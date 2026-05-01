@@ -60,8 +60,9 @@ async function removeFavorite(req, res) {
         const { workId } = req.params;
         
         let localWorkId = workId;
+        let work = null;
         if (isNaN(workId) || workId.length > 10) {
-            const work = await DbAdapter.findOne(Work, { where: { codemao_work_id: workId } });
+            work = await DbAdapter.findOne(Work, { where: { codemao_work_id: workId } });
             if (work) {
                 localWorkId = DbAdapter.getId(work);
             }
@@ -75,9 +76,15 @@ async function removeFavorite(req, res) {
             return errorResponse(res, '未收藏该作品', 400);
         }
         
+        if (!work) {
+            work = await DbAdapter.findByPk(Work, localWorkId);
+        }
+        
         await DbAdapter.destroy(Favorite, { where: { id: DbAdapter.getId(favorite) } });
 
-        await DbAdapter.decrement(work, 'collection_times');
+        if (work) {
+            await DbAdapter.decrement(work, 'collection_times');
+        }
         const updatedWork = await DbAdapter.findByPk(Work, localWorkId, { attributes: ['collection_times'] });
 
         return successResponse(res, { collection_times: Math.max(0, updatedWork.collection_times), favorited: false }, '已取消收藏');
