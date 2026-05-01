@@ -1,0 +1,75 @@
+# ========================================
+# 编程狗社区 - Git忽略配置
+# ========================================
+
+# 依赖目录
+node_modules/
+*/node_modules/
+
+# 构建输出
+dist/
+*/dist/
+build/
+
+# 环境变量文件（包含敏感信息）
+.env
+.env.local
+.env.*.local
+*/.env
+*/.env.local
+
+# 数据库文件
+*.sqlite
+*.sqlite3
+*.db
+server/data/
+server/*.sqlite
+
+# 上传文件（用户数据）
+server/uploads/*
+!server/uploads/.gitkeep
+
+# 下载的临时文件
+server/downloaded/
+
+# 日志文件
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# IDE配置
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# 操作系统文件
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# 缓存目录
+.cache/
+.parcel-cache/
+.vite/
+
+# 测试覆盖率
+coverage/
+.nyc_output/
+
+# 临时文件
+tmp/
+temp/
+*.tmp
+
+# 打包文件
+*.zip
+*.tar.gz
+*.rar
+
+# 源站API文档（给AI参考用）
+【给ai的】源站编程猫社区的api/
+源站编程猫社区的api/

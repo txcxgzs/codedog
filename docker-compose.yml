@@ -1,0 +1,30 @@
+services:
+  app:
+    build: .
+    container_name: codedog-app
+    network_mode: host
+    environment:
+      - DB_TYPE=${DB_TYPE:-sqlite}
+      - DB_PATH=/app/server/data/database.sqlite
+      - DB_HOST=${DB_HOST:-localhost}
+      - DB_PORT=${DB_PORT:-3306}
+      - DB_NAME=${DB_NAME:-coding_dog}
+      - DB_USER=${DB_USER:-root}
+      - DB_PASSWORD=${DB_PASSWORD:-}
+      - JWT_SECRET=${JWT_SECRET}
+      - JWT_EXPIRES_IN=${JWT_EXPIRES_IN:-7d}
+      - GEETEST_ID=${GEETEST_ID:-}
+      - GEETEST_KEY=${GEETEST_KEY:-}
+      - NODE_ENV=production
+      - PORT=3001
+    volumes:
+      - ./server/data:/app/server/data
+      - ./server/uploads:/app/server/uploads
+      - ./server/downloaded:/app/server/downloaded
+    restart: always
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3001/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
