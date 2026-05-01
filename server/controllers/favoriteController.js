@@ -41,14 +41,11 @@ async function addFavorite(req, res) {
             user_id: req.user.id,
             work_id: localWorkId
         });
-        
-        // 更新作品收藏数
-        await DbAdapter.update(Work,
-            { collection_times: (work.collection_times || 0) + 1 },
-            { where: { id: DbAdapter.getId(work) } }
-        );
-        
-        return successResponse(res, null, '收藏成功');
+
+        await DbAdapter.increment(work, 'collection_times');
+        const updatedWork = await DbAdapter.findByPk(Work, DbAdapter.getId(work), { attributes: ['collection_times'] });
+
+        return successResponse(res, { collection_times: updatedWork.collection_times, favorited: true }, '收藏成功');
     } catch (error) {
         console.error('收藏错误:', error);
         return errorResponse(res, '收藏失败', 500);
@@ -79,16 +76,11 @@ async function removeFavorite(req, res) {
         }
         
         await DbAdapter.destroy(Favorite, { where: { id: DbAdapter.getId(favorite) } });
-        
-        const work = await DbAdapter.findByPk(Work, localWorkId);
-        if (work) {
-            await DbAdapter.update(Work,
-                { collection_times: Math.max(0, (work.collection_times || 0) - 1) },
-                { where: { id: DbAdapter.getId(work) } }
-            );
-        }
-        
-        return successResponse(res, null, '已取消收藏');
+
+        await DbAdapter.decrement(work, 'collection_times');
+        const updatedWork = await DbAdapter.findByPk(Work, localWorkId, { attributes: ['collection_times'] });
+
+        return successResponse(res, { collection_times: Math.max(0, updatedWork.collection_times), favorited: false }, '已取消收藏');
     } catch (error) {
         console.error('取消收藏错误:', error);
         return errorResponse(res, '取消收藏失败', 500);

@@ -1,5 +1,169 @@
 # Bug修复记录文档
 
+## 修复日期：2026-05-01
+
+---
+
+## 🐛 本次修复的Bug列表
+
+### 1. ✅ 严重：冗余模型文件导致混淆（已修复）
+
+**问题描述：**
+- `server/models/User.js` 和 `server/models/Work.js` 是冗余文件
+- 与 `server/models/index.js` 中的定义不一致
+- User模型：`index.js` 使用 `codemao_user_id`，`User.js` 使用 `codemao_id`
+- Work模型：`codemao_work_id` 类型不一致（STRING vs INTEGER）
+
+**修复方案：**
+- 删除 `server/models/User.js`
+- 删除 `server/models/Work.js`
+- 统一使用 `server/models/index.js` 中的模型定义
+
+**修复文件：**
+- 删除：`server/models/User.js`
+- 删除：`server/models/Work.js`
+
+---
+
+### 2. ✅ 高危：点赞/取消点赞返回数据不准确（已修复）
+
+**问题描述：**
+- `increment()`/`decrement()` 操作后，`work.praise_times` 的值没有立即更新
+- 返回给前端的点赞数是旧数据，导致前端显示不准确
+- 影响作品点赞和评论点赞功能
+
+**修复方案：**
+- 在执行 `increment`/`decrement` 后重新查询最新数据
+- 使用 `findByPk` 获取更新后的点赞数
+- 确保返回给前端的数据是准确的
+
+**修复文件：**
+- `server/controllers/workController.js` - `likeWork` 函数
+- `server/controllers/commentController.js` - `likeComment` 函数
+
+---
+
+### 3. ✅ 中等：用户作品同步机制不可靠（已修复）
+
+**问题描述：**
+- 作品同步失败时静默处理，没有任何通知机制
+- 没有重试机制，网络波动会导致同步失败
+- `work_count` 只记录新同步的数量，不准确
+
+**修复方案：**
+- 添加重试机制（最多重试3次，每次间隔5秒）
+- 添加逐个作品同步的错误处理
+- 修正 `work_count` 统计逻辑（统计实际作品数量而非同步数量）
+- 返回详细的同步结果统计
+
+**修复文件：**
+- `server/controllers/userController.js` - `syncUserWorks` 函数
+
+---
+
+### 4. ✅ 中等：评论点赞功能缺少取消功能（已修复）
+
+**问题描述：**
+- 用户已点赞评论后只能返回错误，没有取消点赞功能
+- 前端无法实现"再次点击取消点赞"的交互
+
+**修复方案：**
+- 添加评论取消点赞逻辑
+- 取消点赞时删除Like记录并减少点赞数
+- 返回统一的 `liked: true/false` 状态
+
+**修复文件：**
+- `server/controllers/commentController.js` - `likeComment` 函数
+
+---
+
+### 5. ✅ 低危：路由参数类型处理不一致（已修复）
+
+**问题描述：**
+- 路由参数在不同的控制器中处理方式不同
+- `codemao_work_id` 有时转String，有时保持原样
+- 可能导致数据库查询失败
+
+**修复方案：**
+- 创建统一的参数处理中间件 `server/middleware/params.js`
+- 在路由层统一处理ID类型转换
+- 所有以 `Id` 结尾的参数自动转为String类型
+
+**修复文件：**
+- 新增：`server/middleware/params.js`
+- 修改：`server/routes/workRoutes.js`
+
+---
+
+### 6. ✅ 高危：收藏/关注等操作返回数据不准确（已修复）
+
+**问题描述：**
+- 收藏作品、关注用户等操作后，返回的数据没有更新
+- 使用 `update()` 手动增加计数后，返回的还是旧数据
+- 用户界面显示的数量与实际不符
+
+**修复方案：**
+- 统一使用 `increment()`/`decrement()` 方法进行计数
+- 操作后使用 `findByPk` 查询最新数据
+- 返回准确的计数和操作状态
+
+**修复文件：**
+- `server/controllers/favoriteController.js` - `addFavorite`, `removeFavorite` 函数
+- `server/controllers/followController.js` - `followUser`, `unfollowUser` 函数
+
+---
+
+### 7. ✅ 高危：帖子点赞/收藏缺少取消功能（已修复）
+
+**问题描述：**
+- 帖子点赞只能增加不能取消
+- 帖子收藏功能没有检查是否已收藏
+- 用户无法取消已点赞/收藏的帖子
+
+**修复方案：**
+- 添加帖子点赞的取消功能（toggle）
+- 合并 `favoritePost` 和 `unfavoritePost` 为单一函数
+- 使用 Like/Favorite 表检查是否已点赞/收藏
+- 返回 `liked`/`favorited` 状态
+
+**修复文件：**
+- `server/controllers/postController.js` - `likePost`, `favoritePost` 函数
+- `server/routes/postRoutes.js` - 移除单独的取消收藏路由
+
+---
+
+### 8. ✅ 中等：工作室统计数据更新逻辑混乱（已修复）
+
+**问题描述：**
+- 工作室成员数和作品数更新逻辑不一致
+- 审核通过后重新查询工作室再更新，存在竞态条件
+- 审核通知缺少 sender_id，用户无法查看是谁审核的
+
+**修复方案：**
+- 在审核前提前加载工作室数据
+- 统一使用 `increment()`/`decrement()` 方法
+- 审核通知添加 `sender_id` 字段
+
+**修复文件：**
+- `server/controllers/studioController.js` - `reviewMember`, `reviewWork`, `joinStudio`, `leaveStudio`, `kickMember`, `removeWork` 函数
+
+---
+
+### 9. ✅ 高危：评论数更新逻辑不一致（已修复）
+
+**问题描述：**
+- 发表评论和删除评论时使用 `update()` 手动更新计数
+- 与其他控制器中已修复的点赞/收藏逻辑不一致
+
+**修复方案：**
+- 统一使用 `increment()`/`decrement()` 方法
+- 删除评论时减少计数
+
+**修复文件：**
+- `server/controllers/commentController.js` - `createComment`, `deleteComment` 函数
+
+---
+
 ## 修复日期：2026-04-18
 
 ---
@@ -123,15 +287,29 @@ npm install
 
 ### 修复统计
 
-| 严重程度 | 数量 | 状态 |
-|---------|------|------|
-| 🔴 严重 | 1 | ✅ 已修复 |
-| 🟡 中等 | 1 | ✅ 已修复 |
-| 🟢 低危 | 3 | ✅ 已修复 |
-| ℹ️ 信息 | 1 | ✅ 已确认无问题 |
+| 修复日期 | 严重 | 高危 | 中等 | 低危 | 信息 | 状态 |
+|---------|------|------|------|------|------|------|
+| 2026-05-01 | 1 | 4 | 2 | 1 | 0 | ✅ 已完成 |
+| 2026-04-18 | 1 | 0 | 1 | 3 | 1 | ✅ 已完成 |
 
-### 修改的文件列表
+### 累计修复的文件列表
 
+**2026-05-01 新增/修改：**
+1. ✅ `server/models/User.js` - 已删除（冗余文件）
+2. ✅ `server/models/Work.js` - 已删除（冗余文件）
+3. ✅ `server/controllers/workController.js` - 修复点赞数据不准确
+4. ✅ `server/controllers/commentController.js` - 添加取消点赞功能
+5. ✅ `server/controllers/userController.js` - 增强作品同步机制
+6. ✅ `server/middleware/params.js` - 新建（统一参数处理）
+7. ✅ `server/routes/workRoutes.js` - 应用参数处理中间件
+8. ✅ `server/controllers/favoriteController.js` - 修复收藏数返回不准确
+9. ✅ `server/controllers/followController.js` - 修复关注数返回不准确
+10. ✅ `server/controllers/postController.js` - 添加帖子点赞取消功能
+11. ✅ `server/routes/postRoutes.js` - 移除单独的取消收藏路由
+12. ✅ `server/controllers/studioController.js` - 修复统计数据更新逻辑
+13. ✅ `server/controllers/commentController.js` - 修复评论数更新逻辑
+
+**2026-04-18 修改：**
 1. ✅ `server/services/geetestService.js` - 新建
 2. ✅ `server/package.json` - 更新依赖版本
 3. ✅ `.env.example` - 完善配置示例
@@ -274,4 +452,4 @@ npm start
 
 ---
 
-**文档最后更新时间：2026-04-18**
+**文档最后更新时间：2026-05-01**

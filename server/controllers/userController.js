@@ -189,9 +189,12 @@ async function codemaoLogin(req, res, identity, password) {
 }
 
 /**
- * 同步用户作品
+ * 同步用户作品（带重试机制）
  */
-async function syncUserWorks(codemaoUserId, localUserId) {
+const MAX_SYNC_RETRIES = 3;
+const SYNC_RETRY_DELAY = 5000;
+
+async function syncUserWorks(codemaoUserId, localUserId, retryCount = 0) {
     try {
         console.log(`开始同步用户 ${codemaoUserId} 的作品...`);
         
@@ -199,51 +202,72 @@ async function syncUserWorks(codemaoUserId, localUserId) {
         
         if (!worksData || !worksData.items) {
             console.log('未获取到用户作品');
-            return;
+            return { success: true, synced: 0 };
         }
         
         let syncCount = 0;
+        let errorCount = 0;
         
         for (const item of worksData.items) {
-            const existing = await DbAdapter.findOne(Work, { 
-                where: { codemao_work_id: item.id } 
-            });
-            
-            if (existing) continue;
-            
-            const workDetail = await codemaoApi.getWorkDetail(item.id);
-            if (!workDetail || !workDetail.id) continue;
-            
-            const type = workDetail.work_label_list && workDetail.work_label_list[0] 
-                ? workDetail.work_label_list[0].label_name 
-                : '其他';
-            
-            await DbAdapter.create(Work, {
-                codemao_work_id: workDetail.id,
-                name: workDetail.work_name,
-                description: workDetail.description,
-                preview: workDetail.preview,
-                type: type,
-                ide_type: workDetail.ide_type,
-                work_url: workDetail.player_url,
-                user_id: localUserId,
-                codemao_author_id: codemaoUserId,
-                codemao_author_name: workDetail.user_info?.nickname,
-                view_times: workDetail.view_times || 0,
-                praise_times: workDetail.liked_times || 0,
-                collection_times: workDetail.collect_times || 0,
-                comment_count: workDetail.comment_times || 0,
-                status: 'published'
-            });
-            
-            syncCount++;
+            try {
+                const existing = await DbAdapter.findOne(Work, { 
+                    where: { codemao_work_id: String(item.id) } 
+                });
+                
+                if (existing) continue;
+                
+                const workDetail = await codemaoApi.getWorkDetail(item.id);
+                if (!workDetail || !workDetail.id) {
+                    errorCount++;
+                    continue;
+                }
+                
+                const type = workDetail.work_label_list && workDetail.work_label_list[0] 
+                    ? workDetail.work_label_list[0].label_name 
+                    : '其他';
+                
+                await DbAdapter.create(Work, {
+                    codemao_work_id: String(workDetail.id),
+                    name: workDetail.work_name,
+                    description: workDetail.description,
+                    preview: workDetail.preview,
+                    type: type,
+                    ide_type: workDetail.ide_type,
+                    work_url: workDetail.player_url,
+                    user_id: localUserId,
+                    codemao_author_id: String(codemaoUserId),
+                    codemao_author_name: workDetail.user_info?.nickname,
+                    view_times: workDetail.view_times || 0,
+                    praise_times: workDetail.liked_times || 0,
+                    collection_times: workDetail.collect_times || 0,
+                    comment_count: workDetail.comment_times || 0,
+                    status: 'published'
+                });
+                
+                syncCount++;
+            } catch (itemError) {
+                errorCount++;
+                console.error(`同步作品 ${item.id} 失败:`, itemError.message);
+            }
         }
         
-        await DbAdapter.update(User, { work_count: syncCount }, { where: { id: localUserId } });
+        const existingCount = await DbAdapter.count(Work, { where: { user_id: localUserId } });
+        await DbAdapter.update(User, { work_count: existingCount }, { where: { id: localUserId } });
         
-        console.log(`同步完成，共 ${syncCount} 个作品`);
+        console.log(`同步完成，共 ${syncCount} 个新作品，${errorCount} 个失败`);
+        return { success: true, synced: syncCount, failed: errorCount };
+        
     } catch (error) {
-        console.error('同步用户作品错误:', error);
+        console.error('同步用户作品错误:', error.message);
+        
+        if (retryCount < MAX_SYNC_RETRIES) {
+            console.log(`${SYNC_RETRY_DELAY / 1000}秒后重试... (${retryCount + 1}/${MAX_SYNC_RETRIES})`);
+            await new Promise(resolve => setTimeout(resolve, SYNC_RETRY_DELAY));
+            return syncUserWorks(codemaoUserId, localUserId, retryCount + 1);
+        }
+        
+        console.error(`同步失败，已重试 ${MAX_SYNC_RETRIES} 次`);
+        return { success: false, synced: 0, failed: -1, error: error.message };
     }
 }
 

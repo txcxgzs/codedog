@@ -203,10 +203,7 @@ async function joinStudio(req, res) {
             });
             return successResponse(res, member, '申请已提交，请等待审核');
         } else {
-            await DbAdapter.update(Studio, 
-                { member_count: (studio.member_count || 0) + 1 },
-                { where: { id: DbAdapter.getId(studio) } }
-            );
+            await DbAdapter.increment(studio, 'member_count');
             return successResponse(res, member, '加入成功');
         }
     } catch (error) {
@@ -232,15 +229,9 @@ async function leaveStudio(req, res) {
         }
         
         await DbAdapter.destroy(StudioMember, { where: { id: DbAdapter.getId(member) } });
-        
-        const studio = await DbAdapter.findByPk(Studio, id);
-        if (studio) {
-            await DbAdapter.update(Studio, 
-                { member_count: Math.max(0, (studio.member_count || 0) - 1) },
-                { where: { id: DbAdapter.getId(studio) } }
-            );
-        }
-        
+
+        await DbAdapter.decrement(studio, 'member_count');
+
         return successResponse(res, null, '已退出工作室');
     } catch (error) {
         console.error('退出工作室错误:', error);
@@ -339,21 +330,17 @@ async function reviewMember(req, res) {
         
         if (action === 'approve') {
             await DbAdapter.update(StudioMember, { status: 'active' }, { where: { id: DbAdapter.getId(member) } });
-            const studio = await DbAdapter.findByPk(Studio, id);
-            if (studio) {
-                await DbAdapter.update(Studio, 
-                    { member_count: (studio.member_count || 0) + 1 },
-                    { where: { id: DbAdapter.getId(studio) } }
-                );
-            }
-            
+
+            await DbAdapter.increment(studio, 'member_count');
+
             await DbAdapter.create(Notification, {
                 user_id: member.user_id,
                 type: 'system',
                 title: '工作室申请通过',
-                content: `您申请加入的工作室「${studio.name}」已通过审核`
+                content: `您申请加入的工作室「${studio.name}」已通过审核`,
+                sender_id: studio.owner_id
             });
-            
+
             return successResponse(res, null, '已通过申请');
         } else {
             await DbAdapter.update(StudioMember, { status: 'rejected' }, { where: { id: DbAdapter.getId(member) } });
@@ -508,29 +495,25 @@ async function reviewWork(req, res) {
         }
         
         if (action === 'approve') {
-            await DbAdapter.update(StudioWork, { 
-                status: 'approved', 
+            await DbAdapter.update(StudioWork, {
+                status: 'approved',
                 reviewed_by: req.user.id,
                 reviewed_at: new Date()
             }, { where: { id: workId } });
-            const studio = await DbAdapter.findByPk(Studio, id);
-            if (studio) {
-                await DbAdapter.update(Studio, 
-                    { work_count: (studio.work_count || 0) + 1 },
-                    { where: { id: DbAdapter.getId(studio) } }
-                );
-            }
-            
+
+            await DbAdapter.increment(studio, 'work_count');
+
             await DbAdapter.create(Notification, {
                 user_id: studioWork.user_id,
                 type: 'system',
                 title: '作品审核通过',
-                content: `您投稿到「${studio.name}」的作品已通过审核`
+                content: `您投稿到「${studio.name}」的作品已通过审核`,
+                sender_id: studio.owner_id
             });
-            
+
             return successResponse(res, null, '作品已通过');
         } else {
-            await DbAdapter.update(StudioWork, { 
+            await DbAdapter.update(StudioWork, {
                 status: 'rejected',
                 reviewed_by: req.user.id,
                 reviewed_at: new Date()
@@ -556,26 +539,21 @@ async function removeWork(req, res) {
         }
         
         const studioWork = await DbAdapter.findOne(StudioWork, {
-            where: { id: workId, studio_id: id }
+            where: { id: workId, studio_id: id },
+            include: [{ model: Studio, as: 'studio', attributes: ['id', 'work_count'] }]
         });
-        
+
         if (!studioWork) {
             return errorResponse(res, '作品不存在', 404);
         }
-        
+
         const wasApproved = studioWork.status === 'approved';
         await DbAdapter.destroy(StudioWork, { where: { id: DbAdapter.getId(studioWork) } });
-        
+
         if (wasApproved) {
-            const studio = await DbAdapter.findByPk(Studio, id);
-            if (studio) {
-                await DbAdapter.update(Studio, 
-                    { work_count: Math.max(0, (studio.work_count || 0) - 1) },
-                    { where: { id: DbAdapter.getId(studio) } }
-                );
-            }
+            await DbAdapter.decrement(studioWork.studio, 'work_count');
         }
-        
+
         return successResponse(res, null, '作品已移除');
     } catch (error) {
         console.error('移除作品错误:', error);
@@ -729,32 +707,28 @@ async function kickMember(req, res) {
         if (!adminMember || (adminMember.role !== 'owner' && adminMember.role !== 'admin')) {
             return errorResponse(res, '无权移除成员', 403);
         }
-        
+
         const member = await DbAdapter.findOne(StudioMember, {
-            where: { id: memberId, studio_id: id, status: 'active' }
+            where: { id: memberId, studio_id: id, status: 'active' },
+            attributes: ['id', 'studio_id', 'user_id', 'role', 'status'],
+            include: [{ model: Studio, as: 'studio', attributes: ['id', 'member_count'] }]
         });
-        
+
         if (!member) {
             return errorResponse(res, '成员不存在', 404);
         }
-        
+
         if (member.role === 'owner') {
             return errorResponse(res, '不能移除创建者', 400);
         }
-        
+
         if (member.role === 'admin' && adminMember.role !== 'owner') {
             return errorResponse(res, '无权移除管理员', 403);
         }
-        
+
         await DbAdapter.destroy(StudioMember, { where: { id: DbAdapter.getId(member) } });
-        const studio = await DbAdapter.findByPk(Studio, id);
-        if (studio) {
-            await DbAdapter.update(Studio, 
-                { member_count: Math.max(0, (studio.member_count || 0) - 1) },
-                { where: { id: DbAdapter.getId(studio) } }
-            );
-        }
-        
+        await DbAdapter.decrement(member.studio, 'member_count');
+
         return successResponse(res, null, '成员已移除');
     } catch (error) {
         console.error('移除成员错误:', error);
