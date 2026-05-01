@@ -149,6 +149,21 @@
 
 ---
 
+### 9. ✅ 高危：评论数更新逻辑不一致（已修复）
+
+**问题描述：**
+- 发表评论和删除评论时使用 `update()` 手动更新计数
+- 与其他控制器中已修复的点赞/收藏逻辑不一致
+
+**修复方案：**
+- 统一使用 `increment()`/`decrement()` 方法
+- 删除评论时减少计数
+
+**修复文件：**
+- `server/controllers/commentController.js` - `createComment`, `deleteComment` 函数
+
+---
+
 ## 修复日期：2026-04-18
 
 ---
@@ -274,7 +289,7 @@ npm install
 
 | 修复日期 | 严重 | 高危 | 中等 | 低危 | 信息 | 状态 |
 |---------|------|------|------|------|------|------|
-| 2026-05-01 | 1 | 3 | 2 | 1 | 0 | ✅ 已完成 |
+| 2026-05-01 | 1 | 4 | 2 | 1 | 0 | ✅ 已完成 |
 | 2026-04-18 | 1 | 0 | 1 | 3 | 1 | ✅ 已完成 |
 
 ### 累计修复的文件列表
@@ -292,6 +307,7 @@ npm install
 10. ✅ `server/controllers/postController.js` - 添加帖子点赞取消功能
 11. ✅ `server/routes/postRoutes.js` - 移除单独的取消收藏路由
 12. ✅ `server/controllers/studioController.js` - 修复统计数据更新逻辑
+13. ✅ `server/controllers/commentController.js` - 修复评论数更新逻辑
 
 **2026-04-18 修改：**
 1. ✅ `server/services/geetestService.js` - 新建

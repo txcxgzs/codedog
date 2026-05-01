@@ -35,10 +35,7 @@ async function createComment(req, res) {
         if (work_id) {
             const work = await DbAdapter.findByPk(Work, work_id);
             if (work) {
-                await DbAdapter.update(Work, 
-                    { comment_count: (work.comment_count || 0) + 1 },
-                    { where: { id: DbAdapter.getId(work) } }
-                );
+                await DbAdapter.increment(work, 'comment_count');
                 if (work.user_id !== req.user.id) {
                     await DbAdapter.create(Notification, {
                         user_id: work.user_id,
@@ -55,10 +52,7 @@ async function createComment(req, res) {
         if (post_id) {
             const post = await DbAdapter.findByPk(Post, post_id);
             if (post) {
-                await DbAdapter.update(Post, 
-                    { comment_count: (post.comment_count || 0) + 1 },
-                    { where: { id: DbAdapter.getId(post) } }
-                );
+                await DbAdapter.increment(post, 'comment_count');
                 if (post.user_id !== req.user.id) {
                     await DbAdapter.create(Notification, {
                         user_id: post.user_id,
@@ -170,19 +164,13 @@ async function deleteComment(req, res) {
         if (comment.work_id) {
             const work = await DbAdapter.findByPk(Work, comment.work_id);
             if (work) {
-                await DbAdapter.update(Work, 
-                    { comment_count: Math.max(0, (work.comment_count || 0) - 1) },
-                    { where: { id: DbAdapter.getId(work) } }
-                );
+                await DbAdapter.decrement(work, 'comment_count');
             }
         }
         if (comment.post_id) {
             const post = await DbAdapter.findByPk(Post, comment.post_id);
             if (post) {
-                await DbAdapter.update(Post, 
-                    { comment_count: Math.max(0, (post.comment_count || 0) - 1) },
-                    { where: { id: DbAdapter.getId(post) } }
-                );
+                await DbAdapter.decrement(post, 'comment_count');
             }
         }
         
