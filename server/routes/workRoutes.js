@@ -7,6 +7,9 @@ const router = express.Router();
 const workController = require('../controllers/workController');
 const { authMiddleware } = require('../middleware/auth');
 const { geetestVerify } = require('../middleware/geetest');
+const { normalizeParams } = require('../middleware/params');
+
+router.use(normalizeParams(['codemaoId', 'userId']));
 
 // 发布作品（需要登录+验证码）
 router.post('/publish', authMiddleware, geetestVerify('publish_work'), workController.publishWork);

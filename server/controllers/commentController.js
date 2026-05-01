@@ -213,7 +213,10 @@ async function likeComment(req, res) {
         });
         
         if (existing) {
-            return errorResponse(res, '已点赞', 400);
+            await DbAdapter.destroy(Like, { where: { id: DbAdapter.getId(existing) } });
+            await DbAdapter.decrement(comment, 'like_count');
+            const updatedComment = await DbAdapter.findByPk(Comment, DbAdapter.getId(comment), { attributes: ['like_count'] });
+            return successResponse(res, { like_count: Math.max(0, updatedComment.like_count), liked: false }, '已取消点赞');
         }
         
         await DbAdapter.create(Like, {
@@ -221,12 +224,10 @@ async function likeComment(req, res) {
             comment_id: DbAdapter.getId(comment)
         });
         
-        await DbAdapter.update(Comment, 
-            { like_count: (comment.like_count || 0) + 1 },
-            { where: { id: DbAdapter.getId(comment) } }
-        );
+        await DbAdapter.increment(comment, 'like_count');
+        const updatedComment = await DbAdapter.findByPk(Comment, DbAdapter.getId(comment), { attributes: ['like_count'] });
         
-        return successResponse(res, { like_count: (comment.like_count || 0) + 1 }, '点赞成功');
+        return successResponse(res, { like_count: updatedComment.like_count, liked: true }, '点赞成功');
     } catch (error) {
         console.error('点赞错误:', error);
         return errorResponse(res, '点赞失败', 500);

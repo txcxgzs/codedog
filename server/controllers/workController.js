@@ -517,7 +517,7 @@ async function likeWork(req, res) {
         const codemaoId = req.params.codemaoId;
         const { Like, Notification } = require('../models');
         
-        const work = await DbAdapter.findOne(Work, { where: { codemao_work_id: codemaoId } });
+        const work = await DbAdapter.findOne(Work, { where: { codemao_work_id: String(codemaoId) } });
         
         if (!work) {
             return errorResponse(res, '作品不存在', 404);
@@ -530,8 +530,8 @@ async function likeWork(req, res) {
         if (existingLike) {
             await DbAdapter.destroy(Like, { where: { id: DbAdapter.getId(existingLike) } });
             await DbAdapter.decrement(work, 'praise_times');
-            const praiseTimes = (work.praise_times || 1) - 1;
-            return successResponse(res, { praise_times: Math.max(0, praiseTimes), liked: false }, '已取消点赞');
+            const updatedWork = await DbAdapter.findByPk(Work, DbAdapter.getId(work), { attributes: ['praise_times'] });
+            return successResponse(res, { praise_times: Math.max(0, updatedWork.praise_times), liked: false }, '已取消点赞');
         }
         
         await DbAdapter.create(Like, {
@@ -539,6 +539,7 @@ async function likeWork(req, res) {
             work_id: DbAdapter.getId(work)
         });
         await DbAdapter.increment(work, 'praise_times');
+        const updatedWork = await DbAdapter.findByPk(Work, DbAdapter.getId(work), { attributes: ['praise_times'] });
         
         if (work.user_id && work.user_id.toString() !== DbAdapter.getId(req.user).toString()) {
             await DbAdapter.create(Notification, {
@@ -552,7 +553,7 @@ async function likeWork(req, res) {
             });
         }
         
-        return successResponse(res, { praise_times: (work.praise_times || 0) + 1, liked: true }, '点赞成功');
+        return successResponse(res, { praise_times: updatedWork.praise_times, liked: true }, '点赞成功');
     } catch (error) {
         console.error('点赞作品错误:', error);
         return errorResponse(res, '点赞失败', 500);
