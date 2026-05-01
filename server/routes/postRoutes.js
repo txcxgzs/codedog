@@ -15,6 +15,5 @@ router.put('/:id', authMiddleware, postController.updatePost);
 router.delete('/:id', authMiddleware, postController.deletePost);
 router.post('/:id/like', authMiddleware, geetestVerify('like'), postController.likePost);
 router.post('/:id/favorite', authMiddleware, geetestVerify('favorite'), postController.favoritePost);
-router.delete('/:id/favorite', authMiddleware, geetestVerify('favorite'), postController.unfavoritePost);
 
 module.exports = router;

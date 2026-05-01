@@ -36,29 +36,28 @@ async function followUser(req, res) {
             return errorResponse(res, '已关注该用户', 400);
         }
         
-        // 创建关注
         await DbAdapter.create(Follow, {
             follower_id: req.user.id,
             following_id: targetUser.id
         });
-        
-        await DbAdapter.update(User, 
-            { following_count: (req.user.following_count || 0) + 1 },
-            { where: { id: req.user.id } }
-        );
-        await DbAdapter.update(User, 
-            { follower_count: (targetUser.follower_count || 0) + 1 },
-            { where: { id: targetUser.id } }
-        );
-        
+
+        await DbAdapter.increment(targetUser, 'follower_count');
+        const updatedFollower = await DbAdapter.findByPk(User, targetUser.id, { attributes: ['follower_count'] });
+        await DbAdapter.increment(req.user, 'following_count');
+        const updatedFollowing = await DbAdapter.findByPk(User, req.user.id, { attributes: ['following_count'] });
+
         await DbAdapter.create(Notification, {
             user_id: targetUser.id,
             type: 'follow',
             title: '关注了你',
             sender_id: req.user.id
         });
-        
-        return successResponse(res, null, '关注成功');
+
+        return successResponse(res, {
+            follower_count: updatedFollower.follower_count,
+            following_count: updatedFollowing.following_count,
+            isFollowing: true
+        }, '关注成功');
     } catch (error) {
         console.error('关注错误:', error);
         return errorResponse(res, '关注失败', 500);
@@ -87,17 +86,17 @@ async function unfollowUser(req, res) {
         }
         
         await DbAdapter.destroy(Follow, { where: { id: DbAdapter.getId(follow) } });
-        
-        await DbAdapter.update(User, 
-            { following_count: Math.max(0, (req.user.following_count || 0) - 1) },
-            { where: { id: req.user.id } }
-        );
-        await DbAdapter.update(User, 
-            { follower_count: Math.max(0, (targetUser.follower_count || 0) - 1) },
-            { where: { id: targetUser.id } }
-        );
-        
-        return successResponse(res, null, '已取消关注');
+
+        await DbAdapter.decrement(targetUser, 'follower_count');
+        const updatedFollower = await DbAdapter.findByPk(User, targetUser.id, { attributes: ['follower_count'] });
+        await DbAdapter.decrement(req.user, 'following_count');
+        const updatedFollowing = await DbAdapter.findByPk(User, req.user.id, { attributes: ['following_count'] });
+
+        return successResponse(res, {
+            follower_count: Math.max(0, updatedFollower.follower_count),
+            following_count: Math.max(0, updatedFollowing.following_count),
+            isFollowing: false
+        }, '已取消关注');
     } catch (error) {
         console.error('取消关注错误:', error);
         return errorResponse(res, '取消关注失败', 500);

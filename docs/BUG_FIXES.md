@@ -95,6 +95,60 @@
 
 ---
 
+### 6. ✅ 高危：收藏/关注等操作返回数据不准确（已修复）
+
+**问题描述：**
+- 收藏作品、关注用户等操作后，返回的数据没有更新
+- 使用 `update()` 手动增加计数后，返回的还是旧数据
+- 用户界面显示的数量与实际不符
+
+**修复方案：**
+- 统一使用 `increment()`/`decrement()` 方法进行计数
+- 操作后使用 `findByPk` 查询最新数据
+- 返回准确的计数和操作状态
+
+**修复文件：**
+- `server/controllers/favoriteController.js` - `addFavorite`, `removeFavorite` 函数
+- `server/controllers/followController.js` - `followUser`, `unfollowUser` 函数
+
+---
+
+### 7. ✅ 高危：帖子点赞/收藏缺少取消功能（已修复）
+
+**问题描述：**
+- 帖子点赞只能增加不能取消
+- 帖子收藏功能没有检查是否已收藏
+- 用户无法取消已点赞/收藏的帖子
+
+**修复方案：**
+- 添加帖子点赞的取消功能（toggle）
+- 合并 `favoritePost` 和 `unfavoritePost` 为单一函数
+- 使用 Like/Favorite 表检查是否已点赞/收藏
+- 返回 `liked`/`favorited` 状态
+
+**修复文件：**
+- `server/controllers/postController.js` - `likePost`, `favoritePost` 函数
+- `server/routes/postRoutes.js` - 移除单独的取消收藏路由
+
+---
+
+### 8. ✅ 中等：工作室统计数据更新逻辑混乱（已修复）
+
+**问题描述：**
+- 工作室成员数和作品数更新逻辑不一致
+- 审核通过后重新查询工作室再更新，存在竞态条件
+- 审核通知缺少 sender_id，用户无法查看是谁审核的
+
+**修复方案：**
+- 在审核前提前加载工作室数据
+- 统一使用 `increment()`/`decrement()` 方法
+- 审核通知添加 `sender_id` 字段
+
+**修复文件：**
+- `server/controllers/studioController.js` - `reviewMember`, `reviewWork`, `joinStudio`, `leaveStudio`, `kickMember`, `removeWork` 函数
+
+---
+
 ## 修复日期：2026-04-18
 
 ---
@@ -220,7 +274,7 @@ npm install
 
 | 修复日期 | 严重 | 高危 | 中等 | 低危 | 信息 | 状态 |
 |---------|------|------|------|------|------|------|
-| 2026-05-01 | 1 | 1 | 2 | 1 | 0 | ✅ 已完成 |
+| 2026-05-01 | 1 | 3 | 2 | 1 | 0 | ✅ 已完成 |
 | 2026-04-18 | 1 | 0 | 1 | 3 | 1 | ✅ 已完成 |
 
 ### 累计修复的文件列表
@@ -233,6 +287,11 @@ npm install
 5. ✅ `server/controllers/userController.js` - 增强作品同步机制
 6. ✅ `server/middleware/params.js` - 新建（统一参数处理）
 7. ✅ `server/routes/workRoutes.js` - 应用参数处理中间件
+8. ✅ `server/controllers/favoriteController.js` - 修复收藏数返回不准确
+9. ✅ `server/controllers/followController.js` - 修复关注数返回不准确
+10. ✅ `server/controllers/postController.js` - 添加帖子点赞取消功能
+11. ✅ `server/routes/postRoutes.js` - 移除单独的取消收藏路由
+12. ✅ `server/controllers/studioController.js` - 修复统计数据更新逻辑
 
 **2026-04-18 修改：**
 1. ✅ `server/services/geetestService.js` - 新建
