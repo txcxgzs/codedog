@@ -147,6 +147,7 @@ const Like = sequelize.define('Like', {
     id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
     user_id: { type: DataTypes.INTEGER, allowNull: false },
     work_id: { type: DataTypes.INTEGER },
+    post_id: { type: DataTypes.INTEGER },
     comment_id: { type: DataTypes.INTEGER },
     created_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW }
 }, { tableName: 'likes', timestamps: false });
@@ -154,7 +155,8 @@ const Like = sequelize.define('Like', {
 const Favorite = sequelize.define('Favorite', {
     id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
     user_id: { type: DataTypes.INTEGER, allowNull: false },
-    work_id: { type: DataTypes.INTEGER, allowNull: false },
+    work_id: { type: DataTypes.INTEGER },
+    post_id: { type: DataTypes.INTEGER },
     created_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW }
 }, { tableName: 'favorites', timestamps: false });
 
@@ -288,8 +290,10 @@ User.hasMany(Report, { foreignKey: 'reporter_id', as: 'reports' });
 User.hasMany(Report, { foreignKey: 'handler_id', as: 'handled_reports' });
 Favorite.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
 Favorite.belongsTo(Work, { foreignKey: 'work_id', as: 'work' });
+Favorite.belongsTo(Post, { foreignKey: 'post_id', as: 'post' });
 User.hasMany(Favorite, { foreignKey: 'user_id', as: 'favorites' });
 Work.hasMany(Favorite, { foreignKey: 'work_id', as: 'favorites' });
+Post.hasMany(Favorite, { foreignKey: 'post_id', as: 'favorites' });
 Notification.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
 Notification.belongsTo(User, { foreignKey: 'sender_id', as: 'sender' });
 User.hasMany(Notification, { foreignKey: 'user_id', as: 'notifications' });
@@ -298,8 +302,12 @@ User.hasMany(OperationLog, { foreignKey: 'user_id', as: 'operation_logs' });
 
 Like.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
 Like.belongsTo(Work, { foreignKey: 'work_id', as: 'work' });
+Like.belongsTo(Post, { foreignKey: 'post_id', as: 'post' });
+Like.belongsTo(Comment, { foreignKey: 'comment_id', as: 'comment' });
 User.hasMany(Like, { foreignKey: 'user_id', as: 'likes' });
 Work.hasMany(Like, { foreignKey: 'work_id', as: 'likes' });
+Post.hasMany(Like, { foreignKey: 'post_id', as: 'likes' });
+Comment.hasMany(Like, { foreignKey: 'comment_id', as: 'likes' });
 
 Follow.belongsTo(User, { foreignKey: 'follower_id', as: 'follower' });
 Follow.belongsTo(User, { foreignKey: 'following_id', as: 'following' });

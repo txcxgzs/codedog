@@ -453,3 +453,136 @@ npm start
 ---
 
 **文档最后更新时间：2026-05-01**
+
+---
+
+## 修复日期：2026-05-01 补充
+
+---
+
+## 🐛 新发现并修复的Bug列表
+
+### 1. ✅ 严重：studioController.js 中 leaveStudio 函数引用未定义变量（已修复）
+
+**问题描述：**
+- `leaveStudio` 函数中使用了未定义的 `studio` 变量
+- 导致退出工作室时无法正确减少成员计数
+- 错误位置：`await DbAdapter.decrement(studio, 'member_count')`
+
+**修复方案：**
+- 在函数开始时添加工作室查询
+- 添加工作室存在性检查
+- 确保 `studio` 变量在使用前已定义
+
+**修复文件：**
+- `server/controllers/studioController.js` - `leaveStudio` 函数
+
+---
+
+### 2. ✅ 严重：studioController.js 中 reviewMember 函数引用未定义变量（已修复）
+
+**问题描述：**
+- `reviewMember` 函数中使用了未定义的 `studio` 变量
+- 导致审核成员申请时无法正确增加成员计数
+- 导致审核通知缺少工作室名称
+
+**修复方案：**
+- 在函数开始时添加工作室查询
+- 添加工作室存在性检查
+- 确保 `studio` 变量在使用前已定义
+
+**修复文件：**
+- `server/controllers/studioController.js` - `reviewMember` 函数
+
+---
+
+### 3. ✅ 高危：Favorite 模型缺少 post_id 字段（已修复）
+
+**问题描述：**
+- `Favorite` 模型只有 `work_id` 字段，没有 `post_id` 字段
+- 导致帖子收藏功能无法正确保存记录
+- `postController.js` 中的 `favoritePost` 函数无法正常工作
+
+**修复方案：**
+- 在 `Favorite` 模型中添加 `post_id` 字段
+- 移除 `work_id` 的 `allowNull: false` 约束
+- 添加 `Favorite` 与 `Post` 的模型关联
+
+**修复文件：**
+- `server/models/index.js` - `Favorite` 模型定义和关联
+
+---
+
+### 4. ✅ 高危：Like 模型缺少 post_id 字段（已修复）
+
+**问题描述：**
+- `Like` 模型只有 `work_id` 和 `comment_id` 字段，没有 `post_id` 字段
+- 导致帖子点赞功能无法正确保存记录
+- `postController.js` 中的 `likePost` 函数无法正常工作
+
+**修复方案：**
+- 在 `Like` 模型中添加 `post_id` 字段
+- 添加 `Like` 与 `Post` 和 `Comment` 的模型关联
+
+**修复文件：**
+- `server/models/index.js` - `Like` 模型定义和关联
+
+---
+
+### 5. ✅ 中等：前端评论点赞只增不减（已修复）
+
+**问题描述：**
+- `PostDetail.vue` 中评论点赞函数只增加计数
+- 用户取消点赞时计数不会减少
+- 与后端 API 的 `liked` 返回值不匹配
+
+**修复方案：**
+- 修改前端逻辑，根据后端返回的 `liked` 状态更新计数
+- 取消点赞时减少计数，使用 `Math.max(0, ...)` 防止负数
+- 添加取消点赞成功的提示
+
+**修复文件：**
+- `client/src/views/PostDetail.vue` - `likeComment` 函数
+
+---
+
+### 6. ✅ 低危：帖子浏览数更新使用不一致的方法（已修复）
+
+**问题描述：**
+- `postController.js` 中浏览数更新使用 `update()` 方法
+- 与其他控制器中已修复的计数更新逻辑不一致
+
+**修复方案：**
+- 统一使用 `increment()` 方法更新浏览数
+- 保持与其他控制器的一致性
+
+**修复文件：**
+- `server/controllers/postController.js` - `getPostDetail` 函数
+
+---
+
+## 📝 数据库迁移说明
+
+由于添加了新的字段，需要执行数据库迁移：
+
+对于 **SQLite** 数据库，删除旧数据库文件并重启服务即可自动创建新表结构：
+```bash
+rm -f server/data/database.sqlite
+```
+
+对于 **MySQL** 数据库，需要手动添加字段：
+```sql
+ALTER TABLE likes ADD COLUMN post_id INT;
+ALTER TABLE favorites ADD COLUMN post_id INT;
+ALTER TABLE favorites MODIFY COLUMN work_id INT;
+```
+
+---
+
+## 累计修复统计
+
+| 修复日期 | 严重 | 高危 | 中等 | 低危 | 信息 | 状态 |
+|---------|------|------|------|------|------|------|
+| 2026-05-01 补充 | 2 | 2 | 1 | 1 | 0 | ✅ 已完成 |
+| 2026-05-01 | 1 | 4 | 2 | 1 | 0 | ✅ 已完成 |
+| 2026-04-18 | 1 | 0 | 1 | 3 | 1 | ✅ 已完成 |

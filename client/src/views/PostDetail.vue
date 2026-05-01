@@ -331,7 +331,12 @@ const likeComment = async (comment) => {
   try {
     const res = await commentApi.likeComment(comment.id, geetestData)
     if (res.code === 200) {
-      comment.like_count = (comment.like_count || 0) + 1
+      if (res.data.liked === false) {
+        comment.like_count = Math.max(0, (comment.like_count || 0) - 1)
+        ElMessage.success('已取消点赞')
+      } else {
+        comment.like_count = res.data.like_count
+      }
     }
   } catch (e) {
     console.error('点赞失败:', e)

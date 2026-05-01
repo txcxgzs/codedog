@@ -216,6 +216,11 @@ async function leaveStudio(req, res) {
     try {
         const { id } = req.params;
         
+        const studio = await DbAdapter.findByPk(Studio, id);
+        if (!studio) {
+            return errorResponse(res, '工作室不存在', 404);
+        }
+        
         const member = await DbAdapter.findOne(StudioMember, {
             where: { studio_id: id, user_id: req.user.id }
         });
@@ -311,6 +316,11 @@ async function reviewMember(req, res) {
     try {
         const { id, memberId } = req.params;
         const { action } = req.body;
+        
+        const studio = await DbAdapter.findByPk(Studio, id);
+        if (!studio) {
+            return errorResponse(res, '工作室不存在', 404);
+        }
         
         const adminMember = await DbAdapter.findOne(StudioMember, {
             where: { studio_id: id, user_id: req.user.id }

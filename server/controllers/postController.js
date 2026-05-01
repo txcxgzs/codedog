@@ -122,10 +122,7 @@ async function getPostDetail(req, res) {
             return errorResponse(res, '帖子不存在', 404);
         }
         
-        await DbAdapter.update(Post, 
-            { view_count: (post.view_count || 0) + 1 },
-            { where: { id: DbAdapter.getId(post) } }
-        );
+        await DbAdapter.increment(post, 'view_count');
         
         const comments = await DbAdapter.findAll(Comment, {
             where: { post_id: id, status: 'active', parent_id: null },
