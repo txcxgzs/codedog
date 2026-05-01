@@ -488,6 +488,11 @@ async function reviewWork(req, res) {
         const { id, workId } = req.params;
         const { action } = req.body;
         
+        const studio = await DbAdapter.findByPk(Studio, id);
+        if (!studio) {
+            return errorResponse(res, '工作室不存在', 404);
+        }
+        
         const adminMember = await DbAdapter.findOne(StudioMember, {
             where: { studio_id: id, user_id: req.user.id }
         });
