@@ -4,7 +4,7 @@
 
 const { User, Work, Comment, Post, Favorite, Follow, Banner, Report, IpBan, Notification, Announcement, SystemConfig, OperationLog, SensitiveWord, RolePermission, CaptchaStats, Studio, StudioMember, StudioWork, sequelize } = require('../models');
 const { successResponse, errorResponse, paginateResponse } = require('../middleware/response');
-const { getAllRoles, canManageUser, getRole, hasPermission, getAllPermissions, refreshRoleCache, DEFAULT_ROLES } = require('../config/permissions');
+const { getAllRoles, canManageUser, getRole, getRoleSync, hasPermission, getAllPermissions, refreshRoleCache, DEFAULT_ROLES } = require('../config/permissions');
 const { logOperation } = require('../middleware/operationLog');
 const { Op } = require('sequelize');
 const codemaoApi = require('../services/codemaoApi');
@@ -430,8 +430,8 @@ async function updateUserRole(req, res) {
         }
         
         // 检查操作者是否有权限分配目标角色
-        const targetRoleInfo = getRole(role);
-        const operatorRoleInfo = getRole(operatorRole);
+        const targetRoleInfo = getRoleSync(role);
+        const operatorRoleInfo = getRoleSync(operatorRole);
         if (targetRoleInfo.level >= operatorRoleInfo.level) {
             return errorResponse(res, '您没有权限分配此角色', 403);
         }
@@ -449,7 +449,7 @@ async function updateUserRole(req, res) {
             user_id: targetUser.id,
             type: 'system',
             title: '角色变更通知',
-            content: `您的角色已从「${getRole(oldRole).name}」变更为「${getRole(role).name}」`
+            content: `您的角色已从「${getRoleSync(oldRole).name}」变更为「${getRoleSync(role).name}」`
         });
 
         return successResponse(res, { role }, '更新成功');
