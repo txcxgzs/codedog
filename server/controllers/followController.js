@@ -23,13 +23,13 @@ async function followUser(req, res) {
             return errorResponse(res, '用户不存在', 404);
         }
         
-        if (targetUser.id === req.user.id) {
+        if (DbAdapter.getId(targetUser) === DbAdapter.getId(req.user)) {
             return errorResponse(res, '不能关注自己', 400);
         }
         
         // 检查是否已关注
         const existing = await DbAdapter.findOne(Follow, {
-            where: { follower_id: req.user.id, following_id: targetUser.id }
+            where: { follower_id: DbAdapter.getId(req.user), following_id: DbAdapter.getId(targetUser) }
         });
         
         if (existing) {
@@ -37,20 +37,20 @@ async function followUser(req, res) {
         }
         
         await DbAdapter.create(Follow, {
-            follower_id: req.user.id,
-            following_id: targetUser.id
+            follower_id: DbAdapter.getId(req.user),
+            following_id: DbAdapter.getId(targetUser)
         });
 
         await DbAdapter.increment(targetUser, 'follower_count');
-        const updatedFollower = await DbAdapter.findByPk(User, targetUser.id, { attributes: ['follower_count'] });
+        const updatedFollower = await DbAdapter.findByPk(User, DbAdapter.getId(targetUser), { attributes: ['follower_count'] });
         await DbAdapter.increment(req.user, 'following_count');
-        const updatedFollowing = await DbAdapter.findByPk(User, req.user.id, { attributes: ['following_count'] });
+        const updatedFollowing = await DbAdapter.findByPk(User, DbAdapter.getId(req.user), { attributes: ['following_count'] });
 
         await DbAdapter.create(Notification, {
-            user_id: targetUser.id,
+            user_id: DbAdapter.getId(targetUser),
             type: 'follow',
             title: '关注了你',
-            sender_id: req.user.id
+            sender_id: DbAdapter.getId(req.user)
         });
 
         return successResponse(res, {
@@ -78,7 +78,7 @@ async function unfollowUser(req, res) {
         }
         
         const follow = await DbAdapter.findOne(Follow, {
-            where: { follower_id: req.user.id, following_id: targetUser.id }
+            where: { follower_id: DbAdapter.getId(req.user), following_id: DbAdapter.getId(targetUser) }
         });
         
         if (!follow) {
@@ -88,9 +88,9 @@ async function unfollowUser(req, res) {
         await DbAdapter.destroy(Follow, { where: { id: DbAdapter.getId(follow) } });
 
         await DbAdapter.decrement(targetUser, 'follower_count');
-        const updatedFollower = await DbAdapter.findByPk(User, targetUser.id, { attributes: ['follower_count'] });
+        const updatedFollower = await DbAdapter.findByPk(User, DbAdapter.getId(targetUser), { attributes: ['follower_count'] });
         await DbAdapter.decrement(req.user, 'following_count');
-        const updatedFollowing = await DbAdapter.findByPk(User, req.user.id, { attributes: ['following_count'] });
+        const updatedFollowing = await DbAdapter.findByPk(User, DbAdapter.getId(req.user), { attributes: ['following_count'] });
 
         return successResponse(res, {
             follower_count: Math.max(0, updatedFollower.follower_count),
@@ -119,7 +119,7 @@ async function getFollowers(req, res) {
         }
         
         const { count, rows } = await DbAdapter.findAndCountAll(Follow, {
-            where: { following_id: user.id },
+            where: { following_id: DbAdapter.getId(user) },
             include: [{
                 model: User,
                 as: 'follower',
@@ -155,7 +155,7 @@ async function getFollowing(req, res) {
         }
         
         const { count, rows } = await DbAdapter.findAndCountAll(Follow, {
-            where: { follower_id: user.id },
+            where: { follower_id: DbAdapter.getId(user) },
             include: [{
                 model: User,
                 as: 'following',
@@ -189,7 +189,7 @@ async function checkFollow(req, res) {
         }
         
         const follow = await DbAdapter.findOne(Follow, {
-            where: { follower_id: req.user.id, following_id: targetUser.id }
+            where: { follower_id: DbAdapter.getId(req.user), following_id: DbAdapter.getId(targetUser) }
         });
         
         return successResponse(res, { isFollowing: !!follow });

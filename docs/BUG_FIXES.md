@@ -651,11 +651,88 @@ ALTER TABLE favorites MODIFY COLUMN work_id INT;
 
 ---
 
+### 5. ✅ 严重：adminMiddleware 在 req.user 不存在时的潜在错误（已修复）
+
+**问题描述：**
+- `adminMiddleware` 中没有检查 `req.user` 是否存在就直接访问 `req.user.role`
+- 如果中间件顺序错误，会导致运行时错误
+
+**修复方案：**
+- 在 `adminMiddleware` 开头添加 `req.user` 存在性检查
+- 如果不存在，返回 401 未登录状态
+
+**修复文件：**
+- `server/middleware/auth.js` - `adminMiddleware` 函数
+
+---
+
+### 6. ✅ 严重：postController.js 中多个地方直接使用 req.user.id 而不是 DbAdapter.getId()（已修复）
+
+**问题描述：**
+- `postController.js` 中多处直接使用 `req.user.id` 访问用户 ID
+- 没有使用统一的 `DbAdapter.getId(req.user)` 方式
+- 可能导致与其他代码不一致的问题
+
+**修复方案：**
+- 统一将 `req.user.id` 替换为 `DbAdapter.getId(req.user)`
+- 更新 `post.user_id` 与 `DbAdapter.getId(req.user)` 进行比较
+
+**修复文件：**
+- `server/controllers/postController.js` - 多个函数
+
+---
+
+### 7. ✅ 严重：followController.js 中同样的问题（已修复）
+
+**问题描述：**
+- `followController.js` 中多处直接使用 `req.user.id` 访问用户 ID
+- 同样需要统一使用 `DbAdapter.getId(req.user)`
+
+**修复方案：**
+- 统一将 `req.user.id` 替换为 `DbAdapter.getId(req.user)`
+- 更新所有用户 ID 比较和使用的地方
+
+**修复文件：**
+- `server/controllers/followController.js` - 多个函数
+
+---
+
+### 8. ✅ 严重：commentController.js 中同样的问题（已修复）
+
+**问题描述：**
+- `commentController.js` 中多处直接使用 `req.user.id`
+- 同样需要统一使用 `DbAdapter.getId(req.user)`
+
+**修复方案：**
+- 统一将 `req.user.id` 替换为 `DbAdapter.getId(req.user)`
+- 更新通知发送者 ID 也使用统一方式
+- 同时修复 deleteComment 函数中用户 ID 比较也更新
+
+**修复文件：**
+- `server/controllers/commentController.js` - 多个函数
+
+---
+
+### 9. ✅ 严重：notificationController.js 中同样的问题（已修复）
+
+**问题描述：**
+- `notificationController.js` 中多处直接使用 `req.user.id`
+- 同样需要统一使用 `DbAdapter.getId(req.user)`
+
+**修复方案：**
+- 统一将 `req.user.id` 替换为 `DbAdapter.getId(req.user)`
+- 更新所有通知查询和操作中的用户 ID
+
+**修复文件：**
+- `server/controllers/notificationController.js` - 多个函数
+
+---
+
 ## 累计修复统计
 
 | 修复日期 | 严重 | 高危 | 中等 | 低危 | 信息 | 状态 |
 |---------|------|------|------|------|------|
-| 2026-05-02 | 2 | 0 | 2 | 0 | 0 | ✅ 已完成 |
+| 2026-05-02 | 7 | 0 | 2 | 0 | 0 | ✅ 已完成 |
 | 2026-05-01 补充 | 2 | 2 | 1 | 1 | 0 | ✅ 已完成 |
 | 2026-05-01 | 1 | 4 | 2 | 1 | 0 | ✅ 已完成 |
 | 2026-04-18 | 1 | 0 | 1 | 3 | 1 | ✅ 已完成 |

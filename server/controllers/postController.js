@@ -21,13 +21,13 @@ async function createPost(req, res) {
         const post = await DbAdapter.create(Post, {
             title,
             content,
-            user_id: req.user.id,
+            user_id: DbAdapter.getId(req.user),
             category: category || 'discussion',
             tags,
             cover
         });
         
-        const result = await DbAdapter.findByPk(Post, post.id, {
+        const result = await DbAdapter.findByPk(Post, DbAdapter.getId(post), {
             include: [{
                 model: User,
                 as: 'author',
@@ -59,8 +59,7 @@ async function getPosts(req, res) {
         
         if (category === 'essence') {
             where.is_essence = true;
-        } else if (category === 'official') {
-            where.category = 'news'; // 或者直接使用 category=news
+        } else if (category === 'official') { where.category = 'news'; // 或者直接使用 category=news
         } else if (category) {
             where.category = category;
         }
@@ -164,7 +163,7 @@ async function updatePost(req, res) {
             return errorResponse(res, '帖子不存在', 404);
         }
         
-        if (post.user_id !== req.user.id) {
+        if (post.user_id !== DbAdapter.getId(req.user)) {
             return errorResponse(res, '无权修改此帖子', 403);
         }
         
@@ -195,7 +194,7 @@ async function deletePost(req, res) {
             return errorResponse(res, '帖子不存在', 404);
         }
         
-        if (post.user_id !== req.user.id && req.user.role !== 'admin') {
+        if (post.user_id !== DbAdapter.getId(req.user) && req.user.role !== 'admin') {
             return errorResponse(res, '无权删除此帖子', 403);
         }
         
@@ -221,7 +220,7 @@ async function likePost(req, res) {
         }
 
         const existing = await DbAdapter.findOne(Like, {
-            where: { user_id: req.user.id, post_id: id }
+            where: { user_id: DbAdapter.getId(req.user), post_id: id }
         });
 
         if (existing) {
@@ -232,7 +231,7 @@ async function likePost(req, res) {
         }
 
         await DbAdapter.create(Like, {
-            user_id: req.user.id,
+            user_id: DbAdapter.getId(req.user),
             post_id: DbAdapter.getId(post)
         });
         await DbAdapter.increment(post, 'like_count');
@@ -258,7 +257,7 @@ async function favoritePost(req, res) {
         }
 
         const existing = await DbAdapter.findOne(Favorite, {
-            where: { user_id: req.user.id, post_id: id }
+            where: { user_id: DbAdapter.getId(req.user), post_id: id }
         });
 
         if (existing) {
@@ -269,7 +268,7 @@ async function favoritePost(req, res) {
         }
 
         await DbAdapter.create(Favorite, {
-            user_id: req.user.id,
+            user_id: DbAdapter.getId(req.user),
             post_id: DbAdapter.getId(post)
         });
         await DbAdapter.increment(post, 'collection_count');
@@ -291,7 +290,7 @@ async function getMyPosts(req, res) {
         const pageSize = parseInt(req.query.pageSize) || 10;
         
         const { count, rows } = await DbAdapter.findAndCountAll(Post, {
-            where: { user_id: req.user.id },
+            where: { user_id: DbAdapter.getId(req.user) },
             order: [['created_at', 'DESC']],
             limit: pageSize,
             offset: (page - 1) * pageSize
