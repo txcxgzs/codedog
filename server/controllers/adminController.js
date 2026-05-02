@@ -1189,7 +1189,7 @@ async function createBanner(req, res) {
 async function updateBanner(req, res) {
     try {
         const { bannerId } = req.params;
-        const { title, image_url, link_url, sort_order, status } = req.body;
+        const { title, image_url, link_url, sort, is_active } = req.body;
         
         const banner = await DbAdapter.findByPk(Banner, bannerId);
         if (!banner) {
@@ -1200,8 +1200,8 @@ async function updateBanner(req, res) {
             title,
             image_url,
             link_url,
-            sort_order,
-            status
+            sort,
+            is_active
         }, { where: { id: bannerId } });
         
         logOperation(req, 'update_banner', 'banner', bannerId, { title, image_url, link_url });
@@ -1557,7 +1557,8 @@ async function removeIpBan(req, res) {
             return errorResponse(res, '封禁记录不存在', 404);
         }
 
-        await DbAdapter.update(IpBan, { status: 'expired' }, { where: { id: DbAdapter.getId(ipBan) } });
+        // 直接删除封禁记录
+        await DbAdapter.destroy(IpBan, { where: { id: DbAdapter.getId(ipBan) });
         logOperation(req, 'remove_ip_ban', 'ip_ban', ipBanId, { ip: ipBan.ip });
 
         return successResponse(res, null, '解除封禁成功');
@@ -1678,9 +1679,8 @@ async function createAnnouncement(req, res) {
         const announcement = await DbAdapter.create(Announcement, {
             title,
             content,
-            type: type || 'normal',
-            author_id: DbAdapter.getId(req.user),
-            status: 'active'
+            type: type || 'notice',
+            is_active: true
         });
         
         logOperation(req, 'create_announcement', 'announcement', DbAdapter.getId(announcement), { title });
@@ -1694,14 +1694,14 @@ async function createAnnouncement(req, res) {
 async function updateAnnouncement(req, res) {
     try {
         const { announcementId } = req.params;
-        const { title, content, type, status } = req.body;
+        const { title, content, type, is_active } = req.body;
         
         const announcement = await DbAdapter.findByPk(Announcement, announcementId);
         if (!announcement) {
             return errorResponse(res, '公告不存在', 404);
         }
         
-        const updateData = { title, content, type, status };
+        const updateData = { title, content, type, is_active };
         await DbAdapter.update(Announcement, updateData, { where: { id: announcementId } });
         logOperation(req, 'update_announcement', 'announcement', announcementId, { 
             title,
@@ -1710,7 +1710,7 @@ async function updateAnnouncement(req, res) {
                 title: announcement.title,
                 content: announcement.content,
                 type: announcement.type,
-                status: announcement.status
+                is_active: announcement.is_active
             }
         });
         
@@ -1918,9 +1918,8 @@ async function addSensitiveWord(req, res) {
         const sensitiveWord = await DbAdapter.create(SensitiveWord, {
             word,
             category: category || 'other',
-            level: level || 'medium',
-            replacement,
-            created_by: DbAdapter.getId(req.user)
+            level: level || 1,
+            replacement
         });
         
         logOperation(req, 'add_sensitive_word', 'sensitive_word', DbAdapter.getId(sensitiveWord), { word });
@@ -1941,7 +1940,10 @@ async function updateSensitiveWord(req, res) {
             return errorResponse(res, '敏感词不存在', 404);
         }
         
-        await DbAdapter.update(SensitiveWord, { word, category, level, replacement, status }, { where: { id: wordId } });
+        const updateData = { word, category, replacement, status };
+        if (level !== undefined) updateData.level = level;
+        
+        await DbAdapter.update(SensitiveWord, updateData, { where: { id: wordId } });
         logOperation(req, 'update_sensitive_word', 'sensitive_word', wordId, { word });
         
         return successResponse(res, sensitiveWord, '更新成功');
@@ -1986,8 +1988,7 @@ async function batchImportSensitiveWords(req, res) {
                 await DbAdapter.create(SensitiveWord, {
                     word,
                     category: category || 'other',
-                    level: level || 'medium',
-                    created_by: DbAdapter.getId(req.user)
+                    level: level || 1
                 });
                 results.success++;
             } catch (e) {
@@ -2118,8 +2119,8 @@ async function aiAutoHandleReports(req, res) {
             
             for (const sw of sensitiveWords) {
                 if (content.includes(sw.word)) {
-                    if (sw.level === 'high') { riskLevel = 'high'; break; }
-                    if (sw.level === 'medium') riskLevel = 'medium';
+                    if (sw.level >= 3) { riskLevel = 'high'; break; }
+                    if (sw.level === 2) riskLevel = 'medium';
                 }
             }
             
@@ -2488,14 +2489,14 @@ async function getStudioDetail(req, res) {
             limit: 50
         });
         
+        logOperation(req, 'view_studio_detail', 'studio', id, { name: studio.name });
+        
         return successResponse(res, {
             studio,
             owner: studio.owner,
             members,
             works: studioWorks.map(sw => sw.work).filter(w => w)
         });
-        
-        logOperation(req, 'view_studio_detail', 'studio', id, { name: studio.name });
     } catch (error) {
         console.error('获取工作室详情错误:', error);
         return errorResponse(res, '获取工作室详情失败', 500);
