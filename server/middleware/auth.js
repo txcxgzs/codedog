@@ -51,6 +51,13 @@ function optionalAuth(req, res, next) {
 
 // 管理员权限中间件（包括审核员及以上角色）
 function adminMiddleware(req, res, next) {
+    if (!req.user) {
+        return res.status(401).json({
+            code: 401,
+            msg: '请先登录',
+            data: null
+        });
+    }
     if (!isRoleAtLeast(req.user.role, 'reviewer')) {
         return res.status(403).json({
             code: 403,
