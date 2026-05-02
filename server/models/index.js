@@ -41,6 +41,7 @@ const Work = sequelize.define('Work', {
     description: { type: DataTypes.TEXT },
     preview: { type: DataTypes.STRING(500) },
     type: { type: DataTypes.STRING(50) },
+    ide_type: { type: DataTypes.STRING(50) },
     work_url: { type: DataTypes.STRING(500) },
     user_id: { type: DataTypes.INTEGER },
     codemao_author_id: { type: DataTypes.STRING(50) },
