@@ -49,8 +49,24 @@ async function testLogin(identity, password) {
     }
 }
 
-// 测试
-testLogin('19202692613', 'qwe123456').then(result => {
+// 从命令行参数或环境变量读取凭证
+const identity = process.argv[2] || process.env.CODEMAO_IDENTITY;
+const password = process.argv[3] || process.env.CODEMAO_PASSWORD;
+
+if (!identity || !password) {
+    console.log('❌ 错误: 请提供账号和密码');
+    console.log('');
+    console.log('使用方式:');
+    console.log('  node test-codemao-login.js <账号> <密码>');
+    console.log('');
+    console.log('或通过环境变量:');
+    console.log('  set CODEMAO_IDENTITY=你的账号');
+    console.log('  set CODEMAO_PASSWORD=你的密码');
+    console.log('  node test-codemao-login.js');
+    process.exit(1);
+}
+
+testLogin(identity, password).then(result => {
     console.log('========================================');
     console.log('测试完成');
     process.exit(result ? 0 : 1);
