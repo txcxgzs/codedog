@@ -13,7 +13,7 @@ async function getNotifications(req, res) {
         const type = req.query.type;
         const unreadOnly = req.query.unread === 'true';
         
-        const where = { user_id: req.user.id };
+        const where = { user_id: DbAdapter.getId(req.user) };
         if (type) where.type = type;
         if (unreadOnly) where.is_read = false;
         
@@ -40,7 +40,7 @@ async function getNotifications(req, res) {
 async function getUnreadCount(req, res) {
     try {
         const count = await DbAdapter.count(Notification, {
-            where: { user_id: req.user.id, is_read: false }
+            where: { user_id: DbAdapter.getId(req.user), is_read: false }
         });
         
         return successResponse(res, { count });
@@ -58,7 +58,7 @@ async function markAsRead(req, res) {
         const { id } = req.params;
         
         const notification = await DbAdapter.findOne(Notification, {
-            where: { id, user_id: req.user.id }
+            where: { id, user_id: DbAdapter.getId(req.user) }
         });
         
         if (!notification) {
@@ -81,7 +81,7 @@ async function markAllAsRead(req, res) {
     try {
         await DbAdapter.update(Notification,
             { is_read: true },
-            { where: { user_id: req.user.id, is_read: false } }
+            { where: { user_id: DbAdapter.getId(req.user), is_read: false } }
         );
         
         return successResponse(res, null, '已全部标记为已读');
@@ -99,7 +99,7 @@ async function deleteNotification(req, res) {
         const { id } = req.params;
         
         const notification = await DbAdapter.findOne(Notification, {
-            where: { id, user_id: req.user.id }
+            where: { id, user_id: DbAdapter.getId(req.user) }
         });
         
         if (!notification) {
@@ -121,7 +121,7 @@ async function deleteNotification(req, res) {
 async function clearAll(req, res) {
     try {
         await DbAdapter.destroy(Notification, {
-            where: { user_id: req.user.id }
+            where: { user_id: DbAdapter.getId(req.user) }
         });
         
         return successResponse(res, null, '已清空所有通知');

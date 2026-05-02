@@ -23,7 +23,7 @@ async function createComment(req, res) {
         
         const comment = await DbAdapter.create(Comment, {
             content,
-            user_id: req.user.id,
+            user_id: DbAdapter.getId(req.user),
             work_id,
             post_id,
             parent_id,
@@ -36,7 +36,7 @@ async function createComment(req, res) {
             const work = await DbAdapter.findByPk(Work, work_id);
             if (work) {
                 await DbAdapter.increment(work, 'comment_count');
-                if (work.user_id !== req.user.id) {
+                if (work.user_id !== DbAdapter.getId(req.user)) {
                     await DbAdapter.create(Notification, {
                         user_id: work.user_id,
                         type: 'comment',
@@ -44,7 +44,7 @@ async function createComment(req, res) {
                         content: content.substring(0, 100),
                         related_id: DbAdapter.getId(work),
                         related_type: 'work',
-                        sender_id: req.user.id
+                        sender_id: DbAdapter.getId(req.user)
                     });
                 }
             }
@@ -53,7 +53,7 @@ async function createComment(req, res) {
             const post = await DbAdapter.findByPk(Post, post_id);
             if (post) {
                 await DbAdapter.increment(post, 'comment_count');
-                if (post.user_id !== req.user.id) {
+                if (post.user_id !== DbAdapter.getId(req.user)) {
                     await DbAdapter.create(Notification, {
                         user_id: post.user_id,
                         type: 'comment',
@@ -61,14 +61,14 @@ async function createComment(req, res) {
                         content: content.substring(0, 100),
                         related_id: DbAdapter.getId(post),
                         related_type: 'post',
-                        sender_id: req.user.id
+                        sender_id: DbAdapter.getId(req.user)
                     });
                 }
             }
         }
         
         // 如果是回复，发送回复通知
-        if (parent_id && reply_to_user_id && reply_to_user_id !== req.user.id) {
+        if (parent_id && reply_to_user_id && reply_to_user_id !== DbAdapter.getId(req.user)) {
             await DbAdapter.create(Notification, {
                 user_id: reply_to_user_id,
                 type: 'reply',
@@ -76,7 +76,7 @@ async function createComment(req, res) {
                 content: content.substring(0, 100),
                 related_id: work_id || post_id,
                 related_type: work_id ? 'work' : 'post',
-                sender_id: req.user.id
+                sender_id: DbAdapter.getId(req.user)
             });
         }
         
@@ -155,7 +155,7 @@ async function deleteComment(req, res) {
             return errorResponse(res, '评论不存在', 404);
         }
         
-        if (comment.user_id !== req.user.id && req.user.role !== 'admin') {
+        if (comment.user_id !== DbAdapter.getId(req.user) && req.user.role !== 'admin') {
             return errorResponse(res, '无权删除此评论', 403);
         }
         
