@@ -1557,7 +1557,7 @@ async function removeIpBan(req, res) {
             return errorResponse(res, '封禁记录不存在', 404);
         }
 
-        await DbAdapter.update(IpBan, { status: 'expired' }, { where: { id: DbAdapter.getId(ipBan) } });
+        await DbAdapter.destroy(IpBan, { where: { id: DbAdapter.getId(ipBan) } });
         logOperation(req, 'remove_ip_ban', 'ip_ban', ipBanId, { ip: ipBan.ip });
 
         return successResponse(res, null, '解除封禁成功');
@@ -1678,9 +1678,7 @@ async function createAnnouncement(req, res) {
         const announcement = await DbAdapter.create(Announcement, {
             title,
             content,
-            type: type || 'normal',
-            author_id: DbAdapter.getId(req.user),
-            status: 'active'
+            type: type || 'notice'
         });
         
         logOperation(req, 'create_announcement', 'announcement', DbAdapter.getId(announcement), { title });
@@ -1694,24 +1692,19 @@ async function createAnnouncement(req, res) {
 async function updateAnnouncement(req, res) {
     try {
         const { announcementId } = req.params;
-        const { title, content, type, status } = req.body;
+        const { title, content, type, is_active } = req.body;
         
         const announcement = await DbAdapter.findByPk(Announcement, announcementId);
         if (!announcement) {
             return errorResponse(res, '公告不存在', 404);
         }
         
-        const updateData = { title, content, type, status };
+        const updateData = { title, content, type };
+        if (typeof is_active !== 'undefined') updateData.is_active = is_active;
         await DbAdapter.update(Announcement, updateData, { where: { id: announcementId } });
         logOperation(req, 'update_announcement', 'announcement', announcementId, { 
             title,
-            changes: updateData,
-            old_values: {
-                title: announcement.title,
-                content: announcement.content,
-                type: announcement.type,
-                status: announcement.status
-            }
+            changes: updateData
         });
         
         return successResponse(res, announcement, '更新成功');
@@ -1757,13 +1750,13 @@ async function getSystemConfigs(req, res) {
 async function updateSystemConfig(req, res) {
     try {
         const { key } = req.params;
-        const { value, description } = req.body;
+        const { value } = req.body;
         
         let config = await DbAdapter.findOne(SystemConfig, { where: { config_key: key } });
         if (config) {
-            await DbAdapter.update(SystemConfig, { config_value: value, description }, { where: { config_key: key } });
+            await DbAdapter.update(SystemConfig, { config_value: value }, { where: { config_key: key } });
         } else {
-            config = await DbAdapter.create(SystemConfig, { config_key: key, config_value: value, description });
+            config = await DbAdapter.create(SystemConfig, { config_key: key, config_value: value });
         }
         
         logOperation(req, 'update_config', 'system_config', null, { key, value });
