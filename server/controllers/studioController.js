@@ -496,6 +496,11 @@ async function reviewWork(req, res) {
             return errorResponse(res, '无权审核作品', 403);
         }
         
+        const studio = await DbAdapter.findByPk(Studio, id);
+        if (!studio) {
+            return errorResponse(res, '工作室不存在', 404);
+        }
+        
         const studioWork = await DbAdapter.findOne(StudioWork, {
             where: { id: workId, studio_id: id, status: 'pending' }
         });

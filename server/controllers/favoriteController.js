@@ -59,6 +59,7 @@ async function removeFavorite(req, res) {
     try {
         const { workId } = req.params;
         
+        let work = null;
         let localWorkId = workId;
         let work = null;
         if (isNaN(workId) || workId.length > 10) {
@@ -66,6 +67,12 @@ async function removeFavorite(req, res) {
             if (work) {
                 localWorkId = DbAdapter.getId(work);
             }
+        } else {
+            work = await DbAdapter.findByPk(Work, localWorkId);
+        }
+        
+        if (!work) {
+            return errorResponse(res, '作品不存在', 404);
         }
         
         const favorite = await DbAdapter.findOne(Favorite, {
@@ -155,6 +162,11 @@ async function checkFavorite(req, res) {
             if (work) {
                 localWorkId = DbAdapter.getId(work);
             } else {
+                return successResponse(res, { isFavorited: false });
+            }
+        } else {
+            const work = await DbAdapter.findByPk(Work, localWorkId);
+            if (!work) {
                 return successResponse(res, { isFavorited: false });
             }
         }
