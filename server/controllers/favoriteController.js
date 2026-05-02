@@ -157,6 +157,11 @@ async function checkFavorite(req, res) {
             } else {
                 return successResponse(res, { isFavorited: false });
             }
+        } else {
+            const work = await DbAdapter.findByPk(Work, localWorkId);
+            if (!work) {
+                return successResponse(res, { isFavorited: false });
+            }
         }
         
         const favorite = await DbAdapter.findOne(Favorite, {

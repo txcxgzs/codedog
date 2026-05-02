@@ -621,11 +621,41 @@ ALTER TABLE favorites MODIFY COLUMN work_id INT;
 
 ---
 
+### 3. ✅ 中等：adminController.js 中 getCrawlLogs 使用 Map 错误的 Bug（已修复）
+
+**问题描述：**
+- `getCrawlLogs` 函数中使用对象属性访问方式（`crawlLogs[taskId]`）
+- 但 `crawlLogs` 是一个 Map 对象，应该使用 `get()` 方法
+- 导致无法正确获取爬取日志
+
+**修复方案：**
+- 将 `crawlLogs[taskId]` 改为 `crawlLogs.get(taskId)`
+
+**修复文件：**
+- `server/controllers/adminController.js` - `getCrawlLogs` 函数
+
+---
+
+### 4. ✅ 中等：favoriteController.js 中 checkFavorite 数字 ID 缺少存在性检查（已修复）
+
+**问题描述：**
+- `checkFavorite` 函数中，当 workId 是数字时没有检查作品是否存在
+- 直接继续执行可能导致潜在错误
+
+**修复方案：**
+- 为数字 ID 添加作品存在性检查
+- 如果作品不存在，返回 isFavorited: false
+
+**修复文件：**
+- `server/controllers/favoriteController.js` - `checkFavorite` 函数
+
+---
+
 ## 累计修复统计
 
 | 修复日期 | 严重 | 高危 | 中等 | 低危 | 信息 | 状态 |
 |---------|------|------|------|------|------|
-| 2026-05-02 | 2 | 0 | 0 | 0 | 0 | ✅ 已完成 |
+| 2026-05-02 | 2 | 0 | 2 | 0 | 0 | ✅ 已完成 |
 | 2026-05-01 补充 | 2 | 2 | 1 | 1 | 0 | ✅ 已完成 |
 | 2026-05-01 | 1 | 4 | 2 | 1 | 0 | ✅ 已完成 |
 | 2026-04-18 | 1 | 0 | 1 | 3 | 1 | ✅ 已完成 |

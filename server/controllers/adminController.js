@@ -855,7 +855,7 @@ async function crawlHotWorks(req, res) {
 async function getCrawlLogs(req, res) {
     try {
         const { taskId } = req.query;
-        const logs = crawlLogs[taskId] || [];
+        const logs = crawlLogs.get(taskId) || [];
         return successResponse(res, { logs });
     } catch (error) {
         return errorResponse(res, '获取日志失败', 500);
