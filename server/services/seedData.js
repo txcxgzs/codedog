@@ -73,9 +73,10 @@ async function fetchBanners() {
     try {
         const { Banner } = require('../models');
         const data = await codemaoApi.getBanners('OFFICIAL');
-        
+
         if (!data || !data.items) return;
-        
+
+        let index = 0;
         for (const item of data.items) {
             const existing = await Banner.findOne({ where: { title: item.title } });
             if (!existing) {
@@ -83,11 +84,12 @@ async function fetchBanners() {
                     title: item.title,
                     image_url: item.background_url,
                     link_url: item.target_url,
-                    sort_order: parseInt(item.id) || 0,
-                    status: 'active'
+                    sort: index,
+                    is_active: true
                 });
                 console.log(`✅ 轮播图: ${item.title}`);
             }
+            index++;
         }
     } catch (error) {
         console.error('获取轮播图失败:', error.message);

@@ -136,8 +136,8 @@ class DatabaseMigration {
             title: { type: DataTypes.STRING, allowNull: false },
             image_url: { type: DataTypes.STRING, allowNull: false },
             link_url: DataTypes.STRING,
-            sort_order: { type: DataTypes.INTEGER, defaultValue: 0 },
-            status: { type: DataTypes.STRING, defaultValue: 'active' },
+            sort: { type: DataTypes.INTEGER, defaultValue: 0 },
+            is_active: { type: DataTypes.BOOLEAN, defaultValue: true },
             created_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW },
             updated_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW }
         }, { tableName: 'banners', timestamps: false });
@@ -236,7 +236,21 @@ class DatabaseMigration {
         data.comments = await sqlModels.Comment.findAll({ raw: true });
         data.notifications = await sqlModels.Notification.findAll({ raw: true });
         data.systemConfigs = await sqlModels.SystemConfig.findAll({ raw: true });
-        data.banners = await sqlModels.Banner.findAll({ raw: true });
+        
+        // Handle Banner field mapping
+        let bannersData = await sqlModels.Banner.findAll({ raw: true });
+        data.banners = bannersData.map(banner => {
+            // Map old fields to new ones if present
+            const mappedBanner = { ...banner };
+            if (mappedBanner.sort_order !== undefined && mappedBanner.sort === undefined) {
+                mappedBanner.sort = mappedBanner.sort_order;
+            }
+            if (mappedBanner.status !== undefined && mappedBanner.is_active === undefined) {
+                mappedBanner.is_active = mappedBanner.status === 'active' || mappedBanner.status === true;
+            }
+            return mappedBanner;
+        });
+        
         data.announcements = await sqlModels.Announcement.findAll({ raw: true });
         data.ipBans = await sqlModels.IpBan.findAll({ raw: true });
         data.reports = await sqlModels.Report.findAll({ raw: true });

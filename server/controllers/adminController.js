@@ -1189,20 +1189,21 @@ async function createBanner(req, res) {
 async function updateBanner(req, res) {
     try {
         const { bannerId } = req.params;
-        const { title, image_url, link_url, sort_order, status } = req.body;
+        const { title, image_url, link_url, sort, is_active } = req.body;
         
         const banner = await DbAdapter.findByPk(Banner, bannerId);
         if (!banner) {
             return errorResponse(res, '轮播图不存在', 404);
         }
         
-        await DbAdapter.update(Banner, {
-            title,
-            image_url,
-            link_url,
-            sort_order,
-            status
-        }, { where: { id: bannerId } });
+        const updateData = {};
+        if (title !== undefined) updateData.title = title;
+        if (image_url !== undefined) updateData.image_url = image_url;
+        if (link_url !== undefined) updateData.link_url = link_url;
+        if (sort !== undefined) updateData.sort = sort;
+        if (is_active !== undefined) updateData.is_active = is_active;
+        
+        await DbAdapter.update(Banner, updateData, { where: { id: bannerId } });
         
         logOperation(req, 'update_banner', 'banner', bannerId, { title, image_url, link_url });
         

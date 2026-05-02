@@ -15,11 +15,11 @@
       </el-table-column>
       <el-table-column prop="title" label="标题" min-width="200" />
       <el-table-column prop="link_url" label="链接" min-width="200" />
-      <el-table-column prop="sort_order" label="排序" width="80" />
+      <el-table-column prop="sort" label="排序" width="80" />
       <el-table-column label="状态" width="100">
         <template #default="{ row }">
-          <el-tag :type="row.status === 'active' ? 'success' : 'info'">
-            {{ row.status === 'active' ? '显示' : '隐藏' }}
+          <el-tag :type="row.is_active ? 'success' : 'info'">
+            {{ row.is_active ? '显示' : '隐藏' }}
           </el-tag>
         </template>
       </el-table-column>
@@ -44,12 +44,12 @@
           <el-input v-model="editForm.link_url" placeholder="点击跳转链接" />
         </el-form-item>
         <el-form-item label="排序">
-          <el-input-number v-model="editForm.sort_order" :min="0" />
+          <el-input-number v-model="editForm.sort" :min="0" />
         </el-form-item>
         <el-form-item label="状态">
-          <el-select v-model="editForm.status">
-            <el-option label="显示" value="active" />
-            <el-option label="隐藏" value="inactive" />
+          <el-select v-model="editForm.is_active">
+            <el-option label="显示" :value="true" />
+            <el-option label="隐藏" :value="false" />
           </el-select>
         </el-form-item>
       </el-form>
@@ -73,8 +73,8 @@ const editForm = ref({
   title: '',
   image_url: '',
   link_url: '',
-  sort_order: 0,
-  status: 'active'
+  sort: 0,
+  is_active: true
 })
 
 const fetchBanners = async () => {
@@ -99,8 +99,8 @@ const openDialog = (banner = null) => {
       title: '',
       image_url: '',
       link_url: '',
-      sort_order: 0,
-      status: 'active'
+      sort: 0,
+      is_active: true
     }
   }
   dialogVisible.value = true
