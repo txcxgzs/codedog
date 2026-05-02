@@ -85,7 +85,6 @@ app.use('/api/reports', reportRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/geetest', geetestRoutes);
 app.use('/api/hcaptcha', hcaptchaRoutes);
-app.use('/api/admin/db-migration', dbMigrationRoutes);
 
 app.get('/api/health', (req, res) => {
     res.json({ status: 'ok', message: '服务运行正常' });
