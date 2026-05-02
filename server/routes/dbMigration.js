@@ -9,6 +9,13 @@ const router = express.Router();
 const dbMigration = require('../services/dbMigration');
 const { successResponse, errorResponse } = require('../middleware/response');
 const { logOperation } = require('../middleware/operationLog');
+const { authMiddleware, adminMiddleware } = require('../middleware/auth');
+const { requireRole } = require('../middleware/permission');
+
+// 添加身份验证和权限检查
+router.use(authMiddleware);
+router.use(adminMiddleware);
+router.use(requireRole('superadmin'));
 
 /**
  * 获取数据库统计信息
