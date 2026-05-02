@@ -41,6 +41,7 @@ const Work = sequelize.define('Work', {
     description: { type: DataTypes.TEXT },
     preview: { type: DataTypes.STRING(500) },
     type: { type: DataTypes.STRING(50) },
+    ide_type: { type: DataTypes.STRING(50) },
     work_url: { type: DataTypes.STRING(500) },
     user_id: { type: DataTypes.INTEGER },
     codemao_author_id: { type: DataTypes.STRING(50) },
@@ -186,6 +187,8 @@ const Announcement = sequelize.define('Announcement', {
     content: { type: DataTypes.TEXT, allowNull: false },
     type: { type: DataTypes.ENUM('notice', 'update', 'warning'), defaultValue: 'notice' },
     is_active: { type: DataTypes.BOOLEAN, defaultValue: true },
+    author_id: { type: DataTypes.INTEGER },
+    status: { type: DataTypes.STRING(20), defaultValue: 'active' },
     created_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW }
 }, { tableName: 'announcements', timestamps: false });
 
@@ -205,6 +208,7 @@ const IpBan = sequelize.define('IpBan', {
     reason: { type: DataTypes.STRING(500) },
     banned_by: { type: DataTypes.INTEGER },
     expires_at: { type: DataTypes.DATE },
+    status: { type: DataTypes.STRING(20), defaultValue: 'active' },
     created_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW }
 }, { tableName: 'ip_bans', timestamps: false });
 
@@ -263,6 +267,7 @@ const SensitiveWord = sequelize.define('SensitiveWord', {
     level: { type: DataTypes.INTEGER, defaultValue: 1 },
     replacement: { type: DataTypes.STRING(200) },
     status: { type: DataTypes.STRING(20), defaultValue: 'active' },
+    created_by: { type: DataTypes.INTEGER },
     created_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW }
 }, { tableName: 'sensitive_words', timestamps: false });
 
@@ -299,6 +304,8 @@ Notification.belongsTo(User, { foreignKey: 'sender_id', as: 'sender' });
 User.hasMany(Notification, { foreignKey: 'user_id', as: 'notifications' });
 OperationLog.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
 User.hasMany(OperationLog, { foreignKey: 'user_id', as: 'operation_logs' });
+Announcement.belongsTo(User, { foreignKey: 'author_id', as: 'author' });
+User.hasMany(Announcement, { foreignKey: 'author_id', as: 'announcements' });
 
 Like.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
 Like.belongsTo(Work, { foreignKey: 'work_id', as: 'work' });
