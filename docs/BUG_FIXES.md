@@ -452,7 +452,7 @@ npm start
 
 ---
 
-**文档最后更新时间：2026-05-01**
+**文档最后更新时间：2026-05-02**
 
 ---
 
@@ -579,10 +579,53 @@ ALTER TABLE favorites MODIFY COLUMN work_id INT;
 
 ---
 
+---
+
+## 修复日期：2026-05-02
+
+---
+
+## 🐛 本次修复的 Bug 列表
+
+### 1. ✅ 严重：studioController.js 中 reviewWork 函数引用未定义变量（已修复）
+
+**问题描述：**
+- `reviewWork` 函数中使用了未定义的 `studio` 变量
+- 导致审核作品时无法正确增加作品数和发送通知
+- 错误位置：`await DbAdapter.increment(studio, 'work_count')` 和通知内容中
+
+**修复方案：**
+- 在函数开始时添加工作室查询
+- 添加工作室存在性检查
+- 确保 `studio` 变量在使用前已定义
+
+**修复文件：**
+- `server/controllers/studioController.js` - `reviewWork` 函数
+
+---
+
+### 2. ✅ 严重：favoriteController.js 中 removeFavorite 函数引用未定义变量（已修复）
+
+**问题描述：**
+- `removeFavorite` 函数中使用了未定义的 `work` 变量
+- 导致取消收藏时无法正确减少收藏数
+- 错误位置：`await DbAdapter.decrement(work, 'collection_times')`
+
+**修复方案：**
+- 在函数开始时添加作品查询，支持通过 codemao_work_id 或本地 id 查询
+- 添加作品存在性检查
+- 确保 `work` 变量在使用前已定义
+
+**修复文件：**
+- `server/controllers/favoriteController.js` - `removeFavorite` 函数
+
+---
+
 ## 累计修复统计
 
 | 修复日期 | 严重 | 高危 | 中等 | 低危 | 信息 | 状态 |
-|---------|------|------|------|------|------|------|
+|---------|------|------|------|------|------|
+| 2026-05-02 | 2 | 0 | 0 | 0 | 0 | ✅ 已完成 |
 | 2026-05-01 补充 | 2 | 2 | 1 | 1 | 0 | ✅ 已完成 |
 | 2026-05-01 | 1 | 4 | 2 | 1 | 0 | ✅ 已完成 |
 | 2026-04-18 | 1 | 0 | 1 | 3 | 1 | ✅ 已完成 |
