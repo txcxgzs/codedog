@@ -7,6 +7,7 @@ const router = express.Router();
 const adminController = require('../controllers/adminController');
 const { authMiddleware, adminMiddleware } = require('../middleware/auth');
 const { requireRole, requirePermission } = require('../middleware/permission');
+const dbMigrationRoutes = require('./dbMigration');
 
 /**
  * 以下路由需要管理员权限
@@ -167,5 +168,10 @@ router.delete('/studios/:id', requireRole('admin'), adminController.deleteStudio
  * 工作室作品管理
  */
 router.put('/studio-works/:id/score', requireRole('admin'), adminController.setWorkScore);
+
+/**
+ * 数据库迁移（仅限超级管理员）
+ */
+router.use('/db-migration', requireRole('superadmin'), dbMigrationRoutes);
 
 module.exports = router;
