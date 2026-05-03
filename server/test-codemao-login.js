@@ -50,7 +50,16 @@ async function testLogin(identity, password) {
 }
 
 // 测试
-testLogin('19202692613', 'qwe123456').then(result => {
+// 使用命令行参数: node test-codemao-login.js <identity> <password>
+const identity = process.argv[2];
+const password = process.argv[3];
+
+if (!identity || !password) {
+    console.error('使用方法: node test-codemao-login.js <identity> <password>');
+    process.exit(1);
+}
+
+testLogin(identity, password).then(result => {
     console.log('========================================');
     console.log('测试完成');
     process.exit(result ? 0 : 1);
