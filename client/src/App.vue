@@ -1,15 +1,15 @@
 <template>
   <el-config-provider :locale="zhCn">
     <div class="app">
-      <!-- Navigation - Bold & Minimal -->
-      <header class="nav">
-        <div class="nav-inner">
-          <!-- Logo - Geometric Brutalist -->
+      <!-- Navigation -->
+      <header class="header">
+        <div class="header-inner">
+          <!-- Logo -->
           <router-link to="/" class="logo">
             <div class="logo-icon">
               <svg viewBox="0 0 40 40" fill="none">
-                <rect width="40" height="40" rx="8" fill="#FEC433"/>
-                <rect x="8" y="8" width="24" height="24" rx="4" fill="#0F0F0F"/>
+                <rect width="40" height="40" rx="6" fill="#FEC433"/>
+                <rect x="8" y="8" width="24" height="24" rx="3" fill="#1D2129"/>
                 <circle cx="15" cy="20" r="3" fill="#FEC433"/>
                 <circle cx="25" cy="20" r="3" fill="#FEC433"/>
               </svg>
@@ -21,18 +21,18 @@
           </router-link>
 
           <!-- Nav Links -->
-          <div class="nav-links">
-            <router-link to="/" class="link" :class="{ active: $route.path === '/' }">首页</router-link>
-            <router-link to="/works" class="link" :class="{ active: $route.path === '/works' }">发现</router-link>
-            <router-link to="/community" class="link" :class="{ active: $route.path === '/community' }">社区</router-link>
-            <router-link to="/work_shop" class="link" :class="{ active: $route.path === '/work_shop' }">工作室</router-link>
-          </div>
+          <nav class="nav-links">
+            <router-link to="/" class="nav-link" :class="{ active: $route.path === '/' }">首页</router-link>
+            <router-link to="/works" class="nav-link" :class="{ active: $route.path === '/works' }">发现</router-link>
+            <router-link to="/community" class="nav-link" :class="{ active: $route.path === '/community' }">社区</router-link>
+            <router-link to="/work_shop" class="nav-link" :class="{ active: $route.path === '/work_shop' }">工作室</router-link>
+          </nav>
 
           <!-- Search -->
           <div class="search">
             <el-input
               v-model="searchKeyword"
-              placeholder="搜索作品..."
+              placeholder="搜索作品、帖子..."
               :prefix-icon="SearchIcon"
               @keyup.enter="handleSearch"
               clearable
@@ -40,17 +40,17 @@
           </div>
 
           <!-- User -->
-          <div class="user">
+          <div class="user-actions">
             <template v-if="userStore.isLoggedIn">
-              <el-button type="primary" @click="$router.push('/publish')">发布</el-button>
+              <el-button type="primary" @click="$router.push('/publish')">发布作品</el-button>
               <div class="notif" @click="$router.push('/notifications')">
                 <el-badge :value="unreadCount" :max="99" :hidden="!unreadCount">
                   <BellIcon />
                 </el-badge>
               </div>
               <el-dropdown trigger="click" @command="handleCommand">
-                <div class="user-card">
-                  <el-avatar :size="36" :src="userStore.user?.avatar || defaultAvatar" />
+                <div class="user-avatar">
+                  <el-avatar :size="32" :src="userStore.user?.avatar || defaultAvatar" />
                 </div>
                 <template #dropdown>
                   <el-dropdown-menu>
@@ -71,10 +71,10 @@
         </div>
       </header>
 
-      <!-- Main Content -->
+      <!-- Main -->
       <main class="main">
         <router-view v-slot="{ Component }">
-          <transition name="slide" mode="out-in">
+          <transition name="fade" mode="out-in">
             <component :is="Component" />
           </transition>
         </router-view>
@@ -84,11 +84,10 @@
       <footer class="footer">
         <div class="footer-inner">
           <div class="footer-left">
-            <span class="footer-brand">编程狗社区</span>
-            <span class="footer-divider"></span>
+            <span class="footer-logo">编程狗社区</span>
             <span class="footer-copy">© 2024</span>
           </div>
-          <div class="footer-right">
+          <div class="footer-links">
             <a href="javascript:;">关于我们</a>
             <a href="javascript:;">联系我们</a>
             <a href="javascript:;">服务协议</a>
@@ -130,7 +129,7 @@ const BellIcon = h('svg', { viewBox: '0 0 24 24', fill: 'none', stroke: 'current
   h('path', { d: 'M13.73 21a2 2 0 0 1-3.46 0' })
 ])
 
-const defaultAvatar = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI0ZFQzQzMyIvPjx0ZXh0IHg9IjUwIiB5PSI2MCIgZm9udC1zaXplPSI0MCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZmlsbD0iIzBmMGYwZiI+8J+SgTwvdGV4dD48L3N2Zz4='
+const defaultAvatar = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI0ZFQzQzMyIvPjx0ZXh0IHg9IjUwIiB5PSI2MCIgZm9udC1zaXplPSI0MCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZmlsbD0iIzFEMjEyOSI+8J+SgTwvdGV4dD48L3N2Zz4='
 
 onMounted(async () => {
   if (userStore.token && !userStore.user) {
@@ -172,19 +171,17 @@ const handleCommand = (command) => {
 </script>
 
 <style lang="scss" scoped>
-.slide-enter-active,
-.slide-leave-active {
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+.fade-enter-active,
+.fade-leave-active {
+  transition: all 0.2s ease;
 }
 
-.slide-enter-from {
+.fade-enter-from {
   opacity: 0;
-  transform: translateY(16px);
 }
 
-.slide-leave-to {
+.fade-leave-to {
   opacity: 0;
-  transform: translateY(-16px);
 }
 
 .app {
@@ -194,42 +191,34 @@ const handleCommand = (command) => {
   background: var(--bg);
 }
 
-// Navigation
-.nav {
+.header {
   position: sticky;
   top: 0;
   z-index: 100;
-  background: rgba(247, 245, 242, 0.92);
-  backdrop-filter: blur(16px);
+  background: var(--surface);
   border-bottom: 1px solid var(--border);
 
-  .nav-inner {
-    max-width: 1440px;
+  .header-inner {
+    max-width: 1200px;
     margin: 0 auto;
-    padding: 0 48px;
-    height: 72px;
+    padding: 0 24px;
+    height: 56px;
     display: flex;
     align-items: center;
-    gap: 56px;
+    gap: 40px;
   }
 }
 
-// Logo
 .logo {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   text-decoration: none;
   flex-shrink: 0;
 
   .logo-icon {
-    width: 40px;
-    height: 40px;
-
-    svg {
-      width: 100%;
-      height: 100%;
-    }
+    width: 36px;
+    height: 36px;
   }
 
   .logo-text {
@@ -237,80 +226,63 @@ const handleCommand = (command) => {
     flex-direction: column;
 
     .logo-main {
-      font-family: var(--font-display);
-      font-size: 1.25rem;
-      font-weight: 800;
+      font-size: 1.125rem;
+      font-weight: 600;
       color: var(--text);
-      line-height: 1;
-      letter-spacing: -0.03em;
+      line-height: 1.1;
     }
 
     .logo-sub {
-      font-size: 0.625rem;
-      font-weight: 600;
+      font-size: 0.6875rem;
       color: var(--text-muted);
-      text-transform: uppercase;
-      letter-spacing: 0.15em;
-      margin-top: 2px;
+      font-weight: 500;
     }
   }
 }
 
-// Nav Links
 .nav-links {
   display: flex;
   gap: 4px;
 
-  .link {
-    padding: 10px 18px;
+  .nav-link {
+    padding: 8px 16px;
     font-size: 0.9375rem;
-    font-weight: 500;
     color: var(--text-secondary);
     text-decoration: none;
     border-radius: var(--radius);
     transition: all 0.15s ease;
+    font-weight: 500;
 
     &:hover {
       color: var(--text);
-      background: rgba(254, 196, 51, 0.15);
+      background: var(--border-light);
     }
 
     &.active {
       color: var(--text);
-      font-weight: 600;
       background: var(--primary);
+      font-weight: 600;
     }
   }
 }
 
-// Search
 .search {
   flex: 1;
-  max-width: 320px;
+  max-width: 360px;
 
   :deep(.el-input__wrapper) {
-    border-radius: 9999px;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    padding: 4px 16px;
+    background: var(--bg);
+    border: 1px solid var(--border-light);
+    box-shadow: none;
 
-    &:hover {
-      border-color: var(--primary);
-    }
-
+    &:hover,
     &.is-focus {
       border-color: var(--primary);
-      box-shadow: 0 0 0 3px rgba(254, 196, 51, 0.2);
     }
-  }
-
-  :deep(.el-input__inner) {
-    font-weight: 500;
   }
 }
 
-// User
-.user {
+.user-actions {
   display: flex;
   align-items: center;
   gap: 12px;
@@ -320,15 +292,15 @@ const handleCommand = (command) => {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 40px;
-    height: 40px;
+    width: 36px;
+    height: 36px;
     border-radius: 50%;
     cursor: pointer;
     transition: all 0.15s ease;
     color: var(--text-secondary);
 
     &:hover {
-      background: var(--primary-light);
+      background: var(--border-light);
       color: var(--text);
     }
 
@@ -338,33 +310,31 @@ const handleCommand = (command) => {
     }
   }
 
-  .user-card {
+  .user-avatar {
     cursor: pointer;
     border-radius: 50%;
     transition: all 0.15s ease;
 
     &:hover {
-      opacity: 0.8;
+      opacity: 0.85;
     }
   }
 }
 
-// Main
 .main {
   flex: 1;
 }
 
-// Footer
 .footer {
   background: var(--surface);
   border-top: 1px solid var(--border);
-  padding: 48px 0;
-  margin-top: 80px;
+  padding: 32px 0;
+  margin-top: 48px;
 
   .footer-inner {
-    max-width: 1440px;
+    max-width: 1200px;
     margin: 0 auto;
-    padding: 0 48px;
+    padding: 0 24px;
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -373,20 +343,12 @@ const handleCommand = (command) => {
   .footer-left {
     display: flex;
     align-items: center;
-    gap: 16px;
+    gap: 12px;
 
-    .footer-brand {
-      font-family: var(--font-display);
-      font-size: 1.125rem;
-      font-weight: 800;
+    .footer-logo {
+      font-size: 1rem;
+      font-weight: 600;
       color: var(--text);
-      letter-spacing: -0.02em;
-    }
-
-    .footer-divider {
-      width: 1px;
-      height: 16px;
-      background: var(--border);
     }
 
     .footer-copy {
@@ -395,13 +357,12 @@ const handleCommand = (command) => {
     }
   }
 
-  .footer-right {
+  .footer-links {
     display: flex;
-    gap: 32px;
+    gap: 24px;
 
     a {
       font-size: 0.875rem;
-      font-weight: 500;
       color: var(--text-secondary);
       text-decoration: none;
       transition: color 0.15s ease;
@@ -413,17 +374,16 @@ const handleCommand = (command) => {
   }
 }
 
-// Responsive
-@media (max-width: 1024px) {
+@media (max-width: 960px) {
   .nav-links {
     display: none;
   }
 }
 
 @media (max-width: 768px) {
-  .nav-inner {
-    padding: 0 20px;
-    gap: 20px;
+  .header-inner {
+    padding: 0 16px;
+    gap: 16px;
   }
 
   .logo-text {
@@ -436,14 +396,12 @@ const handleCommand = (command) => {
 
   .footer-inner {
     flex-direction: column;
-    gap: 24px;
+    gap: 16px;
     text-align: center;
   }
 
-  .footer-right {
-    gap: 20px;
-    flex-wrap: wrap;
-    justify-content: center;
+  .footer-links {
+    gap: 16px;
   }
 }
 </style>
