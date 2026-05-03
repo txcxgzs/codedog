@@ -21,47 +21,43 @@ const MAX_LOG_ENTRIES = 500;
 const realtimeLogs = [];
 const MAX_REALTIME_LOGS = 1000;
 
-// 重写console.log和console.error以捕获日志
-const originalConsoleLog = console.log;
-const originalConsoleError = console.error;
-const originalConsoleWarn = console.warn;
-
-function addRealtimeLog(level, ...args) {
-    const message = args.map(arg => {
-        if (typeof arg === 'object') {
-            try {
-                return JSON.stringify(arg);
-            } catch (e) {
-                return String(arg);
+// 创建一个独立的日志捕获器，避免覆盖全局 console
+const AdminLogger = {
+    logs: [],
+    addLog(level, ...args) {
+        const message = args.map(arg => {
+            if (typeof arg === 'object') {
+                try {
+                    return JSON.stringify(arg);
+                } catch (e) {
+                    return String(arg);
+                }
             }
+            return String(arg);
+        }).join(' ');
+        
+        realtimeLogs.push({
+            time: new Date().toISOString(),
+            level,
+            message
+        });
+        
+        if (realtimeLogs.length > MAX_REALTIME_LOGS) {
+            realtimeLogs.shift();
         }
-        return String(arg);
-    }).join(' ');
-    
-    realtimeLogs.push({
-        time: new Date().toISOString(),
-        level,
-        message
-    });
-    
-    if (realtimeLogs.length > MAX_REALTIME_LOGS) {
-        realtimeLogs.shift();
+    },
+    info(...args) {
+        console.info(...args);
+        this.addLog('info', ...args);
+    },
+    error(...args) {
+        console.error(...args);
+        this.addLog('error', ...args);
+    },
+    warn(...args) {
+        console.warn(...args);
+        this.addLog('warn', ...args);
     }
-}
-
-console.log = function(...args) {
-    addRealtimeLog('info', ...args);
-    originalConsoleLog.apply(console, args);
-};
-
-console.error = function(...args) {
-    addRealtimeLog('error', ...args);
-    originalConsoleError.apply(console, args);
-};
-
-console.warn = function(...args) {
-    addRealtimeLog('warn', ...args);
-    originalConsoleWarn.apply(console, args);
 };
 
 function addCrawlLog(taskId, message, type = 'info') {

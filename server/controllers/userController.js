@@ -7,6 +7,7 @@ const { User, Work, SystemConfig } = require('../models');
 const { successResponse, errorResponse } = require('../middleware/response');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
 const { JWT_SECRET, JWT_EXPIRES_IN } = require('../config/auth');
 const codemaoApi = require('../services/codemaoApi');
 const multer = require('multer');
@@ -110,7 +111,7 @@ async function codemaoLogin(req, res, identity, password) {
                     codemao_user_id: codemaoUser.id,
                     username: `codemao_${codemaoUser.id}`,
                     email: codemaoRes.auth?.email || `codemao_${codemaoUser.id}@placeholder.com`,
-                    password: await bcrypt.hash(Math.random().toString(36), 10),
+                    password: await bcrypt.hash(crypto.randomBytes(32).toString('hex'), 10),
                     nickname: codemaoUser.nickname,
                     avatar: codemaoUser.avatar_url,
                     bio: codemaoUser.description,
