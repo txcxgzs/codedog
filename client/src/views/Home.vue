@@ -1,16 +1,17 @@
 <template>
-  <div class="home-page">
-    <div class="home-container">
-      <!-- 左侧主内容 -->
-      <div class="main-column">
-        <!-- 轮播图 - 优雅设计 -->
-        <div class="banner-area" v-if="banners.length > 0">
-          <el-carousel height="380px" :interval="5000" indicator-position="outside" :autoplay="true" arrow="hover">
+  <div class="home">
+    <div class="home-grid">
+      <!-- 主内容区 -->
+      <div class="main">
+        <!-- 轮播图 -->
+        <div class="hero" v-if="banners.length > 0">
+          <el-carousel height="420px" :interval="6000" indicator-position="outside" arrow="hover">
             <el-carousel-item v-for="banner in banners" :key="banner.id">
-              <a :href="banner.link_url" target="_blank" class="banner-item">
-                <img :src="banner.image_url" :alt="banner.title" class="banner-image" />
-                <div class="banner-overlay">
-                  <h3 class="banner-title">{{ banner.title }}</h3>
+              <a :href="banner.link_url" target="_blank" class="hero-slide">
+                <img :src="banner.image_url" :alt="banner.title" class="hero-image" />
+                <div class="hero-overlay">
+                  <span class="hero-label">精选</span>
+                  <h2 class="hero-title">{{ banner.title }}</h2>
                 </div>
               </a>
             </el-carousel-item>
@@ -18,207 +19,215 @@
         </div>
 
         <!-- 推荐作品 -->
-        <div class="section">
-          <div class="section-header">
+        <section class="section">
+          <header class="section-header">
             <div class="section-title">
-              <span class="section-icon">⭐</span>
-              <span class="section-text">推荐作品</span>
+              <span class="section-emoji">★</span>
+              <h3 class="section-heading">推荐作品</h3>
             </div>
-            <router-link to="/works" class="section-more">
-              查看更多 <el-icon><ArrowRight /></el-icon>
+            <router-link to="/works" class="section-link">
+              查看全部
+              <el-icon><ArrowRight /></el-icon>
             </router-link>
-          </div>
-          <div class="work-grid" v-loading="loadingFeatured">
-            <div v-for="work in featuredWorks" :key="work.id" class="work-card" @click="$router.push(`/work/${work.codemao_work_id}`)">
+          </header>
+          <div class="works" v-loading="loadingFeatured">
+            <article 
+              v-for="work in featuredWorks" 
+              :key="work.id" 
+              class="work-card"
+              @click="$router.push(`/work/${work.codemao_work_id}`)"
+            >
               <div class="work-cover">
                 <div class="work-image" :style="{ backgroundImage: `url(${work.preview})` }"></div>
-                <div class="work-overlay">
-                  <span class="work-tag" v-if="work.type">{{ getTypeName(work.type) }}</span>
-                </div>
+                <span class="work-type" v-if="work.type">{{ getTypeName(work.type) }}</span>
               </div>
-              <div class="work-body">
-                <p class="work-title" :title="work.name">{{ work.name }}</p>
-                <div class="work-bottom">
-                  <div class="author-info" @click.stop="goUser(work.author)">
-                    <el-avatar :size="20" :src="work.author?.avatar || defaultAvatar" class="author-avatar" />
-                    <span class="author-name">{{ work.author?.nickname || work.author?.username }}</span>
+              <div class="work-info">
+                <h4 class="work-name">{{ work.name }}</h4>
+                <div class="work-meta">
+                  <div class="work-author" @click.stop="goUser(work.author)">
+                    <el-avatar :size="20" :src="work.author?.avatar || defaultAvatar" />
+                    <span>{{ work.author?.nickname || work.author?.username }}</span>
                   </div>
                   <div class="work-stats">
-                    <span class="stat-item">👁 {{ formatNum(work.view_times) }}</span>
-                    <span class="stat-item">❤️ {{ formatNum(work.praise_times) }}</span>
+                    <span>{{ formatNum(work.view_times) }}</span>
+                    <span>{{ formatNum(work.praise_times) }}</span>
                   </div>
                 </div>
               </div>
-            </div>
+            </article>
           </div>
           <el-empty v-if="!loadingFeatured && featuredWorks.length === 0" description="暂无推荐作品" />
-        </div>
+        </section>
         
         <!-- 最新作品 -->
-        <div class="section">
-          <div class="section-header">
+        <section class="section">
+          <header class="section-header">
             <div class="section-title">
-              <span class="section-icon">✨</span>
-              <span class="section-text">最新作品</span>
+              <span class="section-emoji">✦</span>
+              <h3 class="section-heading">最新作品</h3>
             </div>
-            <router-link to="/works" class="section-more">
-              查看更多 <el-icon><ArrowRight /></el-icon>
+            <router-link to="/works" class="section-link">
+              查看全部
+              <el-icon><ArrowRight /></el-icon>
             </router-link>
-          </div>
-          <div class="work-grid" v-loading="loadingLatest">
-            <div v-for="work in latestWorks" :key="work.id" class="work-card" @click="$router.push(`/work/${work.codemao_work_id}`)">
+          </header>
+          <div class="works" v-loading="loadingLatest">
+            <article 
+              v-for="work in latestWorks" 
+              :key="work.id" 
+              class="work-card"
+              @click="$router.push(`/work/${work.codemao_work_id}`)"
+            >
               <div class="work-cover">
                 <div class="work-image" :style="{ backgroundImage: `url(${work.preview})` }"></div>
-                <div class="work-overlay">
-                  <span class="work-tag" v-if="work.type">{{ getTypeName(work.type) }}</span>
-                </div>
+                <span class="work-type" v-if="work.type">{{ getTypeName(work.type) }}</span>
               </div>
-              <div class="work-body">
-                <p class="work-title" :title="work.name">{{ work.name }}</p>
-                <div class="work-bottom">
-                  <div class="author-info" @click.stop="goUser(work.author)">
-                    <el-avatar :size="20" :src="work.author?.avatar || defaultAvatar" class="author-avatar" />
-                    <span class="author-name">{{ work.author?.nickname || work.author?.username }}</span>
+              <div class="work-info">
+                <h4 class="work-name">{{ work.name }}</h4>
+                <div class="work-meta">
+                  <div class="work-author" @click.stop="goUser(work.author)">
+                    <el-avatar :size="20" :src="work.author?.avatar || defaultAvatar" />
+                    <span>{{ work.author?.nickname || work.author?.username }}</span>
                   </div>
                   <div class="work-stats">
-                    <span class="stat-item">👁 {{ formatNum(work.view_times) }}</span>
-                    <span class="stat-item">❤️ {{ formatNum(work.praise_times) }}</span>
+                    <span>{{ formatNum(work.view_times) }}</span>
+                    <span>{{ formatNum(work.praise_times) }}</span>
                   </div>
                 </div>
               </div>
-            </div>
+            </article>
           </div>
           <el-empty v-if="!loadingLatest && latestWorks.length === 0" description="暂无作品" />
-        </div>
+        </section>
         
         <!-- 热门作品 -->
-        <div class="section">
-          <div class="section-header">
+        <section class="section">
+          <header class="section-header">
             <div class="section-title">
-              <span class="section-icon">🔥</span>
-              <span class="section-text">热门作品</span>
+              <span class="section-emoji">◈</span>
+              <h3 class="section-heading">热门作品</h3>
             </div>
-            <router-link to="/works?sortBy=popular" class="section-more">
-              查看更多 <el-icon><ArrowRight /></el-icon>
+            <router-link to="/works?sortBy=popular" class="section-link">
+              查看全部
+              <el-icon><ArrowRight /></el-icon>
             </router-link>
-          </div>
-          <div class="work-grid" v-loading="loadingHot">
-            <div v-for="work in hotWorks" :key="work.id" class="work-card" @click="$router.push(`/work/${work.codemao_work_id}`)">
+          </header>
+          <div class="works" v-loading="loadingHot">
+            <article 
+              v-for="work in hotWorks" 
+              :key="work.id" 
+              class="work-card"
+              @click="$router.push(`/work/${work.codemao_work_id}`)"
+            >
               <div class="work-cover">
                 <div class="work-image" :style="{ backgroundImage: `url(${work.preview})` }"></div>
-                <div class="work-overlay">
-                  <span class="work-tag" v-if="work.type">{{ getTypeName(work.type) }}</span>
-                </div>
+                <span class="work-type" v-if="work.type">{{ getTypeName(work.type) }}</span>
               </div>
-              <div class="work-body">
-                <p class="work-title" :title="work.name">{{ work.name }}</p>
-                <div class="work-bottom">
-                  <div class="author-info" @click.stop="goUser(work.author)">
-                    <el-avatar :size="20" :src="work.author?.avatar || defaultAvatar" class="author-avatar" />
-                    <span class="author-name">{{ work.author?.nickname || work.author?.username }}</span>
+              <div class="work-info">
+                <h4 class="work-name">{{ work.name }}</h4>
+                <div class="work-meta">
+                  <div class="work-author" @click.stop="goUser(work.author)">
+                    <el-avatar :size="20" :src="work.author?.avatar || defaultAvatar" />
+                    <span>{{ work.author?.nickname || work.author?.username }}</span>
                   </div>
                   <div class="work-stats">
-                    <span class="stat-item">👁 {{ formatNum(work.view_times) }}</span>
-                    <span class="stat-item">❤️ {{ formatNum(work.praise_times) }}</span>
+                    <span>{{ formatNum(work.view_times) }}</span>
+                    <span>{{ formatNum(work.praise_times) }}</span>
                   </div>
                 </div>
               </div>
-            </div>
+            </article>
           </div>
           <el-empty v-if="!loadingHot && hotWorks.length === 0" description="暂无作品" />
-        </div>
+        </section>
       </div>
       
-      <!-- 右侧边栏 - 优雅设计 -->
+      <!-- 侧边栏 -->
       <aside class="sidebar">
         <!-- 用户卡片 -->
-        <div class="side-card user-card" v-if="userStore.isLoggedIn">
+        <div class="card user-card" v-if="userStore.isLoggedIn">
           <div class="user-header">
-            <el-avatar :size="56" :src="userStore.user?.avatar || defaultAvatar" class="user-avatar-lg" />
-            <div class="user-info-lg">
+            <el-avatar :size="52" :src="userStore.user?.avatar || defaultAvatar" class="user-avatar" />
+            <div class="user-info">
               <h4 class="user-name">{{ userStore.user?.nickname || userStore.user?.username }}</h4>
-              <span class="user-level-lg">Lv.{{ userStore.user?.level || 1 }} • {{ userStore.user?.experience || 0 }} 经验</span>
+              <span class="user-level">Lv.{{ userStore.user?.level || 1 }}</span>
             </div>
           </div>
           <p class="user-bio">{{ userStore.user?.bio || '这个人很懒，什么都没写~' }}</p>
-          <el-button type="primary" class="publish-btn-full" @click="$router.push('/publish')">
-            <el-icon><EditPen /></el-icon>
+          <el-button type="primary" class="btn-full" @click="$router.push('/publish')">
             发布作品
           </el-button>
-          <div class="action-buttons">
-            <router-link to="/profile" class="action-btn">
-              <span class="action-icon">👤</span>
-              个人中心
-            </router-link>
-            <router-link to="/my-works" class="action-btn">
-              <span class="action-icon">📁</span>
-              我的作品
-            </router-link>
+          <div class="user-actions">
+            <router-link to="/profile" class="action">个人中心</router-link>
+            <router-link to="/my-works" class="action">我的作品</router-link>
           </div>
         </div>
         
         <!-- 登录卡片 -->
-        <div class="side-card login-card" v-else>
-          <div class="login-icon">🐕</div>
+        <div class="card login-card" v-else>
+          <div class="login-icon">◈</div>
           <h4 class="login-title">欢迎来到编程狗</h4>
           <p class="login-desc">登录后可以发布作品、评论互动</p>
           <el-button type="primary" size="large" @click="$router.push('/login')">立即登录</el-button>
-          <el-button text @click="$router.push('/register')">注册账号</el-button>
         </div>
         
         <!-- 重要通知 -->
-        <div class="side-card important-notices" v-if="importantPosts.length > 0">
-          <h4 class="side-card-title">
-            <span class="title-icon">📢</span>
+        <div class="card" v-if="importantPosts.length > 0">
+          <h4 class="card-title">
+            <span class="card-icon">!</span>
             重要通知
           </h4>
           <div class="notice-list">
-            <div v-for="post in importantPosts" :key="post.id" class="notice-item important" @click="$router.push(`/post/${post.id}`)">
-              <div class="notice-content">
-                <el-tag size="small" type="danger" effect="plain" class="notice-tag">重要</el-tag>
-                <span class="notice-title">{{ post.title }}</span>
-              </div>
-              <div class="notice-meta">
-                <span class="notice-author">{{ post.author?.nickname || post.author?.username }}</span>
-                <span class="notice-time">{{ formatTime(post.created_at) }}</span>
-              </div>
+            <div 
+              v-for="post in importantPosts" 
+              :key="post.id" 
+              class="notice-item"
+              @click="$router.push(`/post/${post.id}`)"
+            >
+              <el-tag size="small" type="danger" effect="plain">重要</el-tag>
+              <span class="notice-title">{{ post.title }}</span>
             </div>
           </div>
         </div>
         
         <!-- 精选帖子 -->
-        <div class="side-card featured-posts" v-if="featuredPosts.length > 0">
-          <h4 class="side-card-title">
-            <span class="title-icon">✨</span>
+        <div class="card" v-if="featuredPosts.length > 0">
+          <h4 class="card-title">
+            <span class="card-icon">✦</span>
             精选帖子
           </h4>
           <div class="post-list">
-            <div v-for="post in featuredPosts" :key="post.id" class="post-item" @click="$router.push(`/post/${post.id}`)">
-              <div class="post-title">{{ post.title }}</div>
-              <div class="post-meta">
-                <span class="post-author">{{ post.author?.nickname || post.author?.username }}</span>
-                <span class="post-views">{{ formatNum(post.view_count) }} 阅读</span>
-              </div>
+            <div 
+              v-for="post in featuredPosts" 
+              :key="post.id" 
+              class="post-item"
+              @click="$router.push(`/post/${post.id}`)"
+            >
+              <span class="post-title">{{ post.title }}</span>
+              <span class="post-views">{{ formatNum(post.view_count) }} 阅读</span>
             </div>
           </div>
         </div>
         
         <!-- 活跃用户 -->
-        <div class="side-card active-users" v-if="activeUsers.length > 0">
-          <h4 class="side-card-title">
-            <span class="title-icon">🏆</span>
+        <div class="card" v-if="activeUsers.length > 0">
+          <h4 class="card-title">
+            <span class="card-icon">★</span>
             活跃用户
           </h4>
           <div class="user-list">
-            <div v-for="user in activeUsers" :key="user.id" class="user-list-item" @click="goUser(user)">
-              <div class="user-avatar-wrap">
-                <el-avatar :size="44" :src="user.avatar || defaultAvatar" class="user-list-avatar" />
-                <span class="user-level-badge">Lv.{{ user.level }}</span>
+            <div 
+              v-for="user in activeUsers" 
+              :key="user.id" 
+              class="user-item"
+              @click="goUser(user)"
+            >
+              <el-avatar :size="40" :src="user.avatar || defaultAvatar" />
+              <div class="user-item-info">
+                <span class="user-item-name">{{ user.nickname || user.username }}</span>
+                <span class="user-item-exp">{{ user.experience }} 经验</span>
               </div>
-              <div class="user-list-info">
-                <span class="user-list-name" :title="user.nickname">{{ user.nickname || user.username }}</span>
-                <span class="user-list-exp">{{ user.experience }} 经验</span>
-              </div>
+              <span class="user-item-level">Lv.{{ user.level }}</span>
             </div>
           </div>
         </div>
@@ -230,8 +239,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
-import { ArrowRight, EditPen } from '@element-plus/icons-vue'
+import { ArrowRight } from '@element-plus/icons-vue'
 import { useUserStore } from '@/stores/user'
 import { publicApi } from '@/api/public'
 import { workApi } from '@/api/work'
@@ -240,7 +248,6 @@ import { postApi } from '@/api/post'
 const router = useRouter()
 const userStore = useUserStore()
 const banners = ref([])
-const announcements = ref([])
 const featuredWorks = ref([])
 const latestWorks = ref([])
 const hotWorks = ref([])
@@ -251,26 +258,12 @@ const loadingFeatured = ref(false)
 const loadingLatest = ref(false)
 const loadingHot = ref(false)
 
-const defaultAvatar = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI0ZFQzQzMyIvPjx0ZXh0IHg9IjUwIiB5PSI2MCIgZm9udC1zaXplPSI0MCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZmlsbD0iI2FhYyI+8J+RqOKAjfCfkrs8L3RleHQ+PC9zdmc+'
+const defaultAvatar = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI0ZFQzQzMyIvPjx0ZXh0IHg9IjUwIiB5PSI2MCIgZm9udC1zaXplPSI0MCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZmlsbD0iIzBmMGYwZiI+8J+RqjwvdGV4dD48L3N2Zz4='
 
 const formatNum = (n) => {
   if (n >= 10000) return (n / 10000).toFixed(1) + 'w'
   if (n >= 1000) return (n / 1000).toFixed(1) + 'k'
   return n
-}
-
-const formatTime = (dateStr) => {
-  if (!dateStr) return ''
-  const date = new Date(dateStr)
-  const now = new Date()
-  const diff = now - date
-  
-  if (diff < 60000) return '刚刚'
-  if (diff < 3600000) return Math.floor(diff / 60000) + '分钟前'
-  if (diff < 86400000) return Math.floor(diff / 3600000) + '小时前'
-  if (diff < 604800000) return Math.floor(diff / 86400000) + '天前'
-  
-  return date.toLocaleDateString('zh-CN')
 }
 
 const getTypeName = (workType) => {
@@ -307,46 +300,37 @@ onMounted(async () => {
   } catch (e) {}
   
   try {
-    const aRes = await publicApi.getAnnouncements()
-    if (aRes.code === 200) announcements.value = aRes.data
-  } catch (e) {}
-
-  try {
     const uRes = await publicApi.getActiveUsers()
     if (uRes.code === 200) activeUsers.value = uRes.data
   } catch (e) {}
 
   try {
     const pRes = await postApi.getPosts({ page: 1, pageSize: 4, category: 'essence' })
-    if (pRes.code === 200) {
-      featuredPosts.value = pRes.data.list
-    }
+    if (pRes.code === 200) featuredPosts.value = pRes.data.list
   } catch (e) {}
 
   try {
     const impRes = await postApi.getPosts({ page: 1, pageSize: 2, isTop: true, category: 'official' })
-    if (impRes.code === 200) {
-      importantPosts.value = impRes.data.list
-    }
+    if (impRes.code === 200) importantPosts.value = impRes.data.list
   } catch (e) {}
   
   loadingFeatured.value = true
   try {
     const res = await workApi.getFeatured()
-    if (res.code === 200) featuredWorks.value = res.data.slice(0, 10)
+    if (res.code === 200) featuredWorks.value = res.data.slice(0, 8)
   } catch (e) {}
   loadingFeatured.value = false
   
   loadingLatest.value = true
   try {
-    const res = await workApi.getList({ page: 1, pageSize: 10 })
+    const res = await workApi.getList({ page: 1, pageSize: 8 })
     if (res.code === 200) latestWorks.value = res.data.list
   } catch (e) {}
   loadingLatest.value = false
   
   loadingHot.value = true
   try {
-    const res = await workApi.getList({ page: 1, pageSize: 10, sortBy: 'popular' })
+    const res = await workApi.getList({ page: 1, pageSize: 8, sortBy: 'popular' })
     if (res.code === 200) hotWorks.value = res.data.list
   } catch (e) {}
   loadingHot.value = false
@@ -356,112 +340,115 @@ onMounted(async () => {
 <style lang="scss" scoped>
 // 轮播图样式
 :deep(.el-carousel__indicators--outside) {
-  margin-top: 12px;
+  margin-top: var(--space-4);
 }
 
 :deep(.el-carousel__button) {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
-  background: #d1d5db;
+  background: #d4d4d4;
   opacity: 1;
-  transition: all 0.3s;
 }
 
 :deep(.el-carousel__indicator.is-active .el-carousel__button) {
   background: var(--primary-color);
-  width: 28px;
-  border-radius: 4px;
+  width: 24px;
+  border-radius: 3px;
 }
 
-.home-page {
-  min-height: 100%;
-  padding: var(--spacing-lg) 0 var(--spacing-xl);
+.home {
+  padding: var(--space-8) 0 var(--space-12);
 }
 
-.home-container {
-  max-width: 1280px;
+.home-grid {
+  max-width: 1400px;
   margin: 0 auto;
-  padding: 0 var(--spacing);
-  display: flex;
-  gap: var(--spacing-xl);
-  align-items: flex-start;
+  padding: 0 var(--space-6);
+  display: grid;
+  grid-template-columns: 1fr 340px;
+  gap: var(--space-8);
+  align-items: start;
 }
 
-.main-column {
-  flex: 1;
-  min-width: 0;
+.main {
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-xl);
+  gap: var(--space-8);
 }
 
 .sidebar {
-  width: 320px;
-  flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  gap: var(--spacing);
+  gap: var(--space-5);
   position: sticky;
-  top: 92px;
+  top: 96px;
 }
 
-// 轮播图区域
-.banner-area {
-  width: 100%;
-  
+// 轮播图
+.hero {
   :deep(.el-carousel) {
     border-radius: var(--radius-xl);
     overflow: hidden;
-    box-shadow: var(--shadow);
+    box-shadow: var(--shadow-md);
   }
 }
 
-.banner-item {
+.hero-slide {
   display: block;
   width: 100%;
   height: 100%;
   position: relative;
-  border-radius: var(--radius-xl);
-  overflow: hidden;
-  text-decoration: none;
 }
 
-.banner-image {
+.hero-image {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  object-position: center;
-  border-radius: var(--radius-xl);
-  transition: transform var(--duration-slow);
+  transition: transform 0.6s var(--ease-out);
   
-  .banner-item:hover & {
-    transform: scale(1.05);
+  .hero-slide:hover & {
+    transform: scale(1.03);
   }
 }
 
-.banner-overlay {
+.hero-overlay {
   position: absolute;
   bottom: 0;
   left: 0;
   right: 0;
-  padding: 24px 28px;
-  background: linear-gradient(to top, rgba(0,0,0,0.8), transparent);
+  padding: var(--space-8);
+  background: linear-gradient(to top, rgba(0,0,0,0.85), transparent);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
 }
 
-.banner-title {
+.hero-label {
+  display: inline-block;
+  width: fit-content;
+  padding: var(--space-1) var(--space-3);
+  background: var(--primary-color);
+  color: var(--text-color);
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-radius: var(--radius);
+}
+
+.hero-title {
   color: #fff;
-  font-size: 20px;
-  font-weight: 600;
+  font-size: 1.5rem;
+  font-weight: 700;
   margin: 0;
-  text-shadow: 0 2px 8px rgba(0,0,0,0.3);
 }
 
-// 区域通用样式
+// 区块
 .section {
   background: var(--white);
   border-radius: var(--radius-xl);
-  padding: var(--spacing-xl);
+  padding: var(--space-6);
   border: 1px solid var(--border-color);
 }
 
@@ -469,192 +456,155 @@ onMounted(async () => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: var(--spacing-lg);
+  margin-bottom: var(--space-5);
+}
+
+.section-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
   
-  .section-title {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    
-    .section-icon {
-      font-size: 22px;
-    }
-    
-    .section-text {
-      font-size: 18px;
-      font-weight: 700;
-      color: var(--text-color);
-      letter-spacing: -0.3px;
-    }
+  .section-emoji {
+    font-size: 1.25rem;
+    color: var(--primary-color);
+  }
+  
+  .section-heading {
+    font-size: 1.125rem;
+    font-weight: 700;
+    color: var(--text-color);
+    margin: 0;
+    letter-spacing: -0.01em;
   }
 }
 
-.section-more {
+.section-link {
   display: flex;
   align-items: center;
-  gap: 4px;
-  font-size: 14px;
+  gap: var(--space-1);
+  font-size: 0.875rem;
+  font-weight: 600;
   color: var(--text-secondary);
-  font-weight: 500;
-  text-decoration: none;
-  transition: all var(--duration);
+  transition: color var(--duration-fast) var(--ease-out);
   
   &:hover {
     color: var(--primary-color);
-    transform: translateX(2px);
   }
 }
 
-// 作品卡片网格
-.work-grid {
+// 作品网格
+.works {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: var(--spacing);
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--space-4);
 }
 
 .work-card {
   background: var(--white);
   border-radius: var(--radius-lg);
   overflow: hidden;
-  transition: all var(--duration);
   cursor: pointer;
   border: 1px solid var(--border-light);
+  transition: all var(--duration) var(--ease-out);
   
   &:hover {
     transform: translateY(-4px);
     box-shadow: var(--shadow-lg);
     border-color: var(--primary-light);
+    
+    .work-image {
+      transform: scale(1.05);
+    }
   }
   
   .work-cover {
     position: relative;
-    padding-bottom: 100%; // 1:1 比例
-    background: linear-gradient(135deg, #f5f7fa, #e8ecef);
-    border-bottom: 1px solid var(--border-light);
+    padding-bottom: 100%;
+    background: linear-gradient(135deg, #f5f5f5, #e5e5e5);
+    overflow: hidden;
   }
   
   .work-image {
     position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
+    inset: 0;
     background-size: cover;
     background-position: center;
-    transition: transform var(--duration-slow);
+    transition: transform 0.5s var(--ease-out);
   }
   
-  .work-overlay {
+  .work-type {
     position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: linear-gradient(to bottom, transparent, rgba(0,0,0,0.3));
-    opacity: 0;
-    transition: opacity var(--duration);
-    
-    .work-card:hover & {
-      opacity: 1;
-    }
-  }
-  
-  .work-tag {
-    position: absolute;
-    top: 10px;
-    left: 10px;
+    top: var(--space-2);
+    left: var(--space-2);
+    padding: var(--space-1) var(--space-2);
     background: var(--primary-color);
     color: var(--text-color);
-    font-size: 11px;
-    padding: 4px 10px;
-    border-radius: var(--radius-round);
+    font-size: 0.6875rem;
+    font-weight: 700;
+    border-radius: var(--radius);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+  
+  .work-info {
+    padding: var(--space-3);
+  }
+  
+  .work-name {
+    font-size: 0.875rem;
     font-weight: 600;
-    z-index: 1;
-    box-shadow: var(--shadow-sm);
-  }
-  
-  .work-body {
-    padding: var(--spacing);
-  }
-  
-  .work-title {
-    font-size: 14px;
     color: var(--text-color);
-    margin-bottom: var(--spacing-sm);
-    white-space: nowrap;
+    margin: 0 0 var(--space-2);
     overflow: hidden;
     text-overflow: ellipsis;
-    font-weight: 600;
-    line-height: 1.4;
+    white-space: nowrap;
   }
   
-  .work-bottom {
+  .work-meta {
     display: flex;
     justify-content: space-between;
     align-items: center;
   }
-}
-
-.author-info {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  cursor: pointer;
-  flex: 1;
-  min-width: 0;
   
-  .author-avatar {
-    flex-shrink: 0;
-  }
-  
-  .author-name {
-    font-size: 12px;
+  .work-author {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    font-size: 0.75rem;
     color: var(--text-secondary);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    max-width: 100px;
-    font-weight: 500;
     
     &:hover {
       color: var(--primary-color);
     }
   }
-}
-
-.work-stats {
-  display: flex;
-  gap: 8px;
-  flex-shrink: 0;
   
-  .stat-item {
+  .work-stats {
     display: flex;
-    align-items: center;
-    gap: 3px;
-    font-size: 12px;
+    gap: var(--space-2);
+    font-size: 0.6875rem;
     color: var(--text-muted);
   }
 }
 
 // 侧边栏卡片
-.side-card {
+.card {
   background: var(--white);
   border-radius: var(--radius-xl);
-  padding: var(--spacing-lg);
+  padding: var(--space-5);
   border: 1px solid var(--border-color);
 }
 
-.side-card-title {
-  margin: 0 0 var(--spacing-lg);
-  font-size: 15px;
-  font-weight: 700;
-  color: var(--text-color);
+.card-title {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-4);
+  font-size: 0.9375rem;
+  font-weight: 700;
+  color: var(--text-color);
   
-  .title-icon {
-    font-size: 18px;
+  .card-icon {
+    color: var(--primary-color);
   }
 }
 
@@ -663,70 +613,64 @@ onMounted(async () => {
   .user-header {
     display: flex;
     align-items: center;
-    gap: 12px;
-    margin-bottom: var(--spacing);
+    gap: var(--space-3);
+    margin-bottom: var(--space-3);
   }
   
-  .user-avatar-lg {
-    border: 3px solid var(--primary-light);
-    box-shadow: var(--shadow-sm);
+  .user-avatar {
+    border: 2px solid var(--primary-light);
   }
   
-  .user-info-lg {
+  .user-info {
     flex: 1;
-    min-width: 0;
-    
-    .user-name {
-      margin: 0 0 4px;
-      font-size: 16px;
-      font-weight: 700;
-      color: var(--text-color);
-    }
-    
-    .user-level-lg {
-      font-size: 12px;
-      color: var(--text-muted);
-      font-weight: 500;
-    }
+  }
+  
+  .user-name {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--text-color);
+    margin: 0 0 var(--space-1);
+  }
+  
+  .user-level {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--primary-color);
+    background: var(--primary-bg);
+    padding: var(--space-1) var(--space-2);
+    border-radius: var(--radius);
   }
   
   .user-bio {
-    margin: 0 0 var(--spacing);
-    font-size: 13px;
+    font-size: 0.8125rem;
     color: var(--text-secondary);
-    line-height: 1.6;
+    margin: 0 0 var(--space-4);
+    padding: var(--space-3);
     background: var(--primary-bg);
-    padding: 12px;
     border-radius: var(--radius);
     border-left: 3px solid var(--primary-color);
   }
   
-  .publish-btn-full {
+  .btn-full {
     width: 100%;
-    height: 44px;
-    font-weight: 600;
-    font-size: 14px;
+    font-weight: 700;
   }
   
-  .action-buttons {
+  .user-actions {
     display: flex;
-    gap: var(--spacing-sm);
-    margin-top: var(--spacing-sm);
+    gap: var(--space-2);
+    margin-top: var(--space-3);
     
-    .action-btn {
+    .action {
       flex: 1;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 6px;
-      padding: 10px;
+      text-align: center;
+      padding: var(--space-2);
       background: var(--primary-bg);
       color: var(--text-secondary);
+      font-size: 0.8125rem;
+      font-weight: 600;
       border-radius: var(--radius);
-      font-size: 13px;
-      font-weight: 500;
-      text-decoration: none;
-      transition: all var(--duration);
+      transition: all var(--duration-fast) var(--ease-out);
       
       &:hover {
         background: var(--primary-light);
@@ -742,21 +686,22 @@ onMounted(async () => {
   background: linear-gradient(135deg, var(--primary-bg), var(--white));
   
   .login-icon {
-    font-size: 48px;
-    margin-bottom: var(--spacing-sm);
+    font-size: 3rem;
+    color: var(--primary-color);
+    margin-bottom: var(--space-2);
   }
   
   .login-title {
-    margin: 0 0 8px;
-    font-size: 18px;
+    font-size: 1.125rem;
     font-weight: 700;
     color: var(--text-color);
+    margin: 0 0 var(--space-2);
   }
   
   .login-desc {
-    margin: 0 0 var(--spacing);
-    font-size: 13px;
+    font-size: 0.8125rem;
     color: var(--text-secondary);
+    margin: 0 0 var(--space-4);
   }
 }
 
@@ -766,119 +711,87 @@ onMounted(async () => {
 .user-list {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--space-2);
 }
 
 .notice-item,
 .post-item {
-  padding: 12px;
-  border-radius: var(--radius);
+  padding: var(--space-3);
   background: var(--primary-bg);
+  border-radius: var(--radius);
   cursor: pointer;
-  transition: all var(--duration);
-  border: 1px solid transparent;
+  transition: all var(--duration-fast) var(--ease-out);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
   
   &:hover {
     background: var(--white);
-    border-color: var(--primary-color);
     box-shadow: var(--shadow-sm);
     transform: translateX(4px);
-  }
-  
-  &.important {
-    background: linear-gradient(135deg, #fff7ed, var(--white));
-  }
-  
-  .notice-content {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-bottom: 6px;
   }
   
   .notice-title,
   .post-title {
-    font-size: 13px;
+    flex: 1;
+    font-size: 0.8125rem;
     font-weight: 600;
     color: var(--text-color);
-    line-height: 1.4;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
     overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   
-  .notice-meta,
-  .post-meta {
-    display: flex;
-    justify-content: space-between;
-    font-size: 11px;
+  .post-views {
+    font-size: 0.6875rem;
     color: var(--text-muted);
   }
 }
 
-.user-list-item {
+.user-item {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px;
+  gap: var(--space-3);
+  padding: var(--space-2);
   border-radius: var(--radius);
   cursor: pointer;
-  transition: all var(--duration);
-  border: 1px solid var(--border-light);
+  transition: all var(--duration-fast) var(--ease-out);
   
   &:hover {
     background: var(--primary-bg);
-    border-color: var(--primary-color);
-    transform: translateX(4px);
   }
   
-  .user-avatar-wrap {
-    position: relative;
-    flex-shrink: 0;
-  }
-  
-  .user-list-info {
+  .user-item-info {
     flex: 1;
     display: flex;
     flex-direction: column;
-    gap: 2px;
-    min-width: 0;
   }
   
-  .user-list-name {
-    font-size: 14px;
+  .user-item-name {
+    font-size: 0.875rem;
     font-weight: 600;
     color: var(--text-color);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
   }
   
-  .user-list-exp {
-    font-size: 12px;
+  .user-item-exp {
+    font-size: 0.75rem;
     color: var(--text-muted);
   }
   
-  .user-level-badge {
-    position: absolute;
-    bottom: -4px;
-    right: -4px;
-    background: var(--primary-color);
-    color: var(--text-color);
-    font-size: 10px;
-    padding: 1px 6px;
-    border-radius: var(--radius-round);
+  .user-item-level {
+    font-size: 0.6875rem;
     font-weight: 700;
-    border: 2px solid var(--white);
-    box-shadow: var(--shadow-sm);
+    color: var(--primary-color);
+    background: var(--primary-bg);
+    padding: var(--space-1) var(--space-2);
+    border-radius: var(--radius);
   }
 }
 
 // 响应式
 @media (max-width: 1280px) {
-  .work-grid {
-    grid-template-columns: repeat(4, 1fr);
+  .works {
+    grid-template-columns: repeat(3, 1fr);
   }
 }
 
@@ -887,32 +800,31 @@ onMounted(async () => {
     display: none;
   }
   
-  .work-grid {
-    grid-template-columns: repeat(3, 1fr);
+  .home-grid {
+    grid-template-columns: 1fr;
   }
 }
 
 @media (max-width: 768px) {
-  .home-container {
-    padding: 0 var(--spacing-sm);
+  .home {
+    padding: var(--space-5) 0 var(--space-8);
   }
   
-  .home-page {
-    padding: var(--spacing) 0 var(--spacing-lg);
+  .home-grid {
+    padding: 0 var(--space-4);
   }
   
-  .work-grid {
+  .works {
     grid-template-columns: repeat(2, 1fr);
-    gap: var(--spacing-sm);
+    gap: var(--space-3);
   }
   
   .section {
-    padding: var(--spacing);
-    border-radius: var(--radius-lg);
+    padding: var(--space-4);
   }
   
-  .banner-area :deep(.el-carousel) {
-    height: 220px !important;
+  .hero :deep(.el-carousel) {
+    height: 240px !important;
   }
 }
 </style>
