@@ -1,7 +1,7 @@
 <template>
   <el-config-provider :locale="zhCn">
     <div class="app">
-      <!-- Navigation -->
+      <!-- Header -->
       <header class="header">
         <div class="header-inner">
           <!-- Logo -->
@@ -9,27 +9,32 @@
             <div class="logo-icon">
               <svg viewBox="0 0 40 40" fill="none">
                 <rect width="40" height="40" rx="6" fill="#FEC433"/>
-                <rect x="8" y="8" width="24" height="24" rx="3" fill="#1D2129"/>
-                <circle cx="15" cy="20" r="3" fill="#FEC433"/>
-                <circle cx="25" cy="20" r="3" fill="#FEC433"/>
+                <rect x="8" y="8" width="24" height="24" rx="4" fill="#17181A"/>
+                <circle cx="16" cy="20" r="3" fill="#FEC433"/>
+                <circle cx="24" cy="20" r="3" fill="#FEC433"/>
               </svg>
             </div>
-            <div class="logo-text">
-              <span class="logo-main">编程狗</span>
-              <span class="logo-sub">社区</span>
-            </div>
+            <span class="logo-text">编程狗</span>
           </router-link>
 
-          <!-- Nav Links -->
-          <nav class="nav-links">
-            <router-link to="/" class="nav-link" :class="{ active: $route.path === '/' }">首页</router-link>
-            <router-link to="/works" class="nav-link" :class="{ active: $route.path === '/works' }">发现</router-link>
-            <router-link to="/community" class="nav-link" :class="{ active: $route.path === '/community' }">社区</router-link>
-            <router-link to="/work_shop" class="nav-link" :class="{ active: $route.path === '/work_shop' }">工作室</router-link>
+          <!-- Nav -->
+          <nav class="nav">
+            <router-link to="/" class="nav-item" :class="{ active: $route.path === '/' }">
+              首页
+            </router-link>
+            <router-link to="/works" class="nav-item" :class="{ active: $route.path === '/works' }">
+              发现
+            </router-link>
+            <router-link to="/community" class="nav-item" :class="{ active: $route.path === '/community' }">
+              社区
+            </router-link>
+            <router-link to="/work_shop" class="nav-item" :class="{ active: $route.path === '/work_shop' }">
+              工作室
+            </router-link>
           </nav>
 
           <!-- Search -->
-          <div class="search">
+          <div class="search-wrap">
             <el-input
               v-model="searchKeyword"
               placeholder="搜索作品、帖子..."
@@ -40,18 +45,18 @@
           </div>
 
           <!-- User -->
-          <div class="user-actions">
+          <div class="user-area">
             <template v-if="userStore.isLoggedIn">
-              <el-button type="primary" @click="$router.push('/publish')">发布作品</el-button>
-              <div class="notif" @click="$router.push('/notifications')">
+              <el-button type="primary" size="small" @click="$router.push('/publish')">
+                发布
+              </el-button>
+              <div class="notif-btn" @click="$router.push('/notifications')">
                 <el-badge :value="unreadCount" :max="99" :hidden="!unreadCount">
                   <BellIcon />
                 </el-badge>
               </div>
               <el-dropdown trigger="click" @command="handleCommand">
-                <div class="user-avatar">
-                  <el-avatar :size="32" :src="userStore.user?.avatar || defaultAvatar" />
-                </div>
+                <el-avatar :size="32" :src="userStore.user?.avatar || defaultAvatar" class="avatar" />
                 <template #dropdown>
                   <el-dropdown-menu>
                     <el-dropdown-item command="profile">个人中心</el-dropdown-item>
@@ -64,8 +69,8 @@
               </el-dropdown>
             </template>
             <template v-else>
-              <el-button text @click="$router.push('/login')">登录</el-button>
-              <el-button type="primary" @click="$router.push('/register')">注册</el-button>
+              <el-button text size="small" @click="$router.push('/login')">登录</el-button>
+              <el-button type="primary" size="small" @click="$router.push('/register')">注册</el-button>
             </template>
           </div>
         </div>
@@ -83,9 +88,10 @@
       <!-- Footer -->
       <footer class="footer">
         <div class="footer-inner">
-          <div class="footer-left">
-            <span class="footer-logo">编程狗社区</span>
-            <span class="footer-copy">© 2024</span>
+          <div class="footer-brand">
+            <span class="brand-name">编程狗社区</span>
+            <span class="brand-sep">·</span>
+            <span class="brand-copy">© 2024</span>
           </div>
           <div class="footer-links">
             <a href="javascript:;">关于我们</a>
@@ -119,17 +125,29 @@ const { unreadCount } = storeToRefs(notificationStore)
 const searchKeyword = ref('')
 const hcaptchaDialogRef = ref(null)
 
-const SearchIcon = h('svg', { viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', 'stroke-width': '2' }, [
+const SearchIcon = h('svg', { 
+  viewBox: '0 0 24 24', 
+  fill: 'none', 
+  stroke: 'currentColor', 
+  'stroke-width': '2',
+  class: 'icon'
+}, [
   h('circle', { cx: '11', cy: '11', r: '8' }),
   h('path', { d: 'm21 21-4.35-4.35' })
 ])
 
-const BellIcon = h('svg', { viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', 'stroke-width': '2' }, [
+const BellIcon = h('svg', { 
+  viewBox: '0 0 24 24', 
+  fill: 'none', 
+  stroke: 'currentColor', 
+  'stroke-width': '2',
+  class: 'icon'
+}, [
   h('path', { d: 'M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9' }),
   h('path', { d: 'M13.73 21a2 2 0 0 1-3.46 0' })
 ])
 
-const defaultAvatar = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI0ZFQzQzMyIvPjx0ZXh0IHg9IjUwIiB5PSI2MCIgZm9udC1zaXplPSI0MCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZmlsbD0iIzFEMjEyOSI+8J+SgTwvdGV4dD48L3N2Zz4='
+const defaultAvatar = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI0ZFQzQzMyIvPjx0ZXh0IHg9IjUwIiB5PSI2MCIgZm9udC1zaXplPSI0MCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZmlsbD0iIzE3MTgxQSI+8J+SgTwvdGV4dD48L3N2Zz4='
 
 onMounted(async () => {
   if (userStore.token && !userStore.user) {
@@ -173,13 +191,10 @@ const handleCommand = (command) => {
 <style lang="scss" scoped>
 .fade-enter-active,
 .fade-leave-active {
-  transition: all 0.2s ease;
+  transition: opacity 0.2s ease;
 }
 
-.fade-enter-from {
-  opacity: 0;
-}
-
+.fade-enter-from,
 .fade-leave-to {
   opacity: 0;
 }
@@ -195,17 +210,18 @@ const handleCommand = (command) => {
   position: sticky;
   top: 0;
   z-index: 100;
-  background: var(--surface);
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(8px);
   border-bottom: 1px solid var(--border);
 
   .header-inner {
-    max-width: 1200px;
+    max-width: 1280px;
     margin: 0 auto;
     padding: 0 24px;
     height: 56px;
     display: flex;
     align-items: center;
-    gap: 40px;
+    gap: 32px;
   }
 }
 
@@ -217,45 +233,33 @@ const handleCommand = (command) => {
   flex-shrink: 0;
 
   .logo-icon {
-    width: 36px;
-    height: 36px;
+    width: 32px;
+    height: 32px;
   }
 
   .logo-text {
-    display: flex;
-    flex-direction: column;
-
-    .logo-main {
-      font-size: 1.125rem;
-      font-weight: 600;
-      color: var(--text);
-      line-height: 1.1;
-    }
-
-    .logo-sub {
-      font-size: 0.6875rem;
-      color: var(--text-muted);
-      font-weight: 500;
-    }
+    font-size: 1.0625rem;
+    font-weight: 600;
+    color: var(--text);
   }
 }
 
-.nav-links {
+.nav {
   display: flex;
   gap: 4px;
 
-  .nav-link {
-    padding: 8px 16px;
+  .nav-item {
+    padding: 6px 14px;
     font-size: 0.9375rem;
+    font-weight: 500;
     color: var(--text-secondary);
     text-decoration: none;
     border-radius: var(--radius);
     transition: all 0.15s ease;
-    font-weight: 500;
 
     &:hover {
       color: var(--text);
-      background: var(--border-light);
+      background: rgba(254, 196, 51, 0.12);
     }
 
     &.active {
@@ -266,57 +270,68 @@ const handleCommand = (command) => {
   }
 }
 
-.search {
+.search-wrap {
   flex: 1;
-  max-width: 360px;
+  max-width: 320px;
 
   :deep(.el-input__wrapper) {
     background: var(--bg);
-    border: 1px solid var(--border-light);
+    border: 1px solid var(--border);
     box-shadow: none;
+    padding: 4px 12px;
 
-    &:hover,
+    &:hover {
+      border-color: var(--border-hover);
+    }
+
     &.is-focus {
       border-color: var(--primary);
+      background: var(--surface);
     }
+  }
+
+  :deep(.icon) {
+    width: 16px;
+    height: 16px;
+    color: var(--text-muted);
   }
 }
 
-.user-actions {
+.user-area {
   display: flex;
   align-items: center;
   gap: 12px;
   flex-shrink: 0;
 
-  .notif {
+  .notif-btn {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 36px;
-    height: 36px;
+    width: 32px;
+    height: 32px;
     border-radius: 50%;
     cursor: pointer;
     transition: all 0.15s ease;
     color: var(--text-secondary);
 
     &:hover {
-      background: var(--border-light);
+      background: rgba(254, 196, 51, 0.12);
       color: var(--text);
     }
 
-    svg {
-      width: 20px;
-      height: 20px;
+    :deep(.icon) {
+      width: 18px;
+      height: 18px;
     }
   }
 
-  .user-avatar {
+  .avatar {
     cursor: pointer;
-    border-radius: 50%;
     transition: all 0.15s ease;
+    border: 2px solid transparent;
 
     &:hover {
-      opacity: 0.85;
+      border-color: var(--primary);
     }
   }
 }
@@ -329,10 +344,10 @@ const handleCommand = (command) => {
   background: var(--surface);
   border-top: 1px solid var(--border);
   padding: 32px 0;
-  margin-top: 48px;
+  margin-top: 64px;
 
   .footer-inner {
-    max-width: 1200px;
+    max-width: 1280px;
     margin: 0 auto;
     padding: 0 24px;
     display: flex;
@@ -340,19 +355,23 @@ const handleCommand = (command) => {
     align-items: center;
   }
 
-  .footer-left {
+  .footer-brand {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: 8px;
 
-    .footer-logo {
-      font-size: 1rem;
+    .brand-name {
+      font-size: 0.9375rem;
       font-weight: 600;
       color: var(--text);
     }
 
-    .footer-copy {
-      font-size: 0.8125rem;
+    .brand-sep {
+      color: var(--text-muted);
+    }
+
+    .brand-copy {
+      font-size: 0.875rem;
       color: var(--text-muted);
     }
   }
@@ -375,7 +394,7 @@ const handleCommand = (command) => {
 }
 
 @media (max-width: 960px) {
-  .nav-links {
+  .nav {
     display: none;
   }
 }
@@ -386,22 +405,18 @@ const handleCommand = (command) => {
     gap: 16px;
   }
 
-  .logo-text {
-    display: none;
-  }
-
-  .search {
+  .search-wrap {
     display: none;
   }
 
   .footer-inner {
     flex-direction: column;
-    gap: 16px;
+    gap: 20px;
     text-align: center;
   }
 
   .footer-links {
-    gap: 16px;
+    gap: 20px;
   }
 }
 </style>

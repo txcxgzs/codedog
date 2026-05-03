@@ -3,26 +3,23 @@
 :root {
   --primary: #FEC433;
   --primary-dark: #E5B02E;
-  --primary-light: #FFF8E6;
-  --bg: #F5F7FA;
-  --bg-alt: #FFFFFF;
+  --primary-light: #FFF9E6;
+  --bg: #FAFAFA;
   --surface: #FFFFFF;
-  --text: #1D2129;
-  --text-secondary: #4E5969;
-  --text-muted: #86909C;
-  --border: #E5E6EB;
-  --border-light: #F2F3F5;
+  --text: #17181A;
+  --text-secondary: #5C5E61;
+  --text-muted: #8C8F94;
+  --border: #ECEDED;
+  --border-hover: #D5D7D9;
   
-  --font-display: 'Noto Sans SC', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
-  --font-body: 'Noto Sans SC', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+  --font-main: 'Noto Sans SC', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   
   --radius: 4px;
-  --radius-md: 6px;
-  --radius-lg: 8px;
-  --radius-xl: 12px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
   
-  --shadow: 0 1px 4px rgba(0, 0, 0, 0.05);
-  --shadow-md: 0 2px 12px rgba(0, 0, 0, 0.08);
+  --shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  --shadow-hover: 0 4px 12px rgba(0, 0, 0, 0.08);
 }
 
 * {
@@ -32,7 +29,7 @@
 }
 
 body {
-  font-family: var(--font-body);
+  font-family: var(--font-main);
   font-size: 14px;
   color: var(--text);
   background: var(--bg);
@@ -42,7 +39,7 @@ body {
 }
 
 a {
-  color: var(--text);
+  color: inherit;
   text-decoration: none;
 }
 
@@ -57,7 +54,6 @@ img {
 
 ::-webkit-scrollbar {
   width: 6px;
-  height: 6px;
 }
 
 ::-webkit-scrollbar-track {
@@ -65,24 +61,20 @@ img {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #C9CDD4;
+  background: var(--border-hover);
   border-radius: 3px;
 }
 
-::-webkit-scrollbar-thumb:hover {
-  background: #86909C;
-}
-
 .el-button {
-  font-family: var(--font-body);
+  font-family: var(--font-main);
   font-weight: 500;
-  border-radius: var(--radius-md) !important;
-  transition: all 0.15s ease;
+  border-radius: var(--radius) !important;
+  transition: all 0.2s ease;
 }
 
 .el-input__wrapper {
-  font-family: var(--font-body);
-  border-radius: var(--radius-md) !important;
+  font-family: var(--font-main);
+  border-radius: var(--radius) !important;
 }
 
 .el-button--primary {
