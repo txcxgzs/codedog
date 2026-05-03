@@ -1,111 +1,141 @@
 <template>
   <el-config-provider :locale="zhCn">
-  <div class="r-index--root_container">
-    <!-- 顶部导航栏 -->
-    <div class="c-navigator--navigator">
-      <div class="c-navigator--header-content">
-        <!-- Logo -->
-        <a href="/" class="c-navigator--logo_wrap">
-          <img src="https://static.codemao.cn/community/shequ_logo.png" alt="编程狗社区" class="c-navigator--logo_img">
-          <span class="c-navigator--logo_text">编程狗社区</span>
-        </a>
-        
-        <!-- 导航菜单 -->
-        <ul class="c-navigator--nav_wrap">
-          <li class="c-navigator--item" :class="{ 'c-navigator--selected': $route.path === '/' }">
-            <router-link to="/">首页</router-link>
-          </li>
-          <li class="c-navigator--item" :class="{ 'c-navigator--selected': $route.path === '/works' }">
-            <router-link to="/works">发现</router-link>
-          </li>
-          <li class="c-navigator--item" :class="{ 'c-navigator--selected': $route.path === '/community' }">
-            <router-link to="/community">社区</router-link>
-          </li>
-          <li class="c-navigator--item" :class="{ 'c-navigator--selected': $route.path === '/work_shop' }">
-            <router-link to="/work_shop">工作室</router-link>
-          </li>
-        </ul>
-        
-        <!-- 搜索框 -->
-        <div class="c-navigator--search_wrap">
-          <el-input
-            v-model="searchKeyword"
-            class="c-navigator--search_input"
-            placeholder="搜索作品、用户"
-            :prefix-icon="Search"
-            @keyup.enter="handleSearch"
-            clearable
-          />
-        </div>
-        
-        <!-- 用户区域 -->
-        <div class="c-navigator--user_wrap">
-          <template v-if="userStore.isLoggedIn">
-            <el-button type="primary" round class="c-navigator--publish_btn" @click="$router.push('/publish')">
-              <el-icon class="el-icon--left"><EditPen /></el-icon>
-              发布作品
-            </el-button>
-            
-            <!-- 通知图标 -->
-            <div class="c-navigator--notification" @click="$router.push('/notifications')">
-              <el-badge :value="unreadCount" :max="99" :hidden="!unreadCount" class="c-navigator--badge_item">
-                <el-icon :size="20" color="#666"><Bell /></el-icon>
-              </el-badge>
-            </div>
-            
-            <el-dropdown trigger="click" @command="handleCommand">
-              <div class="c-navigator--user_info">
-                <el-avatar :size="32" :src="userStore.user?.avatar || defaultAvatar" />
-                <span class="c-navigator--username">{{ userStore.user?.nickname || userStore.user?.username }}</span>
-                <el-icon class="el-icon--right"><CaretBottom /></el-icon>
+    <div class="app-root">
+      <!-- 顶部导航栏 - 现代化设计 -->
+      <header class="navbar">
+        <div class="navbar-container">
+          <!-- Logo -->
+          <router-link to="/" class="logo-wrap">
+            <div class="logo-icon"></div>
+            <span class="logo-text">编程狗社区</span>
+          </router-link>
+          
+          <!-- 导航菜单 -->
+          <nav class="nav-menu">
+            <router-link to="/" class="nav-item" :class="{ active: $route.path === '/' }">
+              <span class="nav-icon">🏠</span>
+              首页
+            </router-link>
+            <router-link to="/works" class="nav-item" :class="{ active: $route.path === '/works' }">
+              <span class="nav-icon">🎮</span>
+              发现
+            </router-link>
+            <router-link to="/community" class="nav-item" :class="{ active: $route.path === '/community' }">
+              <span class="nav-icon">💬</span>
+              社区
+            </router-link>
+            <router-link to="/work_shop" class="nav-item" :class="{ active: $route.path === '/work_shop' }">
+              <span class="nav-icon">🏢</span>
+              工作室
+            </router-link>
+          </nav>
+          
+          <!-- 搜索框 -->
+          <div class="search-wrap">
+            <el-input
+              v-model="searchKeyword"
+              class="search-input"
+              placeholder="搜索作品、用户..."
+              :prefix-icon="Search"
+              @keyup.enter="handleSearch"
+              clearable
+              size="default"
+            />
+          </div>
+          
+          <!-- 用户区域 -->
+          <div class="user-wrap">
+            <template v-if="userStore.isLoggedIn">
+              <el-button type="primary" round class="publish-btn" @click="$router.push('/publish')">
+                <el-icon class="el-icon--left"><EditPen /></el-icon>
+                发布作品
+              </el-button>
+              
+              <!-- 通知图标 -->
+              <div class="notification-btn" @click="$router.push('/notifications')">
+                <el-badge :value="unreadCount" :max="99" :hidden="!unreadCount" class="notification-badge">
+                  <el-icon :size="20"><Bell /></el-icon>
+                </el-badge>
               </div>
-              <template #dropdown>
-                <el-dropdown-menu>
-                  <el-dropdown-item command="profile"><el-icon><User /></el-icon>个人中心</el-dropdown-item>
-                  <el-dropdown-item command="myWorks"><el-icon><Monitor /></el-icon>我的作品</el-dropdown-item>
-                  <el-dropdown-item command="notifications"><el-icon><Bell /></el-icon>消息通知</el-dropdown-item>
-                  <el-dropdown-item command="favorites"><el-icon><Star /></el-icon>我的收藏</el-dropdown-item>
-                  <el-dropdown-item v-if="userStore.isAdmin" command="admin" divided><el-icon><Setting /></el-icon>后台管理</el-dropdown-item>
-                  <el-dropdown-item command="logout" divided><el-icon><SwitchButton /></el-icon>退出登录</el-dropdown-item>
-                </el-dropdown-menu>
-              </template>
-            </el-dropdown>
-          </template>
-          <template v-else>
-            <el-button text class="c-navigator--login_btn" @click="$router.push('/login')">登录</el-button>
-            <el-button type="primary" round class="c-navigator--register_btn" @click="$router.push('/register')">注册</el-button>
-          </template>
+              
+              <el-dropdown trigger="click" @command="handleCommand">
+                <div class="user-info">
+                  <el-avatar :size="36" :src="userStore.user?.avatar || defaultAvatar" class="user-avatar" />
+                  <div class="user-meta">
+                    <span class="username">{{ userStore.user?.nickname || userStore.user?.username }}</span>
+                    <span class="user-level">Lv.{{ userStore.user?.level || 1 }}</span>
+                  </div>
+                  <el-icon class="caret-icon"><CaretBottom /></el-icon>
+                </div>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item command="profile">
+                      <el-icon><User /></el-icon>
+                      个人中心
+                    </el-dropdown-item>
+                    <el-dropdown-item command="myWorks">
+                      <el-icon><Monitor /></el-icon>
+                      我的作品
+                    </el-dropdown-item>
+                    <el-dropdown-item command="notifications">
+                      <el-icon><Bell /></el-icon>
+                      消息通知
+                    </el-dropdown-item>
+                    <el-dropdown-item command="favorites">
+                      <el-icon><Star /></el-icon>
+                      我的收藏
+                    </el-dropdown-item>
+                    <el-dropdown-item v-if="userStore.isAdmin" command="admin" divided>
+                      <el-icon><Setting /></el-icon>
+                      后台管理
+                    </el-dropdown-item>
+                    <el-dropdown-item command="logout" divided>
+                      <el-icon><SwitchButton /></el-icon>
+                      退出登录
+                    </el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
+            </template>
+            <template v-else>
+              <el-button text class="login-btn" @click="$router.push('/login')">登录</el-button>
+              <el-button type="primary" round class="register-btn" @click="$router.push('/register')">
+                注册账号
+              </el-button>
+            </template>
+          </div>
         </div>
-      </div>
-    </div>
-    
-    <!-- 主内容区域 -->
-    <div class="r-index--main_content">
-      <router-view v-slot="{ Component }">
-        <transition name="fade-transform" mode="out-in">
-          <component :is="Component" />
-        </transition>
-      </router-view>
-    </div>
-    
-    <!-- 底部 -->
-    <div class="c-footer--footer">
-      <div class="c-footer--content">
-        <div class="c-footer--links">
-          <a href="javascript:;">关于我们</a>
-          <span class="c-footer--divider">|</span>
-          <a href="javascript:;">联系我们</a>
-          <span class="c-footer--divider">|</span>
-          <a href="javascript:;">服务协议</a>
-          <span class="c-footer--divider">|</span>
-          <a href="javascript:;">隐私政策</a>
+      </header>
+      
+      <!-- 主内容区域 -->
+      <main class="main-content">
+        <router-view v-slot="{ Component }">
+          <transition name="fade-transform" mode="out-in">
+            <component :is="Component" />
+          </transition>
+        </router-view>
+      </main>
+      
+      <!-- 底部 - 简约设计 -->
+      <footer class="footer">
+        <div class="footer-container">
+          <div class="footer-content">
+            <div class="footer-links">
+              <a href="javascript:;">关于我们</a>
+              <span class="divider">•</span>
+              <a href="javascript:;">联系我们</a>
+              <span class="divider">•</span>
+              <a href="javascript:;">服务协议</a>
+              <span class="divider">•</span>
+              <a href="javascript:;">隐私政策</a>
+            </div>
+            <p class="copyright">© 2024 编程狗社区 - 作品分享平台</p>
+          </div>
         </div>
-        <p class="c-footer--copyright">© 2024 编程狗社区 - 作品分享平台 | 本站作品来源于编程猫平台，仅供学习交流</p>
-      </div>
+      </footer>
+      
+      <HCaptchaDialog ref="hcaptchaDialogRef" />
     </div>
-    
-    <HCaptchaDialog ref="hcaptchaDialogRef" />
-  </div>
   </el-config-provider>
 </template>
 
@@ -129,7 +159,7 @@ const searchKeyword = ref('')
 const hcaptchaDialogRef = ref(null)
 const hcaptchaVerified = ref(false)
 
-const defaultAvatar = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI0ZFQzQzMyIvPjx0ZXh0IHg9IjUwIiB5PSI2MCIgZm9udC1zaXplPSI0MCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZmlsbD0id2hpdGUiPuahijwvdGV4dD48L3N2Zz4='
+const defaultAvatar = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI0ZFQzQzMyIvPjx0ZXh0IHg9IjUwIiB5PSI2MCIgZm9udC1zaXplPSI0MCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZmlsbD0iI2FhYyI+8J+RqOKAjfCfkrs8L3RleHQ+PC9zdmc+'
 
 let isCheckingHCaptcha = false
 let hcaptchaCheckInterval = null
@@ -196,281 +226,330 @@ const handleCommand = (command) => {
 }
 </script>
 
-<style lang="scss">
+<style lang="scss" scoped>
 .fade-transform-leave-active,
 .fade-transform-enter-active {
-  transition: all 0.3s;
+  transition: all var(--duration-slow);
 }
 
 .fade-transform-enter-from {
   opacity: 0;
-  transform: translateX(-30px);
+  transform: translateY(8px);
 }
 
 .fade-transform-leave-to {
   opacity: 0;
-  transform: translateX(30px);
+  transform: translateY(-8px);
 }
 
-// 全局变量 - 与编程猫一致
-$primary-color: #FEC433;
-$primary-hover: #FFD700;
-$primary-light: #FFF9E6;
-$text-color: #333;
-$text-secondary: #666;
-$text-muted: #999;
-$bg-color: #f5f5f5;
-$white: #fff;
-$border-color: #eee;
-$shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
-
 // 根容器
-.r-index--root_container {
+.app-root {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
-  background: $bg-color;
+  background: var(--bg-color);
 }
 
-// 导航栏 - 仿编程猫样式
-.c-navigator--navigator {
-  background: $white;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+// 导航栏 - 现代化设计
+.navbar {
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  box-shadow: var(--shadow);
   position: sticky;
   top: 0;
   z-index: 1000;
+  border-bottom: 1px solid var(--border-color);
   
-  .c-navigator--header-content {
-    max-width: 1200px;
+  .navbar-container {
+    max-width: 1280px;
     margin: 0 auto;
-    padding: 0 24px;
-    height: 64px;
+    padding: 0 var(--spacing);
+    height: 68px;
     display: flex;
     align-items: center;
-    gap: 24px;
+    gap: var(--spacing-lg);
   }
 }
 
-.c-navigator--logo_wrap {
+.logo-wrap {
   display: flex;
   align-items: center;
   gap: 10px;
   cursor: pointer;
   flex-shrink: 0;
   text-decoration: none;
+  transition: transform var(--duration);
   
-  .c-navigator--logo_img {
-    height: 38px;
-    width: auto;
+  &:hover {
+    transform: scale(1.02);
   }
   
-  .c-navigator--logo_text {
+  .logo-icon {
+    width: 40px;
+    height: 40px;
+    background: linear-gradient(135deg, var(--primary-color), var(--primary-hover));
+    border-radius: var(--radius-lg);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 22px;
+    box-shadow: var(--shadow-sm);
+  }
+  
+  .logo-text {
     font-size: 20px;
-    font-weight: bold;
-    color: $text-color;
-    white-space: nowrap;
+    font-weight: 700;
+    color: var(--text-color);
+    background: linear-gradient(135deg, var(--text-color), var(--text-secondary));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    letter-spacing: -0.3px;
   }
 }
 
-.c-navigator--nav_wrap {
+.nav-menu {
   display: flex;
-  gap: 8px;
+  gap: 4px;
   flex-shrink: 0;
   list-style: none;
   margin: 0;
   padding: 0;
   
-  .c-navigator--item {
-    a {
-      display: block;
-      padding: 8px 16px;
+  .nav-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 10px 16px;
+    font-size: 15px;
+    color: var(--text-secondary);
+    text-decoration: none;
+    border-radius: var(--radius-round);
+    transition: all var(--duration);
+    font-weight: 500;
+    
+    .nav-icon {
       font-size: 16px;
-      color: $text-secondary;
-      text-decoration: none;
-      border-radius: 20px;
-      transition: all 0.2s;
-      font-weight: 500;
     }
     
-    &:hover a {
-      color: $primary-color;
-      background: $primary-light;
+    &:hover {
+      color: var(--text-color);
+      background: var(--primary-bg);
     }
     
-    &.c-navigator--selected a {
-      color: $text-color;
-      background: $primary-color;
+    &.active {
+      color: var(--text-color);
+      background: var(--primary-color);
       font-weight: 600;
+      box-shadow: var(--shadow-sm);
     }
   }
 }
 
-.c-navigator--search_wrap {
+.search-wrap {
   flex: 1;
-  max-width: 300px;
+  max-width: 360px;
   
   :deep(.el-input__wrapper) {
-    border-radius: 20px;
-    background-color: #f5f5f5;
+    border-radius: var(--radius-round);
+    background: var(--border-light);
     box-shadow: none;
-    padding-left: 12px;
+    padding: 4px 16px;
+    transition: all var(--duration);
     
-    &.is-focus {
-      background-color: $white;
-      box-shadow: 0 0 0 1px $primary-color inset;
+    &.is-focus,
+    &:hover {
+      background: var(--white);
+      box-shadow: 0 0 0 2px var(--primary-light), var(--shadow-sm);
     }
   }
   
   :deep(.el-input__inner) {
     height: 36px;
+    font-size: 14px;
   }
 }
 
-.c-navigator--user_wrap {
+.user-wrap {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 14px;
   flex-shrink: 0;
   
-  .c-navigator--notification {
+  .notification-btn {
     display: flex;
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    width: 36px;
-    height: 36px;
+    width: 42px;
+    height: 42px;
     border-radius: 50%;
-    transition: background 0.2s;
+    transition: all var(--duration);
+    color: var(--text-secondary);
     
     &:hover {
-      background: #f5f5f5;
+      background: var(--primary-bg);
+      color: var(--text-color);
+      transform: scale(1.05);
     }
     
-    .c-navigator--badge_item {
+    .notification-badge {
       display: flex;
       align-items: center;
     }
   }
   
-  .c-navigator--login_btn {
-    color: $text-secondary;
-    font-size: 16px;
+  .login-btn {
+    color: var(--text-secondary);
+    font-size: 15px;
+    font-weight: 500;
     
     &:hover {
-      color: $primary-color;
+      color: var(--primary-color);
     }
   }
   
-  .c-navigator--register_btn {
-    padding: 10px 24px;
+  .register-btn {
+    padding: 10px 22px;
     font-weight: 600;
     border: none;
-    
-    &:hover {
-      opacity: 0.9;
-      transform: translateY(-1px);
-    }
+    font-size: 14px;
   }
   
-  .c-navigator--publish_btn {
+  .publish-btn {
     padding: 10px 20px;
     font-weight: 600;
     border: none;
-    box-shadow: 0 2px 6px rgba(254, 196, 51, 0.4);
-    
-    &:hover {
-      opacity: 0.9;
-      transform: translateY(-1px);
-      box-shadow: 0 4px 10px rgba(254, 196, 51, 0.5);
-    }
+    font-size: 14px;
   }
   
-  .c-navigator--user_info {
+  .user-info {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 10px;
     cursor: pointer;
-    padding: 4px 8px;
-    border-radius: 20px;
-    transition: background 0.2s;
+    padding: 6px 10px;
+    padding-right: 6px;
+    border-radius: var(--radius-round);
+    transition: all var(--duration);
     
     &:hover {
-      background: #f5f5f5;
+      background: var(--primary-bg);
     }
     
-    .c-navigator--username {
-      font-size: 15px;
-      color: $text-color;
-      font-weight: 500;
-      max-width: 100px;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
+    .user-avatar {
+      border: 2px solid var(--primary-light);
+    }
+    
+    .user-meta {
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+      line-height: 1.2;
+      
+      .username {
+        font-size: 14px;
+        color: var(--text-color);
+        font-weight: 600;
+        max-width: 100px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      
+      .user-level {
+        font-size: 11px;
+        color: var(--primary-color);
+        font-weight: 600;
+        background: var(--primary-bg);
+        padding: 1px 6px;
+        border-radius: var(--radius-round);
+        display: inline-block;
+      }
+    }
+    
+    .caret-icon {
+      color: var(--text-muted);
+      font-size: 14px;
     }
   }
 }
 
-.r-index--main_content {
+.main-content {
   flex: 1;
   width: 100%;
 }
 
-// 底部 - 仿编程猫样式
-.c-footer--footer {
-  background: $white;
-  border-top: 1px solid $border-color;
-  padding: 40px 0;
+// 底部 - 简约设计
+.footer {
+  background: var(--white);
+  border-top: 1px solid var(--border-color);
+  padding: var(--spacing-xl) 0;
   margin-top: auto;
   
-  .c-footer--content {
-    max-width: 1200px;
+  .footer-container {
+    max-width: 1280px;
     margin: 0 auto;
-    padding: 0 24px;
+    padding: 0 var(--spacing);
+  }
+  
+  .footer-content {
     text-align: center;
   }
   
-  .c-footer--links {
-    margin-bottom: 20px;
+  .footer-links {
+    margin-bottom: 12px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 8px;
     
     a {
-      color: $text-secondary;
+      color: var(--text-secondary);
       font-size: 14px;
-      transition: color 0.2s;
+      font-weight: 500;
       
       &:hover {
-        color: $primary-color;
+        color: var(--primary-color);
       }
     }
     
-    .c-footer--divider {
-      color: $border-color;
-      margin: 0 16px;
+    .divider {
+      color: var(--text-muted);
+      font-size: 12px;
     }
   }
   
-  .c-footer--copyright {
-    color: $text-muted;
+  .copyright {
+    color: var(--text-muted);
     font-size: 13px;
   }
 }
 
 // 响应式
+@media (max-width: 1024px) {
+  .nav-menu {
+    display: none;
+  }
+}
+
 @media (max-width: 768px) {
-  .c-navigator--header-content {
-    gap: 12px;
-    padding: 0 16px;
+  .navbar-container {
+    gap: var(--spacing-sm);
+    padding: 0 var(--spacing-sm);
   }
   
-  .c-navigator--nav_wrap {
+  .search-wrap {
     display: none;
   }
   
-  .c-navigator--search_wrap {
+  .logo-text {
     display: none;
   }
   
-  .c-navigator--logo_text {
-    display: none;
+  .user-wrap {
+    gap: 10px;
   }
 }
 </style>

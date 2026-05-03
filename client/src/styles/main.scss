@@ -1,156 +1,186 @@
 /**
- * 全局样式 - 编程狗社区风格
- * 基于编程猫社区设计
+ * 全局样式 - 编程狗社区设计系统
+ * 现代化、优雅的UI
  */
 
 :root {
-    --primary-color: #FEC433;
-    --primary-hover: #FFD700;
-    --primary-light: #FFF9E6;
-    --text-color: #333333;
-    --text-secondary: #666666;
-    --text-muted: #999999;
-    --bg-color: #f5f5f5;
-    --white: #ffffff;
-    --border-color: #eeeeee;
-    --shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
-    --shadow-lg: 0 12px 24px rgba(0, 0, 0, 0.1);
-    --radius: 6px;
-    --radius-lg: 10px;
-    --radius-round: 16px;
+  // 主题色 - 保持不变
+  --primary-color: #FEC433;
+  --primary-hover: #FFD700;
+  --primary-light: #FFF9E6;
+  --primary-bg: #FFFBEB;
+  
+  // 中性色系统
+  --text-color: #1a1a1a;
+  --text-secondary: #666666;
+  --text-muted: #999999;
+  --bg-color: #fafafa;
+  --white: #ffffff;
+  --border-color: #eeeeee;
+  --border-light: #f5f5f5;
+  
+  // 阴影系统
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
+  --shadow-md: 0 8px 30px rgba(0, 0, 0, 0.08);
+  --shadow-lg: 0 20px 60px rgba(0, 0, 0, 0.12);
+  --shadow-glow: 0 0 40px rgba(254, 196, 51, 0.15);
+  
+  // 圆角系统
+  --radius-sm: 6px;
+  --radius: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+  --radius-round: 24px;
+  
+  // 间距系统
+  --spacing-xs: 4px;
+  --spacing-sm: 8px;
+  --spacing-md: 12px;
+  --spacing: 16px;
+  --spacing-lg: 24px;
+  --spacing-xl: 32px;
+  
+  // 动画系统
+  --duration-fast: 0.15s;
+  --duration: 0.2s;
+  --duration-slow: 0.3s;
+  
+  // Element Plus 主题覆盖
+  --el-color-primary: #FEC433;
+  --el-color-primary-light-3: #FFD966;
+  --el-color-primary-light-5: #FFE599;
+  --el-color-primary-light-7: #FFF2CC;
+  --el-color-primary-light-8: #FFF9E6;
+  --el-color-primary-light-9: #FFF9E6;
+  --el-color-primary-dark-2: #E5B02E;
+  
+  --el-border-radius-base: var(--radius);
+  --el-border-radius-small: var(--radius-sm);
+  --el-border-radius-round: var(--radius-round);
 }
 
 * {
-    margin: 0;
-    padding: 0;
-    box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
 }
 
 html, body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
-    font-size: 14px;
-    color: var(--text-color);
-    background: var(--bg-color);
-    line-height: 1.5;
-    -webkit-font-smoothing: antialiased;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', 'Inter', sans-serif;
+  font-size: 14px;
+  color: var(--text-color);
+  background: var(--bg-color);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 a {
-    color: inherit;
-    text-decoration: none;
+  color: inherit;
+  text-decoration: none;
+  transition: color var(--duration);
 }
 
 img {
-    max-width: 100%;
+  max-width: 100%;
+  display: block;
 }
 
-// 滚动条
+// 滚动条 - 现代化设计
 ::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
+  width: 8px;
+  height: 8px;
 }
 
 ::-webkit-scrollbar-track {
-    background: #f1f1f1;
-    border-radius: 4px;
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-    background: #c1c1c1;
-    border-radius: 4px;
-    
-    &:hover {
-        background: #a8a8a8;
-    }
+  background: #d1d5db;
+  border-radius: 4px;
+  transition: background var(--duration);
+  
+  &:hover {
+    background: #9ca3af;
+  }
 }
 
-// Element Plus 主题色覆盖
-:root {
-    --el-color-primary: #FEC433;
-    --el-color-primary-light-3: #FFD966;
-    --el-color-primary-light-5: #FFE599;
-    --el-color-primary-light-7: #FFF2CC;
-    --el-color-primary-light-8: #FFF9E6;
-    --el-color-primary-light-9: #FFF9E6;
-    --el-color-primary-dark-2: #E5B02E;
-    
-    // 全局圆角覆盖
-    --el-border-radius-base: var(--radius);
-    --el-border-radius-small: 4px;
-    --el-border-radius-round: var(--radius-round);
-}
-
-// 按钮全局圆角优化
+// Element Plus 组件优化
 .el-button {
-    border-radius: var(--radius) !important;
-    font-weight: 500;
-    
-    &.is-round {
-        border-radius: var(--radius-round) !important;
-    }
-    
-    &.is-circle {
-        border-radius: 50% !important;
-    }
+  border-radius: var(--radius) !important;
+  font-weight: 500;
+  transition: all var(--duration);
+  
+  &:hover {
+    transform: translateY(-1px);
+  }
+  
+  &.is-round {
+    border-radius: var(--radius-round) !important;
+  }
+  
+  &.is-circle {
+    border-radius: 50% !important;
+  }
 }
 
-// 输入框圆角
 .el-input__wrapper, .el-textarea__inner {
-    border-radius: var(--radius) !important;
+  border-radius: var(--radius) !important;
+  transition: all var(--duration);
 }
 
-// 卡片圆角
 .el-card {
-    border-radius: var(--radius-lg) !important;
+  border-radius: var(--radius-lg) !important;
+  border: 1px solid var(--border-color);
+  box-shadow: var(--shadow-sm);
 }
 
-// 对话框圆角
 .el-dialog {
-    border-radius: var(--radius-lg) !important;
-    overflow: hidden;
+  border-radius: var(--radius-xl) !important;
+  overflow: hidden;
 }
 
-// 通用类
+// 通用工具类
 .text-center { text-align: center; }
 .text-right { text-align: right; }
 .text-primary { color: var(--primary-color); }
 .text-muted { color: var(--text-muted); }
 
-.mt-10 { margin-top: 10px; }
-.mt-20 { margin-top: 20px; }
-.mb-10 { margin-bottom: 10px; }
-.mb-20 { margin-bottom: 20px; }
+.mt-10 { margin-top: var(--spacing-sm); }
+.mt-20 { margin-top: var(--spacing-lg); }
+.mb-10 { margin-bottom: var(--spacing-sm); }
+.mb-20 { margin-bottom: var(--spacing-lg); }
 
-// 按钮样式
+// 主按钮样式
 .el-button--primary {
-    background: var(--primary-color) !important;
-    border-color: var(--primary-color) !important;
-    color: var(--text-color) !important;
-    
-    &:hover {
-        background: var(--primary-hover) !important;
-        border-color: var(--primary-hover) !important;
-    }
+  background: var(--primary-color) !important;
+  border-color: var(--primary-color) !important;
+  color: var(--text-color) !important;
+  font-weight: 600;
+  box-shadow: 0 4px 12px rgba(254, 196, 51, 0.35);
+  
+  &:hover {
+    background: var(--primary-hover) !important;
+    border-color: var(--primary-hover) !important;
+    box-shadow: 0 6px 20px rgba(254, 196, 51, 0.45);
+  }
 }
 
 .el-button.is-round {
-    border-radius: var(--radius-round);
+  border-radius: var(--radius-round);
 }
 
-// 输入框
 .el-input__wrapper {
-    border-radius: var(--radius);
+  border-radius: var(--radius);
 }
 
-// 卡片
-.el-card {
-    border-radius: var(--radius-lg);
-    border: none;
-    box-shadow: var(--shadow);
-}
-
-// 分页
+// 分页优化
 .el-pagination.is-background .el-pager li.is-active {
-    background: var(--primary-color) !important;
-    color: var(--text-color) !important;
+  background: var(--primary-color) !important;
+  color: var(--text-color) !important;
+  font-weight: 600;
+  box-shadow: 0 2px 8px rgba(254, 196, 51, 0.3);
 }
