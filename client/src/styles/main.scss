@@ -1,76 +1,24 @@
-/**
- * 编程狗社区 - 设计系统
- * 基于 frontend-design + canvas-design 哲学
- * 独特、艺术化、精心制作
- */
-
-@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Playfair+Display:wght@400;500;600;700;800&display=swap');
 
 :root {
-  // 主题色 - 保持不变
-  --primary-color: #FEC433;
-  --primary-hover: #FFD700;
-  --primary-light: #FFF9E6;
-  --primary-bg: #FFFBEB;
-  --primary-glow: rgba(254, 196, 51, 0.25);
-  
-  // 中性色系统 - 更深邃
-  --text-color: #0f0f0f;
+  --primary: #FEC433;
+  --primary-dark: #E5B02E;
+  --primary-light: #FFF3D6;
+  --bg: #FAFAFA;
+  --surface: #FFFFFF;
+  --text: #0A0A0A;
   --text-secondary: #525252;
   --text-muted: #737373;
-  --bg-color: #fafafa;
-  --white: #ffffff;
-  --border-color: #e5e5e5;
-  --border-light: #f0f0f0;
+  --border: #E5E5E5;
+  --shadow: 0 4px 24px rgba(0, 0, 0, 0.06);
+  --shadow-lg: 0 12px 48px rgba(0, 0, 0, 0.1);
   
-  // 阴影系统 - 更精致
-  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.03);
-  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.04);
-  --shadow: 0 4px 20px rgba(0, 0, 0, 0.06);
-  --shadow-md: 0 8px 40px rgba(0, 0, 0, 0.08);
-  --shadow-lg: 0 24px 80px rgba(0, 0, 0, 0.12);
-  --shadow-glow: 0 0 60px var(--primary-glow);
+  --font-display: 'Playfair Display', Georgia, serif;
+  --font-body: 'Outfit', system-ui, sans-serif;
   
-  // 圆角系统
-  --radius-sm: 4px;
-  --radius: 8px;
-  --radius-md: 12px;
-  --radius-lg: 16px;
-  --radius-xl: 24px;
-  --radius-2xl: 32px;
-  --radius-full: 9999px;
-  
-  // 间距系统
-  --space-1: 4px;
-  --space-2: 8px;
-  --space-3: 12px;
-  --space-4: 16px;
-  --space-5: 20px;
-  --space-6: 24px;
-  --space-8: 32px;
-  --space-10: 40px;
-  --space-12: 48px;
-  --space-16: 64px;
-  
-  // 动画
-  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
-  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
-  --duration-fast: 150ms;
-  --duration: 250ms;
-  --duration-slow: 400ms;
-  
-  // Element Plus 覆盖
-  --el-color-primary: #FEC433;
-  --el-color-primary-light-3: #FFD966;
-  --el-color-primary-light-5: #FFE599;
-  --el-color-primary-light-7: #FFF2CC;
-  --el-color-primary-light-8: #FFF9E6;
-  --el-color-primary-light-9: #FFF9E6;
-  --el-color-primary-dark-2: #E5B02E;
-  --el-border-radius-base: var(--radius);
-  --el-border-radius-small: var(--radius-sm);
-  --el-border-radius-round: var(--radius-full);
-  --el-font-family: 'Space Grotesk', 'Noto Sans SC', system-ui, sans-serif;
+  --radius: 12px;
+  --radius-lg: 20px;
+  --radius-xl: 28px;
 }
 
 * {
@@ -79,26 +27,18 @@
   box-sizing: border-box;
 }
 
-html {
-  font-size: 16px;
-  scroll-behavior: smooth;
-}
-
 body {
-  font-family: 'Space Grotesk', 'Noto Sans SC', system-ui, sans-serif;
-  font-size: 0.875rem;
-  color: var(--text-color);
-  background: var(--bg-color);
+  font-family: var(--font-body);
+  font-size: 14px;
+  color: var(--text);
+  background: var(--bg);
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  letter-spacing: -0.01em;
 }
 
 a {
   color: inherit;
   text-decoration: none;
-  transition: color var(--duration-fast) var(--ease-out);
 }
 
 img {
@@ -106,10 +46,8 @@ img {
   display: block;
 }
 
-// 滚动条 - 极简设计
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 8px;
 }
 
 ::-webkit-scrollbar-track {
@@ -118,94 +56,45 @@ img {
 
 ::-webkit-scrollbar-thumb {
   background: #d4d4d4;
-  border-radius: 3px;
-  
-  &:hover {
-    background: #a3a3a3;
-  }
+  border-radius: 4px;
 }
 
-// Element Plus 组件优化
 .el-button {
-  font-family: inherit;
-  border-radius: var(--radius) !important;
+  font-family: var(--font-body);
   font-weight: 600;
-  letter-spacing: -0.01em;
-  transition: all var(--duration) var(--ease-out);
-  
-  &:hover {
-    transform: translateY(-2px);
-  }
-  
-  &.is-round {
-    border-radius: var(--radius-full) !important;
-  }
-  
-  &.is-circle {
-    border-radius: 50% !important;
-  }
+  border-radius: var(--radius) !important;
+  transition: all 0.2s ease;
 }
 
-.el-input__wrapper, .el-textarea__inner {
-  font-family: inherit;
+.el-input__wrapper {
+  font-family: var(--font-body);
   border-radius: var(--radius) !important;
-  transition: all var(--duration) var(--ease-out);
+  transition: all 0.2s ease;
+}
+
+.el-button--primary {
+  background: var(--primary) !important;
+  border-color: var(--primary) !important;
+  color: var(--text) !important;
+  font-weight: 700;
+  box-shadow: 0 4px 16px rgba(254, 196, 51, 0.35);
+}
+
+.el-button--primary:hover {
+  background: var(--primary-dark) !important;
+  border-color: var(--primary-dark) !important;
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(254, 196, 51, 0.45);
 }
 
 .el-card {
-  border-radius: var(--radius-xl) !important;
-  border: 1px solid var(--border-color);
-  box-shadow: var(--shadow-sm);
+  border-radius: var(--radius-lg) !important;
+  border: none;
+  box-shadow: var(--shadow);
 }
 
-.el-dialog {
-  border-radius: var(--radius-2xl) !important;
-  overflow: hidden;
-}
-
-// 通用工具类 - 遵循 shadcn 规范
-.text-center { text-align: center; }
-.text-right { text-align: right; }
-.text-primary { color: var(--primary-color); }
-.text-muted { color: var(--text-muted); }
-
-// 主按钮样式 - 精心设计
-.el-button--primary {
-  background: var(--primary-color) !important;
-  border-color: var(--primary-color) !important;
-  color: var(--text-color) !important;
-  font-weight: 700;
-  box-shadow: 0 4px 16px var(--primary-glow), inset 0 1px 0 rgba(255,255,255,0.2);
-  
-  &:hover {
-    background: var(--primary-hover) !important;
-    border-color: var(--primary-hover) !important;
-    box-shadow: 0 8px 24px var(--primary-glow), inset 0 1px 0 rgba(255,255,255,0.3);
-  }
-  
-  &:active {
-    transform: translateY(0) !important;
-  }
-}
-
-// 分页优化
 .el-pagination.is-background .el-pager li.is-active {
-  background: var(--primary-color) !important;
-  color: var(--text-color) !important;
+  background: var(--primary) !important;
+  color: var(--text) !important;
   font-weight: 700;
-  box-shadow: 0 2px 8px var(--primary-glow);
-}
-
-// 选择器优化
-.el-select-dropdown__item.is-selected {
-  background: var(--primary-bg) !important;
-  color: var(--text-color) !important;
-  font-weight: 600;
-}
-
-// 标签优化
-.el-tag--primary {
-  background: var(--primary-bg) !important;
-  border-color: var(--primary-light) !important;
-  color: var(--text-color) !important;
 }

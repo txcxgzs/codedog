@@ -1,67 +1,56 @@
 <template>
   <el-config-provider :locale="zhCn">
-    <div class="app-root">
-      <!-- 顶部导航栏 -->
-      <header class="navbar">
-        <div class="navbar-inner">
-          <!-- Logo - 艺术化设计 -->
+    <div class="app">
+      <!-- Navigation -->
+      <nav class="nav">
+        <div class="nav-inner">
+          <!-- Logo -->
           <router-link to="/" class="logo">
             <div class="logo-mark">
-              <svg viewBox="0 0 44 44" class="logo-svg">
-                <rect x="4" y="4" width="36" height="36" rx="10" fill="#FEC433"/>
-                <rect x="10" y="10" width="24" height="24" rx="6" fill="#0f0f0f"/>
-                <circle cx="18" cy="22" r="4" fill="#FEC433"/>
+              <svg viewBox="0 0 48 48" class="logo-svg">
+                <rect x="4" y="4" width="40" height="40" rx="12" fill="#FEC433"/>
+                <rect x="12" y="12" width="24" height="24" rx="6" fill="#0A0A0A"/>
+                <circle cx="20" cy="24" r="4" fill="#FEC433"/>
+                <circle cx="28" cy="24" r="4" fill="#FEC433"/>
               </svg>
             </div>
             <div class="logo-text">
-              <span class="logo-title">编程狗</span>
-              <span class="logo-tagline">社区</span>
+              <span class="logo-name">编程狗</span>
+              <span class="logo-sub">社区</span>
             </div>
           </router-link>
-          
-          <!-- 导航 -->
-          <nav class="nav">
-            <router-link to="/" class="nav-link" :class="{ active: $route.path === '/' }">
-              首页
-            </router-link>
-            <router-link to="/works" class="nav-link" :class="{ active: $route.path === '/works' }">
-              发现
-            </router-link>
-            <router-link to="/community" class="nav-link" :class="{ active: $route.path === '/community' }">
-              社区
-            </router-link>
-            <router-link to="/work_shop" class="nav-link" :class="{ active: $route.path === '/work_shop' }">
-              工作室
-            </router-link>
-          </nav>
-          
-          <!-- 搜索 -->
+
+          <!-- Nav Links -->
+          <div class="nav-links">
+            <router-link to="/" class="nav-link" :class="{ active: $route.path === '/' }">首页</router-link>
+            <router-link to="/works" class="nav-link" :class="{ active: $route.path === '/works' }">发现</router-link>
+            <router-link to="/community" class="nav-link" :class="{ active: $route.path === '/community' }">社区</router-link>
+            <router-link to="/work_shop" class="nav-link" :class="{ active: $route.path === '/work_shop' }">工作室</router-link>
+          </div>
+
+          <!-- Search -->
           <div class="search">
             <el-input
               v-model="searchKeyword"
               placeholder="搜索作品..."
-              :prefix-icon="Search"
+              :prefix-icon="SearchIcon"
               @keyup.enter="handleSearch"
               clearable
             />
           </div>
-          
-          <!-- 用户 -->
-          <div class="user-area">
+
+          <!-- User -->
+          <div class="user">
             <template v-if="userStore.isLoggedIn">
-              <el-button type="primary" round @click="$router.push('/publish')">
-                发布作品
-              </el-button>
-              
-              <div class="notification" @click="$router.push('/notifications')">
+              <el-button type="primary" @click="$router.push('/publish')">发布作品</el-button>
+              <div class="notif" @click="$router.push('/notifications')">
                 <el-badge :value="unreadCount" :max="99" :hidden="!unreadCount">
-                  <Bell />
+                  <BellIcon />
                 </el-badge>
               </div>
-              
               <el-dropdown trigger="click" @command="handleCommand">
-                <div class="user">
-                  <el-avatar :size="36" :src="userStore.user?.avatar || defaultAvatar" />
+                <div class="user-info">
+                  <el-avatar :size="38" :src="userStore.user?.avatar || defaultAvatar" />
                   <span class="user-name">{{ userStore.user?.nickname || userStore.user?.username }}</span>
                 </div>
                 <template #dropdown>
@@ -77,28 +66,27 @@
             </template>
             <template v-else>
               <el-button text @click="$router.push('/login')">登录</el-button>
-              <el-button type="primary" round @click="$router.push('/register')">注册</el-button>
+              <el-button type="primary" @click="$router.push('/register')">注册</el-button>
             </template>
           </div>
         </div>
-      </header>
-      
-      <!-- 内容 -->
+      </nav>
+
+      <!-- Main -->
       <main class="main">
         <router-view v-slot="{ Component }">
-          <transition name="page" mode="out-in">
+          <transition name="fade" mode="out-in">
             <component :is="Component" />
           </transition>
         </router-view>
       </main>
-      
-      <!-- 底部 -->
+
+      <!-- Footer -->
       <footer class="footer">
         <div class="footer-inner">
           <div class="footer-brand">
-            <span class="footer-logo">编程狗</span>
-            <span class="footer-divider"></span>
-            <span class="footer-copy">© 2024 编程狗社区</span>
+            <span class="brand-name">编程狗社区</span>
+            <span class="brand-copy">© 2024</span>
           </div>
           <div class="footer-links">
             <a href="javascript:;">关于我们</a>
@@ -108,14 +96,14 @@
           </div>
         </div>
       </footer>
-      
+
       <HCaptchaDialog ref="hcaptchaDialogRef" />
     </div>
   </el-config-provider>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, h } from 'vue'
 import { useUserStore } from '@/stores/user'
 import { useNotificationStore } from '@/stores/notification'
 import { useRouter } from 'vue-router'
@@ -124,7 +112,6 @@ import zhCn from 'element-plus/dist/locale/zh-cn.mjs'
 import { storeToRefs } from 'pinia'
 import HCaptchaDialog from '@/components/HCaptchaDialog.vue'
 import { hcaptchaApi } from '@/api/hcaptcha'
-import { Search, Bell } from '@element-plus/icons-vue'
 
 const router = useRouter()
 const userStore = useUserStore()
@@ -133,7 +120,17 @@ const { unreadCount } = storeToRefs(notificationStore)
 const searchKeyword = ref('')
 const hcaptchaDialogRef = ref(null)
 
-const defaultAvatar = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI0ZFQzQzMyIvPjx0ZXh0IHg9IjUwIiB5PSI2MCIgZm9udC1zaXplPSI0MCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZmlsbD0iIzBmMGYwZiI+8J+RqjwvdGV4dD48L3N2Zz4='
+const SearchIcon = h('svg', { viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', 'stroke-width': '2', class: 'icon' }, [
+  h('circle', { cx: '11', cy: '11', r: '8' }),
+  h('path', { d: 'm21 21-4.35-4.35' })
+])
+
+const BellIcon = h('svg', { viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', 'stroke-width': '2', class: 'icon' }, [
+  h('path', { d: 'M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9' }),
+  h('path', { d: 'M13.73 21a2 2 0 0 1-3.46 0' })
+])
+
+const defaultAvatar = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI0ZFQzQzMyIvPjx0ZXh0IHg9IjUwIiB5PSI2MCIgZm9udC1zaXplPSI0MCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZmlsbD0iIzBhMGEwYSI+8J+SgTwvdGV4dD48L3N2Zz4='
 
 onMounted(async () => {
   if (userStore.token && !userStore.user) {
@@ -175,43 +172,40 @@ const handleCommand = (command) => {
 </script>
 
 <style lang="scss" scoped>
-// 页面过渡
-.page-enter-active,
-.page-leave-active {
-  transition: opacity 0.3s ease, transform 0.3s ease;
+.fade-enter-active,
+.fade-leave-active {
+  transition: all 0.3s ease;
 }
 
-.page-enter-from {
+.fade-enter-from {
   opacity: 0;
-  transform: translateY(20px);
+  transform: translateY(10px);
 }
 
-.page-leave-to {
+.fade-leave-to {
   opacity: 0;
-  transform: translateY(-20px);
+  transform: translateY(-10px);
 }
 
-.app-root {
+.app {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
-  background: var(--bg-color);
+  background: var(--bg);
 }
 
-// 导航栏 - 大胆设计
-.navbar {
+.nav {
   position: sticky;
   top: 0;
-  z-index: 1000;
-  background: rgba(255, 255, 255, 0.95);
+  z-index: 100;
+  background: rgba(255, 255, 255, 0.9);
   backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border-bottom: 1px solid var(--border-color);
-  
-  .navbar-inner {
+  border-bottom: 1px solid var(--border);
+
+  .nav-inner {
     max-width: 1400px;
     margin: 0 auto;
-    padding: 0 32px;
+    padding: 0 40px;
     height: 72px;
     display: flex;
     align-items: center;
@@ -219,144 +213,151 @@ const handleCommand = (command) => {
   }
 }
 
-// Logo - 艺术化SVG设计
 .logo {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 14px;
   text-decoration: none;
   flex-shrink: 0;
-  
+
   .logo-mark {
-    width: 44px;
-    height: 44px;
-    
+    width: 48px;
+    height: 48px;
+
     .logo-svg {
       width: 100%;
       height: 100%;
     }
   }
-  
+
   .logo-text {
     display: flex;
     flex-direction: column;
-    gap: 2px;
-    
-    .logo-title {
-      font-size: 1.25rem;
+
+    .logo-name {
+      font-family: var(--font-display);
+      font-size: 1.375rem;
       font-weight: 700;
-      color: var(--text-color);
+      color: var(--text);
+      line-height: 1.1;
       letter-spacing: -0.02em;
-      line-height: 1;
     }
-    
-    .logo-tagline {
+
+    .logo-sub {
       font-size: 0.6875rem;
       font-weight: 600;
       color: var(--text-muted);
       text-transform: uppercase;
-      letter-spacing: 0.1em;
+      letter-spacing: 0.12em;
     }
   }
 }
 
-// 导航
-.nav {
+.nav-links {
   display: flex;
-  gap: 4px;
-  
+  gap: 8px;
+
   .nav-link {
-    padding: 8px 20px;
+    padding: 10px 20px;
     font-size: 0.9375rem;
     font-weight: 500;
     color: var(--text-secondary);
     text-decoration: none;
     border-radius: var(--radius);
     transition: all 0.2s ease;
-    
+
     &:hover {
-      color: var(--text-color);
-      background: var(--primary-bg);
+      color: var(--text);
+      background: var(--primary-light);
     }
-    
+
     &.active {
-      color: var(--text-color);
+      color: var(--text);
       font-weight: 600;
-      background: var(--primary-color);
+      background: var(--primary);
     }
   }
 }
 
-// 搜索
 .search {
   flex: 1;
-  max-width: 400px;
-  
+  max-width: 360px;
+
   :deep(.el-input__wrapper) {
     border-radius: 9999px;
-    background: var(--bg-color);
+    background: var(--bg);
     border: none;
     padding: 4px 20px;
     box-shadow: none;
-    transition: all 0.2s ease;
-    
+
     &:hover,
     &.is-focus {
-      background: var(--white);
-      box-shadow: 0 0 0 2px var(--primary-color);
+      background: var(--surface);
+      box-shadow: 0 0 0 2px var(--primary);
     }
   }
-  
+
   :deep(.el-input__inner) {
     font-weight: 500;
+
     &::placeholder {
       color: var(--text-muted);
     }
   }
+
+  :deep(.icon) {
+    width: 18px;
+    height: 18px;
+    color: var(--text-muted);
+  }
 }
 
-// 用户区域
-.user-area {
+.user {
   display: flex;
   align-items: center;
   gap: 16px;
   flex-shrink: 0;
-  
-  .notification {
+
+  .notif {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 40px;
-    height: 40px;
+    width: 42px;
+    height: 42px;
     border-radius: 50%;
     cursor: pointer;
     transition: all 0.2s ease;
     color: var(--text-secondary);
-    
+
     &:hover {
-      background: var(--primary-bg);
-      color: var(--text-color);
+      background: var(--primary-light);
+      color: var(--text);
+    }
+
+    :deep(.icon) {
+      width: 22px;
+      height: 22px;
     }
   }
-  
-  .user {
+
+  .user-info {
     display: flex;
     align-items: center;
     gap: 10px;
-    padding: 4px 16px 4px 4px;
+    padding: 6px 14px 6px 6px;
     border-radius: 9999px;
     cursor: pointer;
     transition: all 0.2s ease;
-    
+
     &:hover {
-      background: var(--primary-bg);
+      background: var(--primary-light);
     }
-    
+
     .user-name {
       font-size: 0.875rem;
       font-weight: 600;
-      color: var(--text-color);
-      max-width: 120px;
+      color: var(--text);
+      max-width: 100px;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
@@ -366,93 +367,84 @@ const handleCommand = (command) => {
 
 .main {
   flex: 1;
-  width: 100%;
 }
 
-// 底部
 .footer {
-  background: var(--white);
-  border-top: 1px solid var(--border-color);
-  padding: 48px 0;
-  margin-top: auto;
-  
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  padding: 40px 0;
+
   .footer-inner {
     max-width: 1400px;
     margin: 0 auto;
-    padding: 0 32px;
+    padding: 0 40px;
     display: flex;
     justify-content: space-between;
     align-items: center;
   }
-  
+
   .footer-brand {
     display: flex;
     align-items: center;
     gap: 16px;
-    
-    .footer-logo {
-      font-size: 1rem;
+
+    .brand-name {
+      font-family: var(--font-display);
+      font-size: 1.125rem;
       font-weight: 700;
-      color: var(--text-color);
+      color: var(--text);
     }
-    
-    .footer-divider {
-      width: 1px;
-      height: 16px;
-      background: var(--border-color);
-    }
-    
-    .footer-copy {
+
+    .brand-copy {
       font-size: 0.8125rem;
       color: var(--text-muted);
     }
   }
-  
+
   .footer-links {
     display: flex;
     gap: 32px;
-    
+
     a {
       font-size: 0.875rem;
       font-weight: 500;
       color: var(--text-secondary);
       text-decoration: none;
       transition: color 0.2s ease;
-      
+
       &:hover {
-        color: var(--primary-color);
+        color: var(--primary);
       }
     }
   }
 }
 
-// 响应式
 @media (max-width: 1024px) {
-  .nav {
+  .nav-links {
     display: none;
   }
 }
 
 @media (max-width: 768px) {
-  .navbar-inner {
+  .nav-inner {
     padding: 0 20px;
     gap: 20px;
   }
-  
+
   .logo-text {
     display: none;
   }
-  
+
   .search {
     display: none;
   }
-  
+
   .footer-inner {
     flex-direction: column;
     gap: 24px;
     text-align: center;
   }
-  
+
   .footer-links {
     gap: 20px;
   }
