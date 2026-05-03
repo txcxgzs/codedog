@@ -73,7 +73,32 @@
               <el-button type="primary" size="small" @click="$router.push('/register')">注册</el-button>
             </template>
           </div>
+
+          <!-- Mobile Menu Button -->
+          <div class="mobile-menu-btn" @click="showMobileMenu = !showMobileMenu">
+            <span class="menu-line"></span>
+            <span class="menu-line"></span>
+            <span class="menu-line"></span>
+          </div>
         </div>
+
+        <!-- Mobile Menu -->
+        <transition name="slide-down">
+          <div class="mobile-menu" v-if="showMobileMenu">
+            <router-link to="/" class="mobile-nav-item" @click="showMobileMenu = false">
+              <span>首页</span>
+            </router-link>
+            <router-link to="/works" class="mobile-nav-item" @click="showMobileMenu = false">
+              <span>发现</span>
+            </router-link>
+            <router-link to="/community" class="mobile-nav-item" @click="showMobileMenu = false">
+              <span>社区</span>
+            </router-link>
+            <router-link to="/work_shop" class="mobile-nav-item" @click="showMobileMenu = false">
+              <span>工作室</span>
+            </router-link>
+          </div>
+        </transition>
       </header>
 
       <!-- Main -->
@@ -84,6 +109,22 @@
           </transition>
         </router-view>
       </main>
+
+      <!-- Mobile Bottom Navigation -->
+      <nav class="mobile-bottom-nav">
+        <router-link to="/" class="mobile-nav-item" :class="{ active: $route.path === '/' }">
+          <span class="nav-icon">首页</span>
+        </router-link>
+        <router-link to="/works" class="mobile-nav-item" :class="{ active: $route.path === '/works' }">
+          <span class="nav-icon">发现</span>
+        </router-link>
+        <router-link to="/community" class="mobile-nav-item" :class="{ active: $route.path === '/community' }">
+          <span class="nav-icon">社区</span>
+        </router-link>
+        <router-link to="/work_shop" class="mobile-nav-item" :class="{ active: $route.path === '/work_shop' }">
+          <span class="nav-icon">工作室</span>
+        </router-link>
+      </nav>
 
       <!-- Footer -->
       <footer class="footer">
@@ -101,6 +142,23 @@
           </div>
         </div>
       </footer>
+
+      <!-- Mobile Search Modal -->
+      <transition name="fade">
+        <div class="mobile-search-modal" v-if="showMobileSearch" @click.self="showMobileSearch = false">
+          <div class="mobile-search-box">
+            <el-input
+              v-model="searchKeyword"
+              placeholder="搜索作品、帖子..."
+              :prefix-icon="SearchIcon"
+              @keyup.enter="handleSearch"
+              clearable
+              autofocus
+            />
+            <el-button @click="showMobileSearch = false">取消</el-button>
+          </div>
+        </div>
+      </transition>
 
       <HCaptchaDialog ref="hcaptchaDialogRef" />
     </div>
@@ -124,6 +182,8 @@ const notificationStore = useNotificationStore()
 const { unreadCount } = storeToRefs(notificationStore)
 const searchKeyword = ref('')
 const hcaptchaDialogRef = ref(null)
+const showMobileMenu = ref(false)
+const showMobileSearch = ref(false)
 
 const SearchIcon = h('svg', { 
   viewBox: '0 0 24 24', 
@@ -167,6 +227,7 @@ onMounted(async () => {
 
 const handleSearch = () => {
   if (searchKeyword.value.trim()) {
+    showMobileSearch.value = false
     router.push({ path: '/works', query: { keyword: searchKeyword.value } })
   }
 }
@@ -199,6 +260,17 @@ const handleCommand = (command) => {
   opacity: 0;
 }
 
+.slide-down-enter-active,
+.slide-down-leave-active {
+  transition: all 0.3s ease;
+}
+
+.slide-down-enter-from,
+.slide-down-leave-to {
+  opacity: 0;
+  transform: translateY(-10px);
+}
+
 .app {
   min-height: 100vh;
   display: flex;
@@ -210,8 +282,8 @@ const handleCommand = (command) => {
   position: sticky;
   top: 0;
   z-index: 100;
-  background: rgba(255, 255, 255, 0.95);
-  backdrop-filter: blur(8px);
+  background: rgba(255, 255, 255, 0.98);
+  backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--border);
 
   .header-inner {
@@ -336,8 +408,123 @@ const handleCommand = (command) => {
   }
 }
 
+.mobile-menu-btn {
+  display: none;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  width: 44px;
+  height: 44px;
+  gap: 5px;
+  cursor: pointer;
+  border-radius: var(--radius);
+
+  &:hover {
+    background: rgba(254, 196, 51, 0.12);
+  }
+
+  .menu-line {
+    display: block;
+    width: 20px;
+    height: 2px;
+    background: var(--text);
+    border-radius: 1px;
+    transition: all 0.3s ease;
+  }
+}
+
+.mobile-menu {
+  display: none;
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 12px 24px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+
+  .mobile-nav-item {
+    display: block;
+    padding: 12px 0;
+    font-size: 1rem;
+    font-weight: 500;
+    color: var(--text);
+    text-decoration: none;
+    border-bottom: 1px solid var(--border-light);
+
+    &:last-child {
+      border-bottom: none;
+    }
+
+    &.active {
+      color: var(--primary-dark);
+      font-weight: 600;
+    }
+  }
+}
+
+.mobile-bottom-nav {
+  display: none;
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  padding: 8px 0;
+  padding-bottom: calc(8px + env(safe-area-inset-bottom));
+  z-index: 99;
+
+  .mobile-nav-item {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 6px;
+    text-decoration: none;
+    color: var(--text-muted);
+    font-size: 0.6875rem;
+    font-weight: 500;
+    transition: all 0.15s ease;
+
+    &.active {
+      color: var(--primary-dark);
+      font-weight: 600;
+    }
+
+    .nav-icon {
+      font-size: 0.75rem;
+    }
+  }
+}
+
+.mobile-search-modal {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.6);
+  z-index: 200;
+  padding: 16px;
+  padding-top: 60px;
+
+  .mobile-search-box {
+    display: flex;
+    gap: 12px;
+    background: var(--surface);
+    border-radius: var(--radius-lg);
+    padding: 12px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  }
+}
+
 .main {
   flex: 1;
+  padding-bottom: 80px;
 }
 
 .footer {
@@ -393,30 +580,64 @@ const handleCommand = (command) => {
   }
 }
 
+// Responsive styles
 @media (max-width: 960px) {
   .nav {
     display: none;
   }
-}
 
-@media (max-width: 768px) {
-  .header-inner {
-    padding: 0 16px;
-    gap: 16px;
+  .mobile-menu-btn {
+    display: flex;
+  }
+
+  .mobile-menu {
+    display: block;
+  }
+
+  .mobile-bottom-nav {
+    display: flex;
   }
 
   .search-wrap {
     display: none;
   }
 
-  .footer-inner {
-    flex-direction: column;
-    gap: 20px;
-    text-align: center;
+  .user-area {
+    .publish-btn,
+    .register-btn {
+      display: none;
+    }
   }
 
-  .footer-links {
-    gap: 20px;
+  .mobile-search-modal {
+    display: block;
+  }
+}
+
+@media (max-width: 768px) {
+  .header {
+    .header-inner {
+      padding: 0 16px;
+      gap: 16px;
+    }
+  }
+
+  .footer {
+    .footer-inner {
+      flex-direction: column;
+      gap: 20px;
+      text-align: center;
+    }
+
+    .footer-links {
+      gap: 20px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+  }
+
+  .main {
+    padding-bottom: 100px;
   }
 }
 </style>
