@@ -855,7 +855,7 @@ async function crawlHotWorks(req, res) {
 async function getCrawlLogs(req, res) {
     try {
         const { taskId } = req.query;
-        const logs = crawlLogs[taskId] || [];
+        const logs = taskId ? (crawlLogs.get(taskId) || []) : [];
         return successResponse(res, { logs });
     } catch (error) {
         return errorResponse(res, '获取日志失败', 500);
@@ -1675,12 +1675,15 @@ async function createAnnouncement(req, res) {
     try {
         const { title, content, type } = req.body;
         
+        // 确保类型是有效的枚举值
+        const validTypes = ['notice', 'update', 'warning'];
+        const announcementType = validTypes.includes(type) ? type : 'notice';
+        
         const announcement = await DbAdapter.create(Announcement, {
             title,
             content,
-            type: type || 'normal',
-            author_id: DbAdapter.getId(req.user),
-            status: 'active'
+            type: announcementType,
+            is_active: true
         });
         
         logOperation(req, 'create_announcement', 'announcement', DbAdapter.getId(announcement), { title });
@@ -1694,14 +1697,23 @@ async function createAnnouncement(req, res) {
 async function updateAnnouncement(req, res) {
     try {
         const { announcementId } = req.params;
-        const { title, content, type, status } = req.body;
+        const { title, content, type, is_active } = req.body;
         
         const announcement = await DbAdapter.findByPk(Announcement, announcementId);
         if (!announcement) {
             return errorResponse(res, '公告不存在', 404);
         }
         
-        const updateData = { title, content, type, status };
+        // 确保类型是有效的枚举值
+        const validTypes = ['notice', 'update', 'warning'];
+        const announcementType = type ? (validTypes.includes(type) ? type : 'notice') : undefined;
+        
+        const updateData = {};
+        if (title !== undefined) updateData.title = title;
+        if (content !== undefined) updateData.content = content;
+        if (announcementType) updateData.type = announcementType;
+        if (is_active !== undefined) updateData.is_active = is_active;
+        
         await DbAdapter.update(Announcement, updateData, { where: { id: announcementId } });
         logOperation(req, 'update_announcement', 'announcement', announcementId, { 
             title,
@@ -1710,7 +1722,7 @@ async function updateAnnouncement(req, res) {
                 title: announcement.title,
                 content: announcement.content,
                 type: announcement.type,
-                status: announcement.status
+                is_active: announcement.is_active
             }
         });
         
@@ -1757,15 +1769,15 @@ async function getSystemConfigs(req, res) {
 async function updateSystemConfig(req, res) {
     try {
         const { key } = req.params;
-        const { value, description } = req.body;
-        
+        const { value } = req.body;
+
         let config = await DbAdapter.findOne(SystemConfig, { where: { config_key: key } });
         if (config) {
-            await DbAdapter.update(SystemConfig, { config_value: value, description }, { where: { config_key: key } });
+            await DbAdapter.update(SystemConfig, { config_value: value }, { where: { config_key: key } });
         } else {
-            config = await DbAdapter.create(SystemConfig, { config_key: key, config_value: value, description });
+            config = await DbAdapter.create(SystemConfig, { config_key: key, config_value: value });
         }
-        
+
         logOperation(req, 'update_config', 'system_config', null, { key, value });
         return successResponse(res, config, '更新成功');
     } catch (error) {
@@ -1777,21 +1789,21 @@ async function updateSystemConfig(req, res) {
 async function batchUpdateConfigs(req, res) {
     try {
         const { configs } = req.body;
-        
-        const hasDbConfig = Object.keys(configs).some(key => 
+
+        const hasDbConfig = Object.keys(configs).some(key =>
             key.startsWith('db_') || key.startsWith('mysql_')
         );
-        
+
         if (hasDbConfig) {
             const fs = require('fs');
             const path = require('path');
             const envPath = path.join(__dirname, '../.env');
-            
+
             let envContent = '';
             if (fs.existsSync(envPath)) {
                 envContent = fs.readFileSync(envPath, 'utf8');
             }
-            
+
             if (configs.db_type) {
                 envContent = updateEnvVariable(envContent, 'DB_TYPE', configs.db_type);
             }
@@ -1810,10 +1822,10 @@ async function batchUpdateConfigs(req, res) {
             if (configs.mysql_password) {
                 envContent = updateEnvVariable(envContent, 'DB_PASSWORD', configs.mysql_password);
             }
-            
+
             fs.writeFileSync(envPath, envContent);
         }
-        
+
         for (const [key, value] of Object.entries(configs)) {
             const existing = await DbAdapter.findOne(SystemConfig, { where: { config_key: key } });
             if (existing) {
@@ -1822,9 +1834,9 @@ async function batchUpdateConfigs(req, res) {
                 await DbAdapter.create(SystemConfig, { config_key: key, config_value: value });
             }
         }
-        
+
         logOperation(req, 'batch_update_config', 'system_config', null, configs);
-        
+
         if (hasDbConfig) {
             return successResponse(res, null, '数据库配置更新成功，请重启服务器以应用新配置');
         } else {
@@ -1909,20 +1921,25 @@ async function getSensitiveWords(req, res) {
 async function addSensitiveWord(req, res) {
     try {
         const { word, category, level, replacement } = req.body;
-        
+
         const existing = await DbAdapter.findOne(SensitiveWord, { where: { word } });
         if (existing) {
             return errorResponse(res, '该敏感词已存在', 400);
         }
-        
+
+        // 确保 level 是整数
+        let levelNum = parseInt(level);
+        if (isNaN(levelNum) || levelNum < 1 || levelNum > 5) {
+            levelNum = 1;
+        }
+
         const sensitiveWord = await DbAdapter.create(SensitiveWord, {
             word,
             category: category || 'other',
-            level: level || 'medium',
-            replacement,
-            created_by: DbAdapter.getId(req.user)
+            level: levelNum,
+            replacement
         });
-        
+
         logOperation(req, 'add_sensitive_word', 'sensitive_word', DbAdapter.getId(sensitiveWord), { word });
         return successResponse(res, sensitiveWord, '添加成功');
     } catch (error) {
@@ -1935,15 +1952,31 @@ async function updateSensitiveWord(req, res) {
     try {
         const { wordId } = req.params;
         const { word, category, level, replacement, status } = req.body;
-        
+
         const sensitiveWord = await DbAdapter.findByPk(SensitiveWord, wordId);
         if (!sensitiveWord) {
             return errorResponse(res, '敏感词不存在', 404);
         }
-        
-        await DbAdapter.update(SensitiveWord, { word, category, level, replacement, status }, { where: { id: wordId } });
+
+        // 确保 level 是整数（如果提供了）
+        let levelNum;
+        if (level !== undefined) {
+            levelNum = parseInt(level);
+            if (isNaN(levelNum) || levelNum < 1 || levelNum > 5) {
+                levelNum = undefined;
+            }
+        }
+
+        const updateData = {};
+        if (word !== undefined) updateData.word = word;
+        if (category !== undefined) updateData.category = category;
+        if (levelNum !== undefined) updateData.level = levelNum;
+        if (replacement !== undefined) updateData.replacement = replacement;
+        if (status !== undefined) updateData.status = status;
+
+        await DbAdapter.update(SensitiveWord, updateData, { where: { id: wordId } });
         logOperation(req, 'update_sensitive_word', 'sensitive_word', wordId, { word });
-        
+
         return successResponse(res, sensitiveWord, '更新成功');
     } catch (error) {
         console.error('更新敏感词错误:', error);
@@ -1954,15 +1987,15 @@ async function updateSensitiveWord(req, res) {
 async function deleteSensitiveWord(req, res) {
     try {
         const { wordId } = req.params;
-        
+
         const sensitiveWord = await DbAdapter.findByPk(SensitiveWord, wordId);
         if (!sensitiveWord) {
             return errorResponse(res, '敏感词不存在', 404);
         }
-        
+
         await DbAdapter.destroy(SensitiveWord, { where: { id: DbAdapter.getId(sensitiveWord) } });
         logOperation(req, 'delete_sensitive_word', 'sensitive_word', wordId);
-        
+
         return successResponse(res, null, '删除成功');
     } catch (error) {
         console.error('删除敏感词错误:', error);
@@ -1974,27 +2007,32 @@ async function batchImportSensitiveWords(req, res) {
     try {
         const { words, category, level } = req.body;
         const results = { success: 0, failed: 0, duplicates: 0 };
-        
+
+        // 确保 level 是整数
+        let levelNum = parseInt(level);
+        if (isNaN(levelNum) || levelNum < 1 || levelNum > 5) {
+            levelNum = 1;
+        }
+
         for (const word of words) {
             const existing = await DbAdapter.findOne(SensitiveWord, { where: { word } });
             if (existing) {
                 results.duplicates++;
                 continue;
             }
-            
+
             try {
                 await DbAdapter.create(SensitiveWord, {
                     word,
                     category: category || 'other',
-                    level: level || 'medium',
-                    created_by: DbAdapter.getId(req.user)
+                    level: levelNum
                 });
                 results.success++;
             } catch (e) {
                 results.failed++;
             }
         }
-        
+
         logOperation(req, 'batch_import_sensitive_words', 'sensitive_word', null, results);
         return successResponse(res, results, `成功导入${results.success}个敏感词`);
     } catch (error) {
@@ -2106,23 +2144,23 @@ async function aiAutoHandleReports(req, res) {
     try {
         const { reportIds } = req.body;
         const results = { handled: 0, passed: 0, deleted: 0 };
-        
+
         for (const reportId of reportIds) {
             const report = await DbAdapter.findByPk(Report, reportId);
             if (!report || report.status !== 'pending') continue;
-            
+
             // AI审核
             const sensitiveWords = await DbAdapter.findAll(SensitiveWord, { where: { status: 'active' } });
             let riskLevel = 'low';
             let content = report.description || '';
-            
+
             for (const sw of sensitiveWords) {
                 if (content.includes(sw.word)) {
-                    if (sw.level === 'high') { riskLevel = 'high'; break; }
-                    if (sw.level === 'medium') riskLevel = 'medium';
+                    if (sw.level >= 4) { riskLevel = 'high'; break; }
+                    if (sw.level >= 2) riskLevel = 'medium';
                 }
             }
-            
+
             if (riskLevel === 'high') {
                 // 自动删除
                 if (report.type === 'work') {
@@ -2139,10 +2177,10 @@ async function aiAutoHandleReports(req, res) {
                 await DbAdapter.update(Report, { status: 'rejected', handler_id: DbAdapter.getId(req.user), handle_note: 'AI自动处理-通过' }, { where: { id: DbAdapter.getId(report) } });
                 results.passed++;
             }
-            
+
             results.handled++;
         }
-        
+
         logOperation(req, 'ai_auto_handle_reports', 'report', null, results);
         return successResponse(res, results, `AI自动处理完成，共处理${results.handled}条举报`);
     } catch (error) {
