@@ -1,31 +1,31 @@
 <template>
   <el-config-provider :locale="zhCn">
     <div class="app">
-      <!-- Navigation -->
-      <nav class="nav">
+      <!-- Navigation - Bold & Minimal -->
+      <header class="nav">
         <div class="nav-inner">
-          <!-- Logo -->
+          <!-- Logo - Geometric Brutalist -->
           <router-link to="/" class="logo">
-            <div class="logo-mark">
-              <svg viewBox="0 0 48 48" class="logo-svg">
-                <rect x="4" y="4" width="40" height="40" rx="12" fill="#FEC433"/>
-                <rect x="12" y="12" width="24" height="24" rx="6" fill="#0A0A0A"/>
-                <circle cx="20" cy="24" r="4" fill="#FEC433"/>
-                <circle cx="28" cy="24" r="4" fill="#FEC433"/>
+            <div class="logo-icon">
+              <svg viewBox="0 0 40 40" fill="none">
+                <rect width="40" height="40" rx="8" fill="#FEC433"/>
+                <rect x="8" y="8" width="24" height="24" rx="4" fill="#0F0F0F"/>
+                <circle cx="15" cy="20" r="3" fill="#FEC433"/>
+                <circle cx="25" cy="20" r="3" fill="#FEC433"/>
               </svg>
             </div>
             <div class="logo-text">
-              <span class="logo-name">编程狗</span>
+              <span class="logo-main">编程狗</span>
               <span class="logo-sub">社区</span>
             </div>
           </router-link>
 
           <!-- Nav Links -->
           <div class="nav-links">
-            <router-link to="/" class="nav-link" :class="{ active: $route.path === '/' }">首页</router-link>
-            <router-link to="/works" class="nav-link" :class="{ active: $route.path === '/works' }">发现</router-link>
-            <router-link to="/community" class="nav-link" :class="{ active: $route.path === '/community' }">社区</router-link>
-            <router-link to="/work_shop" class="nav-link" :class="{ active: $route.path === '/work_shop' }">工作室</router-link>
+            <router-link to="/" class="link" :class="{ active: $route.path === '/' }">首页</router-link>
+            <router-link to="/works" class="link" :class="{ active: $route.path === '/works' }">发现</router-link>
+            <router-link to="/community" class="link" :class="{ active: $route.path === '/community' }">社区</router-link>
+            <router-link to="/work_shop" class="link" :class="{ active: $route.path === '/work_shop' }">工作室</router-link>
           </div>
 
           <!-- Search -->
@@ -42,16 +42,15 @@
           <!-- User -->
           <div class="user">
             <template v-if="userStore.isLoggedIn">
-              <el-button type="primary" @click="$router.push('/publish')">发布作品</el-button>
+              <el-button type="primary" @click="$router.push('/publish')">发布</el-button>
               <div class="notif" @click="$router.push('/notifications')">
                 <el-badge :value="unreadCount" :max="99" :hidden="!unreadCount">
                   <BellIcon />
                 </el-badge>
               </div>
               <el-dropdown trigger="click" @command="handleCommand">
-                <div class="user-info">
-                  <el-avatar :size="38" :src="userStore.user?.avatar || defaultAvatar" />
-                  <span class="user-name">{{ userStore.user?.nickname || userStore.user?.username }}</span>
+                <div class="user-card">
+                  <el-avatar :size="36" :src="userStore.user?.avatar || defaultAvatar" />
                 </div>
                 <template #dropdown>
                   <el-dropdown-menu>
@@ -70,12 +69,12 @@
             </template>
           </div>
         </div>
-      </nav>
+      </header>
 
-      <!-- Main -->
+      <!-- Main Content -->
       <main class="main">
         <router-view v-slot="{ Component }">
-          <transition name="fade" mode="out-in">
+          <transition name="slide" mode="out-in">
             <component :is="Component" />
           </transition>
         </router-view>
@@ -84,11 +83,12 @@
       <!-- Footer -->
       <footer class="footer">
         <div class="footer-inner">
-          <div class="footer-brand">
-            <span class="brand-name">编程狗社区</span>
-            <span class="brand-copy">© 2024</span>
+          <div class="footer-left">
+            <span class="footer-brand">编程狗社区</span>
+            <span class="footer-divider"></span>
+            <span class="footer-copy">© 2024</span>
           </div>
-          <div class="footer-links">
+          <div class="footer-right">
             <a href="javascript:;">关于我们</a>
             <a href="javascript:;">联系我们</a>
             <a href="javascript:;">服务协议</a>
@@ -120,17 +120,17 @@ const { unreadCount } = storeToRefs(notificationStore)
 const searchKeyword = ref('')
 const hcaptchaDialogRef = ref(null)
 
-const SearchIcon = h('svg', { viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', 'stroke-width': '2', class: 'icon' }, [
+const SearchIcon = h('svg', { viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', 'stroke-width': '2' }, [
   h('circle', { cx: '11', cy: '11', r: '8' }),
   h('path', { d: 'm21 21-4.35-4.35' })
 ])
 
-const BellIcon = h('svg', { viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', 'stroke-width': '2', class: 'icon' }, [
+const BellIcon = h('svg', { viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', 'stroke-width': '2' }, [
   h('path', { d: 'M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9' }),
   h('path', { d: 'M13.73 21a2 2 0 0 1-3.46 0' })
 ])
 
-const defaultAvatar = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI0ZFQzQzMyIvPjx0ZXh0IHg9IjUwIiB5PSI2MCIgZm9udC1zaXplPSI0MCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZmlsbD0iIzBhMGEwYSI+8J+SgTwvdGV4dD48L3N2Zz4='
+const defaultAvatar = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI0ZFQzQzMyIvPjx0ZXh0IHg9IjUwIiB5PSI2MCIgZm9udC1zaXplPSI0MCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZmlsbD0iIzBmMGYwZiI+8J+SgTwvdGV4dD48L3N2Zz4='
 
 onMounted(async () => {
   if (userStore.token && !userStore.user) {
@@ -172,19 +172,19 @@ const handleCommand = (command) => {
 </script>
 
 <style lang="scss" scoped>
-.fade-enter-active,
-.fade-leave-active {
-  transition: all 0.3s ease;
+.slide-enter-active,
+.slide-leave-active {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-.fade-enter-from {
+.slide-enter-from {
   opacity: 0;
-  transform: translateY(10px);
+  transform: translateY(16px);
 }
 
-.fade-leave-to {
+.slide-leave-to {
   opacity: 0;
-  transform: translateY(-10px);
+  transform: translateY(-16px);
 }
 
 .app {
@@ -194,37 +194,39 @@ const handleCommand = (command) => {
   background: var(--bg);
 }
 
+// Navigation
 .nav {
   position: sticky;
   top: 0;
   z-index: 100;
-  background: rgba(255, 255, 255, 0.9);
-  backdrop-filter: blur(20px);
+  background: rgba(247, 245, 242, 0.92);
+  backdrop-filter: blur(16px);
   border-bottom: 1px solid var(--border);
 
   .nav-inner {
-    max-width: 1400px;
+    max-width: 1440px;
     margin: 0 auto;
-    padding: 0 40px;
+    padding: 0 48px;
     height: 72px;
     display: flex;
     align-items: center;
-    gap: 48px;
+    gap: 56px;
   }
 }
 
+// Logo
 .logo {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 12px;
   text-decoration: none;
   flex-shrink: 0;
 
-  .logo-mark {
-    width: 48px;
-    height: 48px;
+  .logo-icon {
+    width: 40px;
+    height: 40px;
 
-    .logo-svg {
+    svg {
       width: 100%;
       height: 100%;
     }
@@ -234,41 +236,43 @@ const handleCommand = (command) => {
     display: flex;
     flex-direction: column;
 
-    .logo-name {
+    .logo-main {
       font-family: var(--font-display);
-      font-size: 1.375rem;
-      font-weight: 700;
+      font-size: 1.25rem;
+      font-weight: 800;
       color: var(--text);
-      line-height: 1.1;
-      letter-spacing: -0.02em;
+      line-height: 1;
+      letter-spacing: -0.03em;
     }
 
     .logo-sub {
-      font-size: 0.6875rem;
+      font-size: 0.625rem;
       font-weight: 600;
       color: var(--text-muted);
       text-transform: uppercase;
-      letter-spacing: 0.12em;
+      letter-spacing: 0.15em;
+      margin-top: 2px;
     }
   }
 }
 
+// Nav Links
 .nav-links {
   display: flex;
-  gap: 8px;
+  gap: 4px;
 
-  .nav-link {
-    padding: 10px 20px;
+  .link {
+    padding: 10px 18px;
     font-size: 0.9375rem;
     font-weight: 500;
     color: var(--text-secondary);
     text-decoration: none;
     border-radius: var(--radius);
-    transition: all 0.2s ease;
+    transition: all 0.15s ease;
 
     &:hover {
       color: var(--text);
-      background: var(--primary-light);
+      background: rgba(254, 196, 51, 0.15);
     }
 
     &.active {
@@ -279,54 +283,48 @@ const handleCommand = (command) => {
   }
 }
 
+// Search
 .search {
   flex: 1;
-  max-width: 360px;
+  max-width: 320px;
 
   :deep(.el-input__wrapper) {
     border-radius: 9999px;
-    background: var(--bg);
-    border: none;
-    padding: 4px 20px;
-    box-shadow: none;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    padding: 4px 16px;
 
-    &:hover,
+    &:hover {
+      border-color: var(--primary);
+    }
+
     &.is-focus {
-      background: var(--surface);
-      box-shadow: 0 0 0 2px var(--primary);
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(254, 196, 51, 0.2);
     }
   }
 
   :deep(.el-input__inner) {
     font-weight: 500;
-
-    &::placeholder {
-      color: var(--text-muted);
-    }
-  }
-
-  :deep(.icon) {
-    width: 18px;
-    height: 18px;
-    color: var(--text-muted);
   }
 }
 
+// User
 .user {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 12px;
   flex-shrink: 0;
 
   .notif {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 42px;
-    height: 42px;
+    width: 40px;
+    height: 40px;
     border-radius: 50%;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all 0.15s ease;
     color: var(--text-secondary);
 
     &:hover {
@@ -334,74 +332,70 @@ const handleCommand = (command) => {
       color: var(--text);
     }
 
-    :deep(.icon) {
-      width: 22px;
-      height: 22px;
+    svg {
+      width: 20px;
+      height: 20px;
     }
   }
 
-  .user-info {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 6px 14px 6px 6px;
-    border-radius: 9999px;
+  .user-card {
     cursor: pointer;
-    transition: all 0.2s ease;
+    border-radius: 50%;
+    transition: all 0.15s ease;
 
     &:hover {
-      background: var(--primary-light);
-    }
-
-    .user-name {
-      font-size: 0.875rem;
-      font-weight: 600;
-      color: var(--text);
-      max-width: 100px;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
+      opacity: 0.8;
     }
   }
 }
 
+// Main
 .main {
   flex: 1;
 }
 
+// Footer
 .footer {
   background: var(--surface);
   border-top: 1px solid var(--border);
-  padding: 40px 0;
+  padding: 48px 0;
+  margin-top: 80px;
 
   .footer-inner {
-    max-width: 1400px;
+    max-width: 1440px;
     margin: 0 auto;
-    padding: 0 40px;
+    padding: 0 48px;
     display: flex;
     justify-content: space-between;
     align-items: center;
   }
 
-  .footer-brand {
+  .footer-left {
     display: flex;
     align-items: center;
     gap: 16px;
 
-    .brand-name {
+    .footer-brand {
       font-family: var(--font-display);
       font-size: 1.125rem;
-      font-weight: 700;
+      font-weight: 800;
       color: var(--text);
+      letter-spacing: -0.02em;
     }
 
-    .brand-copy {
+    .footer-divider {
+      width: 1px;
+      height: 16px;
+      background: var(--border);
+    }
+
+    .footer-copy {
       font-size: 0.8125rem;
       color: var(--text-muted);
     }
   }
 
-  .footer-links {
+  .footer-right {
     display: flex;
     gap: 32px;
 
@@ -410,15 +404,16 @@ const handleCommand = (command) => {
       font-weight: 500;
       color: var(--text-secondary);
       text-decoration: none;
-      transition: color 0.2s ease;
+      transition: color 0.15s ease;
 
       &:hover {
-        color: var(--primary);
+        color: var(--primary-dark);
       }
     }
   }
 }
 
+// Responsive
 @media (max-width: 1024px) {
   .nav-links {
     display: none;
@@ -445,8 +440,10 @@ const handleCommand = (command) => {
     text-align: center;
   }
 
-  .footer-links {
+  .footer-right {
     gap: 20px;
+    flex-wrap: wrap;
+    justify-content: center;
   }
 }
 </style>
