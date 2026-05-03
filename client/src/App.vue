@@ -1,34 +1,41 @@
 <template>
   <el-config-provider :locale="zhCn">
     <div class="app-root">
-      <!-- 导航栏 - 大胆的艺术化设计 -->
+      <!-- 顶部导航栏 -->
       <header class="navbar">
         <div class="navbar-inner">
-          <!-- Logo - 几何图形设计 -->
+          <!-- Logo - 艺术化设计 -->
           <router-link to="/" class="logo">
             <div class="logo-mark">
-              <div class="logo-shape"></div>
+              <svg viewBox="0 0 44 44" class="logo-svg">
+                <rect x="4" y="4" width="36" height="36" rx="10" fill="#FEC433"/>
+                <rect x="10" y="10" width="24" height="24" rx="6" fill="#0f0f0f"/>
+                <circle cx="18" cy="22" r="4" fill="#FEC433"/>
+              </svg>
             </div>
             <div class="logo-text">
               <span class="logo-title">编程狗</span>
-              <span class="logo-subtitle">社区</span>
+              <span class="logo-tagline">社区</span>
             </div>
           </router-link>
           
-          <!-- 导航 - 极简设计 -->
+          <!-- 导航 -->
           <nav class="nav">
-            <router-link 
-              v-for="item in navItems" 
-              :key="item.path"
-              :to="item.path" 
-              class="nav-link"
-              :class="{ active: $route.path === item.path }"
-            >
-              {{ item.label }}
+            <router-link to="/" class="nav-link" :class="{ active: $route.path === '/' }">
+              首页
+            </router-link>
+            <router-link to="/works" class="nav-link" :class="{ active: $route.path === '/works' }">
+              发现
+            </router-link>
+            <router-link to="/community" class="nav-link" :class="{ active: $route.path === '/community' }">
+              社区
+            </router-link>
+            <router-link to="/work_shop" class="nav-link" :class="{ active: $route.path === '/work_shop' }">
+              工作室
             </router-link>
           </nav>
           
-          <!-- 搜索框 -->
+          <!-- 搜索 -->
           <div class="search">
             <el-input
               v-model="searchKeyword"
@@ -36,20 +43,19 @@
               :prefix-icon="Search"
               @keyup.enter="handleSearch"
               clearable
-              size="default"
             />
           </div>
           
-          <!-- 用户区域 -->
+          <!-- 用户 -->
           <div class="user-area">
             <template v-if="userStore.isLoggedIn">
-              <el-button type="primary" round class="btn-publish" @click="$router.push('/publish')">
-                发布
+              <el-button type="primary" round @click="$router.push('/publish')">
+                发布作品
               </el-button>
               
               <div class="notification" @click="$router.push('/notifications')">
                 <el-badge :value="unreadCount" :max="99" :hidden="!unreadCount">
-                  <el-icon :size="20"><Bell /></el-icon>
+                  <Bell />
                 </el-badge>
               </div>
               
@@ -70,16 +76,14 @@
               </el-dropdown>
             </template>
             <template v-else>
-              <el-button text class="btn-login" @click="$router.push('/login')">登录</el-button>
-              <el-button type="primary" round class="btn-register" @click="$router.push('/register')">
-                注册
-              </el-button>
+              <el-button text @click="$router.push('/login')">登录</el-button>
+              <el-button type="primary" round @click="$router.push('/register')">注册</el-button>
             </template>
           </div>
         </div>
       </header>
       
-      <!-- 主内容 -->
+      <!-- 内容 -->
       <main class="main">
         <router-view v-slot="{ Component }">
           <transition name="page" mode="out-in">
@@ -91,13 +95,17 @@
       <!-- 底部 -->
       <footer class="footer">
         <div class="footer-inner">
+          <div class="footer-brand">
+            <span class="footer-logo">编程狗</span>
+            <span class="footer-divider"></span>
+            <span class="footer-copy">© 2024 编程狗社区</span>
+          </div>
           <div class="footer-links">
             <a href="javascript:;">关于我们</a>
             <a href="javascript:;">联系我们</a>
             <a href="javascript:;">服务协议</a>
             <a href="javascript:;">隐私政策</a>
           </div>
-          <p class="footer-copy">© 2024 编程狗社区</p>
         </div>
       </footer>
       
@@ -124,13 +132,6 @@ const notificationStore = useNotificationStore()
 const { unreadCount } = storeToRefs(notificationStore)
 const searchKeyword = ref('')
 const hcaptchaDialogRef = ref(null)
-
-const navItems = [
-  { path: '/', label: '首页' },
-  { path: '/works', label: '发现' },
-  { path: '/community', label: '社区' },
-  { path: '/work_shop', label: '工作室' }
-]
 
 const defaultAvatar = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI0ZFQzQzMyIvPjx0ZXh0IHg9IjUwIiB5PSI2MCIgZm9udC1zaXplPSI0MCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZmlsbD0iIzBmMGYwZiI+8J+RqjwvdGV4dD48L3N2Zz4='
 
@@ -174,20 +175,20 @@ const handleCommand = (command) => {
 </script>
 
 <style lang="scss" scoped>
-// 页面过渡动画
+// 页面过渡
 .page-enter-active,
 .page-leave-active {
-  transition: all 0.3s var(--ease-out);
+  transition: opacity 0.3s ease, transform 0.3s ease;
 }
 
 .page-enter-from {
   opacity: 0;
-  transform: translateY(12px);
+  transform: translateY(20px);
 }
 
 .page-leave-to {
   opacity: 0;
-  transform: translateY(-12px);
+  transform: translateY(-20px);
 }
 
 .app-root {
@@ -197,117 +198,81 @@ const handleCommand = (command) => {
   background: var(--bg-color);
 }
 
-// 导航栏 - 大胆的艺术化设计
+// 导航栏 - 大胆设计
 .navbar {
-  background: rgba(255, 255, 255, 0.85);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
-  border-bottom: 1px solid var(--border-color);
   position: sticky;
   top: 0;
   z-index: 1000;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-bottom: 1px solid var(--border-color);
   
   .navbar-inner {
     max-width: 1400px;
     margin: 0 auto;
-    padding: 0 var(--space-6);
+    padding: 0 32px;
     height: 72px;
     display: flex;
     align-items: center;
-    gap: var(--space-8);
+    gap: 48px;
   }
 }
 
-// Logo - 几何图形设计
+// Logo - 艺术化SVG设计
 .logo {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
+  gap: 12px;
   text-decoration: none;
   flex-shrink: 0;
   
   .logo-mark {
     width: 44px;
     height: 44px;
-    position: relative;
     
-    .logo-shape {
+    .logo-svg {
       width: 100%;
       height: 100%;
-      background: var(--primary-color);
-      border-radius: var(--radius-md);
-      position: relative;
-      overflow: hidden;
-      
-      &::before {
-        content: '';
-        position: absolute;
-        top: 8px;
-        left: 8px;
-        right: 8px;
-        bottom: 8px;
-        background: var(--text-color);
-        border-radius: var(--radius-sm);
-      }
-      
-      &::after {
-        content: '';
-        position: absolute;
-        top: 14px;
-        left: 14px;
-        width: 16px;
-        height: 16px;
-        background: var(--primary-color);
-        border-radius: 50%;
-      }
     }
   }
   
   .logo-text {
     display: flex;
     flex-direction: column;
-    line-height: 1.1;
+    gap: 2px;
     
     .logo-title {
       font-size: 1.25rem;
       font-weight: 700;
       color: var(--text-color);
       letter-spacing: -0.02em;
+      line-height: 1;
     }
     
-    .logo-subtitle {
-      font-size: 0.75rem;
-      font-weight: 500;
+    .logo-tagline {
+      font-size: 0.6875rem;
+      font-weight: 600;
       color: var(--text-muted);
-      letter-spacing: 0.05em;
       text-transform: uppercase;
+      letter-spacing: 0.1em;
     }
   }
-  
-  &:hover .logo-shape {
-    animation: logo-pulse 0.6s var(--ease-out);
-  }
 }
 
-@keyframes logo-pulse {
-  0%, 100% { transform: scale(1); }
-  50% { transform: scale(1.05); }
-}
-
-// 导航 - 极简设计
+// 导航
 .nav {
   display: flex;
-  gap: var(--space-1);
+  gap: 4px;
   
   .nav-link {
-    padding: var(--space-2) var(--space-4);
+    padding: 8px 20px;
     font-size: 0.9375rem;
     font-weight: 500;
     color: var(--text-secondary);
     text-decoration: none;
     border-radius: var(--radius);
-    transition: all var(--duration-fast) var(--ease-out);
-    position: relative;
+    transition: all 0.2s ease;
     
     &:hover {
       color: var(--text-color);
@@ -317,35 +282,25 @@ const handleCommand = (command) => {
     &.active {
       color: var(--text-color);
       font-weight: 600;
-      
-      &::after {
-        content: '';
-        position: absolute;
-        bottom: 4px;
-        left: 50%;
-        transform: translateX(-50%);
-        width: 20px;
-        height: 3px;
-        background: var(--primary-color);
-        border-radius: 2px;
-      }
+      background: var(--primary-color);
     }
   }
 }
 
-// 搜索框
+// 搜索
 .search {
   flex: 1;
   max-width: 400px;
   
   :deep(.el-input__wrapper) {
-    border-radius: var(--radius-full);
-    background: var(--border-light);
+    border-radius: 9999px;
+    background: var(--bg-color);
     border: none;
-    padding: 0 var(--space-4);
+    padding: 4px 20px;
     box-shadow: none;
-    transition: all var(--duration) var(--ease-out);
+    transition: all 0.2s ease;
     
+    &:hover,
     &.is-focus {
       background: var(--white);
       box-shadow: 0 0 0 2px var(--primary-color);
@@ -364,14 +319,8 @@ const handleCommand = (command) => {
 .user-area {
   display: flex;
   align-items: center;
-  gap: var(--space-4);
+  gap: 16px;
   flex-shrink: 0;
-  
-  .btn-publish {
-    padding: var(--space-2) var(--space-5);
-    font-weight: 700;
-    font-size: 0.875rem;
-  }
   
   .notification {
     display: flex;
@@ -381,7 +330,7 @@ const handleCommand = (command) => {
     height: 40px;
     border-radius: 50%;
     cursor: pointer;
-    transition: all var(--duration-fast) var(--ease-out);
+    transition: all 0.2s ease;
     color: var(--text-secondary);
     
     &:hover {
@@ -390,30 +339,14 @@ const handleCommand = (command) => {
     }
   }
   
-  .btn-login {
-    font-weight: 600;
-    color: var(--text-secondary);
-    
-    &:hover {
-      color: var(--primary-color);
-    }
-  }
-  
-  .btn-register {
-    padding: var(--space-2) var(--space-5);
-    font-weight: 700;
-    font-size: 0.875rem;
-  }
-  
   .user {
     display: flex;
     align-items: center;
-    gap: var(--space-2);
-    padding: var(--space-1);
-    padding-right: var(--space-3);
-    border-radius: var(--radius-full);
+    gap: 10px;
+    padding: 4px 16px 4px 4px;
+    border-radius: 9999px;
     cursor: pointer;
-    transition: all var(--duration-fast) var(--ease-out);
+    transition: all 0.2s ease;
     
     &:hover {
       background: var(--primary-bg);
@@ -423,7 +356,7 @@ const handleCommand = (command) => {
       font-size: 0.875rem;
       font-weight: 600;
       color: var(--text-color);
-      max-width: 100px;
+      max-width: 120px;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
@@ -436,40 +369,60 @@ const handleCommand = (command) => {
   width: 100%;
 }
 
-// 底部 - 极简设计
+// 底部
 .footer {
   background: var(--white);
   border-top: 1px solid var(--border-color);
-  padding: var(--space-8) 0;
+  padding: 48px 0;
+  margin-top: auto;
   
   .footer-inner {
     max-width: 1400px;
     margin: 0 auto;
-    padding: 0 var(--space-6);
-    text-align: center;
+    padding: 0 32px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  
+  .footer-brand {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    
+    .footer-logo {
+      font-size: 1rem;
+      font-weight: 700;
+      color: var(--text-color);
+    }
+    
+    .footer-divider {
+      width: 1px;
+      height: 16px;
+      background: var(--border-color);
+    }
+    
+    .footer-copy {
+      font-size: 0.8125rem;
+      color: var(--text-muted);
+    }
   }
   
   .footer-links {
     display: flex;
-    justify-content: center;
-    gap: var(--space-6);
-    margin-bottom: var(--space-4);
+    gap: 32px;
     
     a {
       font-size: 0.875rem;
       font-weight: 500;
       color: var(--text-secondary);
-      transition: color var(--duration-fast) var(--ease-out);
+      text-decoration: none;
+      transition: color 0.2s ease;
       
       &:hover {
         color: var(--primary-color);
       }
     }
-  }
-  
-  .footer-copy {
-    font-size: 0.8125rem;
-    color: var(--text-muted);
   }
 }
 
@@ -482,24 +435,26 @@ const handleCommand = (command) => {
 
 @media (max-width: 768px) {
   .navbar-inner {
-    padding: 0 var(--space-4);
-    gap: var(--space-4);
-  }
-  
-  .search {
-    display: none;
+    padding: 0 20px;
+    gap: 20px;
   }
   
   .logo-text {
     display: none;
   }
   
-  .user-area {
-    gap: var(--space-2);
-    
-    .btn-publish {
-      padding: var(--space-2) var(--space-3);
-    }
+  .search {
+    display: none;
+  }
+  
+  .footer-inner {
+    flex-direction: column;
+    gap: 24px;
+    text-align: center;
+  }
+  
+  .footer-links {
+    gap: 20px;
   }
 }
 </style>

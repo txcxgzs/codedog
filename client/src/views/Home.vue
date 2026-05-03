@@ -1,16 +1,16 @@
 <template>
   <div class="home">
-    <div class="home-grid">
-      <!-- 主内容区 -->
-      <div class="main">
+    <div class="container">
+      <!-- 主内容 -->
+      <div class="main-content">
         <!-- 轮播图 -->
         <div class="hero" v-if="banners.length > 0">
-          <el-carousel height="420px" :interval="6000" indicator-position="outside" arrow="hover">
+          <el-carousel height="400px" :interval="5000" trigger="click" arrow="hover">
             <el-carousel-item v-for="banner in banners" :key="banner.id">
-              <a :href="banner.link_url" target="_blank" class="hero-slide">
+              <a :href="banner.link_url" target="_blank" class="hero-link">
                 <img :src="banner.image_url" :alt="banner.title" class="hero-image" />
                 <div class="hero-overlay">
-                  <span class="hero-label">精选</span>
+                  <span class="hero-badge">精选</span>
                   <h2 class="hero-title">{{ banner.title }}</h2>
                 </div>
               </a>
@@ -20,123 +20,99 @@
 
         <!-- 推荐作品 -->
         <section class="section">
-          <header class="section-header">
+          <div class="section-header">
             <div class="section-title">
-              <span class="section-emoji">★</span>
-              <h3 class="section-heading">推荐作品</h3>
+              <div class="title-icon"></div>
+              <h3 class="title-text">推荐作品</h3>
             </div>
-            <router-link to="/works" class="section-link">
-              查看全部
-              <el-icon><ArrowRight /></el-icon>
-            </router-link>
-          </header>
-          <div class="works" v-loading="loadingFeatured">
-            <article 
-              v-for="work in featuredWorks" 
-              :key="work.id" 
-              class="work-card"
-              @click="$router.push(`/work/${work.codemao_work_id}`)"
-            >
+            <router-link to="/works" class="more-link">查看全部</router-link>
+          </div>
+          <div class="works-grid" v-loading="loadingFeatured">
+            <div v-for="work in featuredWorks" :key="work.id" class="work-card" @click="$router.push(`/work/${work.codemao_work_id}`)">
               <div class="work-cover">
                 <div class="work-image" :style="{ backgroundImage: `url(${work.preview})` }"></div>
-                <span class="work-type" v-if="work.type">{{ getTypeName(work.type) }}</span>
+                <span class="work-badge" v-if="work.type">{{ getTypeName(work.type) }}</span>
               </div>
-              <div class="work-info">
+              <div class="work-body">
                 <h4 class="work-name">{{ work.name }}</h4>
                 <div class="work-meta">
-                  <div class="work-author" @click.stop="goUser(work.author)">
-                    <el-avatar :size="20" :src="work.author?.avatar || defaultAvatar" />
+                  <div class="author" @click.stop="goUser(work.author)">
+                    <el-avatar :size="18" :src="work.author?.avatar || defaultAvatar" />
                     <span>{{ work.author?.nickname || work.author?.username }}</span>
                   </div>
-                  <div class="work-stats">
+                  <div class="stats">
                     <span>{{ formatNum(work.view_times) }}</span>
                     <span>{{ formatNum(work.praise_times) }}</span>
                   </div>
                 </div>
               </div>
-            </article>
+            </div>
           </div>
           <el-empty v-if="!loadingFeatured && featuredWorks.length === 0" description="暂无推荐作品" />
         </section>
         
         <!-- 最新作品 -->
         <section class="section">
-          <header class="section-header">
+          <div class="section-header">
             <div class="section-title">
-              <span class="section-emoji">✦</span>
-              <h3 class="section-heading">最新作品</h3>
+              <div class="title-icon"></div>
+              <h3 class="title-text">最新作品</h3>
             </div>
-            <router-link to="/works" class="section-link">
-              查看全部
-              <el-icon><ArrowRight /></el-icon>
-            </router-link>
-          </header>
-          <div class="works" v-loading="loadingLatest">
-            <article 
-              v-for="work in latestWorks" 
-              :key="work.id" 
-              class="work-card"
-              @click="$router.push(`/work/${work.codemao_work_id}`)"
-            >
+            <router-link to="/works" class="more-link">查看全部</router-link>
+          </div>
+          <div class="works-grid" v-loading="loadingLatest">
+            <div v-for="work in latestWorks" :key="work.id" class="work-card" @click="$router.push(`/work/${work.codemao_work_id}`)">
               <div class="work-cover">
                 <div class="work-image" :style="{ backgroundImage: `url(${work.preview})` }"></div>
-                <span class="work-type" v-if="work.type">{{ getTypeName(work.type) }}</span>
+                <span class="work-badge" v-if="work.type">{{ getTypeName(work.type) }}</span>
               </div>
-              <div class="work-info">
+              <div class="work-body">
                 <h4 class="work-name">{{ work.name }}</h4>
                 <div class="work-meta">
-                  <div class="work-author" @click.stop="goUser(work.author)">
-                    <el-avatar :size="20" :src="work.author?.avatar || defaultAvatar" />
+                  <div class="author" @click.stop="goUser(work.author)">
+                    <el-avatar :size="18" :src="work.author?.avatar || defaultAvatar" />
                     <span>{{ work.author?.nickname || work.author?.username }}</span>
                   </div>
-                  <div class="work-stats">
+                  <div class="stats">
                     <span>{{ formatNum(work.view_times) }}</span>
                     <span>{{ formatNum(work.praise_times) }}</span>
                   </div>
                 </div>
               </div>
-            </article>
+            </div>
           </div>
           <el-empty v-if="!loadingLatest && latestWorks.length === 0" description="暂无作品" />
         </section>
         
         <!-- 热门作品 -->
         <section class="section">
-          <header class="section-header">
+          <div class="section-header">
             <div class="section-title">
-              <span class="section-emoji">◈</span>
-              <h3 class="section-heading">热门作品</h3>
+              <div class="title-icon"></div>
+              <h3 class="title-text">热门作品</h3>
             </div>
-            <router-link to="/works?sortBy=popular" class="section-link">
-              查看全部
-              <el-icon><ArrowRight /></el-icon>
-            </router-link>
-          </header>
-          <div class="works" v-loading="loadingHot">
-            <article 
-              v-for="work in hotWorks" 
-              :key="work.id" 
-              class="work-card"
-              @click="$router.push(`/work/${work.codemao_work_id}`)"
-            >
+            <router-link to="/works?sortBy=popular" class="more-link">查看全部</router-link>
+          </div>
+          <div class="works-grid" v-loading="loadingHot">
+            <div v-for="work in hotWorks" :key="work.id" class="work-card" @click="$router.push(`/work/${work.codemao_work_id}`)">
               <div class="work-cover">
                 <div class="work-image" :style="{ backgroundImage: `url(${work.preview})` }"></div>
-                <span class="work-type" v-if="work.type">{{ getTypeName(work.type) }}</span>
+                <span class="work-badge" v-if="work.type">{{ getTypeName(work.type) }}</span>
               </div>
-              <div class="work-info">
+              <div class="work-body">
                 <h4 class="work-name">{{ work.name }}</h4>
                 <div class="work-meta">
-                  <div class="work-author" @click.stop="goUser(work.author)">
-                    <el-avatar :size="20" :src="work.author?.avatar || defaultAvatar" />
+                  <div class="author" @click.stop="goUser(work.author)">
+                    <el-avatar :size="18" :src="work.author?.avatar || defaultAvatar" />
                     <span>{{ work.author?.nickname || work.author?.username }}</span>
                   </div>
-                  <div class="work-stats">
+                  <div class="stats">
                     <span>{{ formatNum(work.view_times) }}</span>
                     <span>{{ formatNum(work.praise_times) }}</span>
                   </div>
                 </div>
               </div>
-            </article>
+            </div>
           </div>
           <el-empty v-if="!loadingHot && hotWorks.length === 0" description="暂无作品" />
         </section>
@@ -147,25 +123,23 @@
         <!-- 用户卡片 -->
         <div class="card user-card" v-if="userStore.isLoggedIn">
           <div class="user-header">
-            <el-avatar :size="52" :src="userStore.user?.avatar || defaultAvatar" class="user-avatar" />
+            <el-avatar :size="48" :src="userStore.user?.avatar || defaultAvatar" />
             <div class="user-info">
               <h4 class="user-name">{{ userStore.user?.nickname || userStore.user?.username }}</h4>
               <span class="user-level">Lv.{{ userStore.user?.level || 1 }}</span>
             </div>
           </div>
           <p class="user-bio">{{ userStore.user?.bio || '这个人很懒，什么都没写~' }}</p>
-          <el-button type="primary" class="btn-full" @click="$router.push('/publish')">
-            发布作品
-          </el-button>
+          <el-button type="primary" class="publish-btn" @click="$router.push('/publish')">发布作品</el-button>
           <div class="user-actions">
-            <router-link to="/profile" class="action">个人中心</router-link>
-            <router-link to="/my-works" class="action">我的作品</router-link>
+            <router-link to="/profile" class="action-link">个人中心</router-link>
+            <router-link to="/my-works" class="action-link">我的作品</router-link>
           </div>
         </div>
         
         <!-- 登录卡片 -->
         <div class="card login-card" v-else>
-          <div class="login-icon">◈</div>
+          <div class="login-icon"></div>
           <h4 class="login-title">欢迎来到编程狗</h4>
           <p class="login-desc">登录后可以发布作品、评论互动</p>
           <el-button type="primary" size="large" @click="$router.push('/login')">立即登录</el-button>
@@ -174,18 +148,13 @@
         <!-- 重要通知 -->
         <div class="card" v-if="importantPosts.length > 0">
           <h4 class="card-title">
-            <span class="card-icon">!</span>
+            <span class="title-dot"></span>
             重要通知
           </h4>
-          <div class="notice-list">
-            <div 
-              v-for="post in importantPosts" 
-              :key="post.id" 
-              class="notice-item"
-              @click="$router.push(`/post/${post.id}`)"
-            >
-              <el-tag size="small" type="danger" effect="plain">重要</el-tag>
-              <span class="notice-title">{{ post.title }}</span>
+          <div class="list">
+            <div v-for="post in importantPosts" :key="post.id" class="list-item" @click="$router.push(`/post/${post.id}`)">
+              <el-tag size="small" type="danger">重要</el-tag>
+              <span class="item-title">{{ post.title }}</span>
             </div>
           </div>
         </div>
@@ -193,18 +162,13 @@
         <!-- 精选帖子 -->
         <div class="card" v-if="featuredPosts.length > 0">
           <h4 class="card-title">
-            <span class="card-icon">✦</span>
+            <span class="title-dot"></span>
             精选帖子
           </h4>
-          <div class="post-list">
-            <div 
-              v-for="post in featuredPosts" 
-              :key="post.id" 
-              class="post-item"
-              @click="$router.push(`/post/${post.id}`)"
-            >
-              <span class="post-title">{{ post.title }}</span>
-              <span class="post-views">{{ formatNum(post.view_count) }} 阅读</span>
+          <div class="list">
+            <div v-for="post in featuredPosts" :key="post.id" class="list-item" @click="$router.push(`/post/${post.id}`)">
+              <span class="item-title">{{ post.title }}</span>
+              <span class="item-meta">{{ formatNum(post.view_count) }} 阅读</span>
             </div>
           </div>
         </div>
@@ -212,17 +176,12 @@
         <!-- 活跃用户 -->
         <div class="card" v-if="activeUsers.length > 0">
           <h4 class="card-title">
-            <span class="card-icon">★</span>
+            <span class="title-dot"></span>
             活跃用户
           </h4>
-          <div class="user-list">
-            <div 
-              v-for="user in activeUsers" 
-              :key="user.id" 
-              class="user-item"
-              @click="goUser(user)"
-            >
-              <el-avatar :size="40" :src="user.avatar || defaultAvatar" />
+          <div class="users-list">
+            <div v-for="user in activeUsers" :key="user.id" class="user-item" @click="goUser(user)">
+              <el-avatar :size="36" :src="user.avatar || defaultAvatar" />
               <div class="user-item-info">
                 <span class="user-item-name">{{ user.nickname || user.username }}</span>
                 <span class="user-item-exp">{{ user.experience }} 经验</span>
@@ -239,7 +198,6 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { ArrowRight } from '@element-plus/icons-vue'
 import { useUserStore } from '@/stores/user'
 import { publicApi } from '@/api/public'
 import { workApi } from '@/api/work'
@@ -338,63 +296,61 @@ onMounted(async () => {
 </script>
 
 <style lang="scss" scoped>
-// 轮播图样式
-:deep(.el-carousel__indicators--outside) {
-  margin-top: var(--space-4);
+.home {
+  padding: 48px 0;
 }
 
-:deep(.el-carousel__button) {
-  width: 6px;
-  height: 6px;
+.container {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 0 32px;
+  display: grid;
+  grid-template-columns: 1fr 320px;
+  gap: 48px;
+  align-items: start;
+}
+
+.main-content {
+  display: flex;
+  flex-direction: column;
+  gap: 48px;
+}
+
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  position: sticky;
+  top: 96px;
+}
+
+// 轮播图
+:deep(.el-carousel__indicators) {
+  bottom: 20px;
+}
+
+:deep(.el-carousel__indicator .el-carousel__button) {
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
-  background: #d4d4d4;
+  background: rgba(255, 255, 255, 0.5);
   opacity: 1;
 }
 
 :deep(.el-carousel__indicator.is-active .el-carousel__button) {
   background: var(--primary-color);
   width: 24px;
-  border-radius: 3px;
+  border-radius: 4px;
 }
 
-.home {
-  padding: var(--space-8) 0 var(--space-12);
-}
-
-.home-grid {
-  max-width: 1400px;
-  margin: 0 auto;
-  padding: 0 var(--space-6);
-  display: grid;
-  grid-template-columns: 1fr 340px;
-  gap: var(--space-8);
-  align-items: start;
-}
-
-.main {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-8);
-}
-
-.sidebar {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-5);
-  position: sticky;
-  top: 96px;
-}
-
-// 轮播图
 .hero {
   :deep(.el-carousel) {
-    border-radius: var(--radius-xl);
+    border-radius: 20px;
     overflow: hidden;
-    box-shadow: var(--shadow-md);
   }
 }
 
-.hero-slide {
+.hero-link {
   display: block;
   width: 100%;
   height: 100%;
@@ -405,9 +361,9 @@ onMounted(async () => {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  transition: transform 0.6s var(--ease-out);
+  transition: transform 0.6s ease;
   
-  .hero-slide:hover & {
+  .hero-link:hover & {
     transform: scale(1.03);
   }
 }
@@ -417,29 +373,26 @@ onMounted(async () => {
   bottom: 0;
   left: 0;
   right: 0;
-  padding: var(--space-8);
-  background: linear-gradient(to top, rgba(0,0,0,0.85), transparent);
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
+  padding: 48px;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.85), transparent);
 }
 
-.hero-label {
+.hero-badge {
   display: inline-block;
-  width: fit-content;
-  padding: var(--space-1) var(--space-3);
+  padding: 4px 12px;
   background: var(--primary-color);
-  color: var(--text-color);
+  color: #0f0f0f;
   font-size: 0.75rem;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  border-radius: var(--radius);
+  border-radius: 6px;
+  margin-bottom: 12px;
 }
 
 .hero-title {
   color: #fff;
-  font-size: 1.5rem;
+  font-size: 1.75rem;
   font-weight: 700;
   margin: 0;
 }
@@ -447,8 +400,8 @@ onMounted(async () => {
 // 区块
 .section {
   background: var(--white);
-  border-radius: var(--radius-xl);
-  padding: var(--space-6);
+  border-radius: 20px;
+  padding: 32px;
   border: 1px solid var(--border-color);
 }
 
@@ -456,36 +409,35 @@ onMounted(async () => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: var(--space-5);
+  margin-bottom: 24px;
 }
 
 .section-title {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
+  gap: 12px;
   
-  .section-emoji {
-    font-size: 1.25rem;
-    color: var(--primary-color);
+  .title-icon {
+    width: 8px;
+    height: 8px;
+    background: var(--primary-color);
+    border-radius: 50%;
   }
   
-  .section-heading {
-    font-size: 1.125rem;
+  .title-text {
+    font-size: 1.25rem;
     font-weight: 700;
     color: var(--text-color);
     margin: 0;
-    letter-spacing: -0.01em;
   }
 }
 
-.section-link {
-  display: flex;
-  align-items: center;
-  gap: var(--space-1);
+.more-link {
   font-size: 0.875rem;
   font-weight: 600;
   color: var(--text-secondary);
-  transition: color var(--duration-fast) var(--ease-out);
+  text-decoration: none;
+  transition: color 0.2s ease;
   
   &:hover {
     color: var(--primary-color);
@@ -493,23 +445,23 @@ onMounted(async () => {
 }
 
 // 作品网格
-.works {
+.works-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: var(--space-4);
+  gap: 20px;
 }
 
 .work-card {
-  background: var(--white);
-  border-radius: var(--radius-lg);
-  overflow: hidden;
   cursor: pointer;
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--white);
   border: 1px solid var(--border-light);
-  transition: all var(--duration) var(--ease-out);
+  transition: all 0.25s ease;
   
   &:hover {
-    transform: translateY(-4px);
-    box-shadow: var(--shadow-lg);
+    transform: translateY(-6px);
+    box-shadow: 0 16px 48px rgba(0, 0, 0, 0.12);
     border-color: var(--primary-light);
     
     .work-image {
@@ -520,7 +472,7 @@ onMounted(async () => {
   .work-cover {
     position: relative;
     padding-bottom: 100%;
-    background: linear-gradient(135deg, #f5f5f5, #e5e5e5);
+    background: linear-gradient(135deg, #f5f5f5, #e8e8e8);
     overflow: hidden;
   }
   
@@ -529,32 +481,31 @@ onMounted(async () => {
     inset: 0;
     background-size: cover;
     background-position: center;
-    transition: transform 0.5s var(--ease-out);
+    transition: transform 0.5s ease;
   }
   
-  .work-type {
+  .work-badge {
     position: absolute;
-    top: var(--space-2);
-    left: var(--space-2);
-    padding: var(--space-1) var(--space-2);
+    top: 10px;
+    left: 10px;
+    padding: 4px 10px;
     background: var(--primary-color);
-    color: var(--text-color);
+    color: #0f0f0f;
     font-size: 0.6875rem;
     font-weight: 700;
-    border-radius: var(--radius);
     text-transform: uppercase;
-    letter-spacing: 0.03em;
+    border-radius: 6px;
   }
   
-  .work-info {
-    padding: var(--space-3);
+  .work-body {
+    padding: 14px;
   }
   
   .work-name {
     font-size: 0.875rem;
     font-weight: 600;
     color: var(--text-color);
-    margin: 0 0 var(--space-2);
+    margin: 0 0 10px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -566,10 +517,10 @@ onMounted(async () => {
     align-items: center;
   }
   
-  .work-author {
+  .author {
     display: flex;
     align-items: center;
-    gap: var(--space-1);
+    gap: 6px;
     font-size: 0.75rem;
     color: var(--text-secondary);
     
@@ -578,9 +529,9 @@ onMounted(async () => {
     }
   }
   
-  .work-stats {
+  .stats {
     display: flex;
-    gap: var(--space-2);
+    gap: 10px;
     font-size: 0.6875rem;
     color: var(--text-muted);
   }
@@ -589,22 +540,25 @@ onMounted(async () => {
 // 侧边栏卡片
 .card {
   background: var(--white);
-  border-radius: var(--radius-xl);
-  padding: var(--space-5);
+  border-radius: 20px;
+  padding: 24px;
   border: 1px solid var(--border-color);
 }
 
 .card-title {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
-  margin: 0 0 var(--space-4);
-  font-size: 0.9375rem;
+  gap: 10px;
+  margin: 0 0 20px;
+  font-size: 1rem;
   font-weight: 700;
   color: var(--text-color);
   
-  .card-icon {
-    color: var(--primary-color);
+  .title-dot {
+    width: 8px;
+    height: 8px;
+    background: var(--primary-color);
+    border-radius: 50%;
   }
 }
 
@@ -613,12 +567,8 @@ onMounted(async () => {
   .user-header {
     display: flex;
     align-items: center;
-    gap: var(--space-3);
-    margin-bottom: var(--space-3);
-  }
-  
-  .user-avatar {
-    border: 2px solid var(--primary-light);
+    gap: 14px;
+    margin-bottom: 14px;
   }
   
   .user-info {
@@ -629,7 +579,7 @@ onMounted(async () => {
     font-size: 1rem;
     font-weight: 700;
     color: var(--text-color);
-    margin: 0 0 var(--space-1);
+    margin: 0 0 4px;
   }
   
   .user-level {
@@ -637,40 +587,42 @@ onMounted(async () => {
     font-weight: 600;
     color: var(--primary-color);
     background: var(--primary-bg);
-    padding: var(--space-1) var(--space-2);
-    border-radius: var(--radius);
+    padding: 2px 8px;
+    border-radius: 6px;
   }
   
   .user-bio {
     font-size: 0.8125rem;
     color: var(--text-secondary);
-    margin: 0 0 var(--space-4);
-    padding: var(--space-3);
+    margin: 0 0 16px;
+    padding: 12px;
     background: var(--primary-bg);
-    border-radius: var(--radius);
+    border-radius: 10px;
     border-left: 3px solid var(--primary-color);
+    line-height: 1.5;
   }
   
-  .btn-full {
+  .publish-btn {
     width: 100%;
     font-weight: 700;
   }
   
   .user-actions {
     display: flex;
-    gap: var(--space-2);
-    margin-top: var(--space-3);
+    gap: 10px;
+    margin-top: 12px;
     
-    .action {
+    .action-link {
       flex: 1;
       text-align: center;
-      padding: var(--space-2);
+      padding: 10px;
       background: var(--primary-bg);
       color: var(--text-secondary);
       font-size: 0.8125rem;
       font-weight: 600;
-      border-radius: var(--radius);
-      transition: all var(--duration-fast) var(--ease-out);
+      border-radius: 10px;
+      text-decoration: none;
+      transition: all 0.2s ease;
       
       &:hover {
         background: var(--primary-light);
@@ -686,53 +638,74 @@ onMounted(async () => {
   background: linear-gradient(135deg, var(--primary-bg), var(--white));
   
   .login-icon {
-    font-size: 3rem;
-    color: var(--primary-color);
-    margin-bottom: var(--space-2);
+    width: 48px;
+    height: 48px;
+    margin: 0 auto 12px;
+    background: var(--primary-color);
+    border-radius: 12px;
+    position: relative;
+    
+    &::before {
+      content: '';
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      right: 10px;
+      bottom: 10px;
+      background: #0f0f0f;
+      border-radius: 6px;
+    }
+    
+    &::after {
+      content: '';
+      position: absolute;
+      top: 16px;
+      left: 16px;
+      width: 12px;
+      height: 12px;
+      background: var(--primary-color);
+      border-radius: 50%;
+    }
   }
   
   .login-title {
     font-size: 1.125rem;
     font-weight: 700;
     color: var(--text-color);
-    margin: 0 0 var(--space-2);
+    margin: 0 0 8px;
   }
   
   .login-desc {
     font-size: 0.8125rem;
     color: var(--text-secondary);
-    margin: 0 0 var(--space-4);
+    margin: 0 0 20px;
   }
 }
 
-// 通知列表
-.notice-list,
-.post-list,
-.user-list {
+// 列表
+.list {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
+  gap: 10px;
 }
 
-.notice-item,
-.post-item {
-  padding: var(--space-3);
+.list-item {
+  padding: 12px;
   background: var(--primary-bg);
-  border-radius: var(--radius);
+  border-radius: 10px;
   cursor: pointer;
-  transition: all var(--duration-fast) var(--ease-out);
+  transition: all 0.2s ease;
   display: flex;
   align-items: center;
-  gap: var(--space-2);
+  gap: 10px;
   
   &:hover {
     background: var(--white);
-    box-shadow: var(--shadow-sm);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
     transform: translateX(4px);
   }
   
-  .notice-title,
-  .post-title {
+  .item-title {
     flex: 1;
     font-size: 0.8125rem;
     font-weight: 600;
@@ -742,20 +715,27 @@ onMounted(async () => {
     white-space: nowrap;
   }
   
-  .post-views {
+  .item-meta {
     font-size: 0.6875rem;
     color: var(--text-muted);
   }
 }
 
+// 用户列表
+.users-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
 .user-item {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-2);
-  border-radius: var(--radius);
+  gap: 12px;
+  padding: 8px;
+  border-radius: 10px;
   cursor: pointer;
-  transition: all var(--duration-fast) var(--ease-out);
+  transition: all 0.2s ease;
   
   &:hover {
     background: var(--primary-bg);
@@ -783,14 +763,14 @@ onMounted(async () => {
     font-weight: 700;
     color: var(--primary-color);
     background: var(--primary-bg);
-    padding: var(--space-1) var(--space-2);
-    border-radius: var(--radius);
+    padding: 2px 8px;
+    border-radius: 6px;
   }
 }
 
 // 响应式
 @media (max-width: 1280px) {
-  .works {
+  .works-grid {
     grid-template-columns: repeat(3, 1fr);
   }
 }
@@ -800,31 +780,31 @@ onMounted(async () => {
     display: none;
   }
   
-  .home-grid {
+  .container {
     grid-template-columns: 1fr;
   }
 }
 
 @media (max-width: 768px) {
   .home {
-    padding: var(--space-5) 0 var(--space-8);
+    padding: 24px 0;
   }
   
-  .home-grid {
-    padding: 0 var(--space-4);
+  .container {
+    padding: 0 16px;
   }
   
-  .works {
+  .works-grid {
     grid-template-columns: repeat(2, 1fr);
-    gap: var(--space-3);
+    gap: 12px;
   }
   
   .section {
-    padding: var(--space-4);
+    padding: 20px;
   }
   
   .hero :deep(.el-carousel) {
-    height: 240px !important;
+    height: 220px !important;
   }
 }
 </style>
