@@ -103,6 +103,7 @@ DB_TYPE=sqlite
 # JWT密钥（部署脚本会自动生成）
 JWT_SECRET=auto-generated
 ```
+“后端端口优先读取 PORT，若未设置则读取 SERVER_PORT。”
 
 ## 目录结构
 
