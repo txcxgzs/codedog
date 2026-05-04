@@ -16,8 +16,8 @@ const Work = sequelize.define('Work', {
     },
     // 编程猫作品ID
     codemao_work_id: {
-        type: DataTypes.INTEGER,
-        allowNull: false,
+        type: DataTypes.STRING(50),
+        allowNull: true,
         unique: true,
         comment: '编程猫作品ID'
     },
@@ -60,12 +60,12 @@ const Work = sequelize.define('Work', {
     // 发布者ID（外键关联用户表）
     user_id: {
         type: DataTypes.INTEGER,
-        allowNull: false,
+        allowNull: true,
         comment: '发布者ID'
     },
     // 编程猫作者ID
     codemao_author_id: {
-        type: DataTypes.INTEGER,
+        type: DataTypes.STRING(50),
         allowNull: true,
         comment: '编程猫作者ID'
     },
@@ -96,6 +96,13 @@ const Work = sequelize.define('Work', {
         defaultValue: 0,
         comment: '浏览数'
     },
+    // 评论数
+    comment_count: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        defaultValue: 0,
+        comment: '评论数'
+    },
     // 作品状态：pending-待审核，published-已发布，rejected-已拒绝，deleted-已删除
     status: {
         type: DataTypes.ENUM('pending', 'published', 'rejected', 'deleted'),
@@ -110,6 +117,18 @@ const Work = sequelize.define('Work', {
         defaultValue: false,
         comment: '是否推荐到首页'
     },
+    // 创建时间
+    created_at: {
+        type: DataTypes.DATE,
+        defaultValue: DataTypes.NOW,
+        comment: '创建时间'
+    },
+    // 更新时间
+    updated_at: {
+        type: DataTypes.DATE,
+        defaultValue: DataTypes.NOW,
+        comment: '更新时间'
+    },
     // 拒绝原因
     reject_reason: {
         type: DataTypes.STRING(500),
@@ -118,6 +137,7 @@ const Work = sequelize.define('Work', {
     }
 }, {
     tableName: 'works',
+    timestamps: false,
     comment: '作品表'
 });
 

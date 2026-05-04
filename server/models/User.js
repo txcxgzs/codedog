@@ -13,6 +13,12 @@ const User = sequelize.define('User', {
         autoIncrement: true,
         comment: '用户ID'
     },
+    codemao_user_id: {
+        type: DataTypes.STRING(50),
+        unique: true,
+        allowNull: true,
+        comment: '编程猫用户ID'
+    },
     username: {
         type: DataTypes.STRING(50),
         allowNull: false,
@@ -46,6 +52,16 @@ const User = sequelize.define('User', {
         allowNull: true,
         comment: '个人简介'
     },
+    doing: {
+        type: DataTypes.STRING(200),
+        allowNull: true,
+        comment: '当前状态'
+    },
+    gender: {
+        type: DataTypes.ENUM('m', 'f', 'unknown'),
+        defaultValue: 'unknown',
+        comment: '性别'
+    },
     role: {
         type: DataTypes.ENUM('user', 'reviewer', 'moderator', 'admin', 'superadmin'),
         allowNull: false,
@@ -53,7 +69,7 @@ const User = sequelize.define('User', {
         comment: '用户角色'
     },
     status: {
-        type: DataTypes.ENUM('active', 'banned'),
+        type: DataTypes.ENUM('active', 'disabled'),
         allowNull: false,
         defaultValue: 'active',
         comment: '账户状态'
@@ -70,30 +86,35 @@ const User = sequelize.define('User', {
         defaultValue: 0,
         comment: '经验值'
     },
-    codemao_id: {
-        type: DataTypes.STRING(50),
-        allowNull: true,
-        comment: '编程猫用户ID'
+    follower_count: {
+        type: DataTypes.INTEGER,
+        defaultValue: 0,
+        comment: '粉丝数'
+    },
+    following_count: {
+        type: DataTypes.INTEGER,
+        defaultValue: 0,
+        comment: '关注数'
+    },
+    work_count: {
+        type: DataTypes.INTEGER,
+        defaultValue: 0,
+        comment: '作品数'
     },
     codemao_token: {
         type: DataTypes.TEXT,
         allowNull: true,
         comment: '编程猫登录Token'
     },
-    codemao_refresh_token: {
-        type: DataTypes.TEXT,
-        allowNull: true,
-        comment: '编程猫刷新Token'
-    },
-    last_login_at: {
+    created_at: {
         type: DataTypes.DATE,
-        allowNull: true,
-        comment: '最后登录时间'
+        defaultValue: DataTypes.NOW,
+        comment: '创建时间'
     },
-    last_login_ip: {
-        type: DataTypes.STRING(50),
-        allowNull: true,
-        comment: '最后登录IP'
+    updated_at: {
+        type: DataTypes.DATE,
+        defaultValue: DataTypes.NOW,
+        comment: '更新时间'
     },
     is_active_dalao: {
         type: DataTypes.BOOLEAN,
@@ -103,6 +124,7 @@ const User = sequelize.define('User', {
     }
 }, {
     tableName: 'users',
+    timestamps: false,
     comment: '用户表'
 });
 

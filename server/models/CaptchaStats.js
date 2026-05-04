@@ -51,4 +51,4 @@ const CaptchaStats = sequelize.define('CaptchaStats', {
     ]
 });
 
-module.exports = { CaptchaStats };
+module.exports = CaptchaStats;
