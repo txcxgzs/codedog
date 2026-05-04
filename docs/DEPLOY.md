@@ -201,7 +201,8 @@ cd client && npm run dev
 ### 环境变量 (.env)
 
 ```env
-# 服务端口
+# 服务端口配置
+# 优先读取 PORT（兼容容器/云平台），其次 SERVER_PORT
 CLIENT_PORT=8080
 SERVER_PORT=3001
 
