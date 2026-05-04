@@ -49,8 +49,12 @@ async function testLogin(identity, password) {
     }
 }
 
+// 获取命令行参数或使用占位符
+const identity = process.argv[2] || 'YOUR_IDENTITY_HERE';
+const password = process.argv[3] || 'YOUR_PASSWORD_HERE';
+
 // 测试
-testLogin('19202692613', 'qwe123456').then(result => {
+testLogin(identity, password).then(result => {
     console.log('========================================');
     console.log('测试完成');
     process.exit(result ? 0 : 1);
