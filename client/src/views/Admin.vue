@@ -89,60 +89,52 @@
         <div v-if="activeMenu === 'dashboard'" class="r-admin--section">
           <h2 class="r-admin--title">数据大屏</h2>
           <div class="r-admin--stats" v-loading="loadingStats">
-            <div class="r-admin--stat_card">
-              <div class="r-admin--stat_icon r-admin--stat_icon_users"></div>
+            <div class="r-admin--stat_card" style="--accent: #3b82f6;">
               <div class="r-admin--stat_info">
                 <span class="r-admin--stat_num">{{ stats.userCount }}</span>
                 <span class="r-admin--stat_label">总用户数</span>
-                <span class="r-admin--stat_sub">今日+{{ stats.todayUsers }}</span>
               </div>
+              <span class="r-admin--stat_sub" v-if="stats.todayUsers">今日 +{{ stats.todayUsers }}</span>
             </div>
-            <div class="r-admin--stat_card">
-              <div class="r-admin--stat_icon r-admin--stat_icon_works"></div>
+            <div class="r-admin--stat_card" style="--accent: #8b5cf6;">
               <div class="r-admin--stat_info">
                 <span class="r-admin--stat_num">{{ stats.workCount }}</span>
                 <span class="r-admin--stat_label">总作品数</span>
-                <span class="r-admin--stat_sub">今日+{{ stats.todayWorks }}</span>
               </div>
+              <span class="r-admin--stat_sub" v-if="stats.todayWorks">今日 +{{ stats.todayWorks }}</span>
             </div>
-            <div class="r-admin--stat_card">
-              <div class="r-admin--stat_icon r-admin--stat_icon_comments"></div>
+            <div class="r-admin--stat_card" style="--accent: #06b6d4;">
               <div class="r-admin--stat_info">
                 <span class="r-admin--stat_num">{{ stats.commentCount }}</span>
                 <span class="r-admin--stat_label">总评论数</span>
-                <span class="r-admin--stat_sub">今日+{{ stats.todayComments }}</span>
               </div>
+              <span class="r-admin--stat_sub" v-if="stats.todayComments">今日 +{{ stats.todayComments }}</span>
             </div>
-            <div class="r-admin--stat_card">
-              <div class="r-admin--stat_icon r-admin--stat_icon_reports"></div>
+            <div class="r-admin--stat_card" style="--accent: #ef4444;">
               <div class="r-admin--stat_info">
                 <span class="r-admin--stat_num">{{ stats.pendingReports }}</span>
                 <span class="r-admin--stat_label">待处理举报</span>
               </div>
             </div>
-            <div class="r-admin--stat_card">
-              <div class="r-admin--stat_icon r-admin--stat_icon_featured"></div>
+            <div class="r-admin--stat_card" style="--accent: #f59e0b;">
               <div class="r-admin--stat_info">
                 <span class="r-admin--stat_num">{{ stats.featuredWorks }}</span>
                 <span class="r-admin--stat_label">精选作品</span>
               </div>
             </div>
-            <div class="r-admin--stat_card">
-              <div class="r-admin--stat_icon r-admin--stat_icon_disabled"></div>
+            <div class="r-admin--stat_card" style="--accent: #64748b;">
               <div class="r-admin--stat_info">
                 <span class="r-admin--stat_num">{{ stats.disabledUsers }}</span>
                 <span class="r-admin--stat_label">禁用用户</span>
               </div>
             </div>
-            <div class="r-admin--stat_card">
-              <div class="r-admin--stat_icon r-admin--stat_icon_week"></div>
+            <div class="r-admin--stat_card" style="--accent: #10b981;">
               <div class="r-admin--stat_info">
                 <span class="r-admin--stat_num">{{ stats.newUsersWeek }}</span>
                 <span class="r-admin--stat_label">本周新增用户</span>
               </div>
             </div>
-            <div class="r-admin--stat_card">
-              <div class="r-admin--stat_icon r-admin--stat_icon_ipban"></div>
+            <div class="r-admin--stat_card" style="--accent: #ec4899;">
               <div class="r-admin--stat_info">
                 <span class="r-admin--stat_num">{{ stats.activeIpBans }}</span>
                 <span class="r-admin--stat_label">封禁IP数</span>
@@ -150,7 +142,6 @@
             </div>
           </div>
           
-          <!-- 趋势图表 -->
           <div class="r-admin--chart_section">
             <h3>近7天数据趋势</h3>
             <div class="r-admin--chart" ref="chartRef"></div>
@@ -257,11 +248,11 @@
                   <el-tag v-if="userDetail.user.codemao_user_id" type="warning">编程猫ID: {{ userDetail.user.codemao_user_id }}</el-tag>
                 </div>
               </div>
-              <div class="r-admin--user_detail_actions">
-                <el-button type="primary" @click="showRoleDialog(userDetail.user)">修改角色</el-button>
-                <el-button @click="showPasswordDialog">修改密码</el-button>
-                <el-button type="warning" @click="showSendNotificationDialog">发送站内信</el-button>
-                <el-button :type="userDetail.user.status === 'active' ? 'danger' : 'success'" @click="toggleUserStatus(userDetail.user)">
+              <div class="r-admin--user_detail_actions" style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px;">
+                <el-button type="primary" size="small" @click="showRoleDialog(userDetail.user)">修改角色</el-button>
+                <el-button size="small" @click="showPasswordDialog">修改密码</el-button>
+                <el-button type="warning" size="small" @click="showSendNotificationDialog">发送站内信</el-button>
+                <el-button :type="userDetail.user.status === 'active' ? 'danger' : 'success'" size="small" @click="toggleUserStatus(userDetail.user)">
                   {{ userDetail.user.status === 'active' ? '禁用账户' : '启用账户' }}
                 </el-button>
               </div>
@@ -344,23 +335,24 @@
                 </div>
               </el-tab-pane>
               <el-tab-pane label="评优专区">
-                <div style="padding: 16px 0;">
-                  <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 12px; padding: 20px 24px; margin-bottom: 20px; color: #fff;">
+                <div style="padding: 20px 0;">
+                  <div style="border: 1.5px solid #e6dcc8; border-radius: 8px; padding: 18px 22px; margin-bottom: 20px; background: linear-gradient(to right, #fffdf7, #fff9ed); position: relative; overflow: hidden;">
+                    <div style="position: absolute; top: -20px; right: -10px; font-size: 80px; opacity: 0.06; pointer-events: none;">🏆</div>
                     <div style="display: flex; align-items: center; justify-content: space-between;">
-                      <div style="display: flex; align-items: center; gap: 12px;">
-                        <span style="font-size: 28px;">🌟</span>
+                      <div style="display: flex; align-items: center; gap: 14px;">
+                        <div style="width: 42px; height: 42px; border-radius: 50%; background: linear-gradient(135deg, #f6d365, #d4a017); display: flex; align-items: center; justify-content: center; font-size: 20px; box-shadow: 0 2px 8px rgba(212, 160, 23, 0.3);">🌟</div>
                         <div>
-                          <div style="font-size: 16px; font-weight: 600;">活跃大佬</div>
-                          <div style="font-size: 12px; opacity: 0.8; margin-top: 2px;">授予后将在社区主页展示</div>
+                          <div style="font-size: 15px; font-weight: 600; color: #2c3e50;">活跃大佬</div>
+                          <div style="font-size: 12px; color: #8c7a5b; margin-top: 3px;">授予后在社区主页「活跃用户」栏目展示</div>
                         </div>
                       </div>
-                      <div style="display: flex; align-items: center; gap: 10px;">
-                        <el-tag v-if="userDetail.user.is_active_dalao" effect="dark" type="success" round>已授予</el-tag>
-                        <el-tag v-else effect="plain" type="info" round>未授予</el-tag>
+                      <div style="display: flex; align-items: center; gap: 12px;">
+                        <span v-if="userDetail.user.is_active_dalao" style="display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: 12px; background: #ecfdf5; color: #059669; font-size: 12px; font-weight: 500; border: 1px solid #a7f3d0;">● 已授予</span>
+                        <span v-else style="display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: 12px; background: #f9fafb; color: #9ca3af; font-size: 12px; border: 1px solid #e5e7eb;">○ 未授予</span>
                         <el-button 
-                          :type="userDetail.user.is_active_dalao ? 'danger' : 'success'" 
-                          size="default"
-                          round
+                          :type="userDetail.user.is_active_dalao ? 'danger' : 'primary'" 
+                          size="small"
+                          plain
                           @click="handleToggleActiveDalao(userDetail.user, !userDetail.user.is_active_dalao)"
                         >
                           {{ userDetail.user.is_active_dalao ? '取消荣誉' : '授予荣誉' }}
@@ -369,35 +361,33 @@
                     </div>
                   </div>
 
-                  <div style="background: #f8f9fa; border-radius: 10px; padding: 20px; border: 1px solid #ebeef5;">
-                    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px;">
-                      <div style="display: flex; align-items: center; gap: 8px;">
-                        <span style="font-size: 16px;">📝</span>
-                        <span style="font-size: 15px; font-weight: 600; color: #303133;">管理员备注</span>
-                        <el-tag size="small" type="warning" effect="plain">仅管理员可见</el-tag>
-                      </div>
+                  <div style="border: 1px solid #ebeef5; border-radius: 8px; padding: 18px 22px;">
+                    <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 14px; padding-bottom: 12px; border-bottom: 1px solid #f2f3f5;">
+                      <span style="font-size: 14px; font-weight: 600; color: #303133;">管理员备注</span>
+                      <span style="font-size: 11px; color: #c0c4cc; background: #fafafa; padding: 2px 8px; border-radius: 4px; border: 1px solid #ebeef5;">仅管理员可见</span>
                     </div>
                     <div style="display: flex; gap: 10px; margin-bottom: 16px;">
-                      <el-input v-model="honorNote" placeholder="记录评优理由、操作说明等..." style="flex: 1;" />
-                      <el-button type="primary" @click="addHonorNote">添加</el-button>
+                      <el-input v-model="honorNote" placeholder="记录评优理由、操作说明..." style="flex: 1;" size="default" />
+                      <el-button type="primary" size="default" @click="addHonorNote">添加</el-button>
                     </div>
-                    <div v-if="honorNotes.length > 0" style="max-height: 240px; overflow-y: auto;">
+                    <div v-if="honorNotes.length > 0" style="max-height: 220px; overflow-y: auto; padding-right: 4px;">
                       <el-timeline>
                         <el-timeline-item 
                           v-for="note in honorNotes" 
                           :key="note.time" 
                           :timestamp="formatDateTime(note.time)"
                           placement="top"
-                          :type="note.content.includes('授予') ? 'success' : note.content.includes('取消') ? 'danger' : 'primary'"
+                          size="normal"
+                          :color="note.content.includes('授予') ? '#10b981' : note.content.includes('取消') ? '#ef4444' : '#409eff'"
                         >
-                          <div style="background: #fff; padding: 10px 14px; border-radius: 8px; border: 1px solid #ebeef5;">
-                            <p style="margin: 0; font-size: 14px; color: #303133;">{{ note.content }}</p>
-                            <p style="margin: 6px 0 0; font-size: 12px; color: #909399;">{{ note.operator }}</p>
+                          <div style="padding: 8px 12px; background: #fafbfc; border-radius: 6px; border: 1px solid #f0f1f3;">
+                            <p style="margin: 0; font-size: 13px; color: #303133; line-height: 1.5;">{{ note.content }}</p>
+                            <p style="margin: 5px 0 0; font-size: 11px; color: #a8abb2;">{{ note.operator }}</p>
                           </div>
                         </el-timeline-item>
                       </el-timeline>
                     </div>
-                    <el-empty v-else description="暂无备注记录" :image-size="50" />
+                    <div v-else style="text-align: center; padding: 24px 0; color: #c0c4cc; font-size: 13px;">暂无备注记录</div>
                   </div>
                 </div>
               </el-tab-pane>
@@ -3901,47 +3891,44 @@ $sidebar-width: 200px;
 
 .r-admin--stat_card {
   display: flex;
-  align-items: center;
-  gap: 16px;
+  flex-direction: column;
+  justify-content: space-between;
   padding: 20px;
-  background: #f9f9f9;
-  border-radius: 12px;
+  background: #fff;
+  border-radius: 10px;
+  border: 1px solid #eef0f4;
+  border-left: 3px solid var(--accent, #409eff);
+  transition: box-shadow 0.2s, transform 0.2s;
   
-  .r-admin--stat_icon {
-    width: 48px;
-    height: 48px;
-    border-radius: 12px;
-    
-    &.r-admin--stat_icon_users { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
-    &.r-admin--stat_icon_works { background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); }
-    &.r-admin--stat_icon_comments { background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); }
-    &.r-admin--stat_icon_reports { background: linear-gradient(135deg, #fa709a 0%, #fee140 100%); }
-    &.r-admin--stat_icon_featured { background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%); }
-    &.r-admin--stat_icon_disabled { background: linear-gradient(135deg, #d299c2 0%, #fef9d7 100%); }
-    &.r-admin--stat_icon_week { background: linear-gradient(135deg, #89f7fe 0%, #66a6ff 100%); }
-    &.r-admin--stat_icon_ipban { background: linear-gradient(135deg, #fdcbf1 0%, #e6dee9 100%); }
+  &:hover {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
+    transform: translateY(-2px);
   }
   
   .r-admin--stat_info {
     display: flex;
     flex-direction: column;
     
-    .r-admin--stat_num { font-size: 28px; font-weight: 600; }
-    .r-admin--stat_label { font-size: 14px; color: #666; }
-    .r-admin--stat_sub { font-size: 12px; color: #999; }
+    .r-admin--stat_num { font-size: 26px; font-weight: 700; color: #1a1a2e; letter-spacing: -0.5px; }
+    .r-admin--stat_label { font-size: 13px; color: #8c8c9a; margin-top: 4px; }
   }
+  
+  .r-admin--stat_sub { font-size: 12px; color: var(--accent, #409eff); margin-top: 10px; font-weight: 500; }
 }
 
 .r-admin--chart_section {
-  margin-top: 24px;
+  margin-top: 28px;
+  background: #fff;
+  border-radius: 10px;
+  border: 1px solid #eef0f4;
+  padding: 20px;
   
-  h3 { font-size: 16px; margin: 0 0 16px; }
+  h3 { font-size: 15px; margin: 0 0 16px; color: #303133; font-weight: 600; }
   
   .r-admin--chart {
     width: 100%;
-    height: 300px;
-    background: #f9f9f9;
-    border-radius: 8px;
+    height: 280px;
+    border-radius: 6px;
   }
 }
 

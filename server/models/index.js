@@ -150,7 +150,17 @@ const Like = sequelize.define('Like', {
     post_id: { type: DataTypes.INTEGER },
     comment_id: { type: DataTypes.INTEGER },
     created_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW }
-}, { tableName: 'likes', timestamps: false });
+}, { 
+    tableName: 'likes', 
+    timestamps: false,
+    validate: {
+        hasTarget() {
+            if (!this.work_id && !this.post_id && !this.comment_id) {
+                throw new Error('点赞记录必须关联一个作品、帖子或评论');
+            }
+        }
+    }
+});
 
 const Favorite = sequelize.define('Favorite', {
     id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
@@ -158,7 +168,17 @@ const Favorite = sequelize.define('Favorite', {
     work_id: { type: DataTypes.INTEGER },
     post_id: { type: DataTypes.INTEGER },
     created_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW }
-}, { tableName: 'favorites', timestamps: false });
+}, { 
+    tableName: 'favorites', 
+    timestamps: false,
+    validate: {
+        hasTarget() {
+            if (!this.work_id && !this.post_id) {
+                throw new Error('收藏记录必须关联一个作品或帖子');
+            }
+        }
+    }
+});
 
 const Follow = sequelize.define('Follow', {
     id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
