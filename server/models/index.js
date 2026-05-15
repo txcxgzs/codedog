@@ -147,6 +147,7 @@ const Like = sequelize.define('Like', {
     id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
     user_id: { type: DataTypes.INTEGER, allowNull: false },
     work_id: { type: DataTypes.INTEGER },
+    post_id: { type: DataTypes.INTEGER },
     comment_id: { type: DataTypes.INTEGER },
     created_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW }
 }, { tableName: 'likes', timestamps: false });
@@ -154,7 +155,8 @@ const Like = sequelize.define('Like', {
 const Favorite = sequelize.define('Favorite', {
     id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
     user_id: { type: DataTypes.INTEGER, allowNull: false },
-    work_id: { type: DataTypes.INTEGER, allowNull: false },
+    work_id: { type: DataTypes.INTEGER },
+    post_id: { type: DataTypes.INTEGER },
     created_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW }
 }, { tableName: 'favorites', timestamps: false });
 
@@ -284,6 +286,8 @@ StudioWork.belongsTo(Work, { foreignKey: 'work_id', as: 'work' });
 StudioWork.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
 Report.belongsTo(User, { foreignKey: 'reporter_id', as: 'reporter' });
 Report.belongsTo(User, { foreignKey: 'handler_id', as: 'handler' });
+Report.belongsTo(Work, { foreignKey: 'target_id', as: 'work', constraints: false });
+Report.belongsTo(Comment, { foreignKey: 'target_id', as: 'comment', constraints: false });
 User.hasMany(Report, { foreignKey: 'reporter_id', as: 'reports' });
 User.hasMany(Report, { foreignKey: 'handler_id', as: 'handled_reports' });
 Favorite.belongsTo(User, { foreignKey: 'user_id', as: 'user' });

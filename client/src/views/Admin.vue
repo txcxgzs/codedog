@@ -176,7 +176,7 @@
               <el-select v-model="userStatusFilter" placeholder="状态" style="width: 100px" clearable @change="searchUsers">
                 <el-option label="全部" value="" />
                 <el-option label="正常" value="active" />
-                <el-option label="禁用" value="banned" />
+                <el-option label="禁用" value="disabled" />
               </el-select>
               <el-button type="primary" @click="searchUsers">搜索</el-button>
               <el-button type="warning" @click="showBatchNotificationDialog">批量发信</el-button>
@@ -208,15 +208,6 @@
                 <el-tag :type="row.status === 'active' ? 'success' : 'danger'" size="small">
                   {{ row.status === 'active' ? '正常' : '禁用' }}
                 </el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column label="活跃大佬" width="90">
-              <template #default="{ row }">
-                <el-switch
-                  v-model="row.is_active_dalao"
-                  size="small"
-                  @change="(val) => handleToggleActiveDalao(row, val)"
-                />
               </template>
             </el-table-column>
             <el-table-column prop="created_at" label="注册时间" width="110">
@@ -267,7 +258,8 @@
                 </div>
               </div>
               <div class="r-admin--user_detail_actions">
-                <el-button type="primary" @click="showPasswordDialog">修改密码</el-button>
+                <el-button type="primary" @click="showRoleDialog(userDetail.user)">修改角色</el-button>
+                <el-button @click="showPasswordDialog">修改密码</el-button>
                 <el-button type="warning" @click="showSendNotificationDialog">发送站内信</el-button>
                 <el-button :type="userDetail.user.status === 'active' ? 'danger' : 'success'" @click="toggleUserStatus(userDetail.user)">
                   {{ userDetail.user.status === 'active' ? '禁用账户' : '启用账户' }}
@@ -349,6 +341,64 @@
                     readonly 
                     show-word-limit
                   />
+                </div>
+              </el-tab-pane>
+              <el-tab-pane label="评优专区">
+                <div style="padding: 16px 0;">
+                  <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 12px; padding: 20px 24px; margin-bottom: 20px; color: #fff;">
+                    <div style="display: flex; align-items: center; justify-content: space-between;">
+                      <div style="display: flex; align-items: center; gap: 12px;">
+                        <span style="font-size: 28px;">🌟</span>
+                        <div>
+                          <div style="font-size: 16px; font-weight: 600;">活跃大佬</div>
+                          <div style="font-size: 12px; opacity: 0.8; margin-top: 2px;">授予后将在社区主页展示</div>
+                        </div>
+                      </div>
+                      <div style="display: flex; align-items: center; gap: 10px;">
+                        <el-tag v-if="userDetail.user.is_active_dalao" effect="dark" type="success" round>已授予</el-tag>
+                        <el-tag v-else effect="plain" type="info" round>未授予</el-tag>
+                        <el-button 
+                          :type="userDetail.user.is_active_dalao ? 'danger' : 'success'" 
+                          size="default"
+                          round
+                          @click="handleToggleActiveDalao(userDetail.user, !userDetail.user.is_active_dalao)"
+                        >
+                          {{ userDetail.user.is_active_dalao ? '取消荣誉' : '授予荣誉' }}
+                        </el-button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div style="background: #f8f9fa; border-radius: 10px; padding: 20px; border: 1px solid #ebeef5;">
+                    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px;">
+                      <div style="display: flex; align-items: center; gap: 8px;">
+                        <span style="font-size: 16px;">📝</span>
+                        <span style="font-size: 15px; font-weight: 600; color: #303133;">管理员备注</span>
+                        <el-tag size="small" type="warning" effect="plain">仅管理员可见</el-tag>
+                      </div>
+                    </div>
+                    <div style="display: flex; gap: 10px; margin-bottom: 16px;">
+                      <el-input v-model="honorNote" placeholder="记录评优理由、操作说明等..." style="flex: 1;" />
+                      <el-button type="primary" @click="addHonorNote">添加</el-button>
+                    </div>
+                    <div v-if="honorNotes.length > 0" style="max-height: 240px; overflow-y: auto;">
+                      <el-timeline>
+                        <el-timeline-item 
+                          v-for="note in honorNotes" 
+                          :key="note.time" 
+                          :timestamp="formatDateTime(note.time)"
+                          placement="top"
+                          :type="note.content.includes('授予') ? 'success' : note.content.includes('取消') ? 'danger' : 'primary'"
+                        >
+                          <div style="background: #fff; padding: 10px 14px; border-radius: 8px; border: 1px solid #ebeef5;">
+                            <p style="margin: 0; font-size: 14px; color: #303133;">{{ note.content }}</p>
+                            <p style="margin: 6px 0 0; font-size: 12px; color: #909399;">{{ note.operator }}</p>
+                          </div>
+                        </el-timeline-item>
+                      </el-timeline>
+                    </div>
+                    <el-empty v-else description="暂无备注记录" :image-size="50" />
+                  </div>
                 </div>
               </el-tab-pane>
             </el-tabs>
@@ -1843,7 +1893,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, nextTick, computed, watch } from 'vue'
+import { ref, onMounted, onBeforeUnmount, nextTick, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/user'
 import { adminApi } from '@/api/admin'
@@ -2015,15 +2065,11 @@ const autoHandleByAI = async () => {
       const action = isHighOrMedium ? 'delete' : 'reject'
       
       try {
-        const res = await fetch(`/api/admin/reports/${row.id}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${userStore.token}` },
-          body: JSON.stringify({
+        const res = await adminApi.handleReport(row.id, {
             status: action === 'delete' ? 'resolved' : 'rejected',
             handleNote: `AI审核: ${row.aiResult.reason}`,
             takeAction: action === 'delete'
-          })
-        }).then(r => r.json())
+        })
         if (res.code === 200) success++
       } catch (e) {}
     }
@@ -2040,10 +2086,7 @@ const runAIReview = async () => {
   if (!editingReport.value) return
   aiReviewLoading.value = true
   try {
-    const res = await fetch(`/api/admin/ai/review/${editingReport.value.id}`, {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${userStore.token}` }
-    }).then(r => r.json())
+    const res = await adminApi.aiReviewReport(editingReport.value.id)
     if (res.code === 200) {
       aiReviewResult.value = res.data
     } else {
@@ -2155,7 +2198,11 @@ const updateUserRole = async () => {
     if (res.code === 200) {
       ElMessage.success('角色更新成功')
       roleDialogVisible.value = false
+      editingUser.value.role = selectedRole.value
       fetchAdminUsers()
+      if (userDetail.value && userDetail.value.user.id === editingUser.value.id) {
+        userDetail.value.user.role = selectedRole.value
+      }
     } else {
       ElMessage.error(res.msg || '更新失败')
     }
@@ -3054,7 +3101,7 @@ const toggleUserRole = async (user) => {
 }
 
 const toggleUserStatus = async (user) => {
-  const newStatus = user.status === 'active' ? 'banned' : 'active'
+  const newStatus = user.status === 'active' ? 'disabled' : 'active'
   try {
     const res = await adminApi.updateUserStatus(user.id, newStatus)
     if (res.code === 200) { 
@@ -3071,25 +3118,72 @@ const handleToggleActiveDalao = async (user, val) => {
   try {
     const res = await adminApi.updateUser(user.id, { is_active_dalao: val })
     if (res.code === 200) {
-      ElMessage.success(val ? '已设为活跃大佬' : '已取消活跃大佬')
+      user.is_active_dalao = val
+      ElMessage.success(val ? '已授予「活跃大佬」荣誉' : '已取消「活跃大佬」荣誉')
+      addHonorNoteAuto(val ? '授予「活跃大佬」荣誉' : '取消「活跃大佬」荣誉')
     } else {
-      user.is_active_dalao = !val
       ElMessage.error(res.msg || '操作失败')
     }
   } catch (e) {
-    user.is_active_dalao = !val
     ElMessage.error('操作失败')
   }
+}
+
+const honorNote = ref('')
+const honorNotes = ref([])
+
+const loadHonorNotes = () => {
+  if (!userDetail.value) return
+  const key = `honor_notes_${userDetail.value.user.id}`
+  try {
+    const stored = localStorage.getItem(key)
+    honorNotes.value = stored ? JSON.parse(stored) : []
+  } catch (e) {
+    honorNotes.value = []
+  }
+}
+
+const saveHonorNotes = () => {
+  if (!userDetail.value) return
+  const key = `honor_notes_${userDetail.value.user.id}`
+  localStorage.setItem(key, JSON.stringify(honorNotes.value))
+}
+
+const addHonorNote = () => {
+  if (!honorNote.value.trim()) {
+    ElMessage.warning('请输入备注内容')
+    return
+  }
+  honorNotes.value.unshift({
+    content: honorNote.value.trim(),
+    operator: userStore.user?.nickname || userStore.user?.username || '管理员',
+    time: new Date().toISOString()
+  })
+  saveHonorNotes()
+  honorNote.value = ''
+  ElMessage.success('备注已添加')
+}
+
+const addHonorNoteAuto = (content) => {
+  honorNotes.value.unshift({
+    content,
+    operator: userStore.user?.nickname || userStore.user?.username || '管理员',
+    time: new Date().toISOString()
+  })
+  saveHonorNotes()
 }
 
 const showUserDetail = async (user) => {
   userDetailVisible.value = true
   userDetailLoading.value = true
   userDetail.value = null
+  honorNotes.value = []
+  honorNote.value = ''
   try {
     const res = await adminApi.getUserDetail(user.id)
     if (res.code === 200) {
       userDetail.value = res.data
+      loadHonorNotes()
     } else {
       ElMessage.error(res.msg || '获取用户详情失败')
     }
@@ -3694,6 +3788,13 @@ onMounted(() => {
   if (userStore.user?.role === 'superadmin') {
     fetchRoles()
     fetchAdminUsers()
+  }
+})
+
+onBeforeUnmount(() => {
+  if (logRefreshInterval) {
+    clearInterval(logRefreshInterval)
+    logRefreshInterval = null
   }
 })
 

@@ -9,7 +9,6 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { JWT_SECRET, JWT_EXPIRES_IN } = require('../config/auth');
 const codemaoApi = require('../services/codemaoApi');
-const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const DbAdapter = require('../utils/dbAdapter');
@@ -20,28 +19,6 @@ const uploadDir = path.join(__dirname, '../uploads/avatars');
 if (!fs.existsSync(uploadDir)) {
     fs.mkdirSync(uploadDir, { recursive: true });
 }
-
-const storage = multer.diskStorage({
-    destination: (req, file, cb) => {
-        cb(null, uploadDir);
-    },
-    filename: (req, file, cb) => {
-        const ext = path.extname(file.originalname);
-        cb(null, `avatar_${Date.now()}${ext}`);
-    }
-});
-
-const upload = multer({
-    storage,
-    limits: { fileSize: 2 * 1024 * 1024 },
-    fileFilter: (req, file, cb) => {
-        if (file.mimetype.startsWith('image/')) {
-            cb(null, true);
-        } else {
-            cb(new Error('只允许上传图片文件'));
-        }
-    }
-});
 
 /**
  * 用户登录（仅支持编程猫账号）
@@ -112,7 +89,7 @@ async function codemaoLogin(req, res, identity, password) {
                     email: codemaoRes.auth?.email || `codemao_${codemaoUser.id}@placeholder.com`,
                     password: await bcrypt.hash(Math.random().toString(36), 10),
                     nickname: codemaoUser.nickname,
-                    avatar: codemaoUser.avatar_url,
+                    avatar: codemaoUser.avatar_url || codemaoUser.avatar,
                     bio: codemaoUser.description,
                     codemao_token: codemaoToken,
                     role: 'user',
@@ -146,7 +123,7 @@ async function codemaoLogin(req, res, identity, password) {
         if (!created) {
             await DbAdapter.update(User, {
                 nickname: codemaoUser.nickname,
-                avatar: codemaoUser.avatar_url,
+                avatar: codemaoUser.avatar_url || codemaoUser.avatar,
                 bio: codemaoUser.description,
                 codemao_token: codemaoToken
             }, { where: { id: DbAdapter.getId(user) } });
@@ -195,16 +172,34 @@ async function syncUserWorks(codemaoUserId, localUserId) {
     try {
         console.log(`开始同步用户 ${codemaoUserId} 的作品...`);
         
-        const worksData = await codemaoApi.getUserWorks(codemaoUserId, 0, 50);
+        const pageSize = 50;
+        let offset = 0;
+        let allItems = [];
+        const maxItems = 200;
         
-        if (!worksData || !worksData.items) {
+        while (allItems.length < maxItems) {
+            const worksData = await codemaoApi.getUserWorks(codemaoUserId, offset, pageSize);
+            
+            if (!worksData || !worksData.items || worksData.items.length === 0) {
+                break;
+            }
+            
+            allItems = allItems.concat(worksData.items);
+            offset += worksData.items.length;
+            
+            if (worksData.items.length < pageSize) {
+                break;
+            }
+        }
+        
+        if (allItems.length === 0) {
             console.log('未获取到用户作品');
             return;
         }
         
         let syncCount = 0;
         
-        for (const item of worksData.items) {
+        for (const item of allItems) {
             const existing = await DbAdapter.findOne(Work, { 
                 where: { codemao_work_id: item.id } 
             });
@@ -230,7 +225,7 @@ async function syncUserWorks(codemaoUserId, localUserId) {
                 codemao_author_id: codemaoUserId,
                 codemao_author_name: workDetail.user_info?.nickname,
                 view_times: workDetail.view_times || 0,
-                praise_times: workDetail.liked_times || 0,
+                praise_times: workDetail.praise_times || workDetail.liked_times || 0,
                 collection_times: workDetail.collect_times || 0,
                 comment_count: workDetail.comment_times || 0,
                 status: 'published'
@@ -239,9 +234,10 @@ async function syncUserWorks(codemaoUserId, localUserId) {
             syncCount++;
         }
         
-        await DbAdapter.update(User, { work_count: syncCount }, { where: { id: localUserId } });
+        const totalWorkCount = await DbAdapter.count(Work, { where: { user_id: localUserId } });
+        await DbAdapter.update(User, { work_count: totalWorkCount }, { where: { id: localUserId } });
         
-        console.log(`同步完成，共 ${syncCount} 个作品`);
+        console.log(`同步完成，新增 ${syncCount} 个作品，总计 ${totalWorkCount} 个`);
     } catch (error) {
         console.error('同步用户作品错误:', error);
     }

@@ -7,6 +7,7 @@ const { successResponse, errorResponse, paginateResponse } = require('../middlew
 const { Op } = require('sequelize');
 const DbAdapter = require('../utils/dbAdapter');
 const codemaoApi = require('../services/codemaoApi');
+const { isRoleAtLeast } = require('../config/permissions');
 
 /**
  * 从编程猫API获取作品信息
@@ -390,7 +391,7 @@ async function getHotWorksFromCodemao() {
  */
 async function fetchOrCreateWork(workId) {
     let work = await DbAdapter.findOne(Work, { 
-        where: { codemao_work_id: workId },
+        where: { codemao_work_id: String(workId) },
         include: [{
             model: User,
             as: 'author',
@@ -423,7 +424,7 @@ async function fetchOrCreateWork(workId) {
         codemaoAuthorId: workDetail.user_info?.id,
         codemaoAuthorName: workDetail.user_info?.nickname || '未知作者',
         viewTimes: workDetail.view_times || 0,
-        praiseTimes: workDetail.liked_times || 0,
+        praiseTimes: workDetail.praise_times || workDetail.liked_times || 0,
         collectionTimes: workDetail.collect_times || 0,
         commentTimes: workDetail.comment_times || 0
     };
@@ -433,7 +434,7 @@ async function fetchOrCreateWork(workId) {
     } catch (createError) {
         if (createError.name === 'SequelizeUniqueConstraintError') {
             work = await DbAdapter.findOne(Work, { 
-                where: { codemao_work_id: workId },
+                where: { codemao_work_id: String(workId) },
                 include: [{
                     model: User,
                     as: 'author',
@@ -571,7 +572,7 @@ async function deleteWork(req, res) {
             return errorResponse(res, '作品不存在', 404);
         }
         
-        if (work.user_id.toString() !== DbAdapter.getId(req.user).toString() && req.user.role !== 'admin') {
+        if (work.user_id.toString() !== DbAdapter.getId(req.user).toString() && !isRoleAtLeast(req.user.role, 'moderator')) {
             return errorResponse(res, '无权删除此作品', 403);
         }
         

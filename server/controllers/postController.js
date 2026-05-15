@@ -6,6 +6,7 @@ const DbAdapter = require('../utils/dbAdapter');
 const { Post, User, Comment, sequelize } = require('../models');
 const { successResponse, errorResponse, paginateResponse } = require('../middleware/response');
 const { Op } = require('sequelize');
+const { isRoleAtLeast } = require('../config/permissions');
 
 /**
  * 发布帖子
@@ -198,7 +199,7 @@ async function deletePost(req, res) {
             return errorResponse(res, '帖子不存在', 404);
         }
         
-        if (post.user_id !== req.user.id && req.user.role !== 'admin') {
+        if (post.user_id !== req.user.id && !isRoleAtLeast(req.user.role, 'moderator')) {
             return errorResponse(res, '无权删除此帖子', 403);
         }
         
@@ -217,18 +218,40 @@ async function deletePost(req, res) {
 async function likePost(req, res) {
     try {
         const { id } = req.params;
+        const { Like } = require('../models');
+        const userId = req.user.id;
         
         const post = await DbAdapter.findByPk(Post, id);
         if (!post) {
             return errorResponse(res, '帖子不存在', 404);
         }
         
+        const existingLike = await DbAdapter.findOne(Like, {
+            where: { user_id: userId, post_id: DbAdapter.getId(post) }
+        });
+        
+        if (existingLike) {
+            await DbAdapter.destroy(Like, { where: { id: DbAdapter.getId(existingLike) } });
+            const newCount = Math.max(0, (post.like_count || 0) - 1);
+            await DbAdapter.update(Post, 
+                { like_count: newCount },
+                { where: { id: DbAdapter.getId(post) } }
+            );
+            return successResponse(res, { like_count: newCount, liked: false }, '已取消点赞');
+        }
+        
+        await DbAdapter.create(Like, {
+            user_id: userId,
+            post_id: DbAdapter.getId(post)
+        });
+        
+        const newCount = (post.like_count || 0) + 1;
         await DbAdapter.update(Post, 
-            { like_count: (post.like_count || 0) + 1 },
+            { like_count: newCount },
             { where: { id: DbAdapter.getId(post) } }
         );
         
-        return successResponse(res, { like_count: (post.like_count || 0) + 1 }, '点赞成功');
+        return successResponse(res, { like_count: newCount, liked: true }, '点赞成功');
     } catch (error) {
         console.error('点赞错误:', error);
         return errorResponse(res, '点赞失败', 500);
@@ -241,18 +264,34 @@ async function likePost(req, res) {
 async function favoritePost(req, res) {
     try {
         const { id } = req.params;
+        const { Favorite } = require('../models');
+        const userId = req.user.id;
         
         const post = await DbAdapter.findByPk(Post, id);
         if (!post) {
             return errorResponse(res, '帖子不存在', 404);
         }
         
+        const existing = await DbAdapter.findOne(Favorite, {
+            where: { user_id: userId, post_id: DbAdapter.getId(post) }
+        });
+        
+        if (existing) {
+            return errorResponse(res, '已收藏该帖子', 400);
+        }
+        
+        await DbAdapter.create(Favorite, {
+            user_id: userId,
+            post_id: DbAdapter.getId(post)
+        });
+        
+        const newCount = (post.collection_count || 0) + 1;
         await DbAdapter.update(Post, 
-            { collection_count: (post.collection_count || 0) + 1 },
+            { collection_count: newCount },
             { where: { id: DbAdapter.getId(post) } }
         );
         
-        return successResponse(res, { collection_count: (post.collection_count || 0) + 1 }, '收藏成功');
+        return successResponse(res, { collection_count: newCount, favorited: true }, '收藏成功');
     } catch (error) {
         console.error('收藏错误:', error);
         return errorResponse(res, '收藏失败', 500);
@@ -265,20 +304,31 @@ async function favoritePost(req, res) {
 async function unfavoritePost(req, res) {
     try {
         const { id } = req.params;
+        const { Favorite } = require('../models');
+        const userId = req.user.id;
         
         const post = await DbAdapter.findByPk(Post, id);
         if (!post) {
             return errorResponse(res, '帖子不存在', 404);
         }
         
-        if (post.collection_count > 0) {
-            await DbAdapter.update(Post, 
-                { collection_count: Math.max(0, (post.collection_count || 0) - 1) },
-                { where: { id: DbAdapter.getId(post) } }
-            );
+        const existing = await DbAdapter.findOne(Favorite, {
+            where: { user_id: userId, post_id: DbAdapter.getId(post) }
+        });
+        
+        if (!existing) {
+            return errorResponse(res, '未收藏该帖子', 400);
         }
         
-        return successResponse(res, { collection_count: Math.max(0, (post.collection_count || 1) - 1) }, '已取消收藏');
+        await DbAdapter.destroy(Favorite, { where: { id: DbAdapter.getId(existing) } });
+        
+        const newCount = Math.max(0, (post.collection_count || 0) - 1);
+        await DbAdapter.update(Post, 
+            { collection_count: newCount },
+            { where: { id: DbAdapter.getId(post) } }
+        );
+        
+        return successResponse(res, { collection_count: newCount, favorited: false }, '已取消收藏');
     } catch (error) {
         console.error('取消收藏错误:', error);
         return errorResponse(res, '取消收藏失败', 500);

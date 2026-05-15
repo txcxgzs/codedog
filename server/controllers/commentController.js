@@ -5,6 +5,7 @@ const DbAdapter = require('../utils/dbAdapter');
 
 const { Comment, User, Work, Post, Notification, sequelize } = require('../models');
 const { successResponse, errorResponse } = require('../middleware/response');
+const { isRoleAtLeast } = require('../config/permissions');
 
 /**
  * 发表评论
@@ -161,7 +162,7 @@ async function deleteComment(req, res) {
             return errorResponse(res, '评论不存在', 404);
         }
         
-        if (comment.user_id !== req.user.id && req.user.role !== 'admin') {
+        if (comment.user_id !== req.user.id && !isRoleAtLeast(req.user.role, 'moderator')) {
             return errorResponse(res, '无权删除此评论', 403);
         }
         

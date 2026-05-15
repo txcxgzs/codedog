@@ -42,8 +42,10 @@ async function followUser(req, res) {
             following_id: targetUser.id
         });
         
+        // 从数据库获取最新的用户数据来更新计数
+        const currentUser = await DbAdapter.findByPk(User, req.user.id);
         await DbAdapter.update(User, 
-            { following_count: (req.user.following_count || 0) + 1 },
+            { following_count: (currentUser.following_count || 0) + 1 },
             { where: { id: req.user.id } }
         );
         await DbAdapter.update(User, 
@@ -88,8 +90,10 @@ async function unfollowUser(req, res) {
         
         await DbAdapter.destroy(Follow, { where: { id: DbAdapter.getId(follow) } });
         
+        // 从数据库获取最新的用户数据来更新计数
+        const currentUser = await DbAdapter.findByPk(User, req.user.id);
         await DbAdapter.update(User, 
-            { following_count: Math.max(0, (req.user.following_count || 0) - 1) },
+            { following_count: Math.max(0, (currentUser.following_count || 0) - 1) },
             { where: { id: req.user.id } }
         );
         await DbAdapter.update(User, 

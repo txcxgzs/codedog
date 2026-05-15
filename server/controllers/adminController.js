@@ -430,8 +430,9 @@ async function updateUserRole(req, res) {
         }
         
         // 检查操作者是否有权限分配目标角色
-        const targetRoleInfo = getRole(role);
-        const operatorRoleInfo = getRole(operatorRole);
+        const { getRoleSync } = require('../config/permissions');
+        const targetRoleInfo = getRoleSync(role);
+        const operatorRoleInfo = getRoleSync(operatorRole);
         if (targetRoleInfo.level >= operatorRoleInfo.level) {
             return errorResponse(res, '您没有权限分配此角色', 403);
         }
@@ -449,7 +450,7 @@ async function updateUserRole(req, res) {
             user_id: targetUser.id,
             type: 'system',
             title: '角色变更通知',
-            content: `您的角色已从「${getRole(oldRole).name}」变更为「${getRole(role).name}」`
+            content: `您的角色已从「${getRoleSync(oldRole).name}」变更为「${getRoleSync(role).name}」`
         });
 
         return successResponse(res, { role }, '更新成功');
@@ -670,7 +671,7 @@ async function crawlWork(req, res) {
             codemao_author_id: workDetail.user_info.id,
             codemao_author_name: workDetail.user_info.nickname,
             view_times: workDetail.view_times || 0,
-            praise_times: workDetail.liked_times || 0,
+            praise_times: workDetail.praise_times || workDetail.liked_times || 0,
             collection_times: workDetail.collect_times || 0,
             comment_count: workDetail.comment_times || 0,
             status: 'published'
@@ -852,10 +853,10 @@ async function crawlHotWorks(req, res) {
 /**
  * 获取爬取日志
  */
-async function getCrawlLogs(req, res) {
+async function getCrawlLogsApi(req, res) {
     try {
         const { taskId } = req.query;
-        const logs = crawlLogs[taskId] || [];
+        const logs = crawlLogs.get(taskId) || [];
         return successResponse(res, { logs });
     } catch (error) {
         return errorResponse(res, '获取日志失败', 500);
@@ -913,9 +914,28 @@ async function crawlUserWorks(req, res) {
         
         console.log(`开始爬取用户 ${userId} 的作品...`);
         
-        const worksData = await codemaoApi.getUserWorks(userId, 0, Math.min(limit, 100));
+        const targetLimit = Math.min(limit, 500);
+        const pageSize = 50;
+        let offset = 0;
+        let allItems = [];
         
-        if (!worksData || !worksData.items || worksData.items.length === 0) {
+        while (allItems.length < targetLimit) {
+            const fetchSize = Math.min(pageSize, targetLimit - allItems.length);
+            const worksData = await codemaoApi.getUserWorks(userId, offset, fetchSize);
+            
+            if (!worksData || !worksData.items || worksData.items.length === 0) {
+                break;
+            }
+            
+            allItems = allItems.concat(worksData.items);
+            offset += worksData.items.length;
+            
+            if (worksData.items.length < fetchSize) {
+                break;
+            }
+        }
+        
+        if (allItems.length === 0) {
             return errorResponse(res, '该用户没有公开作品', 400);
         }
         
@@ -932,7 +952,7 @@ async function crawlUserWorks(req, res) {
                     email: `codemao_${userId}@placeholder.com`,
                     password: '$2a$10$placeholder',
                     nickname: userInfo?.nickname || userInfo?.username || `用户${userId}`,
-                    avatar: userInfo?.avatar_url,
+                    avatar: userInfo?.avatar_url || userInfo?.avatar,
                     bio: userInfo?.description,
                     role: 'user',
                     status: 'active'
@@ -945,7 +965,7 @@ async function crawlUserWorks(req, res) {
         
         const results = [];
         
-        for (const item of worksData.items) {
+        for (const item of allItems) {
             try {
                 const existing = await DbAdapter.findOne(Work, { where: { codemao_work_id: item.id } });
                 if (existing) continue;
@@ -975,7 +995,7 @@ async function crawlUserWorks(req, res) {
                     codemao_author_id: String(userId),
                     codemao_author_name: workDetail.user_info?.nickname,
                     view_times: workDetail.view_times || 0,
-                    praise_times: workDetail.liked_times || workDetail.praise_times || 0,
+                    praise_times: workDetail.praise_times || workDetail.liked_times || 0,
                     collection_times: workDetail.collect_times || 0,
                     comment_count: workDetail.comment_times || 0,
                     status: 'published'
@@ -988,7 +1008,8 @@ async function crawlUserWorks(req, res) {
             }
         }
         
-        await DbAdapter.update(User, { work_count: results.length }, { where: { id: DbAdapter.getId(user) } });
+        const totalWorkCount = await DbAdapter.count(Work, { where: { user_id: DbAdapter.getId(user) } });
+        await DbAdapter.update(User, { work_count: totalWorkCount }, { where: { id: DbAdapter.getId(user) } });
         
         return successResponse(res, { total: results.length }, `成功爬取 ${results.length} 个作品`);
     } catch (error) {
@@ -1557,7 +1578,7 @@ async function removeIpBan(req, res) {
             return errorResponse(res, '封禁记录不存在', 404);
         }
 
-        await DbAdapter.update(IpBan, { status: 'expired' }, { where: { id: DbAdapter.getId(ipBan) } });
+        await DbAdapter.destroy(IpBan, { where: { id: DbAdapter.getId(ipBan) } });
         logOperation(req, 'remove_ip_ban', 'ip_ban', ipBanId, { ip: ipBan.ip });
 
         return successResponse(res, null, '解除封禁成功');
@@ -1678,9 +1699,8 @@ async function createAnnouncement(req, res) {
         const announcement = await DbAdapter.create(Announcement, {
             title,
             content,
-            type: type || 'normal',
-            author_id: DbAdapter.getId(req.user),
-            status: 'active'
+            type: type || 'notice',
+            is_active: true
         });
         
         logOperation(req, 'create_announcement', 'announcement', DbAdapter.getId(announcement), { title });
@@ -1918,9 +1938,8 @@ async function addSensitiveWord(req, res) {
         const sensitiveWord = await DbAdapter.create(SensitiveWord, {
             word,
             category: category || 'other',
-            level: level || 'medium',
-            replacement,
-            created_by: DbAdapter.getId(req.user)
+            level: level || 1,
+            replacement
         });
         
         logOperation(req, 'add_sensitive_word', 'sensitive_word', DbAdapter.getId(sensitiveWord), { word });
@@ -1986,8 +2005,7 @@ async function batchImportSensitiveWords(req, res) {
                 await DbAdapter.create(SensitiveWord, {
                     word,
                     category: category || 'other',
-                    level: level || 'medium',
-                    created_by: DbAdapter.getId(req.user)
+                    level: level || 1
                 });
                 results.success++;
             } catch (e) {
@@ -2488,14 +2506,14 @@ async function getStudioDetail(req, res) {
             limit: 50
         });
         
+        logOperation(req, 'view_studio_detail', 'studio', id, { name: studio.name });
+        
         return successResponse(res, {
             studio,
             owner: studio.owner,
             members,
             works: studioWorks.map(sw => sw.work).filter(w => w)
         });
-        
-        logOperation(req, 'view_studio_detail', 'studio', id, { name: studio.name });
     } catch (error) {
         console.error('获取工作室详情错误:', error);
         return errorResponse(res, '获取工作室详情失败', 500);
@@ -2724,7 +2742,7 @@ module.exports = {
     crawlUserWorks,
     crawlPostWorks,
     crawlBanners,
-    getCrawlLogs,
+    getCrawlLogs: getCrawlLogsApi,
     getRealtimeLogs,
     clearRealtimeLogs,
     getBanners,
