@@ -9,6 +9,11 @@ const router = express.Router();
 const dbMigration = require('../services/dbMigration');
 const { successResponse, errorResponse } = require('../middleware/response');
 const { logOperation } = require('../middleware/operationLog');
+const { authMiddleware, adminMiddleware } = require('../middleware/auth');
+
+// Apply authentication and admin middleware
+router.use(authMiddleware);
+router.use(adminMiddleware);
 
 /**
  * 获取数据库统计信息
