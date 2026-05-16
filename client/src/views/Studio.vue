@@ -169,8 +169,12 @@ const handleCreate = async () => {
   const valid = await createFormRef.value.validate().catch(() => false)
   if (!valid) return
   
-  const geetestData = await geetestDialog.value?.show('create_studio')
-  if (!geetestData) return
+  let geetestData = {}
+  if (geetestDialog.value) {
+    const result = await geetestDialog.value.show('create_studio')
+    if (!result) return
+    geetestData = result
+  }
   
   createLoading.value = true
   try {
