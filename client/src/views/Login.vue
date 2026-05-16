@@ -136,7 +136,7 @@ const handleLogin = async () => {
     if (res && res.code === 200) {
       ElMessage.success('登录成功')
       const redirect = route.query.redirect || '/'
-      router.push(redirect)
+      router.push(redirect.startsWith('/') && !redirect.startsWith('//') ? redirect : '/')
     } else {
       ElMessage.error(res?.msg || '登录失败')
       if (geetestRef.value) geetestRef.value.reset()

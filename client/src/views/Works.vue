@@ -65,6 +65,7 @@
 <script setup>
 import { ref, onMounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
+import { View, Star } from '@element-plus/icons-vue'
 import { workApi } from '@/api/work'
 
 const route = useRoute()

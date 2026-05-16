@@ -157,6 +157,7 @@ const handlePublish = async () => {
     }
   } catch (error) {
     console.error('发布作品错误:', error)
+    ElMessage.error('发布失败，请重试')
   } finally {
     loading.value = false
   }

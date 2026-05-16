@@ -68,7 +68,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useNotificationStore } from '@/stores/notification'
 import { storeToRefs } from 'pinia'
@@ -82,15 +82,6 @@ const page = ref(1)
 const pageSize = ref(20)
 const total = ref(0)
 const activeType = ref('')
-
-const typeNames = {
-  like: '点赞了你的作品',
-  comment: '评论了你的作品',
-  reply: '回复了你的评论',
-  follow: '关注了你',
-  system: '系统通知',
-  report: '举报处理结果'
-}
 
 const formatTime = (time) => {
   if (!time) return ''

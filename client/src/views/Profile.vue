@@ -105,6 +105,7 @@
 import { ref, reactive, onMounted } from 'vue'
 import { useUserStore } from '@/stores/user'
 import { userApi } from '@/api/user'
+import { geetestApi } from '@/api/geetest'
 import { ElMessage } from 'element-plus'
 import GeetestDialog from '@/components/GeetestDialog.vue'
 
@@ -162,7 +163,7 @@ const passwordRules = {
 
 const fetchGeetestConfig = async () => {
   try {
-    const res = await fetch('/api/geetest/config').then(r => r.json())
+    const res = await geetestApi.getConfig()
     if (res.code === 200) {
       geetestConfig.value = res.data
     }

@@ -1210,24 +1210,26 @@ async function createBanner(req, res) {
 async function updateBanner(req, res) {
     try {
         const { bannerId } = req.params;
-        const { title, image_url, link_url, sort_order, status } = req.body;
+        const { title, image_url, link_url, sort, is_active } = req.body;
         
         const banner = await DbAdapter.findByPk(Banner, bannerId);
         if (!banner) {
             return errorResponse(res, '轮播图不存在', 404);
         }
         
-        await DbAdapter.update(Banner, {
-            title,
-            image_url,
-            link_url,
-            sort_order,
-            status
-        }, { where: { id: bannerId } });
+        const updateData = {};
+        if (title !== undefined) updateData.title = title;
+        if (image_url !== undefined) updateData.image_url = image_url;
+        if (link_url !== undefined) updateData.link_url = link_url;
+        if (sort !== undefined) updateData.sort = sort;
+        if (is_active !== undefined) updateData.is_active = is_active;
+        
+        await DbAdapter.update(Banner, updateData, { where: { id: bannerId } });
         
         logOperation(req, 'update_banner', 'banner', bannerId, { title, image_url, link_url });
         
-        return successResponse(res, banner, '更新成功');
+        const updatedBanner = await DbAdapter.findByPk(Banner, bannerId);
+        return successResponse(res, updatedBanner, '更新成功');
     } catch (error) {
         console.error('更新轮播图错误:', error);
         return errorResponse(res, '更新失败', 500);
@@ -1516,10 +1518,8 @@ async function getIpBans(req, res) {
     try {
         const page = parseInt(req.query.page) || 1;
         const pageSize = parseInt(req.query.pageSize) || 20;
-        const status = req.query.status || '';
 
         const where = {};
-        if (status) where.status = status;
 
         const { count, rows } = await DbAdapter.findAndCountAll(IpBan, {
             where,
@@ -1714,14 +1714,19 @@ async function createAnnouncement(req, res) {
 async function updateAnnouncement(req, res) {
     try {
         const { announcementId } = req.params;
-        const { title, content, type, status } = req.body;
+        const { title, content, type, is_active } = req.body;
         
         const announcement = await DbAdapter.findByPk(Announcement, announcementId);
         if (!announcement) {
             return errorResponse(res, '公告不存在', 404);
         }
         
-        const updateData = { title, content, type, status };
+        const updateData = {};
+        if (title !== undefined) updateData.title = title;
+        if (content !== undefined) updateData.content = content;
+        if (type !== undefined) updateData.type = type;
+        if (is_active !== undefined) updateData.is_active = is_active;
+        
         await DbAdapter.update(Announcement, updateData, { where: { id: announcementId } });
         logOperation(req, 'update_announcement', 'announcement', announcementId, { 
             title,
@@ -1730,11 +1735,12 @@ async function updateAnnouncement(req, res) {
                 title: announcement.title,
                 content: announcement.content,
                 type: announcement.type,
-                status: announcement.status
+                is_active: announcement.is_active
             }
         });
         
-        return successResponse(res, announcement, '更新成功');
+        const updatedAnnouncement = await DbAdapter.findByPk(Announcement, announcementId);
+        return successResponse(res, updatedAnnouncement, '更新成功');
     } catch (error) {
         console.error('更新公告错误:', error);
         return errorResponse(res, '更新失败', 500);
@@ -2136,8 +2142,8 @@ async function aiAutoHandleReports(req, res) {
             
             for (const sw of sensitiveWords) {
                 if (content.includes(sw.word)) {
-                    if (sw.level === 'high') { riskLevel = 'high'; break; }
-                    if (sw.level === 'medium') riskLevel = 'medium';
+                    if (sw.level >= 3) { riskLevel = 'high'; break; }
+                    if (sw.level >= 2) riskLevel = 'medium';
                 }
             }
             
@@ -2218,7 +2224,7 @@ async function updateRolePermissions(req, res) {
                 permissions: JSON.stringify(permissions || [])
             }, { where: { role } });
         } else {
-            rolePerm = await DbAdapter.create(RolePermission, {
+            await DbAdapter.create(RolePermission, {
                 role,
                 name: name || DEFAULT_ROLES[role].name,
                 level: level !== undefined ? level : DEFAULT_ROLES[role].level,
@@ -2229,12 +2235,15 @@ async function updateRolePermissions(req, res) {
         // 刷新缓存
         await refreshRoleCache(RolePermission);
         
+        // 重新查询获取最新数据
+        const updatedRolePerm = await DbAdapter.findOne(RolePermission, { where: { role } });
+        
         logOperation(req, 'update_role_permissions', 'role', null, { role, name, level, permissions });
         return successResponse(res, {
             role,
-            name: rolePerm.name,
-            level: rolePerm.level,
-            permissions: JSON.parse(rolePerm.permissions)
+            name: updatedRolePerm.name,
+            level: updatedRolePerm.level,
+            permissions: JSON.parse(updatedRolePerm.permissions)
         }, '权限更新成功');
     } catch (error) {
         console.error('更新角色权限错误:', error);
@@ -2367,7 +2376,8 @@ async function updateStudioStatus(req, res) {
         await DbAdapter.update(Studio, { status }, { where: { id } });
         logOperation(req, 'update_studio_status', 'studio', id, { status });
         
-        return successResponse(res, studio, '工作室状态已更新');
+        const updatedStudio = await DbAdapter.findByPk(Studio, id);
+        return successResponse(res, updatedStudio, '工作室状态已更新');
     } catch (error) {
         console.error('更新工作室状态错误:', error);
         return errorResponse(res, '更新失败', 500);
@@ -2395,7 +2405,8 @@ async function updateStudio(req, res) {
         
         logOperation(req, 'update_studio', 'studio', id, req.body);
         
-        return successResponse(res, studio, '工作室已更新');
+        const updatedStudio = await DbAdapter.findByPk(Studio, id);
+        return successResponse(res, updatedStudio, '工作室已更新');
     } catch (error) {
         console.error('更新工作室错误:', error);
         return errorResponse(res, '更新失败', 500);
@@ -2719,7 +2730,8 @@ async function updateStudioPoints(req, res) {
             note 
         });
         
-        return successResponse(res, studio, '积分已更新');
+        const updatedStudio = await DbAdapter.findByPk(Studio, id);
+        return successResponse(res, updatedStudio, '积分已更新');
     } catch (error) {
         console.error('更新工作室积分错误:', error);
         return errorResponse(res, '更新失败', 500);

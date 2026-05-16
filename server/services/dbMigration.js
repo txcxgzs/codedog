@@ -228,24 +228,26 @@ class DatabaseMigration {
         const data = {};
 
         const { connection } = await this.getConnection(sourceType, sourceConfig);
-        const sqlModels = this.getSqlModels(connection);
-        await connection.sync();
+        try {
+            const sqlModels = this.getSqlModels(connection);
+            await connection.sync();
 
-        data.users = await sqlModels.User.findAll({ raw: true });
-        data.works = await sqlModels.Work.findAll({ raw: true });
-        data.comments = await sqlModels.Comment.findAll({ raw: true });
-        data.notifications = await sqlModels.Notification.findAll({ raw: true });
-        data.systemConfigs = await sqlModels.SystemConfig.findAll({ raw: true });
-        data.banners = await sqlModels.Banner.findAll({ raw: true });
-        data.announcements = await sqlModels.Announcement.findAll({ raw: true });
-        data.ipBans = await sqlModels.IpBan.findAll({ raw: true });
-        data.reports = await sqlModels.Report.findAll({ raw: true });
-        data.studios = await sqlModels.Studio.findAll({ raw: true });
-        data.studioMembers = await sqlModels.StudioMember.findAll({ raw: true });
-        data.favorites = await sqlModels.Favorite.findAll({ raw: true });
-        data.follows = await sqlModels.Follow.findAll({ raw: true });
-
-        await connection.close();
+            data.users = await sqlModels.User.findAll({ raw: true });
+            data.works = await sqlModels.Work.findAll({ raw: true });
+            data.comments = await sqlModels.Comment.findAll({ raw: true });
+            data.notifications = await sqlModels.Notification.findAll({ raw: true });
+            data.systemConfigs = await sqlModels.SystemConfig.findAll({ raw: true });
+            data.banners = await sqlModels.Banner.findAll({ raw: true });
+            data.announcements = await sqlModels.Announcement.findAll({ raw: true });
+            data.ipBans = await sqlModels.IpBan.findAll({ raw: true });
+            data.reports = await sqlModels.Report.findAll({ raw: true });
+            data.studios = await sqlModels.Studio.findAll({ raw: true });
+            data.studioMembers = await sqlModels.StudioMember.findAll({ raw: true });
+            data.favorites = await sqlModels.Favorite.findAll({ raw: true });
+            data.follows = await sqlModels.Follow.findAll({ raw: true });
+        } finally {
+            await connection.close();
+        }
 
         console.log(`✅ 读取完成: 用户 ${data.users.length}, 作品 ${data.works.length}, 评论 ${data.comments.length}`);
         return data;
@@ -258,24 +260,26 @@ class DatabaseMigration {
         console.log(`📝 写入数据到 ${targetType}...`);
 
         const { connection } = await this.getConnection(targetType, targetConfig);
-        const sqlModels = this.getSqlModels(connection);
-        await connection.sync({ force: clearExisting });
+        try {
+            const sqlModels = this.getSqlModels(connection);
+            await connection.sync({ force: clearExisting });
 
-        if (data.users.length > 0) await sqlModels.User.bulkCreate(data.users, { ignoreDuplicates: true });
-        if (data.works.length > 0) await sqlModels.Work.bulkCreate(data.works, { ignoreDuplicates: true });
-        if (data.comments.length > 0) await sqlModels.Comment.bulkCreate(data.comments, { ignoreDuplicates: true });
-        if (data.notifications.length > 0) await sqlModels.Notification.bulkCreate(data.notifications, { ignoreDuplicates: true });
-        if (data.systemConfigs.length > 0) await sqlModels.SystemConfig.bulkCreate(data.systemConfigs, { ignoreDuplicates: true });
-        if (data.banners.length > 0) await sqlModels.Banner.bulkCreate(data.banners, { ignoreDuplicates: true });
-        if (data.announcements.length > 0) await sqlModels.Announcement.bulkCreate(data.announcements, { ignoreDuplicates: true });
-        if (data.ipBans.length > 0) await sqlModels.IpBan.bulkCreate(data.ipBans, { ignoreDuplicates: true });
-        if (data.reports.length > 0) await sqlModels.Report.bulkCreate(data.reports, { ignoreDuplicates: true });
-        if (data.studios.length > 0) await sqlModels.Studio.bulkCreate(data.studios, { ignoreDuplicates: true });
-        if (data.studioMembers.length > 0) await sqlModels.StudioMember.bulkCreate(data.studioMembers, { ignoreDuplicates: true });
-        if (data.favorites.length > 0) await sqlModels.Favorite.bulkCreate(data.favorites, { ignoreDuplicates: true });
-        if (data.follows.length > 0) await sqlModels.Follow.bulkCreate(data.follows, { ignoreDuplicates: true });
-
-        await connection.close();
+            if (data.users.length > 0) await sqlModels.User.bulkCreate(data.users, { ignoreDuplicates: true });
+            if (data.works.length > 0) await sqlModels.Work.bulkCreate(data.works, { ignoreDuplicates: true });
+            if (data.comments.length > 0) await sqlModels.Comment.bulkCreate(data.comments, { ignoreDuplicates: true });
+            if (data.notifications.length > 0) await sqlModels.Notification.bulkCreate(data.notifications, { ignoreDuplicates: true });
+            if (data.systemConfigs.length > 0) await sqlModels.SystemConfig.bulkCreate(data.systemConfigs, { ignoreDuplicates: true });
+            if (data.banners.length > 0) await sqlModels.Banner.bulkCreate(data.banners, { ignoreDuplicates: true });
+            if (data.announcements.length > 0) await sqlModels.Announcement.bulkCreate(data.announcements, { ignoreDuplicates: true });
+            if (data.ipBans.length > 0) await sqlModels.IpBan.bulkCreate(data.ipBans, { ignoreDuplicates: true });
+            if (data.reports.length > 0) await sqlModels.Report.bulkCreate(data.reports, { ignoreDuplicates: true });
+            if (data.studios.length > 0) await sqlModels.Studio.bulkCreate(data.studios, { ignoreDuplicates: true });
+            if (data.studioMembers.length > 0) await sqlModels.StudioMember.bulkCreate(data.studioMembers, { ignoreDuplicates: true });
+            if (data.favorites.length > 0) await sqlModels.Favorite.bulkCreate(data.favorites, { ignoreDuplicates: true });
+            if (data.follows.length > 0) await sqlModels.Follow.bulkCreate(data.follows, { ignoreDuplicates: true });
+        } finally {
+            await connection.close();
+        }
 
         console.log(`✅ 写入完成!`);
     }

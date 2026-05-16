@@ -117,8 +117,10 @@ router.get('/register', async (req, res) => {
 });
 
 router.post('/validate', async (req, res) => {
+    let scene = 'global';
     try {
-        const { challenge, validate, seccode, scene } = req.body;
+        const { challenge, validate, seccode, scene: reqScene } = req.body;
+        scene = reqScene || 'global';
         
         let geetestId = GEETEST_ID;
         let geetestKey = GEETEST_KEY;

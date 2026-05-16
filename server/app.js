@@ -58,8 +58,12 @@ app.use(express.urlencoded({ extended: true }));
 
 // Session配置
 const isProduction = process.env.NODE_ENV === 'production';
+const sessionSecret = process.env.SESSION_SECRET || require('crypto').randomBytes(32).toString('hex');
+if (!process.env.SESSION_SECRET) {
+    console.warn('⚠️ SESSION_SECRET 未设置，已自动生成随机密钥（重启后会失效）');
+}
 app.use(session({
-    secret: process.env.SESSION_SECRET || 'your-session-secret-at-least-32-chars',
+    secret: sessionSecret,
     resave: false,
     saveUninitialized: false,
     cookie: {

@@ -180,7 +180,15 @@ async function updatePost(req, res) {
             cover: cover || post.cover
         }, { where: { id } });
         
-        return successResponse(res, post, '帖子已更新');
+        const updatedPost = await DbAdapter.findByPk(Post, id, {
+            include: [{
+                model: User,
+                as: 'author',
+                attributes: ['id', 'username', 'nickname', 'avatar']
+            }]
+        });
+        
+        return successResponse(res, updatedPost, '帖子已更新');
     } catch (error) {
         console.error('更新帖子错误:', error);
         return errorResponse(res, '更新帖子失败', 500);

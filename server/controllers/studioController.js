@@ -772,7 +772,7 @@ async function setViceOwner(req, res) {
         });
         
         if (!member || member.role !== 'owner') {
-            return errorResponse(res, '只有室长可以设置副市长', 403);
+            return errorResponse(res, '只有室长可以设置副室长', 403);
         }
         
         const studio = await DbAdapter.findByPk(Studio, id);
@@ -791,9 +791,9 @@ async function setViceOwner(req, res) {
             await DbAdapter.update(Studio, { vice_owner_id: null }, { where: { id: DbAdapter.getId(studio) } });
         }
         
-        return successResponse(res, studio, '副市长已设置');
+        return successResponse(res, studio, '副室长已设置');
     } catch (error) {
-        console.error('设置副市长错误:', error);
+        console.error('设置副室长错误:', error);
         return errorResponse(res, '设置失败', 500);
     }
 }

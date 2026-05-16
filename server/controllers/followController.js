@@ -42,16 +42,10 @@ async function followUser(req, res) {
             following_id: targetUser.id
         });
         
-        // 从数据库获取最新的用户数据来更新计数
+        // 使用原子操作更新计数，避免竞态条件
         const currentUser = await DbAdapter.findByPk(User, req.user.id);
-        await DbAdapter.update(User, 
-            { following_count: (currentUser.following_count || 0) + 1 },
-            { where: { id: req.user.id } }
-        );
-        await DbAdapter.update(User, 
-            { follower_count: (targetUser.follower_count || 0) + 1 },
-            { where: { id: targetUser.id } }
-        );
+        await DbAdapter.increment(currentUser, 'following_count');
+        await DbAdapter.increment(targetUser, 'follower_count');
         
         await DbAdapter.create(Notification, {
             user_id: targetUser.id,
@@ -90,16 +84,10 @@ async function unfollowUser(req, res) {
         
         await DbAdapter.destroy(Follow, { where: { id: DbAdapter.getId(follow) } });
         
-        // 从数据库获取最新的用户数据来更新计数
+        // 使用原子操作更新计数，避免竞态条件
         const currentUser = await DbAdapter.findByPk(User, req.user.id);
-        await DbAdapter.update(User, 
-            { following_count: Math.max(0, (currentUser.following_count || 0) - 1) },
-            { where: { id: req.user.id } }
-        );
-        await DbAdapter.update(User, 
-            { follower_count: Math.max(0, (targetUser.follower_count || 0) - 1) },
-            { where: { id: targetUser.id } }
-        );
+        await DbAdapter.decrement(currentUser, 'following_count');
+        await DbAdapter.decrement(targetUser, 'follower_count');
         
         return successResponse(res, null, '已取消关注');
     } catch (error) {

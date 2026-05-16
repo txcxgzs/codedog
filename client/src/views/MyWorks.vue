@@ -49,11 +49,9 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
-import { useUserStore } from '@/stores/user'
 import { workApi } from '@/api/work'
 import { ElMessage, ElMessageBox } from 'element-plus'
 
-const userStore = useUserStore()
 const loading = ref(false)
 const works = ref([])
 const currentPage = ref(1)

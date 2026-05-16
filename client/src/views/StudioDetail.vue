@@ -384,7 +384,7 @@ const fetchWorks = async () => {
       works.value = res.data.list
       worksTotal.value = res.data.total
     }
-  } catch (e) {}
+  } catch (e) { ElMessage.error('加载作品失败') }
 }
 
 const canManageWork = (studioWork) => {
@@ -419,7 +419,8 @@ const handleJoin = async () => {
     ElMessage.warning('该工作室仅限邀请加入')
     return
   }
-  const geetestData = await geetestDialog.value.show('join_studio')
+  const geetestData = await geetestDialog.value?.show('join_studio')
+  if (!geetestData) return
   try {
     const res = await studioApi.joinStudio(route.params.id, geetestData)
     if (res.code === 200) {
@@ -443,7 +444,7 @@ const handleLeave = async () => {
     } else {
       ElMessage.error(res.msg || '操作失败')
     }
-  } catch (e) {}
+  } catch (e) { if (e !== 'cancel') ElMessage.error('操作失败') }
 }
 
 const showEditDialog = () => {
@@ -480,7 +481,7 @@ const showManageDialog = async () => {
     ])
     if (membersRes.code === 200) pendingMembers.value = membersRes.data
     if (worksRes.code === 200) pendingWorks.value = worksRes.data
-  } catch (e) {}
+  } catch (e) { ElMessage.error('加载管理数据失败') }
 }
 
 const showViceOwnerDialog = () => {
@@ -516,7 +517,7 @@ const handleDissolve = async () => {
     } else {
       ElMessage.error(res.msg || '解散失败')
     }
-  } catch (e) {}
+  } catch (e) { if (e !== 'cancel') ElMessage.error('操作失败') }
 }
 
 const handleCommand = (command) => {
@@ -531,7 +532,8 @@ const handleCommand = (command) => {
 }
 
 const handleReviewMember = async (memberId, action) => {
-  const geetestData = await geetestDialog.value.show('review_member')
+  const geetestData = await geetestDialog.value?.show('review_member')
+  if (!geetestData) return
   try {
     const res = await studioApi.reviewMember(route.params.id, memberId, action, geetestData)
     if (res.code === 200) {
@@ -585,7 +587,7 @@ const handleKickMember = async (memberId) => {
     } else {
       ElMessage.error(res.msg || '操作失败')
     }
-  } catch (e) {}
+  } catch (e) { if (e !== 'cancel') ElMessage.error('操作失败') }
 }
 
 const showSubmitWorkDialog = async () => {
@@ -596,12 +598,13 @@ const showSubmitWorkDialog = async () => {
     if (res.code === 200) {
       myWorks.value = res.data.list || res.data || []
     }
-  } catch (e) {}
+  } catch (e) { ElMessage.error('加载作品列表失败') }
   myWorksLoading.value = false
 }
 
 const handleSubmitWork = async (workId) => {
-  const geetestData = await geetestDialog.value.show('submit_work')
+  const geetestData = await geetestDialog.value?.show('submit_work')
+  if (!geetestData) return
   try {
     const res = await studioApi.submitWork(route.params.id, workId, geetestData)
     if (res.code === 200) {

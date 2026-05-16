@@ -15,7 +15,7 @@
       </el-table-column>
       <el-table-column label="分类" width="120">
         <template #default="{ row }">
-          <el-select v-model="row.category" size="small" @change="updateCategory(row)">
+          <el-select v-model="row.category" size="small" @focus="row._oldCategory = row.category" @change="updateCategory(row)">
             <el-option label="讨论" value="discussion" />
             <el-option label="问答" value="question" />
             <el-option label="分享" value="share" />
@@ -73,20 +73,23 @@ const fetchPosts = async () => {
   try {
     const res = await adminApi.getPosts({ page: currentPage.value, pageSize: pageSize.value, keyword: searchKeyword.value })
     if (res.code === 200) { posts.value = res.data.list; total.value = res.data.total }
-  } catch (e) {} finally { loading.value = false }
+  } catch (e) { ElMessage.error('获取帖子列表失败') } finally { loading.value = false }
 }
 
 const handleSearch = () => { currentPage.value = 1; fetchPosts() }
 
 const updateCategory = async (post) => {
+  const oldCategory = post._oldCategory
   try {
     const res = await adminApi.updatePost(post.id, { category: post.category })
     if (res.code === 200) {
       ElMessage.success('分类已更新')
     } else {
+      post.category = oldCategory
       ElMessage.error(res.msg || '操作失败')
     }
   } catch (e) {
+    post.category = oldCategory
     ElMessage.error('操作失败')
   }
 }

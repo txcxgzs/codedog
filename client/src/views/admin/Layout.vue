@@ -30,6 +30,16 @@
           <span>作品管理</span>
         </el-menu-item>
         
+        <el-menu-item index="/admin/posts">
+          <el-icon><ChatDotRound /></el-icon>
+          <span>帖子管理</span>
+        </el-menu-item>
+        
+        <el-menu-item index="/admin/studios">
+          <el-icon><OfficeBuilding /></el-icon>
+          <span>工作室管理</span>
+        </el-menu-item>
+        
         <el-menu-item index="/admin/banners">
           <el-icon><Picture /></el-icon>
           <span>轮播图管理</span>
@@ -87,7 +97,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/user'
 import { ElMessage } from 'element-plus'
 import { 
-  DataAnalysis, User, Document, Picture, Bell, Back, ArrowDown 
+  DataAnalysis, User, Document, Picture, Bell, Back, ArrowDown, ChatDotRound, OfficeBuilding 
 } from '@element-plus/icons-vue'
 
 const route = useRoute()
@@ -103,6 +113,8 @@ const pageTitle = computed(() => {
     '/admin': '数据概览',
     '/admin/users': '用户管理',
     '/admin/works': '作品管理',
+    '/admin/posts': '帖子管理',
+    '/admin/studios': '工作室管理',
     '/admin/banners': '轮播图管理',
     '/admin/announcements': '公告管理'
   }

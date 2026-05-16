@@ -87,57 +87,68 @@
       <main class="r-admin--main">
         <!-- 数据大屏 -->
         <div v-if="activeMenu === 'dashboard'" class="r-admin--section">
-          <h2 class="r-admin--title">数据大屏</h2>
+          <div class="r-admin--dashboard_header">
+            <h2 class="r-admin--title" style="margin: 0;">数据大屏</h2>
+            <span style="font-size: 12px; color: #a08c5a;">实时数据概览</span>
+          </div>
           <div class="r-admin--stats" v-loading="loadingStats">
-            <div class="r-admin--stat_card" style="--accent: #3b82f6;">
+            <div class="r-admin--stat_card r-admin--stat_card_primary">
+              <div class="r-admin--stat_icon_wrap">👥</div>
               <div class="r-admin--stat_info">
                 <span class="r-admin--stat_num">{{ stats.userCount }}</span>
                 <span class="r-admin--stat_label">总用户数</span>
               </div>
-              <span class="r-admin--stat_sub" v-if="stats.todayUsers">今日 +{{ stats.todayUsers }}</span>
+              <span class="r-admin--stat_sub" v-if="stats.todayUsers">+{{ stats.todayUsers }} 今日</span>
             </div>
-            <div class="r-admin--stat_card" style="--accent: #8b5cf6;">
+            <div class="r-admin--stat_card">
+              <div class="r-admin--stat_icon_wrap">🎨</div>
               <div class="r-admin--stat_info">
                 <span class="r-admin--stat_num">{{ stats.workCount }}</span>
                 <span class="r-admin--stat_label">总作品数</span>
               </div>
-              <span class="r-admin--stat_sub" v-if="stats.todayWorks">今日 +{{ stats.todayWorks }}</span>
+              <span class="r-admin--stat_sub" v-if="stats.todayWorks">+{{ stats.todayWorks }} 今日</span>
             </div>
-            <div class="r-admin--stat_card" style="--accent: #06b6d4;">
+            <div class="r-admin--stat_card">
+              <div class="r-admin--stat_icon_wrap">💬</div>
               <div class="r-admin--stat_info">
                 <span class="r-admin--stat_num">{{ stats.commentCount }}</span>
                 <span class="r-admin--stat_label">总评论数</span>
               </div>
-              <span class="r-admin--stat_sub" v-if="stats.todayComments">今日 +{{ stats.todayComments }}</span>
+              <span class="r-admin--stat_sub" v-if="stats.todayComments">+{{ stats.todayComments }} 今日</span>
             </div>
-            <div class="r-admin--stat_card" style="--accent: #ef4444;">
+            <div class="r-admin--stat_card r-admin--stat_card_alert">
+              <div class="r-admin--stat_icon_wrap">⚠️</div>
               <div class="r-admin--stat_info">
                 <span class="r-admin--stat_num">{{ stats.pendingReports }}</span>
                 <span class="r-admin--stat_label">待处理举报</span>
               </div>
             </div>
-            <div class="r-admin--stat_card" style="--accent: #f59e0b;">
+            <div class="r-admin--stat_card">
+              <div class="r-admin--stat_icon_wrap">⭐</div>
               <div class="r-admin--stat_info">
                 <span class="r-admin--stat_num">{{ stats.featuredWorks }}</span>
                 <span class="r-admin--stat_label">精选作品</span>
               </div>
             </div>
-            <div class="r-admin--stat_card" style="--accent: #64748b;">
+            <div class="r-admin--stat_card">
+              <div class="r-admin--stat_icon_wrap">🚫</div>
               <div class="r-admin--stat_info">
                 <span class="r-admin--stat_num">{{ stats.disabledUsers }}</span>
                 <span class="r-admin--stat_label">禁用用户</span>
               </div>
             </div>
-            <div class="r-admin--stat_card" style="--accent: #10b981;">
+            <div class="r-admin--stat_card">
+              <div class="r-admin--stat_icon_wrap">📈</div>
               <div class="r-admin--stat_info">
                 <span class="r-admin--stat_num">{{ stats.newUsersWeek }}</span>
-                <span class="r-admin--stat_label">本周新增用户</span>
+                <span class="r-admin--stat_label">本周新增</span>
               </div>
             </div>
-            <div class="r-admin--stat_card" style="--accent: #ec4899;">
+            <div class="r-admin--stat_card">
+              <div class="r-admin--stat_icon_wrap">🔒</div>
               <div class="r-admin--stat_info">
                 <span class="r-admin--stat_num">{{ stats.activeIpBans }}</span>
-                <span class="r-admin--stat_label">封禁IP数</span>
+                <span class="r-admin--stat_label">封禁IP</span>
               </div>
             </div>
           </div>
@@ -3889,45 +3900,111 @@ $sidebar-width: 200px;
   }
 }
 
+.r-admin--dashboard_header {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
 .r-admin--stat_card {
   display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  padding: 20px;
+  align-items: center;
+  gap: 14px;
+  padding: 18px 20px;
   background: #fff;
   border-radius: 10px;
-  border: 1px solid #eef0f4;
-  border-left: 3px solid var(--accent, #409eff);
-  transition: box-shadow 0.2s, transform 0.2s;
+  border: 1px solid #f0ebe0;
+  position: relative;
+  overflow: hidden;
+  transition: transform 0.2s, box-shadow 0.2s;
+  
+  &::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 3px;
+    height: 100%;
+    background: linear-gradient(180deg, #c9a84c, #e8c86a);
+    border-radius: 3px 0 0 3px;
+  }
   
   &:hover {
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
     transform: translateY(-2px);
+    box-shadow: 0 4px 16px rgba(180, 140, 50, 0.1);
+  }
+  
+  &.r-admin--stat_card_primary {
+    background: linear-gradient(to right, #fffdf7, #fff9ed);
+    border-color: #e6dcc8;
+  }
+  
+  &.r-admin--stat_card_alert .r-admin--stat_num {
+    color: #dc2626;
+  }
+  
+  .r-admin--stat_icon_wrap {
+    width: 38px;
+    height: 38px;
+    border-radius: 8px;
+    background: #faf6ee;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 17px;
+    flex-shrink: 0;
+    border: 1px solid #f0ebe0;
   }
   
   .r-admin--stat_info {
     display: flex;
     flex-direction: column;
+    flex: 1;
     
-    .r-admin--stat_num { font-size: 26px; font-weight: 700; color: #1a1a2e; letter-spacing: -0.5px; }
-    .r-admin--stat_label { font-size: 13px; color: #8c8c9a; margin-top: 4px; }
+    .r-admin--stat_num { 
+      font-size: 24px; 
+      font-weight: 700; 
+      color: #1a1a2e;
+      letter-spacing: -0.5px;
+      font-variant-numeric: tabular-nums;
+    }
+    .r-admin--stat_label { 
+      font-size: 12px; 
+      color: #8c8c9a; 
+      margin-top: 2px;
+    }
   }
   
-  .r-admin--stat_sub { font-size: 12px; color: var(--accent, #409eff); margin-top: 10px; font-weight: 500; }
+  .r-admin--stat_sub { 
+    font-size: 11px; 
+    color: #a08c5a; 
+    font-weight: 500;
+    background: #faf6ee;
+    padding: 2px 8px;
+    border-radius: 4px;
+    border: 1px solid #f0ebe0;
+    white-space: nowrap;
+  }
 }
 
 .r-admin--chart_section {
-  margin-top: 28px;
+  margin-top: 24px;
   background: #fff;
   border-radius: 10px;
-  border: 1px solid #eef0f4;
+  border: 1px solid #f0ebe0;
   padding: 20px;
   
-  h3 { font-size: 15px; margin: 0 0 16px; color: #303133; font-weight: 600; }
+  h3 { 
+    font-size: 14px; 
+    margin: 0 0 16px; 
+    color: #303133; 
+    font-weight: 600;
+  }
   
   .r-admin--chart {
     width: 100%;
-    height: 280px;
+    height: 260px;
     border-radius: 6px;
   }
 }

@@ -55,8 +55,10 @@ router.post('/show', async (req, res) => {
 });
 
 router.post('/verify', async (req, res) => {
+    let scene = 'global';
     try {
-        const { token, scene } = req.body;
+        const { token, scene: reqScene } = req.body;
+        scene = reqScene || 'global';
         
         if (!token) {
             await recordStats('hcaptcha', scene || 'global', 'fail', req);

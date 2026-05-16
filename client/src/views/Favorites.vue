@@ -157,7 +157,7 @@ const removeFavorite = async (work) => {
   try {
     await ElMessageBox.confirm('确定要取消收藏该作品吗？', '提示', { type: 'warning' })
     
-    if (geetestEnabled.value('remove_favorite')) {
+    if (geetestEnabled('remove_favorite')) {
       pendingRemoveWork.value = work
       geetestDialog.value?.show('remove_favorite')
     } else {
@@ -174,7 +174,7 @@ const batchRemove = async () => {
   try {
     await ElMessageBox.confirm(`确定要取消收藏选中的 ${selectedWorks.value.length} 个作品吗？`, '提示', { type: 'warning' })
     
-    if (geetestEnabled.value('remove_favorite')) {
+    if (geetestEnabled('remove_favorite')) {
       pendingBatchRemove.value = true
       geetestDialog.value?.show('remove_favorite')
     } else {

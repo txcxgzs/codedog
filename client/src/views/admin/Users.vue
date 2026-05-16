@@ -116,11 +116,7 @@
 import { ref, onMounted } from 'vue'
 import { adminApi } from '@/api/admin'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { useRouter } from 'vue-router'
-import { useUserStore } from '@/stores/user'
 
-const router = useRouter()
-const userStore = useUserStore()
 const loading = ref(false)
 const users = ref([])
 const currentPage = ref(1)

@@ -58,7 +58,7 @@ async function codemaoLogin(req, res, identity, password) {
     try {
         const codemaoRes = await codemaoApi.login(identity, password);
         
-        console.log('编程猫登录响应:', JSON.stringify(codemaoRes, null, 2));
+        console.log('编程猫登录响应: 用户', codemaoRes?.user_info?.nickname || '未知');
         
         if (!codemaoRes) {
             return errorResponse(res, '编程猫服务暂时不可用，请稍后重试', 502);

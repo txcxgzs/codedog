@@ -343,7 +343,7 @@ const fetchStudios = async () => {
   try {
     const res = await adminApi.getStudios({ page: currentPage.value, pageSize: pageSize.value, keyword: searchKeyword.value })
     if (res.code === 200) { studios.value = res.data.list; total.value = res.data.total }
-  } catch (e) {} finally { loading.value = false }
+  } catch (e) { ElMessage.error('获取工作室列表失败') } finally { loading.value = false }
 }
 
 const handleSearch = () => { currentPage.value = 1; fetchStudios() }
@@ -452,7 +452,7 @@ const deleteStudio = async (studio) => {
       detailDialogVisible.value = false
       fetchStudios()
     }
-  } catch (e) {}
+  } catch (e) { if (e !== 'cancel') ElMessage.error('删除失败') }
 }
 
 const showEditDialog = (studio) => {
