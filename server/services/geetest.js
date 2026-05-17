@@ -15,9 +15,9 @@ class GeetestLib {
         });
     }
 
-    register() {
+    register(data = {}) {
         return new Promise((resolve) => {
-            this.geetest.register(null, (err, data) => {
+            this.geetest.register(data, (err, data) => {
                 if (err) {
                     console.error('[极验] 注册失败:', err);
                     resolve({
