@@ -59,8 +59,8 @@ class GeetestService {
 
             // 检查配置是否完整
             if (!config.geetestId || !config.geetestKey) {
-                console.log('[极验] 配置不完整，跳过验证');
-                return { success: true };
+                console.error('[极验] 配置不完整，拒绝验证请求');
+                return { success: false, reason: '验证码服务配置不完整，请联系管理员' };
             }
 
             // 记录验证码统计
