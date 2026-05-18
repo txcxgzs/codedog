@@ -328,9 +328,10 @@ async function getUserById(req, res) {
             // 如果不是数字，可能是编程猫的特殊ID（虽然通常是数字）
             where.codemao_user_id = codemaoId;
         } else {
-            // 如果是数字，尝试匹配本地ID或编程猫ID
+            // 如果是数字，尝试匹配本地ID（需转换为整数）或编程猫ID
+            const numericId = parseInt(codemaoId, 10);
             where[Op.or] = [
-                { id: codemaoId },
+                { id: numericId },
                 { codemao_user_id: codemaoId }
             ];
         }

@@ -21,7 +21,7 @@ const MAX_LOG_ENTRIES = 500;
 const realtimeLogs = [];
 const MAX_REALTIME_LOGS = 1000;
 
-// 重写console.log和console.error以捕获日志
+let consolePatched = false;
 const originalConsoleLog = console.log;
 const originalConsoleError = console.error;
 const originalConsoleWarn = console.warn;
@@ -49,20 +49,42 @@ function addRealtimeLog(level, ...args) {
     }
 }
 
-console.log = function(...args) {
-    addRealtimeLog('info', ...args);
-    originalConsoleLog.apply(console, args);
-};
+function patchConsole() {
+    if (consolePatched) return;
+    
+    console.log = function(...args) {
+        addRealtimeLog('info', ...args);
+        originalConsoleLog.apply(console, args);
+    };
 
-console.error = function(...args) {
-    addRealtimeLog('error', ...args);
-    originalConsoleError.apply(console, args);
-};
+    console.error = function(...args) {
+        addRealtimeLog('error', ...args);
+        originalConsoleError.apply(console, args);
+    };
 
-console.warn = function(...args) {
-    addRealtimeLog('warn', ...args);
-    originalConsoleWarn.apply(console, args);
-};
+    console.warn = function(...args) {
+        addRealtimeLog('warn', ...args);
+        originalConsoleWarn.apply(console, args);
+    };
+    
+    consolePatched = true;
+}
+
+function restoreConsole() {
+    if (!consolePatched) return;
+    
+    console.log = originalConsoleLog;
+    console.error = originalConsoleError;
+    console.warn = originalConsoleWarn;
+    
+    consolePatched = false;
+}
+
+patchConsole();
+
+process.on('exit', () => {
+    restoreConsole();
+});
 
 function addCrawlLog(taskId, message, type = 'info') {
     if (!crawlLogs.has(taskId)) {

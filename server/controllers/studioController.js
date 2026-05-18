@@ -7,8 +7,25 @@ async function createStudio(req, res) {
     try {
         const { name, description, cover, is_public, join_type } = req.body;
         
-        if (!name) {
+        if (!name || !name.trim()) {
             return errorResponse(res, '请输入工作室名称', 400);
+        }
+        
+        if (name.length > 100) {
+            return errorResponse(res, '工作室名称不能超过100个字符', 400);
+        }
+        
+        if (description && description.length > 2000) {
+            return errorResponse(res, '工作室简介不能超过2000个字符', 400);
+        }
+        
+        if (cover && cover.length > 500) {
+            return errorResponse(res, '封面图片URL不能超过500个字符', 400);
+        }
+        
+        const validJoinTypes = ['free', 'apply', 'invite'];
+        if (join_type && !validJoinTypes.includes(join_type)) {
+            return errorResponse(res, '无效的加入方式', 400);
         }
         
         const existingOwner = await DbAdapter.findOne(Studio, { where: { owner_id: req.user.id, status: { [Op.ne]: 'banned' } } });
@@ -16,28 +33,32 @@ async function createStudio(req, res) {
             return errorResponse(res, '您已创建过工作室，每人只能创建一个', 400);
         }
         
-        const existing = await DbAdapter.findOne(Studio, { where: { name } });
+        const existing = await DbAdapter.findOne(Studio, { where: { name: name.trim() } });
         if (existing) {
             return errorResponse(res, '工作室名称已存在', 400);
         }
         
-        const studio = await DbAdapter.create(Studio, {
-            name,
-            description,
-            cover,
-            owner_id: req.user.id,
-            is_public: is_public !== false,
-            join_type: join_type || 'apply'
+        const result = await sequelize.transaction(async (t) => {
+            const studio = await DbAdapter.create(Studio, {
+                name: name.trim(),
+                description: description?.trim(),
+                cover,
+                owner_id: req.user.id,
+                is_public: is_public !== false,
+                join_type: join_type || 'apply'
+            }, { transaction: t });
+            
+            await DbAdapter.create(StudioMember, {
+                studio_id: studio.id,
+                user_id: req.user.id,
+                role: 'owner',
+                status: 'active'
+            }, { transaction: t });
+            
+            return studio;
         });
         
-        await DbAdapter.create(StudioMember, {
-            studio_id: studio.id,
-            user_id: req.user.id,
-            role: 'owner',
-            status: 'active'
-        });
-        
-        return successResponse(res, studio, '工作室创建成功');
+        return successResponse(res, result, '工作室创建成功');
     } catch (error) {
         console.error('创建工作室错误:', error);
         return errorResponse(res, '创建工作室失败', 500);
@@ -378,9 +399,11 @@ async function deleteStudio(req, res) {
             return errorResponse(res, '只有创建者可以解散工作室', 403);
         }
         
-        await DbAdapter.destroy(StudioMember, { where: { studio_id: id } });
-        await DbAdapter.destroy(StudioWork, { where: { studio_id: id } });
-        await DbAdapter.destroy(Studio, { where: { id: DbAdapter.getId(studio) } });
+        await sequelize.transaction(async (t) => {
+            await DbAdapter.destroy(StudioMember, { where: { studio_id: id }, transaction: t });
+            await DbAdapter.destroy(StudioWork, { where: { studio_id: id }, transaction: t });
+            await DbAdapter.destroy(Studio, { where: { id: DbAdapter.getId(studio) }, transaction: t });
+        });
         
         return successResponse(res, null, '工作室已解散');
     } catch (error) {
@@ -810,9 +833,11 @@ async function dissolveStudio(req, res) {
             return errorResponse(res, '只有室长可以解散工作室', 403);
         }
         
-        await DbAdapter.destroy(StudioMember, { where: { studio_id: id } });
-        await DbAdapter.destroy(StudioWork, { where: { studio_id: id } });
-        await DbAdapter.destroy(Studio, { where: { id } });
+        await sequelize.transaction(async (t) => {
+            await DbAdapter.destroy(StudioMember, { where: { studio_id: id }, transaction: t });
+            await DbAdapter.destroy(StudioWork, { where: { studio_id: id }, transaction: t });
+            await DbAdapter.destroy(Studio, { where: { id }, transaction: t });
+        });
         
         return successResponse(res, null, '工作室已解散');
     } catch (error) {
