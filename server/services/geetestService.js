@@ -51,23 +51,25 @@ class GeetestService {
         try {
             const config = await this.getConfig();
 
-            // 如果未启用验证码，直接返回成功
-            if (!config.enabled) {
-                console.log('[极验] 未启用，跳过验证');
-                return { success: true };
-            }
-
-            // 检查配置是否完整
-            if (!config.geetestId || !config.geetestKey) {
-                console.log('[极验] 配置不完整，跳过验证');
-                return { success: true };
-            }
-
             // 记录验证码统计
             await this.recordStats(scene, 'verify', req);
 
+            // 检查配置是否完整且已启用
+            if (!config.enabled) {
+                console.log('[极验] 未启用，验证失败');
+                await this.recordStats(scene, 'fail', req);
+                return { success: false, reason: '验证码未启用' };
+            }
+
+            if (!config.geetestId || !config.geetestKey) {
+                console.log('[极验] 配置不完整，验证失败');
+                await this.recordStats(scene, 'fail', req);
+                return { success: false, reason: '验证码配置不完整' };
+            }
+
             // 检查是否提供了验证参数
             if (!challenge || !validate || !seccode) {
+                await this.recordStats(scene, 'fail', req);
                 return { success: false, reason: '请完成验证码验证' };
             }
 

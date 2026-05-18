@@ -31,16 +31,28 @@ async function login(req, res) {
             return errorResponse(res, '请输入用户名和密码', 400);
         }
         
-        const result = await GeetestService.verify(
-            'login', 
-            geetest_challenge, 
-            geetest_validate, 
-            geetest_seccode, 
-            req
-        );
+        // 检查极验配置，仅在启用时才验证
+        const config = await GeetestService.getConfig();
         
-        if (!result.success) {
-            return errorResponse(res, result.reason || '请完成验证码验证', 400, 'CAPTCHA_FAILED');
+        if (config.enabled && config.geetestId && config.geetestKey) {
+            // 启用了验证，必须检查验证码
+            if (!geetest_challenge || !geetest_validate || !geetest_seccode) {
+                return errorResponse(res, '请完成验证码验证', 400, 'CAPTCHA_FAILED');
+            }
+            
+            const result = await GeetestService.verify(
+                'login', 
+                geetest_challenge, 
+                geetest_validate, 
+                geetest_seccode, 
+                req
+            );
+            
+            if (!result.success) {
+                return errorResponse(res, result.reason || '请完成验证码验证', 400, 'CAPTCHA_FAILED');
+            }
+        } else {
+            console.log('[极验] 登录场景验证未启用，直接放行');
         }
         
         return await codemaoLogin(req, res, username, password);
@@ -270,16 +282,28 @@ async function updateProfile(req, res) {
     try {
         const { nickname, bio, doing, geetest_challenge, geetest_validate, geetest_seccode } = req.body;
         
-        const result = await GeetestService.verify(
-            'update_profile', 
-            geetest_challenge, 
-            geetest_validate, 
-            geetest_seccode, 
-            req
-        );
+        // 检查极验配置，仅在启用时才验证
+        const config = await GeetestService.getConfig();
         
-        if (!result.success) {
-            return errorResponse(res, '请完成验证码验证', 400);
+        if (config.enabled && config.geetestId && config.geetestKey) {
+            // 启用了验证，必须检查验证码
+            if (!geetest_challenge || !geetest_validate || !geetest_seccode) {
+                return errorResponse(res, '请完成验证码验证', 400);
+            }
+            
+            const result = await GeetestService.verify(
+                'update_profile', 
+                geetest_challenge, 
+                geetest_validate, 
+                geetest_seccode, 
+                req
+            );
+            
+            if (!result.success) {
+                return errorResponse(res, '请完成验证码验证', 400);
+            }
+        } else {
+            console.log('[极验] 更新资料场景验证未启用，直接放行');
         }
         
         const user = await DbAdapter.findByPk(User, DbAdapter.getId(req.user));
