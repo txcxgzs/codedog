@@ -12,8 +12,8 @@ async function recordStats(type, scene, action, req) {
             type,
             scene,
             action,
-            ip: req.ip || req.connection?.remoteAddress,
-            user_agent: req.headers['user-agent']?.substring(0, 500)
+            ip: req?.ip || req?.connection?.remoteAddress || 'unknown',
+            user_agent: req?.headers?.['user-agent']?.substring(0, 500) || 'unknown'
         });
     } catch (e) {
         console.error('记录验证码统计失败:', e);
