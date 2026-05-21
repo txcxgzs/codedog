@@ -107,7 +107,7 @@ router.get('/register', async (req, res) => {
         }
         
         const geetest = new GeetestLib(geetestId, geetestKey);
-        const result = await geetest.register('md5');
+        const result = await geetest.register();
         
         return successResponse(res, result);
     } catch (error) {
@@ -119,8 +119,19 @@ router.get('/register', async (req, res) => {
 router.post('/validate', async (req, res) => {
     let scene = 'global';
     try {
-        const { challenge, validate, seccode, scene: reqScene } = req.body;
+        const { 
+            challenge, 
+            validate, 
+            seccode, 
+            geetest_challenge, 
+            geetest_validate, 
+            geetest_seccode,
+            scene: reqScene 
+        } = req.body;
         scene = reqScene || 'global';
+        const finalChallenge = challenge || geetest_challenge;
+        const finalValidate = validate || geetest_validate;
+        const finalSeccode = seccode || geetest_seccode;
         
         let geetestId = GEETEST_ID;
         let geetestKey = GEETEST_KEY;
@@ -140,7 +151,7 @@ router.post('/validate', async (req, res) => {
         }
         
         const geetest = new GeetestLib(geetestId, geetestKey);
-        const result = await geetest.validate(challenge, validate, seccode);
+        const result = await geetest.validate(finalChallenge, finalValidate, finalSeccode);
         
         if (result.result === 'success') {
             await recordStats('geetest', scene || 'global', 'pass', req);
