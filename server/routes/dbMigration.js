@@ -5,10 +5,31 @@
  */
 
 const express = require('express');
+const path = require('path');
 const router = express.Router();
 const dbMigration = require('../services/dbMigration');
 const { successResponse, errorResponse } = require('../middleware/response');
 const { logOperation } = require('../middleware/operationLog');
+const { authMiddleware, adminMiddleware } = require('../middleware/auth');
+const { requireRole } = require('../middleware/permission');
+
+// All database migration routes require admin authentication
+router.use(authMiddleware);
+router.use(adminMiddleware);
+router.use(requireRole('admin'));
+
+// Validate SQLite path to prevent path traversal
+function validateSqlitePath(filePath) {
+    if (!filePath) return null;
+    // Resolve path and ensure it's within the project directory
+    const resolvedPath = path.resolve(filePath);
+    const projectRoot = path.resolve(__dirname, '..');
+    // Check if resolved path is within project root or is a relative path without traversal
+    if (!resolvedPath.startsWith(projectRoot) && filePath.includes('..')) {
+        throw new Error('Invalid SQLite path - path traversal not allowed');
+    }
+    return resolvedPath;
+}
 
 /**
  * 获取数据库统计信息
@@ -31,7 +52,7 @@ router.get('/stats', async (req, res) => {
             dbConfig.user = config.user || process.env.DB_USER;
             dbConfig.password = config.password || process.env.DB_PASSWORD;
         } else if (dbType === 'sqlite') {
-            dbConfig.path = config.path || './database.sqlite';
+            dbConfig.path = validateSqlitePath(config.path) || './database.sqlite';
         } else {
             return errorResponse(res, '不支持的数据库类型，仅支持 sqlite 和 mysql', 400);
         }
@@ -88,7 +109,7 @@ router.post('/migrate', async (req, res) => {
             srcConfig.user = sourceConfig?.user || process.env.DB_USER;
             srcConfig.password = sourceConfig?.password || process.env.DB_PASSWORD;
         } else if (sourceType === 'sqlite') {
-            srcConfig.path = sourceConfig?.path || './database.sqlite';
+            srcConfig.path = validateSqlitePath(sourceConfig?.path) || './database.sqlite';
         }
 
         let tgtConfig = {};
@@ -99,7 +120,7 @@ router.post('/migrate', async (req, res) => {
             tgtConfig.user = targetConfig?.user || process.env.DB_USER;
             tgtConfig.password = targetConfig?.password || process.env.DB_PASSWORD;
         } else if (targetType === 'sqlite') {
-            tgtConfig.path = targetConfig?.path || './database.sqlite';
+            tgtConfig.path = validateSqlitePath(targetConfig?.path) || './database.sqlite';
         }
 
         console.log(`\n🔄 收到数据库迁移请求: ${sourceType} -> ${targetType}`);
@@ -183,7 +204,7 @@ router.post('/test-connection', async (req, res) => {
             await sequelize.close();
         } else if (dbType === 'sqlite') {
             const { Sequelize } = require('sequelize');
-            testConfig.path = config?.path || './database.sqlite';
+            testConfig.path = validateSqlitePath(config?.path) || './database.sqlite';
             const sequelize = new Sequelize({
                 dialect: 'sqlite',
                 storage: testConfig.path,

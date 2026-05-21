@@ -19,6 +19,19 @@ class DatabaseMigration {
     }
 
     /**
+     * Validate SQLite path to prevent path traversal
+     */
+    validateSqlitePath(filePath) {
+        if (!filePath) return null;
+        const resolvedPath = path.resolve(filePath);
+        const projectRoot = path.resolve(__dirname, '..');
+        if (!resolvedPath.startsWith(projectRoot) && filePath.includes('..')) {
+            throw new Error('Invalid SQLite path - path traversal not allowed');
+        }
+        return resolvedPath;
+    }
+
+    /**
      * 获取数据库连接
      */
     async getConnection(dbType, config = {}) {
@@ -37,7 +50,7 @@ class DatabaseMigration {
             await sequelize.authenticate();
             return { type: 'mysql', connection: sequelize };
         } else {
-            const dbPath = config.path || path.join(__dirname, '../migration_temp.sqlite');
+            const dbPath = this.validateSqlitePath(config.path) || path.join(__dirname, '../migration_temp.sqlite');
             const sequelize = new Sequelize({
                 dialect: 'sqlite',
                 storage: dbPath,
