@@ -6,9 +6,16 @@
 
 const express = require('express');
 const router = express.Router();
+const { authMiddleware, adminMiddleware } = require('../middleware/auth');
+const { requireRole } = require('../middleware/permission');
 const dbMigration = require('../services/dbMigration');
 const { successResponse, errorResponse } = require('../middleware/response');
 const { logOperation } = require('../middleware/operationLog');
+
+// Apply authentication, admin check, and superadmin role requirement
+router.use(authMiddleware);
+router.use(adminMiddleware);
+router.use(requireRole('superadmin'));
 
 /**
  * 获取数据库统计信息
