@@ -6,6 +6,7 @@
     :close-on-click-modal="false"
     destroy-on-close
     @open="onOpen"
+    @close="handleCancel"
   >
     <div v-if="loading" class="geetest-dialog--loading">
       <el-icon class="is-loading"><Loading /></el-icon>
@@ -18,7 +19,7 @@
     </div>
     <div ref="captchaBox" class="geetest-dialog--box"></div>
     <template #footer>
-      <el-button @click="visible = false">取消</el-button>
+      <el-button @click="handleCancel">取消</el-button>
     </template>
   </el-dialog>
 </template>
@@ -158,6 +159,14 @@ const show = async (sceneName) => {
     
     visible.value = true
   })
+}
+
+const handleCancel = () => {
+  if (resolvePromise.value) {
+    resolvePromise.value({})
+    resolvePromise.value = null
+  }
+  visible.value = false
 }
 
 defineExpose({
