@@ -107,7 +107,7 @@ router.get('/register', async (req, res) => {
         }
         
         const geetest = new GeetestLib(geetestId, geetestKey);
-        const result = await geetest.register('md5');
+        const result = await geetest.register();
         
         return successResponse(res, result);
     } catch (error) {
