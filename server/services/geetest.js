@@ -15,7 +15,7 @@ class GeetestLib {
         });
     }
 
-    register() {
+    register(digest) {
         return new Promise((resolve) => {
             this.geetest.register(null, (err, data) => {
                 if (err) {
