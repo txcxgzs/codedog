@@ -610,11 +610,11 @@ const submitComment = async () => {
   
   // 检查是否需要验证码
   if (geetestConfig.value?.enabled && geetestConfig.value?.scenes?.comment) {
-    geetestData = await geetestDialogRef.value.show('comment')
+    geetestData = await geetestDialogRef.value?.show('comment') || {}
     if (!geetestData) return
   }
   
-  submitting.value = true
+  commentSubmitting.value = true
   try {
     const res = await commentApi.createComment({
       content: commentContent.value,
@@ -827,7 +827,7 @@ const submitReport = async () => {
   
   // 检查是否需要验证码
   if (geetestConfig.value?.enabled && geetestConfig.value?.scenes?.report) {
-    geetestData = await geetestDialogRef.value.show('report')
+    geetestData = await geetestDialogRef.value?.show('report') || {}
     if (!geetestData) return
   }
   
@@ -862,7 +862,7 @@ const reportComment = async (comment) => {
   let geetestData = {}
   
   if (geetestConfig.value?.enabled && geetestConfig.value?.scenes?.report) {
-    geetestData = await geetestDialogRef.value.show('report')
+    geetestData = await geetestDialogRef.value?.show('report') || {}
     if (!geetestData) return
   }
   
