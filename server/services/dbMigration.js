@@ -136,10 +136,9 @@ class DatabaseMigration {
             title: { type: DataTypes.STRING, allowNull: false },
             image_url: { type: DataTypes.STRING, allowNull: false },
             link_url: DataTypes.STRING,
-            sort_order: { type: DataTypes.INTEGER, defaultValue: 0 },
-            status: { type: DataTypes.STRING, defaultValue: 'active' },
-            created_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW },
-            updated_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW }
+            sort: { type: DataTypes.INTEGER, defaultValue: 0 },
+            is_active: { type: DataTypes.BOOLEAN, defaultValue: true },
+            created_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW }
         }, { tableName: 'banners', timestamps: false });
 
         const Announcement = sequelize.define('Announcement', {
