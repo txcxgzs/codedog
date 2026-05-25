@@ -5,6 +5,8 @@
 
 require('dotenv').config();
 const { Sequelize } = require('sequelize');
+const fs = require('fs');
+const path = require('path');
 
 const dbType = process.env.DB_TYPE || 'sqlite';
 let sequelize = null;
@@ -56,9 +58,15 @@ if (dbType === 'mysql') {
     connectWithRetry();
 } else {
     console.log('📦 使用SQLite数据库');
+    const dbPath = process.env.DB_PATH || './data/database.sqlite';
+    const dbDir = path.dirname(dbPath);
+    if (!fs.existsSync(dbDir)) {
+        fs.mkdirSync(dbDir, { recursive: true });
+        console.log(`📁 创建数据库目录: ${dbDir}`);
+    }
     sequelize = new Sequelize({
         dialect: 'sqlite',
-        storage: process.env.DB_PATH || './data/database.sqlite',
+        storage: dbPath,
         logging: false,
         define: {
             timestamps: true,
