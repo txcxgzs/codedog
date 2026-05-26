@@ -256,8 +256,10 @@ const likePost = async () => {
   let geetestData = {}
   
   if (geetestConfig.value?.enabled && geetestConfig.value?.scenes?.like) {
-    geetestData = await geetestDialogRef.value.show('like')
-    if (!geetestData) return
+    if (geetestDialogRef.value) {
+      geetestData = await geetestDialogRef.value.show('like')
+      if (!geetestData) return
+    }
   }
   
   try {
@@ -324,8 +326,10 @@ const likeComment = async (comment) => {
   let geetestData = {}
   
   if (geetestConfig.value?.enabled && geetestConfig.value?.scenes?.like) {
-    geetestData = await geetestDialogRef.value.show('like')
-    if (!geetestData) return
+    if (geetestDialogRef.value) {
+      geetestData = await geetestDialogRef.value.show('like')
+      if (!geetestData) return
+    }
   }
   
   try {
@@ -367,8 +371,10 @@ const reportComment = async (comment) => {
   
   let geetestData = {}
   if (geetestConfig.value?.enabled && geetestConfig.value?.scenes?.report) {
-    geetestData = await geetestDialogRef.value.show('report')
-    if (!geetestData) return
+    if (geetestDialogRef.value) {
+      geetestData = await geetestDialogRef.value.show('report')
+      if (!geetestData) return
+    }
   }
   
   ElMessageBox.prompt('请输入举报原因', '举报评论', {
@@ -409,8 +415,10 @@ const handleMoreAction = async (command) => {
     
     let geetestData = {}
     if (geetestConfig.value?.enabled && geetestConfig.value?.scenes?.report) {
-      geetestData = await geetestDialogRef.value.show('report')
-      if (!geetestData) return
+      if (geetestDialogRef.value) {
+        geetestData = await geetestDialogRef.value.show('report')
+        if (!geetestData) return
+      }
     }
     
     ElMessageBox.prompt('请输入举报原因', '举报帖子', {

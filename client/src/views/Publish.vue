@@ -142,8 +142,10 @@ const handlePublish = async () => {
   let geetestData = {}
   
   if (geetestConfig.value?.enabled && geetestConfig.value?.scenes?.publish_work) {
-    geetestData = await geetestDialogRef.value.show('publish_work')
-    if (!geetestData) return
+    if (geetestDialogRef.value) {
+      geetestData = await geetestDialogRef.value.show('publish_work')
+      if (!geetestData) return
+    }
   }
   
   loading.value = true
