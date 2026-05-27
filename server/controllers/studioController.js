@@ -427,7 +427,7 @@ async function submitWork(req, res) {
             if (existing.status === 'pending') {
                 return errorResponse(res, '该作品正在审核中', 400);
             }
-            await existing.update({ status: 'pending' });
+            await DbAdapter.update(StudioWork, { status: 'pending' }, { where: { id: DbAdapter.getId(existing) } });
             return successResponse(res, existing, '作品已重新提交');
         }
         

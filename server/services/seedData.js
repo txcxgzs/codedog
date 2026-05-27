@@ -83,8 +83,8 @@ async function fetchBanners() {
                     title: item.title,
                     image_url: item.background_url,
                     link_url: item.target_url,
-                    sort_order: parseInt(item.id) || 0,
-                    status: 'active'
+                    sort: parseInt(item.id) || 0,
+                    is_active: true
                 });
                 console.log(`✅ 轮播图: ${item.title}`);
             }
