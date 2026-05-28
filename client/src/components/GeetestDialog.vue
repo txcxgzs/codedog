@@ -18,7 +18,7 @@
     </div>
     <div ref="captchaBox" class="geetest-dialog--box"></div>
     <template #footer>
-      <el-button @click="visible = false">取消</el-button>
+      <el-button @click="onCancel">取消</el-button>
     </template>
   </el-dialog>
 </template>
@@ -35,6 +35,18 @@ const error = ref('')
 const captchaObj = ref(null)
 const resolvePromise = ref(null)
 const currentScene = ref('')
+const timeoutId = ref(null)
+const TIMEOUT_MS = 60000
+
+const clearResolve = () => {
+  if (resolvePromise.value) {
+    resolvePromise.value = null
+  }
+  if (timeoutId.value) {
+    clearTimeout(timeoutId.value)
+    timeoutId.value = null
+  }
+}
 
 const onOpen = () => {
   initCaptcha()
@@ -49,7 +61,7 @@ const initCaptcha = async () => {
     if (configRes.code !== 200 || !configRes.data.enabled) {
       if (resolvePromise.value) {
         resolvePromise.value({})
-        resolvePromise.value = null
+        clearResolve()
       }
       visible.value = false
       return
@@ -58,7 +70,7 @@ const initCaptcha = async () => {
     if (!configRes.data.scenes[currentScene.value]) {
       if (resolvePromise.value) {
         resolvePromise.value({})
-        resolvePromise.value = null
+        clearResolve()
       }
       visible.value = false
       return
@@ -116,7 +128,7 @@ const loadCaptcha = (gt, challenge, offline, newCaptcha, product) => {
           geetest_validate: result.geetest_validate,
           geetest_seccode: result.geetest_seccode
         })
-        resolvePromise.value = null
+        clearResolve()
       }
       visible.value = false
     })
@@ -124,6 +136,17 @@ const loadCaptcha = (gt, challenge, offline, newCaptcha, product) => {
     captcha.onError(() => {
       error.value = '验证码加载出错'
       loading.value = false
+      if (resolvePromise.value) {
+        resolvePromise.value({})
+        clearResolve()
+      }
+    })
+    
+    captcha.onClose(() => {
+      if (resolvePromise.value) {
+        resolvePromise.value({})
+        clearResolve()
+      }
     })
     
     if (product !== 'bind') {
@@ -133,35 +156,55 @@ const loadCaptcha = (gt, challenge, offline, newCaptcha, product) => {
 }
 
 const show = async (sceneName) => {
-  return new Promise(async (resolve) => {
+  return new Promise((resolve) => {
+    clearResolve()
     currentScene.value = sceneName
     resolvePromise.value = resolve
     
-    try {
-      const configRes = await geetestApi.getConfig()
-      if (configRes.code !== 200 || !configRes.data.enabled) {
+    timeoutId.value = setTimeout(() => {
+      if (resolvePromise.value) {
         resolve({})
-        resolvePromise.value = null
-        return
+        clearResolve()
+        visible.value = false
       }
-      
-      if (!configRes.data.scenes[sceneName]) {
-        resolve({})
-        resolvePromise.value = null
-        return
-      }
-      
-      await geetestApi.recordShow(sceneName)
-    } catch (e) {
-      console.error('检查验证码配置失败:', e)
-    }
+    }, TIMEOUT_MS)
     
-    visible.value = true
+    ;(async () => {
+      try {
+        const configRes = await geetestApi.getConfig()
+        if (configRes.code !== 200 || !configRes.data.enabled) {
+          resolve({})
+          clearResolve()
+          return
+        }
+        
+        if (!configRes.data.scenes[sceneName]) {
+          resolve({})
+          clearResolve()
+          return
+        }
+        
+        await geetestApi.recordShow(sceneName)
+      } catch (e) {
+        console.error('检查验证码配置失败:', e)
+      }
+      
+      visible.value = true
+    })()
   })
 }
 
+const onCancel = () => {
+  if (resolvePromise.value) {
+    resolvePromise.value({})
+    clearResolve()
+  }
+  visible.value = false
+}
+
 defineExpose({
-  show
+  show,
+  onCancel
 })
 </script>
 
