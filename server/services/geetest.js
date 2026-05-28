@@ -15,9 +15,9 @@ class GeetestLib {
         });
     }
 
-    register() {
+    register(md5) {
         return new Promise((resolve) => {
-            this.geetest.register(null, (err, data) => {
+            this.geetest.register(md5 || null, (err, data) => {
                 if (err) {
                     console.error('[极验] 注册失败:', err);
                     resolve({
@@ -48,13 +48,8 @@ class GeetestLib {
 
             console.log('[极验] 调用SDK验证...', { challenge, validate, seccode });
             
-            // 正确的调用方式: validate(fallback, result, callback)
-            // fallback: false 表示正常模式，true表示宕机模式
-            this.geetest.validate(false, {
-                geetest_challenge: challenge,
-                geetest_validate: validate,
-                geetest_seccode: seccode
-            }, (err, success) => {
+            // gt3-sdk 正确调用方式: validate(challenge, validate, seccode, callback)
+            this.geetest.validate(challenge, validate, seccode, (err, success) => {
                 console.log('[极验] SDK回调:', { err, success });
                 
                 if (err) {

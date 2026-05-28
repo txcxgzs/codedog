@@ -6,7 +6,6 @@
 const { GeetestLib } = require('./geetest');
 const { SystemConfig, CaptchaStats } = require('../models');
 const DbAdapter = require('../utils/dbAdapter');
-const { Op } = require('sequelize');
 
 // 从环境变量获取默认配置
 const GEETEST_ID = process.env.GEETEST_ID || '';
