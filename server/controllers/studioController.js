@@ -203,10 +203,7 @@ async function joinStudio(req, res) {
             });
             return successResponse(res, member, '申请已提交，请等待审核');
         } else {
-            await DbAdapter.update(Studio, 
-                { member_count: (studio.member_count || 0) + 1 },
-                { where: { id: DbAdapter.getId(studio) } }
-            );
+            await DbAdapter.increment(studio, 'member_count');
             return successResponse(res, member, '加入成功');
         }
     } catch (error) {
@@ -235,10 +232,7 @@ async function leaveStudio(req, res) {
         
         const studio = await DbAdapter.findByPk(Studio, id);
         if (studio) {
-            await DbAdapter.update(Studio, 
-                { member_count: Math.max(0, (studio.member_count || 0) - 1) },
-                { where: { id: DbAdapter.getId(studio) } }
-            );
+            await DbAdapter.decrement(studio, 'member_count');
         }
         
         return successResponse(res, null, '已退出工作室');
@@ -341,17 +335,14 @@ async function reviewMember(req, res) {
             await DbAdapter.update(StudioMember, { status: 'active' }, { where: { id: DbAdapter.getId(member) } });
             const studio = await DbAdapter.findByPk(Studio, id);
             if (studio) {
-                await DbAdapter.update(Studio, 
-                    { member_count: (studio.member_count || 0) + 1 },
-                    { where: { id: DbAdapter.getId(studio) } }
-                );
+                await DbAdapter.increment(studio, 'member_count');
             }
             
             await DbAdapter.create(Notification, {
                 user_id: member.user_id,
                 type: 'system',
                 title: '工作室申请通过',
-                content: `您申请加入的工作室「${studio.name}」已通过审核`
+                content: `您申请加入的工作室「${studio?.name || '未知工作室'}」已通过审核`
             });
             
             return successResponse(res, null, '已通过申请');
@@ -378,9 +369,11 @@ async function deleteStudio(req, res) {
             return errorResponse(res, '只有创建者可以解散工作室', 403);
         }
         
-        await DbAdapter.destroy(StudioMember, { where: { studio_id: id } });
-        await DbAdapter.destroy(StudioWork, { where: { studio_id: id } });
-        await DbAdapter.destroy(Studio, { where: { id: DbAdapter.getId(studio) } });
+        await sequelize.transaction(async (t) => {
+            await DbAdapter.destroy(StudioMember, { where: { studio_id: id }, transaction: t });
+            await DbAdapter.destroy(StudioWork, { where: { studio_id: id }, transaction: t });
+            await DbAdapter.destroy(Studio, { where: { id: DbAdapter.getId(studio) }, transaction: t });
+        });
         
         return successResponse(res, null, '工作室已解散');
     } catch (error) {
@@ -515,17 +508,14 @@ async function reviewWork(req, res) {
             }, { where: { id: workId } });
             const studio = await DbAdapter.findByPk(Studio, id);
             if (studio) {
-                await DbAdapter.update(Studio, 
-                    { work_count: (studio.work_count || 0) + 1 },
-                    { where: { id: DbAdapter.getId(studio) } }
-                );
+                await DbAdapter.increment(studio, 'work_count');
             }
             
             await DbAdapter.create(Notification, {
                 user_id: studioWork.user_id,
                 type: 'system',
                 title: '作品审核通过',
-                content: `您投稿到「${studio.name}」的作品已通过审核`
+                content: `您投稿到「${studio?.name || '未知工作室'}」的作品已通过审核`
             });
             
             return successResponse(res, null, '作品已通过');
@@ -749,10 +739,7 @@ async function kickMember(req, res) {
         await DbAdapter.destroy(StudioMember, { where: { id: DbAdapter.getId(member) } });
         const studio = await DbAdapter.findByPk(Studio, id);
         if (studio) {
-            await DbAdapter.update(Studio, 
-                { member_count: Math.max(0, (studio.member_count || 0) - 1) },
-                { where: { id: DbAdapter.getId(studio) } }
-            );
+            await DbAdapter.decrement(studio, 'member_count');
         }
         
         return successResponse(res, null, '成员已移除');
@@ -810,9 +797,11 @@ async function dissolveStudio(req, res) {
             return errorResponse(res, '只有室长可以解散工作室', 403);
         }
         
-        await DbAdapter.destroy(StudioMember, { where: { studio_id: id } });
-        await DbAdapter.destroy(StudioWork, { where: { studio_id: id } });
-        await DbAdapter.destroy(Studio, { where: { id } });
+        await sequelize.transaction(async (t) => {
+            await DbAdapter.destroy(StudioMember, { where: { studio_id: id }, transaction: t });
+            await DbAdapter.destroy(StudioWork, { where: { studio_id: id }, transaction: t });
+            await DbAdapter.destroy(Studio, { where: { id }, transaction: t });
+        });
         
         return successResponse(res, null, '工作室已解散');
     } catch (error) {
