@@ -18,23 +18,58 @@ class GeetestService {
      */
     static async getConfig() {
         try {
-            const [idConfig, keyConfig, enabledConfig] = await Promise.all([
-                DbAdapter.findOne(SystemConfig, { where: { config_key: 'geetest_id' } }),
-                DbAdapter.findOne(SystemConfig, { where: { config_key: 'geetest_key' } }),
-                DbAdapter.findOne(SystemConfig, { where: { config_key: 'geetest_enabled' } })
-            ]);
+            const configKeys = [
+                'geetest_enabled', 'geetest_id', 'geetest_key',
+                'geetest_login', 'geetest_register', 'geetest_like',
+                'geetest_comment', 'geetest_reply', 'geetest_report',
+                'geetest_publish_work', 'geetest_publish_post',
+                'geetest_favorite', 'geetest_remove_favorite', 'geetest_update_profile',
+                'geetest_create_studio', 'geetest_join_studio', 
+                'geetest_submit_work', 'geetest_review_member'
+            ];
+
+            const configs = await DbAdapter.findAll(SystemConfig, {
+                where: { config_key: { [Op.in]: configKeys } }
+            });
+
+            const configMap = {};
+            configs.forEach(c => {
+                configMap[c.config_key] = c.config_value;
+            });
+
+            const geetestId = configMap.geetest_id || GEETEST_ID;
+            const geetestKey = configMap.geetest_key || GEETEST_KEY;
+            const enabled = configMap.geetest_enabled === 'true' && !!geetestId;
 
             return {
-                geetestId: (idConfig && idConfig.config_value) || GEETEST_ID,
-                geetestKey: (keyConfig && keyConfig.config_value) || GEETEST_KEY,
-                enabled: (enabledConfig && enabledConfig.config_value) === 'true'
+                geetestId,
+                geetestKey,
+                enabled,
+                scenes: {
+                    login: configMap.geetest_login === 'true',
+                    register: configMap.geetest_register === 'true',
+                    like: configMap.geetest_like === 'true',
+                    comment: configMap.geetest_comment === 'true',
+                    reply: configMap.geetest_reply === 'true',
+                    report: configMap.geetest_report === 'true',
+                    publish_work: configMap.geetest_publish_work === 'true',
+                    publish_post: configMap.geetest_publish_post === 'true',
+                    favorite: configMap.geetest_favorite === 'true',
+                    remove_favorite: configMap.geetest_remove_favorite === 'true',
+                    update_profile: configMap.geetest_update_profile === 'true',
+                    create_studio: configMap.geetest_create_studio === 'true',
+                    join_studio: configMap.geetest_join_studio === 'true',
+                    submit_work: configMap.geetest_submit_work === 'true',
+                    review_member: configMap.geetest_review_member === 'true'
+                }
             };
         } catch (error) {
             console.error('获取极验配置失败:', error);
             return {
                 geetestId: GEETEST_ID,
                 geetestKey: GEETEST_KEY,
-                enabled: false
+                enabled: false,
+                scenes: {}
             };
         }
     }
@@ -60,6 +95,12 @@ class GeetestService {
             // 检查配置是否完整
             if (!config.geetestId || !config.geetestKey) {
                 console.log('[极验] 配置不完整，跳过验证');
+                return { success: true };
+            }
+
+            // 检查当前场景是否启用了验证码，未启用则跳过
+            if (!config.scenes[scene]) {
+                console.log(`[极验] 场景 ${scene} 未启用，跳过验证`);
                 return { success: true };
             }
 
