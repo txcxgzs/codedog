@@ -89,7 +89,7 @@ app.use('/api/reports', reportRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/geetest', geetestRoutes);
 app.use('/api/hcaptcha', hcaptchaRoutes);
-app.use('/api/admin/db-migration', dbMigrationRoutes);
+// db-migration 路由挂载到 adminRoutes 内部以获取认证保护，而不是单独挂载
 
 app.get('/api/health', (req, res) => {
     res.json({ status: 'ok', message: '服务运行正常' });
