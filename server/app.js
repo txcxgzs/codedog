@@ -26,6 +26,8 @@ const geetestRoutes = require('./routes/geetestRoutes');
 const hcaptchaRoutes = require('./routes/hcaptchaRoutes');
 const dbMigrationRoutes = require('./routes/dbMigration');
 const { hcaptchaGuard } = require('./middleware/hcaptcha');
+const { authMiddleware, adminMiddleware } = require('./middleware/auth');
+const { requireSuperAdmin } = require('./middleware/permission');
 
 const app = express();
 
@@ -89,7 +91,7 @@ app.use('/api/reports', reportRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/geetest', geetestRoutes);
 app.use('/api/hcaptcha', hcaptchaRoutes);
-app.use('/api/admin/db-migration', dbMigrationRoutes);
+app.use('/api/admin/db-migration', authMiddleware, adminMiddleware, requireSuperAdmin, dbMigrationRoutes);
 
 app.get('/api/health', (req, res) => {
     res.json({ status: 'ok', message: '服务运行正常' });

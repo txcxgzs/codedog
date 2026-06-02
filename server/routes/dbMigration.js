@@ -9,6 +9,7 @@ const router = express.Router();
 const dbMigration = require('../services/dbMigration');
 const { successResponse, errorResponse } = require('../middleware/response');
 const { logOperation } = require('../middleware/operationLog');
+const path = require('path');
 
 /**
  * 获取数据库统计信息
@@ -31,7 +32,8 @@ router.get('/stats', async (req, res) => {
             dbConfig.user = config.user || process.env.DB_USER;
             dbConfig.password = config.password || process.env.DB_PASSWORD;
         } else if (dbType === 'sqlite') {
-            dbConfig.path = config.path || './database.sqlite';
+            // 安全处理 SQLite 路径，只允许文件名
+            dbConfig.path = config.path ? path.basename(config.path) : 'database.sqlite';
         } else {
             return errorResponse(res, '不支持的数据库类型，仅支持 sqlite 和 mysql', 400);
         }
@@ -88,7 +90,8 @@ router.post('/migrate', async (req, res) => {
             srcConfig.user = sourceConfig?.user || process.env.DB_USER;
             srcConfig.password = sourceConfig?.password || process.env.DB_PASSWORD;
         } else if (sourceType === 'sqlite') {
-            srcConfig.path = sourceConfig?.path || './database.sqlite';
+            // 安全处理 SQLite 路径，只允许文件名
+            srcConfig.path = sourceConfig?.path ? path.basename(sourceConfig.path) : 'database.sqlite';
         }
 
         let tgtConfig = {};
@@ -99,7 +102,8 @@ router.post('/migrate', async (req, res) => {
             tgtConfig.user = targetConfig?.user || process.env.DB_USER;
             tgtConfig.password = targetConfig?.password || process.env.DB_PASSWORD;
         } else if (targetType === 'sqlite') {
-            tgtConfig.path = targetConfig?.path || './database.sqlite';
+            // 安全处理 SQLite 路径，只允许文件名
+            tgtConfig.path = targetConfig?.path ? path.basename(targetConfig.path) : 'database.sqlite';
         }
 
         console.log(`\n🔄 收到数据库迁移请求: ${sourceType} -> ${targetType}`);
@@ -183,7 +187,9 @@ router.post('/test-connection', async (req, res) => {
             await sequelize.close();
         } else if (dbType === 'sqlite') {
             const { Sequelize } = require('sequelize');
-            testConfig.path = config?.path || './database.sqlite';
+            // 安全处理 SQLite 路径，只允许文件名，并限制在项目目录内
+            const safePath = config?.path ? path.basename(config.path) : 'database.sqlite';
+            testConfig.path = path.join(__dirname, '../', safePath);
             const sequelize = new Sequelize({
                 dialect: 'sqlite',
                 storage: testConfig.path,

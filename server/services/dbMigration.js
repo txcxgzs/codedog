@@ -37,7 +37,15 @@ class DatabaseMigration {
             await sequelize.authenticate();
             return { type: 'mysql', connection: sequelize };
         } else {
-            const dbPath = config.path || path.join(__dirname, '../migration_temp.sqlite');
+            // 安全处理 SQLite 路径，防止路径遍历
+            let dbPath;
+            if (config.path) {
+                // 只允许文件名，不允许包含路径分隔符
+                const baseName = path.basename(config.path);
+                dbPath = path.join(__dirname, '../', baseName);
+            } else {
+                dbPath = path.join(__dirname, '../migration_temp.sqlite');
+            }
             const sequelize = new Sequelize({
                 dialect: 'sqlite',
                 storage: dbPath,
