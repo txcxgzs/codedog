@@ -294,6 +294,10 @@ const createPost = async () => {
   let geetestData = {}
   
   if (geetestConfig.value?.enabled && geetestConfig.value?.scenes?.publish_post) {
+    if (!geetestDialogRef.value) {
+      postLoading.value = false
+      return
+    }
     geetestData = await geetestDialogRef.value.show('publish_post')
     if (!geetestData) {
       postLoading.value = false
