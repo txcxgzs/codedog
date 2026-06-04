@@ -48,7 +48,7 @@
       </div>
     </div>
     
-    <GeetestDialog ref="geetestDialog" @success="onGeetestSuccess" />
+    <GeetestDialog ref="geetestDialog" @success="onGeetestSuccess" @cancel="onGeetestCancel" />
   </div>
 </template>
 
@@ -193,6 +193,12 @@ const onGeetestSuccess = async (data) => {
     await doRemoveFavorite(pendingRemoveWork.value.id)
     pendingRemoveWork.value = null
   }
+}
+
+const onGeetestCancel = () => {
+  // 用户取消验证码，清除待处理状态
+  pendingRemoveWork.value = null
+  pendingBatchRemove.value = false
 }
 
 const doRemoveFavorite = async (workId) => {

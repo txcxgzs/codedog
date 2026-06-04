@@ -96,8 +96,11 @@ import { studioApi } from '@/api/studio'
 import { ElMessage } from 'element-plus'
 import GeetestDialog from '@/components/GeetestDialog.vue'
 import { Search, Plus } from '@element-plus/icons-vue'
+import { useGeetestConfig } from '@/composables/useGeetestConfig'
 
 const userStore = useUserStore()
+const { geetestEnabled, fetchGeetestConfig } = useGeetestConfig()
+
 const loading = ref(false)
 const createLoading = ref(false)
 const activeTab = ref('all')
@@ -170,7 +173,7 @@ const handleCreate = async () => {
   if (!valid) return
   
   let geetestData = {}
-  if (geetestDialog.value) {
+  if (geetestEnabled('create_studio')) {
     const result = await geetestDialog.value.show('create_studio')
     if (!result) return
     geetestData = result
@@ -194,7 +197,10 @@ const handleCreate = async () => {
   }
 }
 
-onMounted(fetchStudios)
+onMounted(() => {
+  fetchGeetestConfig()
+  fetchStudios()
+})
 </script>
 
 <style lang="scss" scoped>

@@ -6,6 +6,7 @@
     :close-on-click-modal="false"
     destroy-on-close
     @open="onOpen"
+    @close="onClose"
   >
     <div v-if="loading" class="geetest-dialog--loading">
       <el-icon class="is-loading"><Loading /></el-icon>
@@ -18,7 +19,7 @@
     </div>
     <div ref="captchaBox" class="geetest-dialog--box"></div>
     <template #footer>
-      <el-button @click="visible = false">取消</el-button>
+      <el-button @click="handleCancel">取消</el-button>
     </template>
   </el-dialog>
 </template>
@@ -28,6 +29,8 @@ import { ref } from 'vue'
 import { Loading, WarningFilled } from '@element-plus/icons-vue'
 import { geetestApi } from '@/api/geetest'
 
+const emit = defineEmits(['success', 'cancel'])
+
 const visible = ref(false)
 const captchaBox = ref(null)
 const loading = ref(false)
@@ -35,9 +38,28 @@ const error = ref('')
 const captchaObj = ref(null)
 const resolvePromise = ref(null)
 const currentScene = ref('')
+const lastResult = ref(null)
 
 const onOpen = () => {
   initCaptcha()
+}
+
+const onClose = () => {
+  // 弹窗关闭时，如果 Promise 还未 resolve，需要 resolve 为 null 表示取消
+  if (resolvePromise.value) {
+    resolvePromise.value(null)
+    resolvePromise.value = null
+  }
+  // 清理验证码实例
+  if (captchaObj.value) {
+    captchaObj.value = null
+  }
+  lastResult.value = null
+}
+
+const handleCancel = () => {
+  visible.value = false
+  emit('cancel')
 }
 
 const initCaptcha = async () => {
@@ -111,12 +133,15 @@ const loadCaptcha = (gt, challenge, offline, newCaptcha, product) => {
     captcha.onSuccess(() => {
       const result = captcha.getValidate()
       if (result && resolvePromise.value) {
-        resolvePromise.value({
+        const geetestData = {
           geetest_challenge: result.geetest_challenge,
           geetest_validate: result.geetest_validate,
           geetest_seccode: result.geetest_seccode
-        })
+        }
+        lastResult.value = geetestData
+        resolvePromise.value(geetestData)
         resolvePromise.value = null
+        emit('success', geetestData)
       }
       visible.value = false
     })
