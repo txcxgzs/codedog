@@ -547,7 +547,7 @@ const likeWork = async () => {
   let geetestData = {}
   
   // 检查是否需要验证码
-  if (geetestConfig.value?.enabled && geetestConfig.value?.scenes?.like) {
+  if (geetestConfig.value?.enabled && geetestConfig.value?.scenes?.like && geetestDialogRef.value) {
     geetestData = await geetestDialogRef.value.show('like')
     if (!geetestData) return
   }
@@ -609,7 +609,7 @@ const submitComment = async () => {
   let geetestData = {}
   
   // 检查是否需要验证码
-  if (geetestConfig.value?.enabled && geetestConfig.value?.scenes?.comment) {
+  if (geetestConfig.value?.enabled && geetestConfig.value?.scenes?.comment && geetestDialogRef.value) {
     geetestData = await geetestDialogRef.value.show('comment')
     if (!geetestData) return
   }
@@ -692,7 +692,7 @@ const likeComment = async (comment) => {
   
   let geetestData = {}
   
-  if (geetestConfig.value?.enabled && geetestConfig.value?.scenes?.like) {
+  if (geetestConfig.value?.enabled && geetestConfig.value?.scenes?.like && geetestDialogRef.value) {
     geetestData = await geetestDialogRef.value.show('like')
     if (!geetestData) return
   }
@@ -826,7 +826,7 @@ const submitReport = async () => {
   let geetestData = {}
   
   // 检查是否需要验证码
-  if (geetestConfig.value?.enabled && geetestConfig.value?.scenes?.report) {
+  if (geetestConfig.value?.enabled && geetestConfig.value?.scenes?.report && geetestDialogRef.value) {
     geetestData = await geetestDialogRef.value.show('report')
     if (!geetestData) return
   }
@@ -861,7 +861,7 @@ const reportComment = async (comment) => {
   
   let geetestData = {}
   
-  if (geetestConfig.value?.enabled && geetestConfig.value?.scenes?.report) {
+  if (geetestConfig.value?.enabled && geetestConfig.value?.scenes?.report && geetestDialogRef.value) {
     geetestData = await geetestDialogRef.value.show('report')
     if (!geetestData) return
   }
