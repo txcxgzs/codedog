@@ -6,7 +6,7 @@
 require('dotenv').config();
 
 const { sequelize } = require('../config/database');
-const { DataTypes } = require('sequelize');
+const { DataTypes, Op } = require('sequelize');
 
 console.log('📦 加载Sequelize模型');
 
@@ -90,7 +90,7 @@ const Post = sequelize.define('Post', {
 
 const Studio = sequelize.define('Studio', {
     id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
-    name: { type: DataTypes.STRING(100), allowNull: false },
+    name: { type: DataTypes.STRING(100), allowNull: false, unique: true },
     description: { type: DataTypes.TEXT },
     cover: { type: DataTypes.STRING(500) },
     cover_url: { type: DataTypes.STRING(500) },
@@ -106,7 +106,14 @@ const Studio = sequelize.define('Studio', {
     status: { type: DataTypes.STRING(20), defaultValue: 'active' },
     created_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW },
     updated_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW }
-}, { tableName: 'studios', timestamps: false });
+}, { 
+    tableName: 'studios', 
+    timestamps: false,
+    indexes: [
+        // 每个用户只能拥有一个非被封禁状态的工作室
+        { unique: true, fields: ['owner_id'], where: { status: { [Op.ne]: 'banned' } } }
+    ]
+});
 
 const StudioMember = sequelize.define('StudioMember', {
     id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
@@ -115,7 +122,13 @@ const StudioMember = sequelize.define('StudioMember', {
     role: { type: DataTypes.ENUM('owner', 'vice_owner', 'admin', 'member'), defaultValue: 'member' },
     status: { type: DataTypes.ENUM('active', 'pending', 'rejected'), defaultValue: 'active' },
     joined_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW }
-}, { tableName: 'studio_members', timestamps: false });
+}, { 
+    tableName: 'studio_members', 
+    timestamps: false,
+    indexes: [
+        { unique: true, fields: ['studio_id', 'user_id'] }
+    ]
+});
 
 const StudioWork = sequelize.define('StudioWork', {
     id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
@@ -178,7 +191,11 @@ const Favorite = sequelize.define('Favorite', {
                 throw new Error('收藏记录必须关联一个作品或帖子');
             }
         }
-    }
+    },
+    indexes: [
+        { unique: true, fields: ['user_id', 'work_id'], where: { work_id: { [Op.ne]: null } } },
+        { unique: true, fields: ['user_id', 'post_id'], where: { post_id: { [Op.ne]: null } } }
+    ]
 });
 
 const Follow = sequelize.define('Follow', {
@@ -186,7 +203,13 @@ const Follow = sequelize.define('Follow', {
     follower_id: { type: DataTypes.INTEGER, allowNull: false },
     following_id: { type: DataTypes.INTEGER, allowNull: false },
     created_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW }
-}, { tableName: 'follows', timestamps: false });
+}, { 
+    tableName: 'follows', 
+    timestamps: false,
+    indexes: [
+        { unique: true, fields: ['follower_id', 'following_id'] }
+    ]
+});
 
 const Notification = sequelize.define('Notification', {
     id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },

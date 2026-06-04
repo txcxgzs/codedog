@@ -11,45 +11,49 @@ const { Op } = require('sequelize');
  * 收藏作品
  */
 async function addFavorite(req, res) {
+    const transaction = await sequelize.transaction();
     try {
         const { workId } = req.body;
         
         if (!workId) {
+            await transaction.rollback();
             return errorResponse(res, '请提供作品ID', 400);
         }
         
-        let work = await DbAdapter.findByPk(Work, workId);
+        let work = await DbAdapter.findByPk(Work, workId, { lock: true, transaction });
         if (!work) {
-            work = await DbAdapter.findOne(Work, { where: { codemao_work_id: workId } });
+            work = await DbAdapter.findOne(Work, { where: { codemao_work_id: workId }, lock: true, transaction });
         }
         
         if (!work) {
+            await transaction.rollback();
             return errorResponse(res, '作品不存在', 404);
         }
         
         const localWorkId = DbAdapter.getId(work);
         
-        const existing = await DbAdapter.findOne(Favorite, {
-            where: { user_id: req.user.id, work_id: localWorkId }
+        // 使用 findOrCreate 防止并发重复收藏
+        const [favorite, created] = await DbAdapter.findOrCreate(Favorite, {
+            where: { user_id: req.user.id, work_id: localWorkId },
+            defaults: {
+                user_id: req.user.id,
+                work_id: localWorkId
+            },
+            transaction
         });
         
-        if (existing) {
+        if (!created) {
+            await transaction.rollback();
             return errorResponse(res, '已收藏该作品', 400);
         }
         
-        await DbAdapter.create(Favorite, {
-            user_id: req.user.id,
-            work_id: localWorkId
-        });
+        // 使用原子 increment 操作更新收藏数
+        await work.increment('collection_times', { transaction });
         
-        // 更新作品收藏数
-        await DbAdapter.update(Work,
-            { collection_times: (work.collection_times || 0) + 1 },
-            { where: { id: DbAdapter.getId(work) } }
-        );
-        
+        await transaction.commit();
         return successResponse(res, null, '收藏成功');
     } catch (error) {
+        await transaction.rollback();
         console.error('收藏错误:', error);
         return errorResponse(res, '收藏失败', 500);
     }
@@ -59,37 +63,43 @@ async function addFavorite(req, res) {
  * 取消收藏
  */
 async function removeFavorite(req, res) {
+    const transaction = await sequelize.transaction();
     try {
         const { workId } = req.params;
         
         let localWorkId = workId;
+        let work = null;
         if (isNaN(workId) || workId.length > 10) {
-            const work = await DbAdapter.findOne(Work, { where: { codemao_work_id: workId } });
+            work = await DbAdapter.findOne(Work, { where: { codemao_work_id: workId }, lock: true, transaction });
             if (work) {
                 localWorkId = DbAdapter.getId(work);
             }
+        } else {
+            work = await DbAdapter.findByPk(Work, localWorkId, { lock: true, transaction });
         }
         
         const favorite = await DbAdapter.findOne(Favorite, {
-            where: { user_id: req.user.id, work_id: localWorkId }
+            where: { user_id: req.user.id, work_id: localWorkId },
+            lock: true,
+            transaction
         });
         
         if (!favorite) {
+            await transaction.rollback();
             return errorResponse(res, '未收藏该作品', 400);
         }
         
-        await DbAdapter.destroy(Favorite, { where: { id: DbAdapter.getId(favorite) } });
+        await DbAdapter.destroy(Favorite, { where: { id: DbAdapter.getId(favorite) }, transaction });
         
-        const work = await DbAdapter.findByPk(Work, localWorkId);
         if (work) {
-            await DbAdapter.update(Work,
-                { collection_times: Math.max(0, (work.collection_times || 0) - 1) },
-                { where: { id: DbAdapter.getId(work) } }
-            );
+            // 使用原子 decrement 操作更新收藏数
+            await work.decrement('collection_times', { transaction });
         }
         
+        await transaction.commit();
         return successResponse(res, null, '已取消收藏');
     } catch (error) {
+        await transaction.rollback();
         console.error('取消收藏错误:', error);
         return errorResponse(res, '取消收藏失败', 500);
     }

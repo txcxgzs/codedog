@@ -4,20 +4,29 @@ const { successResponse, errorResponse, paginateResponse } = require('../middlew
 const { Op } = require('sequelize');
 
 async function createStudio(req, res) {
+    const transaction = await sequelize.transaction();
     try {
         const { name, description, cover, is_public, join_type } = req.body;
         
         if (!name) {
+            await transaction.rollback();
             return errorResponse(res, '请输入工作室名称', 400);
         }
         
-        const existingOwner = await DbAdapter.findOne(Studio, { where: { owner_id: req.user.id, status: { [Op.ne]: 'banned' } } });
+        // 使用事务和锁确保原子性检查，防止并发创建多个工作室
+        const existingOwner = await DbAdapter.findOne(Studio, { 
+            where: { owner_id: req.user.id, status: { [Op.ne]: 'banned' } },
+            lock: true,
+            transaction
+        });
         if (existingOwner) {
+            await transaction.rollback();
             return errorResponse(res, '您已创建过工作室，每人只能创建一个', 400);
         }
         
-        const existing = await DbAdapter.findOne(Studio, { where: { name } });
+        const existing = await DbAdapter.findOne(Studio, { where: { name }, lock: true, transaction });
         if (existing) {
+            await transaction.rollback();
             return errorResponse(res, '工作室名称已存在', 400);
         }
         
@@ -28,18 +37,24 @@ async function createStudio(req, res) {
             owner_id: req.user.id,
             is_public: is_public !== false,
             join_type: join_type || 'apply'
-        });
+        }, { transaction });
         
         await DbAdapter.create(StudioMember, {
             studio_id: studio.id,
             user_id: req.user.id,
             role: 'owner',
             status: 'active'
-        });
+        }, { transaction });
         
+        await transaction.commit();
         return successResponse(res, studio, '工作室创建成功');
     } catch (error) {
+        await transaction.rollback();
         console.error('创建工作室错误:', error);
+        // 检测唯一约束冲突（并发创建时的兜底保护）
+        if (error.name === 'SequelizeUniqueConstraintError') {
+            return errorResponse(res, '您已创建过工作室或工作室名称已存在', 400);
+        }
         return errorResponse(res, '创建工作室失败', 500);
     }
 }
@@ -149,49 +164,56 @@ async function getStudioDetail(req, res) {
 }
 
 async function joinStudio(req, res) {
+    const transaction = await sequelize.transaction();
     try {
         const { id } = req.params;
         
-        const studio = await DbAdapter.findByPk(Studio, id);
+        const studio = await DbAdapter.findByPk(Studio, id, { lock: true, transaction });
         if (!studio) {
+            await transaction.rollback();
             return errorResponse(res, '工作室不存在', 404);
         }
         
         if (studio.status !== 'active') {
+            await transaction.rollback();
             return errorResponse(res, '该工作室已被禁用', 400);
         }
         
-        const existing = await DbAdapter.findOne(StudioMember, {
-            where: { studio_id: id, user_id: req.user.id }
-        });
-        
-        if (existing) {
-            if (existing.status === 'active') {
-                return errorResponse(res, '您已是工作室成员', 400);
-            }
-            if (existing.status === 'pending') {
-                return errorResponse(res, '您的申请正在审核中', 400);
-            }
-        }
-        
         if (studio.join_type === 'invite') {
+            await transaction.rollback();
             return errorResponse(res, '该工作室仅限邀请加入', 400);
         }
         
-        const status = studio.join_type === 'apply' ? 'pending' : 'active';
-        
-        let member;
-        if (existing) {
-            await DbAdapter.update(StudioMember, { status }, { where: { id: DbAdapter.getId(existing) } });
-            member = existing;
-        } else {
-            member = await DbAdapter.create(StudioMember, {
+        // 使用 findOrCreate 防止并发重复加入
+        const [member, created] = await DbAdapter.findOrCreate(StudioMember, {
+            where: { studio_id: id, user_id: req.user.id },
+            defaults: {
                 studio_id: id,
                 user_id: req.user.id,
                 role: 'member',
-                status
-            });
+                status: studio.join_type === 'apply' ? 'pending' : 'active'
+            },
+            lock: true,
+            transaction
+        });
+        
+        if (!created) {
+            await transaction.rollback();
+            if (member.status === 'active') {
+                return errorResponse(res, '您已是工作室成员', 400);
+            }
+            if (member.status === 'pending') {
+                return errorResponse(res, '您的申请正在审核中', 400);
+            }
+            // 之前被拒绝的用户可以重新申请
+            if (studio.join_type === 'apply') {
+                await DbAdapter.update(StudioMember, { status: 'pending' }, { where: { id: DbAdapter.getId(member) }, transaction });
+                await transaction.commit();
+                return successResponse(res, member, '申请已提交，请等待审核');
+            }
         }
+        
+        const status = member.status;
         
         if (status === 'pending') {
             await DbAdapter.create(Notification, {
@@ -200,16 +222,17 @@ async function joinStudio(req, res) {
                 title: '新成员申请',
                 content: `有新成员申请加入您的工作室「${studio.name}」`,
                 sender_id: req.user.id
-            });
+            }, { transaction });
+            await transaction.commit();
             return successResponse(res, member, '申请已提交，请等待审核');
         } else {
-            await DbAdapter.update(Studio, 
-                { member_count: (studio.member_count || 0) + 1 },
-                { where: { id: DbAdapter.getId(studio) } }
-            );
+            // 使用原子 increment 操作更新计数
+            await studio.increment('member_count', { transaction });
+            await transaction.commit();
             return successResponse(res, member, '加入成功');
         }
     } catch (error) {
+        await transaction.rollback();
         console.error('加入工作室错误:', error);
         return errorResponse(res, '加入工作室失败', 500);
     }

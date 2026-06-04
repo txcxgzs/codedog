@@ -10,52 +10,63 @@ const { successResponse, errorResponse, paginateResponse } = require('../middlew
  * 关注用户（使用编程猫用户ID）
  */
 async function followUser(req, res) {
+    const transaction = await sequelize.transaction();
     try {
         const { codemaoUserId } = req.body;
         
         if (!codemaoUserId) {
+            await transaction.rollback();
             return errorResponse(res, '请提供用户ID', 400);
         }
         
         // 通过编程猫用户ID找到目标用户
-        const targetUser = await DbAdapter.findOne(User, { where: { codemao_user_id: codemaoUserId } });
+        const targetUser = await DbAdapter.findOne(User, { 
+            where: { codemao_user_id: codemaoUserId },
+            lock: true,
+            transaction
+        });
         if (!targetUser) {
+            await transaction.rollback();
             return errorResponse(res, '用户不存在', 404);
         }
         
         if (targetUser.id === req.user.id) {
+            await transaction.rollback();
             return errorResponse(res, '不能关注自己', 400);
         }
         
-        // 检查是否已关注
-        const existing = await DbAdapter.findOne(Follow, {
-            where: { follower_id: req.user.id, following_id: targetUser.id }
+        // 使用 findOrCreate 防止并发重复关注
+        const [follow, created] = await DbAdapter.findOrCreate(Follow, {
+            where: { follower_id: req.user.id, following_id: targetUser.id },
+            defaults: {
+                follower_id: req.user.id,
+                following_id: targetUser.id
+            },
+            lock: true,
+            transaction
         });
         
-        if (existing) {
+        if (!created) {
+            await transaction.rollback();
             return errorResponse(res, '已关注该用户', 400);
         }
         
-        // 创建关注
-        await DbAdapter.create(Follow, {
-            follower_id: req.user.id,
-            following_id: targetUser.id
-        });
-        
-        // 使用原子操作更新计数，避免竞态条件
-        const currentUser = await DbAdapter.findByPk(User, req.user.id);
-        await DbAdapter.increment(currentUser, 'following_count');
-        await DbAdapter.increment(targetUser, 'follower_count');
+        // 使用原子 increment 操作更新计数
+        const currentUser = await DbAdapter.findByPk(User, req.user.id, { lock: true, transaction });
+        await currentUser.increment('following_count', { transaction });
+        await targetUser.increment('follower_count', { transaction });
         
         await DbAdapter.create(Notification, {
             user_id: targetUser.id,
             type: 'follow',
             title: '关注了你',
             sender_id: req.user.id
-        });
+        }, { transaction });
         
+        await transaction.commit();
         return successResponse(res, null, '关注成功');
     } catch (error) {
+        await transaction.rollback();
         console.error('关注错误:', error);
         return errorResponse(res, '关注失败', 500);
     }
@@ -65,32 +76,43 @@ async function followUser(req, res) {
  * 取消关注（使用编程猫用户ID）
  */
 async function unfollowUser(req, res) {
+    const transaction = await sequelize.transaction();
     try {
         const { codemaoUserId } = req.params;
         
         // 通过编程猫用户ID找到目标用户
-        const targetUser = await DbAdapter.findOne(User, { where: { codemao_user_id: codemaoUserId } });
+        const targetUser = await DbAdapter.findOne(User, { 
+            where: { codemao_user_id: codemaoUserId },
+            lock: true,
+            transaction
+        });
         if (!targetUser) {
+            await transaction.rollback();
             return errorResponse(res, '用户不存在', 404);
         }
         
         const follow = await DbAdapter.findOne(Follow, {
-            where: { follower_id: req.user.id, following_id: targetUser.id }
+            where: { follower_id: req.user.id, following_id: targetUser.id },
+            lock: true,
+            transaction
         });
         
         if (!follow) {
+            await transaction.rollback();
             return errorResponse(res, '未关注该用户', 400);
         }
         
-        await DbAdapter.destroy(Follow, { where: { id: DbAdapter.getId(follow) } });
+        await DbAdapter.destroy(Follow, { where: { id: DbAdapter.getId(follow) }, transaction });
         
-        // 使用原子操作更新计数，避免竞态条件
-        const currentUser = await DbAdapter.findByPk(User, req.user.id);
-        await DbAdapter.decrement(currentUser, 'following_count');
-        await DbAdapter.decrement(targetUser, 'follower_count');
+        // 使用原子 decrement 操作更新计数
+        const currentUser = await DbAdapter.findByPk(User, req.user.id, { lock: true, transaction });
+        await currentUser.decrement('following_count', { transaction });
+        await targetUser.decrement('follower_count', { transaction });
         
+        await transaction.commit();
         return successResponse(res, null, '已取消关注');
     } catch (error) {
+        await transaction.rollback();
         console.error('取消关注错误:', error);
         return errorResponse(res, '取消关注失败', 500);
     }
