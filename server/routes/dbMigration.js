@@ -9,6 +9,13 @@ const router = express.Router();
 const dbMigration = require('../services/dbMigration');
 const { successResponse, errorResponse } = require('../middleware/response');
 const { logOperation } = require('../middleware/operationLog');
+const { authMiddleware, adminMiddleware } = require('../middleware/auth');
+const { requireRole } = require('../middleware/permission');
+
+// Apply auth and admin middleware to all routes
+router.use(authMiddleware);
+router.use(adminMiddleware);
+router.use(requireRole('admin'));
 
 /**
  * 获取数据库统计信息
