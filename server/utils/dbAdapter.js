@@ -87,7 +87,7 @@ class DbAdapter {
     }
 
     static getId(instance) {
-        return instance.id;
+        return instance?.id;
     }
 }
 

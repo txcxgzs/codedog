@@ -6,6 +6,7 @@
     :close-on-click-modal="false"
     destroy-on-close
     @open="onOpen"
+    @close="onClose"
   >
     <div v-if="loading" class="geetest-dialog--loading">
       <el-icon class="is-loading"><Loading /></el-icon>
@@ -24,7 +25,7 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, onUnmounted } from 'vue'
 import { Loading, WarningFilled } from '@element-plus/icons-vue'
 import { geetestApi } from '@/api/geetest'
 
@@ -36,8 +37,29 @@ const captchaObj = ref(null)
 const resolvePromise = ref(null)
 const currentScene = ref('')
 
+const destroyCaptcha = () => {
+  if (captchaObj.value) {
+    try {
+      captchaObj.value.destroy()
+    } catch (e) {
+      console.warn('[极验] 销毁验证码实例失败:', e)
+    }
+    captchaObj.value = null
+  }
+}
+
+onUnmounted(() => {
+  destroyCaptcha()
+})
+
 const onOpen = () => {
   initCaptcha()
+}
+
+const onClose = () => {
+  destroyCaptcha()
+  error.value = ''
+  loading.value = false
 }
 
 const initCaptcha = async () => {

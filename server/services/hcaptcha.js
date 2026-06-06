@@ -29,10 +29,15 @@ class HCaptchaService {
 
             console.log('[hCaptcha] 验证响应:', response.data);
 
+            if (typeof response.data.success !== 'boolean') {
+                console.error('[hCaptcha] 响应数据格式错误');
+                return { success: false, reason: '验证响应格式错误' };
+            }
+            
             return {
                 success: response.data.success,
-                score: response.data.score,
-                reason: response.data['error-codes']?.join(', ') || null
+                score: typeof response.data.score === 'number' ? response.data.score : null,
+                reason: Array.isArray(response.data['error-codes']) ? response.data['error-codes'].join(', ') : null
             };
         } catch (error) {
             console.error('hCaptcha验证失败:', error.message);

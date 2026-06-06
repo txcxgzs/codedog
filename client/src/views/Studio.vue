@@ -172,8 +172,8 @@ const handleCreate = async () => {
   let geetestData = {}
   if (geetestDialog.value) {
     const result = await geetestDialog.value.show('create_studio')
-    if (!result) return
-    geetestData = result
+    if (result === null) return
+    geetestData = result || {}
   }
   
   createLoading.value = true

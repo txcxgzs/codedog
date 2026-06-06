@@ -204,7 +204,7 @@ async function joinStudio(req, res) {
             return successResponse(res, member, '申请已提交，请等待审核');
         } else {
             await DbAdapter.update(Studio, 
-                { member_count: (studio.member_count || 0) + 1 },
+                { member_count: sequelize.literal('COALESCE(member_count, 0) + 1') },
                 { where: { id: DbAdapter.getId(studio) } }
             );
             return successResponse(res, member, '加入成功');
@@ -232,14 +232,10 @@ async function leaveStudio(req, res) {
         }
         
         await DbAdapter.destroy(StudioMember, { where: { id: DbAdapter.getId(member) } });
-        
-        const studio = await DbAdapter.findByPk(Studio, id);
-        if (studio) {
-            await DbAdapter.update(Studio, 
-                { member_count: Math.max(0, (studio.member_count || 0) - 1) },
-                { where: { id: DbAdapter.getId(studio) } }
-            );
-        }
+        await DbAdapter.update(Studio, 
+            { member_count: sequelize.literal('GREATEST(0, COALESCE(member_count, 0) - 1)') },
+            { where: { id } }
+        );
         
         return successResponse(res, null, '已退出工作室');
     } catch (error) {
@@ -339,20 +335,20 @@ async function reviewMember(req, res) {
         
         if (action === 'approve') {
             await DbAdapter.update(StudioMember, { status: 'active' }, { where: { id: DbAdapter.getId(member) } });
+            await DbAdapter.update(Studio, 
+                { member_count: sequelize.literal('COALESCE(member_count, 0) + 1') },
+                { where: { id } }
+            );
+            
             const studio = await DbAdapter.findByPk(Studio, id);
             if (studio) {
-                await DbAdapter.update(Studio, 
-                    { member_count: (studio.member_count || 0) + 1 },
-                    { where: { id: DbAdapter.getId(studio) } }
-                );
+                await DbAdapter.create(Notification, {
+                    user_id: member.user_id,
+                    type: 'system',
+                    title: '工作室申请通过',
+                    content: `您申请加入的工作室「${studio.name}」已通过审核`
+                });
             }
-            
-            await DbAdapter.create(Notification, {
-                user_id: member.user_id,
-                type: 'system',
-                title: '工作室申请通过',
-                content: `您申请加入的工作室「${studio.name}」已通过审核`
-            });
             
             return successResponse(res, null, '已通过申请');
         } else {
@@ -513,20 +509,20 @@ async function reviewWork(req, res) {
                 reviewed_by: req.user.id,
                 reviewed_at: new Date()
             }, { where: { id: workId } });
+            await DbAdapter.update(Studio, 
+                { work_count: sequelize.literal('COALESCE(work_count, 0) + 1') },
+                { where: { id } }
+            );
+            
             const studio = await DbAdapter.findByPk(Studio, id);
             if (studio) {
-                await DbAdapter.update(Studio, 
-                    { work_count: (studio.work_count || 0) + 1 },
-                    { where: { id: DbAdapter.getId(studio) } }
-                );
+                await DbAdapter.create(Notification, {
+                    user_id: studioWork.user_id,
+                    type: 'system',
+                    title: '作品审核通过',
+                    content: `您投稿到「${studio.name}」的作品已通过审核`
+                });
             }
-            
-            await DbAdapter.create(Notification, {
-                user_id: studioWork.user_id,
-                type: 'system',
-                title: '作品审核通过',
-                content: `您投稿到「${studio.name}」的作品已通过审核`
-            });
             
             return successResponse(res, null, '作品已通过');
         } else {
@@ -567,13 +563,10 @@ async function removeWork(req, res) {
         await DbAdapter.destroy(StudioWork, { where: { id: DbAdapter.getId(studioWork) } });
         
         if (wasApproved) {
-            const studio = await DbAdapter.findByPk(Studio, id);
-            if (studio) {
-                await DbAdapter.update(Studio, 
-                    { work_count: Math.max(0, (studio.work_count || 0) - 1) },
-                    { where: { id: DbAdapter.getId(studio) } }
-                );
-            }
+            await DbAdapter.update(Studio, 
+                { work_count: sequelize.literal('GREATEST(0, COALESCE(work_count, 0) - 1)') },
+                { where: { id } }
+            );
         }
         
         return successResponse(res, null, '作品已移除');
@@ -747,13 +740,10 @@ async function kickMember(req, res) {
         }
         
         await DbAdapter.destroy(StudioMember, { where: { id: DbAdapter.getId(member) } });
-        const studio = await DbAdapter.findByPk(Studio, id);
-        if (studio) {
-            await DbAdapter.update(Studio, 
-                { member_count: Math.max(0, (studio.member_count || 0) - 1) },
-                { where: { id: DbAdapter.getId(studio) } }
-            );
-        }
+        await DbAdapter.update(Studio, 
+            { member_count: sequelize.literal('GREATEST(0, COALESCE(member_count, 0) - 1)') },
+            { where: { id } }
+        );
         
         return successResponse(res, null, '成员已移除');
     } catch (error) {
