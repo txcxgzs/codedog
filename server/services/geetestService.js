@@ -63,6 +63,13 @@ class GeetestService {
                 return { success: true };
             }
 
+            // 检查该场景是否需要验证码
+            const sceneEnabled = await this.isSceneEnabled(scene);
+            if (!sceneEnabled) {
+                console.log(`[极验] 场景 ${scene} 未启用验证码，跳过验证`);
+                return { success: true };
+            }
+
             // 记录验证码统计
             await this.recordStats(scene, 'verify', req);
 
@@ -86,6 +93,25 @@ class GeetestService {
             console.error('[极验] 验证异常:', error);
             await this.recordStats(scene, 'error', req);
             return { success: false, reason: '验证服务异常' };
+        }
+    }
+
+    /**
+     * 检查场景是否启用验证码
+     * @param {string} scene - 验证场景
+     */
+    static async isSceneEnabled(scene) {
+        if (!scene) return false;
+        
+        try {
+            const sceneConfig = await DbAdapter.findOne(SystemConfig, {
+                where: { config_key: `geetest_${scene}` }
+            });
+            
+            return sceneConfig && sceneConfig.config_value === 'true';
+        } catch (e) {
+            console.error('[极验] 检查场景配置失败:', e);
+            return false;
         }
     }
 

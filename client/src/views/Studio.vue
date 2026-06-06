@@ -93,6 +93,7 @@
 import { ref, reactive, onMounted } from 'vue'
 import { useUserStore } from '@/stores/user'
 import { studioApi } from '@/api/studio'
+import { geetestApi } from '@/api/geetest'
 import { ElMessage } from 'element-plus'
 import GeetestDialog from '@/components/GeetestDialog.vue'
 import { Search, Plus } from '@element-plus/icons-vue'
@@ -109,6 +110,7 @@ const createDialogVisible = ref(false)
 const createFormRef = ref(null)
 const geetestDialog = ref(null)
 const searchKeyword = ref('')
+const geetestConfig = ref(null)
 
 const defaultCover = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMDAgMTUwIj48cmVjdCB3aWR0aD0iMzAwIiBoZWlnaHQ9IjE1MCIgZmlsbD0iI2Y1ZjVmNSIvPjx0ZXh0IHg9IjE1MCIgeT0iNzUiIGZvbnQtc2l6ZT0iMjAiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGZpbGw9IiM5OTkiPuWbvueJh+WKoOi9veWksei0pTwvdGV4dD48L3N2Zz4='
 
@@ -170,7 +172,9 @@ const handleCreate = async () => {
   if (!valid) return
   
   let geetestData = {}
-  if (geetestDialog.value) {
+  
+  // 检查是否需要验证码
+  if (geetestConfig.value?.enabled && geetestConfig.value?.scenes?.create_studio) {
     const result = await geetestDialog.value.show('create_studio')
     if (!result) return
     geetestData = result
@@ -194,7 +198,22 @@ const handleCreate = async () => {
   }
 }
 
-onMounted(fetchStudios)
+// 获取验证码配置
+const fetchGeetestConfig = async () => {
+  try {
+    const res = await geetestApi.getConfig()
+    if (res.code === 200) {
+      geetestConfig.value = res.data
+    }
+  } catch (e) {
+    console.error('获取验证码配置失败:', e)
+  }
+}
+
+onMounted(() => {
+  fetchStudios()
+  fetchGeetestConfig()
+})
 </script>
 
 <style lang="scss" scoped>

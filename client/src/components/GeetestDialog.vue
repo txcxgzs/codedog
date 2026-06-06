@@ -6,6 +6,7 @@
     :close-on-click-modal="false"
     destroy-on-close
     @open="onOpen"
+    @close="onClose"
   >
     <div v-if="loading" class="geetest-dialog--loading">
       <el-icon class="is-loading"><Loading /></el-icon>
@@ -18,7 +19,7 @@
     </div>
     <div ref="captchaBox" class="geetest-dialog--box"></div>
     <template #footer>
-      <el-button @click="visible = false">取消</el-button>
+      <el-button @click="handleCancel">取消</el-button>
     </template>
   </el-dialog>
 </template>
@@ -38,6 +39,18 @@ const currentScene = ref('')
 
 const onOpen = () => {
   initCaptcha()
+}
+
+const onClose = () => {
+  // 弹窗关闭时，如果 Promise 还未 resolve，则 resolve 为 null 表示用户取消
+  if (resolvePromise.value) {
+    resolvePromise.value(null)
+    resolvePromise.value = null
+  }
+}
+
+const handleCancel = () => {
+  visible.value = false
 }
 
 const initCaptcha = async () => {
