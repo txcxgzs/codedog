@@ -516,7 +516,7 @@ async function getUserWorks(req, res) {
 async function likeWork(req, res) {
     try {
         const codemaoId = req.params.codemaoId;
-        const { Like, Notification } = require('../models');
+        const { Like, Notification, sequelize } = require('../models');
         
         const work = await DbAdapter.findOne(Work, { where: { codemao_work_id: codemaoId } });
         
@@ -524,36 +524,40 @@ async function likeWork(req, res) {
             return errorResponse(res, '作品不存在', 404);
         }
         
-        const existingLike = await DbAdapter.findOne(Like, {
-            where: { user_id: DbAdapter.getId(req.user), work_id: DbAdapter.getId(work) }
-        });
-        
-        if (existingLike) {
-            await DbAdapter.destroy(Like, { where: { id: DbAdapter.getId(existingLike) } });
-            await DbAdapter.decrement(work, 'praise_times');
-            const praiseTimes = (work.praise_times || 1) - 1;
-            return successResponse(res, { praise_times: Math.max(0, praiseTimes), liked: false }, '已取消点赞');
-        }
-        
-        await DbAdapter.create(Like, {
-            user_id: DbAdapter.getId(req.user),
-            work_id: DbAdapter.getId(work)
-        });
-        await DbAdapter.increment(work, 'praise_times');
-        
-        if (work.user_id && work.user_id.toString() !== DbAdapter.getId(req.user).toString()) {
-            await DbAdapter.create(Notification, {
-                user_id: work.user_id,
-                type: 'like',
-                title: '点赞了你的作品',
-                content: work.name,
-                related_id: DbAdapter.getId(work),
-                related_type: 'work',
-                sender_id: DbAdapter.getId(req.user)
+        // 使用事务和 findOrCreate 防止竞态条件导致的重复点赞
+        const result = await sequelize.transaction(async (t) => {
+            const [like, created] = await DbAdapter.findOrCreate(Like, {
+                where: { user_id: DbAdapter.getId(req.user), work_id: DbAdapter.getId(work) },
+                defaults: { user_id: DbAdapter.getId(req.user), work_id: DbAdapter.getId(work) },
+                transaction: t
             });
-        }
+            
+            if (!created) {
+                // 已存在点赞，取消点赞
+                await DbAdapter.destroy(Like, { where: { id: DbAdapter.getId(like) }, transaction: t });
+                await work.decrement('praise_times', { transaction: t });
+                return { praise_times: Math.max(0, (work.praise_times || 1) - 1), liked: false, msg: '已取消点赞' };
+            }
+            
+            // 新点赞
+            await work.increment('praise_times', { transaction: t });
+            
+            if (work.user_id && work.user_id.toString() !== DbAdapter.getId(req.user).toString()) {
+                await DbAdapter.create(Notification, {
+                    user_id: work.user_id,
+                    type: 'like',
+                    title: '点赞了你的作品',
+                    content: work.name,
+                    related_id: DbAdapter.getId(work),
+                    related_type: 'work',
+                    sender_id: DbAdapter.getId(req.user)
+                }, { transaction: t });
+            }
+            
+            return { praise_times: (work.praise_times || 0) + 1, liked: true, msg: '点赞成功' };
+        });
         
-        return successResponse(res, { praise_times: (work.praise_times || 0) + 1, liked: true }, '点赞成功');
+        return successResponse(res, { praise_times: result.praise_times, liked: result.liked }, result.msg);
     } catch (error) {
         console.error('点赞作品错误:', error);
         return errorResponse(res, '点赞失败', 500);

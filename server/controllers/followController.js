@@ -27,34 +27,38 @@ async function followUser(req, res) {
             return errorResponse(res, '不能关注自己', 400);
         }
         
-        // 检查是否已关注
-        const existing = await DbAdapter.findOne(Follow, {
-            where: { follower_id: req.user.id, following_id: targetUser.id }
+        // 使用事务和 findOrCreate 防止竞态条件导致的重复关注
+        const result = await sequelize.transaction(async (t) => {
+            const [follow, created] = await DbAdapter.findOrCreate(Follow, {
+                where: { follower_id: req.user.id, following_id: targetUser.id },
+                defaults: { follower_id: req.user.id, following_id: targetUser.id },
+                transaction: t
+            });
+            
+            if (!created) {
+                return { success: false, msg: '已关注该用户' };
+            }
+            
+            // 使用原子操作更新计数
+            const currentUser = await DbAdapter.findByPk(User, req.user.id, { transaction: t });
+            await currentUser.increment('following_count', { transaction: t });
+            await targetUser.increment('follower_count', { transaction: t });
+            
+            await DbAdapter.create(Notification, {
+                user_id: targetUser.id,
+                type: 'follow',
+                title: '关注了你',
+                sender_id: req.user.id
+            }, { transaction: t });
+            
+            return { success: true, msg: '关注成功' };
         });
         
-        if (existing) {
-            return errorResponse(res, '已关注该用户', 400);
+        if (!result.success) {
+            return errorResponse(res, result.msg, 400);
         }
         
-        // 创建关注
-        await DbAdapter.create(Follow, {
-            follower_id: req.user.id,
-            following_id: targetUser.id
-        });
-        
-        // 使用原子操作更新计数，避免竞态条件
-        const currentUser = await DbAdapter.findByPk(User, req.user.id);
-        await DbAdapter.increment(currentUser, 'following_count');
-        await DbAdapter.increment(targetUser, 'follower_count');
-        
-        await DbAdapter.create(Notification, {
-            user_id: targetUser.id,
-            type: 'follow',
-            title: '关注了你',
-            sender_id: req.user.id
-        });
-        
-        return successResponse(res, null, '关注成功');
+        return successResponse(res, null, result.msg);
     } catch (error) {
         console.error('关注错误:', error);
         return errorResponse(res, '关注失败', 500);
@@ -74,24 +78,31 @@ async function unfollowUser(req, res) {
             return errorResponse(res, '用户不存在', 404);
         }
         
-        const follow = await DbAdapter.findOne(Follow, {
-            where: { follower_id: req.user.id, following_id: targetUser.id }
+        // 使用事务确保数据一致性
+        await sequelize.transaction(async (t) => {
+            const follow = await DbAdapter.findOne(Follow, {
+                where: { follower_id: req.user.id, following_id: targetUser.id },
+                transaction: t
+            });
+            
+            if (!follow) {
+                throw new Error('未关注该用户');
+            }
+            
+            await DbAdapter.destroy(Follow, { where: { id: DbAdapter.getId(follow) }, transaction: t });
+            
+            // 使用原子操作更新计数
+            const currentUser = await DbAdapter.findByPk(User, req.user.id, { transaction: t });
+            await currentUser.decrement('following_count', { transaction: t });
+            await targetUser.decrement('follower_count', { transaction: t });
         });
-        
-        if (!follow) {
-            return errorResponse(res, '未关注该用户', 400);
-        }
-        
-        await DbAdapter.destroy(Follow, { where: { id: DbAdapter.getId(follow) } });
-        
-        // 使用原子操作更新计数，避免竞态条件
-        const currentUser = await DbAdapter.findByPk(User, req.user.id);
-        await DbAdapter.decrement(currentUser, 'following_count');
-        await DbAdapter.decrement(targetUser, 'follower_count');
         
         return successResponse(res, null, '已取消关注');
     } catch (error) {
         console.error('取消关注错误:', error);
+        if (error.message === '未关注该用户') {
+            return errorResponse(res, error.message, 400);
+        }
         return errorResponse(res, '取消关注失败', 500);
     }
 }
