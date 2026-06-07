@@ -192,7 +192,7 @@ const handleAvatarChange = async (e) => {
   
   let geetestData = {}
   if (geetestConfig.value?.enabled && geetestConfig.value?.scenes?.update_profile) {
-    geetestData = await geetestDialogRef.value.show('update_profile')
+    geetestData = await geetestDialogRef.value?.show('update_profile')
     if (!geetestData) {
       avatarInput.value.value = ''
       return
@@ -229,7 +229,7 @@ const saveProfile = async () => {
   
   let geetestData = {}
   if (geetestConfig.value?.enabled && geetestConfig.value?.scenes?.update_profile) {
-    geetestData = await geetestDialogRef.value.show('update_profile')
+    geetestData = await geetestDialogRef.value?.show('update_profile')
     if (!geetestData) return
   }
   
@@ -258,7 +258,7 @@ const changePassword = async () => {
   
   let geetestData = {}
   if (geetestConfig.value?.enabled && geetestConfig.value?.scenes?.update_profile) {
-    geetestData = await geetestDialogRef.value.show('update_profile')
+    geetestData = await geetestDialogRef.value?.show('update_profile')
     if (!geetestData) return
   }
   

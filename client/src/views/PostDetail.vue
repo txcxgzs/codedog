@@ -256,7 +256,7 @@ const likePost = async () => {
   let geetestData = {}
   
   if (geetestConfig.value?.enabled && geetestConfig.value?.scenes?.like) {
-    geetestData = await geetestDialogRef.value.show('like')
+    geetestData = await geetestDialogRef.value?.show('like')
     if (!geetestData) return
   }
   
@@ -324,7 +324,7 @@ const likeComment = async (comment) => {
   let geetestData = {}
   
   if (geetestConfig.value?.enabled && geetestConfig.value?.scenes?.like) {
-    geetestData = await geetestDialogRef.value.show('like')
+    geetestData = await geetestDialogRef.value?.show('like')
     if (!geetestData) return
   }
   
@@ -367,7 +367,7 @@ const reportComment = async (comment) => {
   
   let geetestData = {}
   if (geetestConfig.value?.enabled && geetestConfig.value?.scenes?.report) {
-    geetestData = await geetestDialogRef.value.show('report')
+    geetestData = await geetestDialogRef.value?.show('report')
     if (!geetestData) return
   }
   
@@ -409,7 +409,7 @@ const handleMoreAction = async (command) => {
     
     let geetestData = {}
     if (geetestConfig.value?.enabled && geetestConfig.value?.scenes?.report) {
-      geetestData = await geetestDialogRef.value.show('report')
+      geetestData = await geetestDialogRef.value?.show('report')
       if (!geetestData) return
     }
     
