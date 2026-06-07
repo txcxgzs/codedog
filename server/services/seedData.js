@@ -19,6 +19,11 @@ async function fetchAndSaveWork(workId) {
             return null;
         }
         
+        if (!data.user_info) {
+            console.error(`作品 ${workId} 缺少 user_info 数据`);
+            return null;
+        }
+        
         const existing = await Work.findOne({ where: { codemao_work_id: data.id } });
         if (existing) {
             return existing;
@@ -32,9 +37,9 @@ async function fetchAndSaveWork(workId) {
                 username: `codemao_${data.user_info.id}`,
                 email: `codemao_${data.user_info.id}@placeholder.com`,
                 password: '$2a$10$placeholder',
-                nickname: data.user_info.nickname,
-                avatar: data.user_info.avatar,
-                bio: data.user_info.description,
+                nickname: data.user_info.nickname || '未知用户',
+                avatar: data.user_info.avatar || '',
+                bio: data.user_info.description || '',
                 role: 'user',
                 status: 'active'
             });
@@ -46,15 +51,15 @@ async function fetchAndSaveWork(workId) {
         
         const work = await Work.create({
             codemao_work_id: data.id,
-            name: data.work_name,
-            description: data.description,
-            preview: data.preview,
+            name: data.work_name || '未命名作品',
+            description: data.description || '',
+            preview: data.preview || '',
             type: type,
-            ide_type: data.ide_type,
-            work_url: data.player_url,
+            ide_type: data.ide_type || '',
+            work_url: data.player_url || '',
             user_id: user.id,
             codemao_author_id: data.user_info.id,
-            codemao_author_name: data.user_info.nickname,
+            codemao_author_name: data.user_info.nickname || '未知用户',
             view_times: data.view_times || 0,
             praise_times: data.liked_times || 0,
             collection_times: data.collect_times || 0,
@@ -62,9 +67,10 @@ async function fetchAndSaveWork(workId) {
             status: 'published'
         });
         
-        console.log(`✅ 作品: ${data.work_name} (作者ID: ${data.user_info.id})`);
+        console.log(`✅ 作品: ${data.work_name || '未命名作品'} (作者ID: ${data.user_info.id})`);
         return { work, authorId: data.user_info.id };
     } catch (error) {
+        console.error(`获取作品 ${workId} 失败:`, error.message);
         return null;
     }
 }
@@ -112,6 +118,7 @@ async function fetchUserWorks(userId, limit = 10) {
         }
         return { count, authorIds: Array.from(authorIds) };
     } catch (error) {
+        console.error(`获取用户 ${userId} 的作品失败:`, error.message);
         return { count: 0, authorIds: [] };
     }
 }
@@ -134,6 +141,7 @@ async function fetchUserCollections(userId, limit = 10) {
         }
         return { count, authorIds: Array.from(authorIds) };
     } catch (error) {
+        console.error(`获取用户 ${userId} 的收藏失败:`, error.message);
         return { count: 0, authorIds: [] };
     }
 }
@@ -198,6 +206,7 @@ async function searchAndFetchWorks(keyword, limit = 50) {
         
         return { count, authorIds: Array.from(authorIds) };
     } catch (error) {
+        console.error(`搜索关键词 "${keyword}" 失败:`, error.message);
         return { count: 0, authorIds: [] };
     }
 }
