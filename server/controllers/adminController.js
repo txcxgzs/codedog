@@ -1864,11 +1864,17 @@ async function batchUpdateConfigs(req, res) {
 
 // 辅助函数：更新.env文件中的环境变量
 function updateEnvVariable(content, key, value) {
+    // 安全修复：移除值中的换行符，防止环境变量注入攻击
+    const safeValue = value.replace(/[\r\n]/g, '');
+    // 验证 key 只包含合法的环境变量名称字符
+    if (!/^[\w]+$/.test(key)) {
+        throw new Error(`Invalid environment variable key: ${key}`);
+    }
     const regex = new RegExp(`^${key}=.*$`, 'gm');
     if (regex.test(content)) {
-        return content.replace(regex, `${key}=${value}`);
+        return content.replace(regex, `${key}=${safeValue}`);
     } else {
-        return content + `\n${key}=${value}`;
+        return content + `\n${key}=${safeValue}`;
     }
 }
 
