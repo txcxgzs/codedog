@@ -48,7 +48,7 @@
       </div>
     </div>
     
-    <GeetestDialog ref="geetestDialog" @success="onGeetestSuccess" />
+    <GeetestDialog ref="geetestDialog" />
   </div>
 </template>
 
@@ -75,8 +75,6 @@ const searchKeyword = ref('')
 const batchMode = ref(false)
 const selectedWorks = ref([])
 const geetestDialog = ref(null)
-const pendingRemoveWork = ref(null)
-const pendingBatchRemove = ref(false)
 
 const getIdeTypeName = (ideType) => {
   if (!ideType) return ''
@@ -158,8 +156,9 @@ const removeFavorite = async (work) => {
     await ElMessageBox.confirm('确定要取消收藏该作品吗？', '提示', { type: 'warning' })
     
     if (geetestEnabled('remove_favorite')) {
-      pendingRemoveWork.value = work
-      geetestDialog.value?.show('remove_favorite')
+      const geetestData = await geetestDialog.value?.show('remove_favorite')
+      if (!geetestData) return
+      await doRemoveFavorite(work.id)
     } else {
       await doRemoveFavorite(work.id)
     }
@@ -175,23 +174,14 @@ const batchRemove = async () => {
     await ElMessageBox.confirm(`确定要取消收藏选中的 ${selectedWorks.value.length} 个作品吗？`, '提示', { type: 'warning' })
     
     if (geetestEnabled('remove_favorite')) {
-      pendingBatchRemove.value = true
-      geetestDialog.value?.show('remove_favorite')
+      const geetestData = await geetestDialog.value?.show('remove_favorite')
+      if (!geetestData) return
+      await doBatchRemove()
     } else {
       await doBatchRemove()
     }
   } catch (e) {
     if (e !== 'cancel') console.error(e)
-  }
-}
-
-const onGeetestSuccess = async (data) => {
-  if (pendingBatchRemove.value) {
-    await doBatchRemove()
-    pendingBatchRemove.value = false
-  } else if (pendingRemoveWork.value) {
-    await doRemoveFavorite(pendingRemoveWork.value.id)
-    pendingRemoveWork.value = null
   }
 }
 
