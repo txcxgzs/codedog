@@ -192,7 +192,8 @@ async function reviewContent(type, content) {
         return {
             success: false,
             error: 'AI响应格式错误，无法解析JSON',
-            rawResponse: aiResponse.substring(0, 500)
+            rawResponse: aiResponse.substring(0, 500),
+            fallback: await fallbackReview(content)
         };
     } catch (error) {
         console.error('AI审核请求失败:', error.message);

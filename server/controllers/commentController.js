@@ -160,22 +160,33 @@ async function deleteComment(req, res) {
             return errorResponse(res, '无权删除此评论', 403);
         }
         
-        await DbAdapter.update(Comment, { status: 'deleted' }, { where: { id } });
+        const t = await sequelize.transaction();
         
-        if (comment.work_id) {
-            const work = await DbAdapter.findByPk(Work, comment.work_id);
-            if (work) {
-                await DbAdapter.decrement(work, 'comment_count');
+        try {
+            await DbAdapter.update(Comment, { status: 'deleted' }, { 
+                where: { id },
+                transaction: t 
+            });
+            
+            if (comment.work_id) {
+                const work = await DbAdapter.findByPk(Work, comment.work_id, { transaction: t });
+                if (work) {
+                    await DbAdapter.decrement(work, 'comment_count', { transaction: t });
+                }
             }
-        }
-        if (comment.post_id) {
-            const post = await DbAdapter.findByPk(Post, comment.post_id);
-            if (post) {
-                await DbAdapter.decrement(post, 'comment_count');
+            if (comment.post_id) {
+                const post = await DbAdapter.findByPk(Post, comment.post_id, { transaction: t });
+                if (post) {
+                    await DbAdapter.decrement(post, 'comment_count', { transaction: t });
+                }
             }
+            
+            await t.commit();
+            return successResponse(res, null, '评论已删除');
+        } catch (error) {
+            await t.rollback();
+            throw error;
         }
-        
-        return successResponse(res, null, '评论已删除');
     } catch (error) {
         console.error('删除评论错误:', error);
         return errorResponse(res, '删除评论失败', 500);

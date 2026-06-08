@@ -180,34 +180,49 @@ async function joinStudio(req, res) {
         
         const status = studio.join_type === 'apply' ? 'pending' : 'active';
         
-        let member;
-        if (existing) {
-            await DbAdapter.update(StudioMember, { status }, { where: { id: DbAdapter.getId(existing) } });
-            member = existing;
-        } else {
-            member = await DbAdapter.create(StudioMember, {
-                studio_id: id,
-                user_id: req.user.id,
-                role: 'member',
-                status
-            });
-        }
+        const t = await sequelize.transaction();
         
-        if (status === 'pending') {
-            await DbAdapter.create(Notification, {
-                user_id: studio.owner_id,
-                type: 'system',
-                title: '新成员申请',
-                content: `有新成员申请加入您的工作室「${studio.name}」`,
-                sender_id: req.user.id
-            });
-            return successResponse(res, member, '申请已提交，请等待审核');
-        } else {
-            await DbAdapter.update(Studio, 
-                { member_count: (studio.member_count || 0) + 1 },
-                { where: { id: DbAdapter.getId(studio) } }
-            );
-            return successResponse(res, member, '加入成功');
+        try {
+            let member;
+            if (existing) {
+                await DbAdapter.update(StudioMember, { status }, { 
+                    where: { id: DbAdapter.getId(existing) },
+                    transaction: t 
+                });
+                member = existing;
+            } else {
+                member = await DbAdapter.create(StudioMember, {
+                    studio_id: id,
+                    user_id: req.user.id,
+                    role: 'member',
+                    status
+                }, { transaction: t });
+            }
+            
+            if (status === 'pending') {
+                await DbAdapter.create(Notification, {
+                    user_id: studio.owner_id,
+                    type: 'system',
+                    title: '新成员申请',
+                    content: `有新成员申请加入您的工作室「${studio.name}」`,
+                    sender_id: req.user.id
+                }, { transaction: t });
+                await t.commit();
+                return successResponse(res, member, '申请已提交，请等待审核');
+            } else {
+                await DbAdapter.update(Studio, 
+                    { member_count: (studio.member_count || 0) + 1 },
+                    { 
+                        where: { id: DbAdapter.getId(studio) },
+                        transaction: t 
+                    }
+                );
+                await t.commit();
+                return successResponse(res, member, '加入成功');
+            }
+        } catch (error) {
+            await t.rollback();
+            throw error;
         }
     } catch (error) {
         console.error('加入工作室错误:', error);
@@ -525,7 +540,7 @@ async function reviewWork(req, res) {
                 user_id: studioWork.user_id,
                 type: 'system',
                 title: '作品审核通过',
-                content: `您投稿到「${studio.name}」的作品已通过审核`
+                content: studio ? `您投稿到「${studio.name}」的作品已通过审核` : '您的作品已通过审核'
             });
             
             return successResponse(res, null, '作品已通过');

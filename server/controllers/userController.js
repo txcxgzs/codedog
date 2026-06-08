@@ -3,7 +3,7 @@
  * 仅支持编程猫账号登录
  */
 
-const { User, Work, SystemConfig } = require('../models');
+const { User, Work, SystemConfig, sequelize } = require('../models');
 const { successResponse, errorResponse } = require('../middleware/response');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
@@ -78,8 +78,11 @@ async function codemaoLogin(req, res, identity, password) {
         const codemaoUser = codemaoRes.user_info;
         const codemaoToken = codemaoRes.auth?.token || codemaoRes.token || null;
         
-        // 使用 findOrCreate 避免竞态条件
         let user, created;
+        let isFirstUser = false;
+        
+        const t = await sequelize.transaction();
+        
         try {
             [user, created] = await DbAdapter.findOrCreate(User, {
                 where: { codemao_user_id: codemaoUser.id },
@@ -94,28 +97,33 @@ async function codemaoLogin(req, res, identity, password) {
                     codemao_token: codemaoToken,
                     role: 'user',
                     status: 'active'
-                }
+                },
+                transaction: t
             });
+            
+            if (created) {
+                const userCount = await DbAdapter.count(User, { transaction: t });
+                if (userCount === 1) {
+                    isFirstUser = true;
+                    await DbAdapter.update(User, { role: 'superadmin' }, { 
+                        where: { id: DbAdapter.getId(user) },
+                        transaction: t 
+                    });
+                    user.role = 'superadmin';
+                    console.log(`✅ 第一个用户 ${codemaoUser.nickname} 已自动成为超级管理员`);
+                }
+            }
+            
+            await t.commit();
         } catch (createError) {
-            // 如果创建失败（可能是并发创建），尝试再次查找
+            await t.rollback();
+            
             user = await DbAdapter.findOne(User, { 
                 where: { codemao_user_id: codemaoUser.id } 
             });
             created = false;
             if (!user) {
                 throw createError;
-            }
-        }
-        
-        // 如果是新创建的用户，检查是否是第一个用户（自动成为管理员）
-        let isFirstUser = false;
-        if (created) {
-            const userCount = await DbAdapter.count(User, {});
-            if (userCount === 1) {
-                isFirstUser = true;
-                await DbAdapter.update(User, { role: 'superadmin' }, { where: { id: DbAdapter.getId(user) } });
-                user.role = 'superadmin';
-                console.log(`✅ 第一个用户 ${codemaoUser.nickname} 已自动成为超级管理员`);
             }
         }
         
