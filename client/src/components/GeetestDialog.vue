@@ -28,6 +28,8 @@ import { ref } from 'vue'
 import { Loading, WarningFilled } from '@element-plus/icons-vue'
 import { geetestApi } from '@/api/geetest'
 
+const emit = defineEmits(['success'])
+
 const visible = ref(false)
 const captchaBox = ref(null)
 const loading = ref(false)
@@ -111,12 +113,14 @@ const loadCaptcha = (gt, challenge, offline, newCaptcha, product) => {
     captcha.onSuccess(() => {
       const result = captcha.getValidate()
       if (result && resolvePromise.value) {
-        resolvePromise.value({
+        const geetestData = {
           geetest_challenge: result.geetest_challenge,
           geetest_validate: result.geetest_validate,
           geetest_seccode: result.geetest_seccode
-        })
+        }
+        resolvePromise.value(geetestData)
         resolvePromise.value = null
+        emit('success', geetestData)
       }
       visible.value = false
     })
