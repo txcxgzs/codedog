@@ -61,7 +61,7 @@ function setSecurityHeaders(res) {
         "base-uri 'self'",
         "object-src 'none'",
         "frame-ancestors 'none'",
-        "script-src 'self'",
+        "script-src 'self' https://static.geetest.com https://*.geetest.com https://hcaptcha.com https://*.hcaptcha.com",
         "style-src 'self' 'unsafe-inline'",
         "img-src 'self' data: http: https:",
         "font-src 'self' data:",
