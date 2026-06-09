@@ -203,10 +203,10 @@ async function joinStudio(req, res) {
             });
             return successResponse(res, member, '申请已提交，请等待审核');
         } else {
-            await DbAdapter.update(Studio, 
-                { member_count: (studio.member_count || 0) + 1 },
-                { where: { id: DbAdapter.getId(studio) } }
-            );
+            await Studio.increment('member_count', {
+                by: 1,
+                where: { id: DbAdapter.getId(studio) }
+            });
             return successResponse(res, member, '加入成功');
         }
     } catch (error) {
@@ -235,10 +235,10 @@ async function leaveStudio(req, res) {
         
         const studio = await DbAdapter.findByPk(Studio, id);
         if (studio) {
-            await DbAdapter.update(Studio, 
-                { member_count: Math.max(0, (studio.member_count || 0) - 1) },
-                { where: { id: DbAdapter.getId(studio) } }
-            );
+            await Studio.decrement('member_count', {
+                by: 1,
+                where: { id: DbAdapter.getId(studio), member_count: { [Op.gt]: 0 } }
+            });
         }
         
         return successResponse(res, null, '已退出工作室');
@@ -341,10 +341,10 @@ async function reviewMember(req, res) {
             await DbAdapter.update(StudioMember, { status: 'active' }, { where: { id: DbAdapter.getId(member) } });
             const studio = await DbAdapter.findByPk(Studio, id);
             if (studio) {
-                await DbAdapter.update(Studio, 
-                    { member_count: (studio.member_count || 0) + 1 },
-                    { where: { id: DbAdapter.getId(studio) } }
-                );
+                await Studio.increment('member_count', {
+                    by: 1,
+                    where: { id: DbAdapter.getId(studio) }
+                });
             }
             
             await DbAdapter.create(Notification, {
@@ -515,10 +515,10 @@ async function reviewWork(req, res) {
             }, { where: { id: workId } });
             const studio = await DbAdapter.findByPk(Studio, id);
             if (studio) {
-                await DbAdapter.update(Studio, 
-                    { work_count: (studio.work_count || 0) + 1 },
-                    { where: { id: DbAdapter.getId(studio) } }
-                );
+                await Studio.increment('work_count', {
+                    by: 1,
+                    where: { id: DbAdapter.getId(studio) }
+                });
             }
             
             await DbAdapter.create(Notification, {
@@ -569,10 +569,10 @@ async function removeWork(req, res) {
         if (wasApproved) {
             const studio = await DbAdapter.findByPk(Studio, id);
             if (studio) {
-                await DbAdapter.update(Studio, 
-                    { work_count: Math.max(0, (studio.work_count || 0) - 1) },
-                    { where: { id: DbAdapter.getId(studio) } }
-                );
+                await Studio.decrement('work_count', {
+                    by: 1,
+                    where: { id: DbAdapter.getId(studio), work_count: { [Op.gt]: 0 } }
+                });
             }
         }
         
@@ -749,10 +749,10 @@ async function kickMember(req, res) {
         await DbAdapter.destroy(StudioMember, { where: { id: DbAdapter.getId(member) } });
         const studio = await DbAdapter.findByPk(Studio, id);
         if (studio) {
-            await DbAdapter.update(Studio, 
-                { member_count: Math.max(0, (studio.member_count || 0) - 1) },
-                { where: { id: DbAdapter.getId(studio) } }
-            );
+            await Studio.decrement('member_count', {
+                by: 1,
+                where: { id: DbAdapter.getId(studio), member_count: { [Op.gt]: 0 } }
+            });
         }
         
         return successResponse(res, null, '成员已移除');

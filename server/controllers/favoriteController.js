@@ -43,10 +43,10 @@ async function addFavorite(req, res) {
         });
         
         // 更新作品收藏数
-        await DbAdapter.update(Work,
-            { collection_times: (work.collection_times || 0) + 1 },
-            { where: { id: DbAdapter.getId(work) } }
-        );
+        await Work.increment('collection_times', {
+            by: 1,
+            where: { id: DbAdapter.getId(work) }
+        });
         
         return successResponse(res, null, '收藏成功');
     } catch (error) {
@@ -82,10 +82,10 @@ async function removeFavorite(req, res) {
         
         const work = await DbAdapter.findByPk(Work, localWorkId);
         if (work) {
-            await DbAdapter.update(Work,
-                { collection_times: Math.max(0, (work.collection_times || 0) - 1) },
-                { where: { id: DbAdapter.getId(work) } }
-            );
+            await Work.decrement('collection_times', {
+                by: 1,
+                where: { id: DbAdapter.getId(work), collection_times: { [Op.gt]: 0 } }
+            });
         }
         
         return successResponse(res, null, '已取消收藏');
