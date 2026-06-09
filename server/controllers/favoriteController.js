@@ -7,6 +7,10 @@ const { Favorite, Work, User, sequelize } = require('../models');
 const { successResponse, errorResponse } = require('../middleware/response');
 const { Op } = require('sequelize');
 
+function canInteractWithWork(work) {
+    return work && work.status === 'published';
+}
+
 /**
  * 收藏作品
  */
@@ -27,6 +31,10 @@ async function addFavorite(req, res) {
             return errorResponse(res, '作品不存在', 404);
         }
         
+        if (!canInteractWithWork(work)) {
+            return errorResponse(res, 'Work not found', 404);
+        }
+
         const localWorkId = DbAdapter.getId(work);
         
         const existing = await DbAdapter.findOne(Favorite, {
@@ -104,7 +112,7 @@ async function getMyFavorites(req, res) {
         const pageSize = parseInt(req.query.pageSize) || 20;
         const keyword = req.query.keyword || '';
         
-        const workWhere = {};
+        const workWhere = { status: 'published' };
         if (keyword) {
             workWhere[Op.or] = [
                 { name: { [Op.like]: `%${keyword}%` } },
@@ -117,7 +125,7 @@ async function getMyFavorites(req, res) {
             include: [{
                 model: Work,
                 as: 'work',
-                where: keyword ? workWhere : undefined,
+                where: workWhere,
                 include: [{
                     model: User,
                     as: 'author',

@@ -4,6 +4,7 @@
  */
 
 const axios = require('axios');
+const net = require('net');
 const { SystemConfig, SensitiveWord } = require('../models');
 const DbAdapter = require('../utils/dbAdapter');
 const { Op } = require('sequelize');
@@ -88,6 +89,46 @@ JSON格式如下：
 3. violations数组为空时表示无违规
 4. riskLevel和recommendation必须匹配`;
 
+function isPrivateHost(hostname) {
+    const host = String(hostname || '').toLowerCase();
+    if (!host || host === 'localhost' || host.endsWith('.localhost')) {
+        return true;
+    }
+
+    const ipVersion = net.isIP(host);
+    if (ipVersion === 4) {
+        const parts = host.split('.').map(Number);
+        return parts[0] === 10
+            || parts[0] === 127
+            || (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31)
+            || (parts[0] === 192 && parts[1] === 168)
+            || (parts[0] === 169 && parts[1] === 254)
+            || parts[0] === 0;
+    }
+    if (ipVersion === 6) {
+        return host === '::1' || host.startsWith('fc') || host.startsWith('fd') || host.startsWith('fe80:');
+    }
+
+    return false;
+}
+
+function validateAIEndpoint(apiUrl) {
+    let parsed;
+    try {
+        parsed = new URL(apiUrl);
+    } catch (error) {
+        throw new Error('AI API 地址格式无效');
+    }
+
+    if (parsed.protocol !== 'https:') {
+        throw new Error('AI API 地址必须使用 HTTPS');
+    }
+
+    if (isPrivateHost(parsed.hostname)) {
+        throw new Error('AI API 地址不能指向本机或内网地址');
+    }
+}
+
 async function getAIConfig() {
     const configs = await DbAdapter.findAll(SystemConfig, {
         where: { config_key: { [Op.in]: ['ai_enabled', 'ai_api_url', 'ai_api_key', 'ai_model', 'ai_prompt'] } }
@@ -134,6 +175,8 @@ async function reviewContent(type, content) {
             };
         }
         
+        validateAIEndpoint(config.apiUrl);
+
         if (!config.apiKey) {
             console.log('AI API密钥未配置');
             return {

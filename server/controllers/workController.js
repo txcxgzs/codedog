@@ -60,7 +60,7 @@ function buildWorkCreateParams(workInfo, userId) {
         ide_type: workInfo.ideType || 'KITTEN',
         work_url: workInfo.playerUrl,
         user_id: userId,
-        codemao_author_id: String(workInfo.codemaoAuthorId),
+        codemao_author_id: workInfo.codemaoAuthorId != null ? String(workInfo.codemaoAuthorId) : null,
         codemao_author_name: workInfo.codemaoAuthorName,
         praise_times: workInfo.praiseTimes,
         collection_times: workInfo.collectionTimes,
@@ -68,6 +68,40 @@ function buildWorkCreateParams(workInfo, userId) {
         comment_count: workInfo.commentTimes,
         status: 'published'
     };
+}
+
+async function withLikeStatus(req, work) {
+    const data = work.toJSON ? work.toJSON() : work.toObject ? work.toObject() : work;
+    let liked = false;
+
+    if (req.user) {
+        const { Like } = require('../models');
+        const likeRecord = await DbAdapter.findOne(Like, {
+            where: { user_id: DbAdapter.getId(req.user), work_id: DbAdapter.getId(work) }
+        });
+        liked = !!likeRecord;
+    }
+
+    return { ...data, liked };
+}
+
+function isValidCodemaoWorkId(codemaoId) {
+    return /^\d{1,20}$/.test(String(codemaoId));
+}
+
+function canViewWork(req, work) {
+    if (work.status === 'published') {
+        return true;
+    }
+    if (!req.user) {
+        return false;
+    }
+    const isOwner = work.user_id != null && String(work.user_id) === String(DbAdapter.getId(req.user));
+    return isOwner || isRoleAtLeast(req.user.role, 'moderator');
+}
+
+function canInteractWithWork(work) {
+    return work && work.status === 'published';
 }
 
 /**
@@ -104,6 +138,9 @@ async function publishWork(req, res) {
         
         if (!codemaoWorkId) {
             return errorResponse(res, '请输入编程猫作品ID', 400);
+        }
+        if (!isValidCodemaoWorkId(codemaoWorkId)) {
+            return errorResponse(res, '作品ID格式不正确', 400);
         }
         
         const workInfo = await fetchCodemaoWork(codemaoWorkId);
@@ -200,7 +237,6 @@ async function getWorks(req, res) {
 async function getWorkDetail(req, res) {
     try {
         const codemaoId = req.params.codemaoId;
-        const { Like } = require('../models');
         
         const work = await DbAdapter.findOne(Work, {
             where: { codemao_work_id: String(codemaoId) },
@@ -214,18 +250,12 @@ async function getWorkDetail(req, res) {
         if (!work) {
             return errorResponse(res, '作品不存在', 404);
         }
-        
-        await DbAdapter.increment(work, 'view_times');
-        
-        let liked = false;
-        if (req.user) {
-            const likeRecord = await DbAdapter.findOne(Like, {
-                where: { user_id: DbAdapter.getId(req.user), work_id: DbAdapter.getId(work) }
-            });
-            liked = !!likeRecord;
+        if (!canViewWork(req, work)) {
+            return errorResponse(res, '作品不存在', 404);
         }
         
-        return successResponse(res, { ...(work.toJSON ? work.toJSON() : work.toObject ? work.toObject() : work), liked });
+        await DbAdapter.increment(work, 'view_times');
+        return successResponse(res, await withLikeStatus(req, work));
     } catch (error) {
         console.error('获取作品详情错误:', error);
         return errorResponse(res, '获取作品详情失败', 500);
@@ -249,8 +279,19 @@ async function getWorkByCodemaoId(req, res) {
         });
         
         if (work) {
+            if (!canViewWork(req, work)) {
+                return errorResponse(res, '作品不存在', 404);
+            }
             await DbAdapter.increment(work, 'view_times');
-            return successResponse(res, work.toJSON ? work.toJSON() : work);
+            return successResponse(res, await withLikeStatus(req, work));
+        }
+
+        if (!isValidCodemaoWorkId(codemaoId)) {
+            return errorResponse(res, '作品ID格式不正确', 400);
+        }
+
+        if (!req.user) {
+            return errorResponse(res, '请先登录后导入作品', 401);
         }
         
         const workInfo = await fetchCodemaoWork(codemaoId);
@@ -294,13 +335,24 @@ async function getWorkByCodemaoId(req, res) {
                     }]
                 });
                 if (work) {
-                    return successResponse(res, work.toJSON ? work.toJSON() : work);
+                    if (!canViewWork(req, work)) {
+                        return errorResponse(res, '作品不存在', 404);
+                    }
+                    return successResponse(res, await withLikeStatus(req, work));
                 }
             }
             throw createError;
         }
         
-        return successResponse(res, work.toJSON ? work.toJSON() : work);
+        const result = await DbAdapter.findByPk(Work, DbAdapter.getId(work), {
+            include: [{
+                model: User,
+                as: 'author',
+                attributes: ['id', 'codemao_user_id', 'username', 'nickname', 'avatar', 'bio']
+            }]
+        });
+
+        return successResponse(res, await withLikeStatus(req, result || work));
     } catch (error) {
         console.error('获取编程猫作品错误:', error);
         return errorResponse(res, '获取作品信息失败', 500);
@@ -407,7 +459,7 @@ async function fetchOrCreateWork(workId) {
         return null;
     }
     
-    const user = await ensureCodemaoUser(workDetail.user_info);
+    const user = workDetail.user_info?.id ? await ensureCodemaoUser(workDetail.user_info) : null;
     
     const type = workDetail.work_label_list && workDetail.work_label_list[0] 
         ? workDetail.work_label_list[0].label_name 
@@ -420,7 +472,7 @@ async function fetchOrCreateWork(workId) {
         preview: workDetail.preview || '',
         type: type,
         ideType: workDetail.ide_type || 'KITTEN',
-        workUrl: workDetail.player_url || '',
+        playerUrl: workDetail.player_url || '',
         codemaoAuthorId: workDetail.user_info?.id,
         codemaoAuthorName: workDetail.user_info?.nickname || '未知作者',
         viewTimes: workDetail.view_times || 0,
@@ -430,7 +482,7 @@ async function fetchOrCreateWork(workId) {
     };
     
     try {
-        work = await DbAdapter.create(Work, buildWorkCreateParams(workInfo, DbAdapter.getId(user)));
+        work = await DbAdapter.create(Work, buildWorkCreateParams(workInfo, user ? DbAdapter.getId(user) : null));
     } catch (createError) {
         if (createError.name === 'SequelizeUniqueConstraintError') {
             work = await DbAdapter.findOne(Work, { 
@@ -524,6 +576,10 @@ async function likeWork(req, res) {
             return errorResponse(res, '作品不存在', 404);
         }
         
+        if (!canInteractWithWork(work)) {
+            return errorResponse(res, 'Work not found', 404);
+        }
+
         const existingLike = await DbAdapter.findOne(Like, {
             where: { user_id: DbAdapter.getId(req.user), work_id: DbAdapter.getId(work) }
         });
@@ -541,7 +597,7 @@ async function likeWork(req, res) {
         });
         await DbAdapter.increment(work, 'praise_times');
         
-        if (work.user_id && work.user_id.toString() !== DbAdapter.getId(req.user).toString()) {
+        if (work.user_id != null && String(work.user_id) !== String(DbAdapter.getId(req.user))) {
             await DbAdapter.create(Notification, {
                 user_id: work.user_id,
                 type: 'like',
@@ -572,7 +628,8 @@ async function deleteWork(req, res) {
             return errorResponse(res, '作品不存在', 404);
         }
         
-        if (work.user_id.toString() !== DbAdapter.getId(req.user).toString() && !isRoleAtLeast(req.user.role, 'moderator')) {
+        const isOwner = work.user_id != null && String(work.user_id) === String(DbAdapter.getId(req.user));
+        if (!isOwner && !isRoleAtLeast(req.user.role, 'moderator')) {
             return errorResponse(res, '无权删除此作品', 403);
         }
         
@@ -598,7 +655,8 @@ async function updateWork(req, res) {
             return errorResponse(res, '作品不存在', 404);
         }
         
-        if (work.user_id.toString() !== DbAdapter.getId(req.user).toString()) {
+        const isOwner = work.user_id != null && String(work.user_id) === String(DbAdapter.getId(req.user));
+        if (!isOwner) {
             return errorResponse(res, '无权修改此作品', 403);
         }
         

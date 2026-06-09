@@ -8,6 +8,10 @@ const { successResponse, errorResponse, paginateResponse } = require('../middlew
 const { Op } = require('sequelize');
 const { isRoleAtLeast } = require('../config/permissions');
 
+function canInteractWithPost(post) {
+    return post && post.status === 'published';
+}
+
 /**
  * 发布帖子
  */
@@ -123,6 +127,10 @@ async function getPostDetail(req, res) {
             return errorResponse(res, '帖子不存在', 404);
         }
         
+        if (post.status !== 'published') {
+            return errorResponse(res, '帖子不存在', 404);
+        }
+
         await DbAdapter.update(Post, 
             { view_count: (post.view_count || 0) + 1 },
             { where: { id: DbAdapter.getId(post) } }
@@ -234,6 +242,10 @@ async function likePost(req, res) {
             return errorResponse(res, '帖子不存在', 404);
         }
         
+        if (!canInteractWithPost(post)) {
+            return errorResponse(res, 'Post not found', 404);
+        }
+
         const existingLike = await DbAdapter.findOne(Like, {
             where: { user_id: userId, post_id: DbAdapter.getId(post) }
         });
@@ -280,6 +292,10 @@ async function favoritePost(req, res) {
             return errorResponse(res, '帖子不存在', 404);
         }
         
+        if (!canInteractWithPost(post)) {
+            return errorResponse(res, 'Post not found', 404);
+        }
+
         const existing = await DbAdapter.findOne(Favorite, {
             where: { user_id: userId, post_id: DbAdapter.getId(post) }
         });
@@ -320,6 +336,10 @@ async function unfavoritePost(req, res) {
             return errorResponse(res, '帖子不存在', 404);
         }
         
+        if (!canInteractWithPost(post)) {
+            return errorResponse(res, 'Post not found', 404);
+        }
+
         const existing = await DbAdapter.findOne(Favorite, {
             where: { user_id: userId, post_id: DbAdapter.getId(post) }
         });

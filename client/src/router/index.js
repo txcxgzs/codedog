@@ -57,6 +57,10 @@ const routes = [
     meta: { title: '登录' }
   },
   {
+    path: '/register',
+    redirect: '/login'
+  },
+  {
     path: '/publish',
     name: 'Publish',
     component: () => import('@/views/Publish.vue'),

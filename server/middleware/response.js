@@ -27,16 +27,25 @@ function errorResponse(res, msg = '操作失败', statusCode = 400, errorCode = 
 
 // 分页响应
 function paginateResponse(res, list, total, page, pageSize) {
+    const normalizedTotal = parseInt(total) || 0;
+    const normalizedPage = parseInt(page) || 1;
+    const normalizedPageSize = parseInt(pageSize) || 20;
+    const totalPages = Math.ceil(normalizedTotal / normalizedPageSize);
+
     return res.json({
         code: 200,
         msg: '获取成功',
         data: {
             list: list,
+            total: normalizedTotal,
+            page: normalizedPage,
+            pageSize: normalizedPageSize,
+            totalPages,
             pagination: {
-                total: total,
-                page: parseInt(page),
-                pageSize: parseInt(pageSize),
-                totalPages: Math.ceil(total / pageSize)
+                total: normalizedTotal,
+                page: normalizedPage,
+                pageSize: normalizedPageSize,
+                totalPages
             }
         }
     });

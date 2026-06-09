@@ -1,17 +1,46 @@
-/**
- * JWT认证中间件
- * 验证用户Token，保护需要登录的路由
- */
-
 const jwt = require('jsonwebtoken');
 const { isRoleAtLeast } = require('../config/permissions');
 const { JWT_SECRET } = require('../config/auth');
+const { User } = require('../models');
+const DbAdapter = require('../utils/dbAdapter');
 
-// 认证中间件
-function authMiddleware(req, res, next) {
-    // 从请求头获取Token
-    const token = req.headers.authorization?.split(' ')[1];
-    
+function getBearerToken(req) {
+    const header = req.headers.authorization || '';
+    const [scheme, token] = header.split(' ');
+    if (!token || scheme.toLowerCase() !== 'bearer') {
+        return null;
+    }
+    return token;
+}
+
+async function resolveUserFromToken(token) {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    const user = await DbAdapter.findByPk(User, decoded.id);
+
+    if (!user) {
+        const error = new Error('USER_NOT_FOUND');
+        error.statusCode = 401;
+        throw error;
+    }
+
+    if (user.status !== 'active') {
+        const error = new Error('USER_DISABLED');
+        error.statusCode = 403;
+        throw error;
+    }
+
+    return {
+        id: DbAdapter.getId(user),
+        username: user.username,
+        role: user.role,
+        status: user.status,
+        codemao_user_id: user.codemao_user_id
+    };
+}
+
+async function authMiddleware(req, res, next) {
+    const token = getBearerToken(req);
+
     if (!token) {
         return res.status(401).json({
             code: 401,
@@ -19,37 +48,34 @@ function authMiddleware(req, res, next) {
             data: null
         });
     }
-    
+
     try {
-        // 验证Token
-        const decoded = jwt.verify(token, JWT_SECRET);
-        req.user = decoded;
+        req.user = await resolveUserFromToken(token);
         next();
     } catch (error) {
-        return res.status(401).json({
-            code: 401,
-            msg: '登录已过期，请重新登录',
+        const statusCode = error.statusCode || 401;
+        return res.status(statusCode).json({
+            code: statusCode,
+            msg: statusCode === 403 ? '账号已被禁用' : '登录已过期，请重新登录',
             data: null
         });
     }
 }
 
-// 可选认证中间件（有token则解析，无token也放行）
-function optionalAuth(req, res, next) {
-    const token = req.headers.authorization?.split(' ')[1];
-    
+async function optionalAuth(req, res, next) {
+    const token = getBearerToken(req);
+
     if (token) {
         try {
-            const decoded = jwt.verify(token, JWT_SECRET);
-            req.user = decoded;
+            req.user = await resolveUserFromToken(token);
         } catch (error) {
-            // Token无效但不阻止请求
+            // Public endpoints should still work when an optional token is invalid.
         }
     }
+
     next();
 }
 
-// 管理员权限中间件（包括审核员及以上角色）
 function adminMiddleware(req, res, next) {
     if (!isRoleAtLeast(req.user.role, 'reviewer')) {
         return res.status(403).json({

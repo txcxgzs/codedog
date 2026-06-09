@@ -8,9 +8,14 @@ const { errorResponse } = require('../middleware/response');
 const axios = require('axios');
 
 async function hcaptchaGuard(req, res, next) {
+    if (!req.path.startsWith('/api/')) {
+        return next();
+    }
+
     const excludePaths = [
         '/api/users/login',
         '/api/users/register',
+        '/api/health',
         '/api/hcaptcha',
         '/api/geetest',
         '/api/admin'

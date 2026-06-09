@@ -142,7 +142,7 @@ const checkHCaptcha = async () => {
     const res = await hcaptchaApi.getStatus()
     if (res.code === 200 && res.data.required && !res.data.verified) {
       const result = await hcaptchaDialogRef.value.show()
-      if (result) {
+      if (result?.verified) {
         hcaptchaVerified.value = true
       }
     }

@@ -38,7 +38,7 @@ request.interceptors.response.use(
     if (error.response) {
       const status = error.response.status
       const message = error.response.data?.msg || '请求失败'
-      const errorCode = error.response.data?.code
+      const errorCode = error.response.data?.errorCode || error.response.data?.code
       const url = error.config?.url || ''
       
       if (errorCode === 'HCAPTCHA_REQUIRED') {

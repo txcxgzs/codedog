@@ -253,6 +253,9 @@ const saveProfile = async () => {
 }
 
 const changePassword = async () => {
+  ElMessage.info('当前仅支持编程猫账号登录，请前往编程猫修改密码')
+  return
+
   const valid = await passwordFormRef.value.validate().catch(() => false)
   if (!valid) return
   

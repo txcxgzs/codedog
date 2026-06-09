@@ -2,6 +2,51 @@ const DbAdapter = require('../utils/dbAdapter');
 const { Studio, StudioMember, StudioWork, User, Work, Notification, sequelize } = require('../models');
 const { successResponse, errorResponse, paginateResponse } = require('../middleware/response');
 const { Op } = require('sequelize');
+const { isRoleAtLeast } = require('../config/permissions');
+
+const VALID_JOIN_TYPES = ['public', 'apply', 'invite'];
+
+function sameId(left, right) {
+    return String(left) === String(right);
+}
+
+function isValidJoinType(joinType) {
+    return joinType == null || VALID_JOIN_TYPES.includes(joinType);
+}
+
+async function isStudioMember(studioId, userId) {
+    if (!userId) return false;
+
+    const member = await DbAdapter.findOne(StudioMember, {
+        where: { studio_id: studioId, user_id: userId, status: 'active' }
+    });
+    return !!member;
+}
+
+async function canViewStudio(req, studio) {
+    if (!studio || studio.status !== 'active') {
+        return false;
+    }
+
+    if (studio.is_public) {
+        return true;
+    }
+
+    if (!req.user) {
+        return false;
+    }
+
+    if (isRoleAtLeast(req.user.role, 'moderator')) {
+        return true;
+    }
+
+    const userId = DbAdapter.getId(req.user);
+    if (sameId(studio.owner_id, userId) || (studio.vice_owner_id && sameId(studio.vice_owner_id, userId))) {
+        return true;
+    }
+
+    return isStudioMember(DbAdapter.getId(studio), userId);
+}
 
 async function createStudio(req, res) {
     try {
@@ -9,6 +54,10 @@ async function createStudio(req, res) {
         
         if (!name) {
             return errorResponse(res, '请输入工作室名称', 400);
+        }
+
+        if (!isValidJoinType(join_type)) {
+            return errorResponse(res, '无效的加入方式', 400);
         }
         
         const existingOwner = await DbAdapter.findOne(Studio, { where: { owner_id: req.user.id, status: { [Op.ne]: 'banned' } } });
@@ -50,7 +99,7 @@ async function getStudios(req, res) {
         const pageSize = parseInt(req.query.pageSize) || 20;
         const keyword = req.query.keyword || '';
         
-        const where = { status: 'active' };
+        const where = { status: 'active', is_public: true };
         if (keyword) {
             where.name = { [Op.like]: `%${keyword}%` };
         }
@@ -89,6 +138,14 @@ async function getStudioDetail(req, res) {
         if (!studio) {
             return errorResponse(res, '工作室不存在', 404);
         }
+
+        if (studio.status !== 'active') {
+            return errorResponse(res, '工作室不存在', 404);
+        }
+
+        if (!await canViewStudio(req, studio)) {
+            return errorResponse(res, '工作室不存在', 404);
+        }
         
         const members = await DbAdapter.findAll(StudioMember, {
             where: { studio_id: id, status: 'active' },
@@ -105,13 +162,15 @@ async function getStudioDetail(req, res) {
             include: [{
                 model: Work,
                 as: 'work',
+                where: { status: 'published' },
+                required: true,
                 attributes: ['id', 'name', 'preview', 'praise_times', 'view_times', 'codemao_work_id', 'ide_type', 'work_url']
             }, {
                 model: User,
                 as: 'user',
                 attributes: ['id', 'username', 'nickname', 'avatar', 'codemao_user_id']
             }],
-            order: [['created_at', 'DESC']],
+            order: [['added_at', 'DESC']],
             limit: 12
         });
         
@@ -137,7 +196,7 @@ async function getStudioDetail(req, res) {
             works: works.filter(w => w.work).map(w => ({
                 ...w.work.toJSON(),
                 submitUser: w.user,
-                submittedAt: w.created_at
+                submittedAt: w.added_at
             })),
             userRole,
             userMemberStatus
@@ -159,6 +218,10 @@ async function joinStudio(req, res) {
         
         if (studio.status !== 'active') {
             return errorResponse(res, '该工作室已被禁用', 400);
+        }
+
+        if (!studio.is_public) {
+            return errorResponse(res, '工作室不存在', 404);
         }
         
         const existing = await DbAdapter.findOne(StudioMember, {
@@ -285,6 +348,10 @@ async function updateStudio(req, res) {
         if (!studio) {
             return errorResponse(res, '工作室不存在', 404);
         }
+
+        if (!isValidJoinType(join_type)) {
+            return errorResponse(res, '无效的加入方式', 400);
+        }
         
         const member = await DbAdapter.findOne(StudioMember, {
             where: { studio_id: id, user_id: req.user.id }
@@ -398,6 +465,10 @@ async function submitWork(req, res) {
         if (!studio) {
             return errorResponse(res, '工作室不存在', 404);
         }
+
+        if (studio.status !== 'active') {
+            return errorResponse(res, '工作室不存在', 404);
+        }
         
         const member = await DbAdapter.findOne(StudioMember, {
             where: { studio_id: id, user_id: req.user.id, status: 'active' }
@@ -412,7 +483,11 @@ async function submitWork(req, res) {
             return errorResponse(res, '作品不存在', 404);
         }
         
-        if (work.user_id !== req.user.id) {
+        if (work.status !== 'published') {
+            return errorResponse(res, '作品不存在', 404);
+        }
+
+        if (!sameId(work.user_id, req.user.id)) {
             return errorResponse(res, '只能投稿自己的作品', 403);
         }
         
@@ -450,23 +525,28 @@ async function getStudioWorks(req, res) {
         const { id } = req.params;
         const page = parseInt(req.query.page) || 1;
         const pageSize = parseInt(req.query.pageSize) || 20;
-        const status = req.query.status;
+
+        const studio = await DbAdapter.findByPk(Studio, id);
+        if (!studio || !await canViewStudio(req, studio)) {
+            return errorResponse(res, '工作室不存在', 404);
+        }
         
         const where = { studio_id: id, status: 'approved' };
-        if (status) where.status = status;
         
         const { count, rows } = await DbAdapter.findAndCountAll(StudioWork, {
             where,
             include: [{
                 model: Work,
                 as: 'work',
+                where: { status: 'published' },
+                required: true,
                 attributes: ['id', 'name', 'preview', 'praise_times', 'view_times', 'codemao_work_id', 'ide_type', 'work_url']
             }, {
                 model: User,
                 as: 'user',
                 attributes: ['id', 'username', 'nickname', 'avatar', 'codemao_user_id']
             }],
-            order: [['created_at', 'DESC']],
+            order: [['added_at', 'DESC']],
             limit: pageSize,
             offset: (page - 1) * pageSize
         });
@@ -476,7 +556,7 @@ async function getStudioWorks(req, res) {
             studioWorkId: w.id,
             status: w.status,
             submitUser: w.user,
-            submittedAt: w.created_at
+            submittedAt: w.added_at
         }));
         
         return paginateResponse(res, list, count, page, pageSize);
@@ -671,7 +751,7 @@ async function getPendingWorks(req, res) {
                 as: 'user',
                 attributes: ['id', 'username', 'nickname', 'avatar']
             }],
-            order: [['created_at', 'ASC']]
+            order: [['added_at', 'ASC']]
         });
         
         return successResponse(res, works);

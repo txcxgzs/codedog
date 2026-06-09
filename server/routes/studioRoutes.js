@@ -7,7 +7,7 @@ const { geetestVerify } = require('../middleware/geetest');
 router.get('/', studioController.getStudios);
 router.get('/my/list', authMiddleware, studioController.getMyStudios);
 router.get('/:id', optionalAuth, studioController.getStudioDetail);
-router.get('/:id/works', studioController.getStudioWorks);
+router.get('/:id/works', optionalAuth, studioController.getStudioWorks);
 
 router.post('/', authMiddleware, geetestVerify('create_studio'), studioController.createStudio);
 router.post('/:id/join', authMiddleware, geetestVerify('join_studio'), studioController.joinStudio);

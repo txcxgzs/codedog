@@ -1,115 +1,131 @@
-/**
- * 数据库迁移路由
- * 只有手动触发才会执行，系统不会自动迁移
- * 支持 SQLite 和 MySQL 之间的数据迁移
- */
-
 const express = require('express');
-const router = express.Router();
+const path = require('path');
+const fs = require('fs');
+const { Sequelize } = require('sequelize');
 const dbMigration = require('../services/dbMigration');
 const { successResponse, errorResponse } = require('../middleware/response');
 const { logOperation } = require('../middleware/operationLog');
+const { authMiddleware } = require('../middleware/auth');
+const { requireRole } = require('../middleware/permission');
 
-/**
- * 获取数据库统计信息
- * GET /api/admin/db-migration/stats
- */
+const router = express.Router();
+
+router.use(authMiddleware, requireRole('superadmin'));
+
+function routeError(message, statusCode = 400) {
+    const error = new Error(message);
+    error.statusCode = statusCode;
+    return error;
+}
+
+function handleRouteError(res, error, fallbackMessage) {
+    const statusCode = error.statusCode || 500;
+    const message = statusCode < 500 ? error.message : fallbackMessage;
+    return errorResponse(res, message, statusCode);
+}
+
+function assertAllowedMysqlHost(host) {
+    if (!host || process.env.DB_MIGRATION_ALLOW_CUSTOM_HOSTS === 'true') {
+        return;
+    }
+
+    const allowedHosts = [process.env.DB_HOST, 'localhost', '127.0.0.1']
+        .filter(Boolean)
+        .map(String);
+
+    if (!allowedHosts.includes(String(host))) {
+        throw routeError('Database migration only allows preconfigured database hosts.');
+    }
+}
+
+function resolveSqlitePath(inputPath) {
+    const dataDir = path.resolve(__dirname, '../data');
+    fs.mkdirSync(dataDir, { recursive: true });
+
+    const requested = inputPath || process.env.DB_PATH || './data/database.sqlite';
+    const resolved = path.isAbsolute(requested)
+        ? path.resolve(requested)
+        : path.resolve(__dirname, '..', requested);
+
+    if (!resolved.startsWith(dataDir + path.sep) && resolved !== dataDir) {
+        throw routeError('SQLite path must stay inside server/data.');
+    }
+
+    return resolved;
+}
+
+function buildDbConfig(dbType, config = {}) {
+    if (dbType === 'mysql') {
+        const host = config.host || process.env.DB_HOST;
+        assertAllowedMysqlHost(host);
+        return {
+            host,
+            port: config.port || process.env.DB_PORT,
+            database: config.database || process.env.DB_NAME,
+            user: config.user || process.env.DB_USER,
+            password: config.password || process.env.DB_PASSWORD
+        };
+    }
+
+    if (dbType === 'sqlite') {
+        return {
+            path: resolveSqlitePath(config.path)
+        };
+    }
+
+    throw routeError('Unsupported database type. Only sqlite and mysql are allowed.');
+}
+
+function assertValidDbType(dbType) {
+    if (!['sqlite', 'mysql'].includes(dbType)) {
+        throw routeError('Unsupported database type. Only sqlite and mysql are allowed.');
+    }
+}
+
 router.get('/stats', async (req, res) => {
     try {
         const { dbType, ...config } = req.query;
-
         if (!dbType) {
-            return errorResponse(res, '请指定数据库类型', 400);
+            throw routeError('dbType is required.');
         }
 
-        let dbConfig = {};
-
-        if (dbType === 'mysql') {
-            dbConfig.host = config.host || process.env.DB_HOST;
-            dbConfig.port = config.port || process.env.DB_PORT;
-            dbConfig.database = config.database || process.env.DB_NAME;
-            dbConfig.user = config.user || process.env.DB_USER;
-            dbConfig.password = config.password || process.env.DB_PASSWORD;
-        } else if (dbType === 'sqlite') {
-            dbConfig.path = config.path || './database.sqlite';
-        } else {
-            return errorResponse(res, '不支持的数据库类型，仅支持 sqlite 和 mysql', 400);
-        }
-
+        assertValidDbType(dbType);
+        const dbConfig = buildDbConfig(dbType, config);
         const result = await dbMigration.getStats(dbType, dbConfig);
 
-        if (result.success) {
-            return successResponse(res, result.stats);
-        } else {
-            return errorResponse(res, result.message, 500);
+        if (!result.success) {
+            return errorResponse(res, 'Failed to get database stats.', 500);
         }
+
+        return successResponse(res, result.stats);
     } catch (error) {
-        console.error('获取数据库统计失败:', error);
-        return errorResponse(res, '获取数据库统计失败', 500);
+        console.error('Failed to get database stats:', error);
+        return handleRouteError(res, error, 'Failed to get database stats.');
     }
 });
 
-/**
- * 执行数据库迁移
- * POST /api/admin/db-migration/migrate
- * 
- * 请求体:
- * {
- *   sourceType: 'sqlite' | 'mysql',
- *   sourceConfig: { ... },
- *   targetType: 'sqlite' | 'mysql',
- *   targetConfig: { ... },
- *   clearExisting: boolean
- * }
- */
 router.post('/migrate', async (req, res) => {
     try {
         const { sourceType, sourceConfig, targetType, targetConfig, clearExisting } = req.body;
 
         if (!sourceType || !targetType) {
-            return errorResponse(res, '请指定源数据库和目标数据库类型', 400);
+            throw routeError('sourceType and targetType are required.');
         }
 
-        const validTypes = ['sqlite', 'mysql'];
-        if (!validTypes.includes(sourceType) || !validTypes.includes(targetType)) {
-            return errorResponse(res, '不支持的数据库类型，仅支持 sqlite 和 mysql', 400);
+        assertValidDbType(sourceType);
+        assertValidDbType(targetType);
+
+        if (sourceType === targetType && JSON.stringify(sourceConfig || {}) === JSON.stringify(targetConfig || {})) {
+            throw routeError('Source and target databases cannot be identical.');
         }
 
-        if (sourceType === targetType && 
-            JSON.stringify(sourceConfig) === JSON.stringify(targetConfig)) {
-            return errorResponse(res, '源数据库和目标数据库不能相同', 400);
-        }
-
-        let srcConfig = {};
-        if (sourceType === 'mysql') {
-            srcConfig.host = sourceConfig?.host || process.env.DB_HOST;
-            srcConfig.port = sourceConfig?.port || process.env.DB_PORT;
-            srcConfig.database = sourceConfig?.database || process.env.DB_NAME;
-            srcConfig.user = sourceConfig?.user || process.env.DB_USER;
-            srcConfig.password = sourceConfig?.password || process.env.DB_PASSWORD;
-        } else if (sourceType === 'sqlite') {
-            srcConfig.path = sourceConfig?.path || './database.sqlite';
-        }
-
-        let tgtConfig = {};
-        if (targetType === 'mysql') {
-            tgtConfig.host = targetConfig?.host || process.env.DB_HOST;
-            tgtConfig.port = targetConfig?.port || process.env.DB_PORT;
-            tgtConfig.database = targetConfig?.database || process.env.DB_NAME;
-            tgtConfig.user = targetConfig?.user || process.env.DB_USER;
-            tgtConfig.password = targetConfig?.password || process.env.DB_PASSWORD;
-        } else if (targetType === 'sqlite') {
-            tgtConfig.path = targetConfig?.path || './database.sqlite';
-        }
-
-        console.log(`\n🔄 收到数据库迁移请求: ${sourceType} -> ${targetType}`);
-        console.log('操作者:', req.user?.username || '未知');
-        console.log('清空目标:', clearExisting ? '是' : '否');
+        const srcConfig = buildDbConfig(sourceType, sourceConfig);
+        const tgtConfig = buildDbConfig(targetType, targetConfig);
 
         logOperation(req, 'db_migration_start', 'database', null, {
             sourceType,
             targetType,
-            clearExisting
+            clearExisting: !!clearExisting
         });
 
         const result = await dbMigration.migrate(
@@ -117,58 +133,47 @@ router.post('/migrate', async (req, res) => {
             srcConfig,
             targetType,
             tgtConfig,
-            clearExisting
+            !!clearExisting
         );
 
-        if (result.success) {
-            logOperation(req, 'db_migration_success', 'database', null, {
-                sourceType,
-                targetType,
-                stats: result.stats
-            });
-
-            return successResponse(res, result.stats, '数据库迁移成功');
-        } else {
+        if (!result.success) {
             logOperation(req, 'db_migration_failed', 'database', null, {
                 sourceType,
-                targetType,
-                error: result.error
+                targetType
             });
-
-            return errorResponse(res, result.message, 500);
+            return errorResponse(res, 'Database migration failed.', 500);
         }
+
+        logOperation(req, 'db_migration_success', 'database', null, {
+            sourceType,
+            targetType,
+            stats: result.stats
+        });
+
+        return successResponse(res, result.stats, 'Database migration completed.');
     } catch (error) {
-        console.error('数据库迁移错误:', error);
+        console.error('Database migration error:', error);
         logOperation(req, 'db_migration_error', 'database', null, {
             error: error.message
         });
-        return errorResponse(res, `数据库迁移失败: ${error.message}`, 500);
+        return handleRouteError(res, error, 'Database migration failed.');
     }
 });
 
-/**
- * 测试数据库连接
- * POST /api/admin/db-migration/test-connection
- */
 router.post('/test-connection', async (req, res) => {
+    let sequelize;
+
     try {
         const { dbType, config } = req.body;
-
         if (!dbType) {
-            return errorResponse(res, '请指定数据库类型', 400);
+            throw routeError('dbType is required.');
         }
 
-        let testConfig = {};
+        assertValidDbType(dbType);
+        const testConfig = buildDbConfig(dbType, config);
 
         if (dbType === 'mysql') {
-            const { Sequelize } = require('sequelize');
-            testConfig.host = config?.host || process.env.DB_HOST;
-            testConfig.port = config?.port || process.env.DB_PORT;
-            testConfig.database = config?.database || process.env.DB_NAME;
-            testConfig.user = config?.user || process.env.DB_USER;
-            testConfig.password = config?.password || process.env.DB_PASSWORD;
-
-            const sequelize = new Sequelize(
+            sequelize = new Sequelize(
                 testConfig.database,
                 testConfig.user,
                 testConfig.password,
@@ -179,26 +184,23 @@ router.post('/test-connection', async (req, res) => {
                     logging: false
                 }
             );
-            await sequelize.authenticate();
-            await sequelize.close();
-        } else if (dbType === 'sqlite') {
-            const { Sequelize } = require('sequelize');
-            testConfig.path = config?.path || './database.sqlite';
-            const sequelize = new Sequelize({
+        } else {
+            sequelize = new Sequelize({
                 dialect: 'sqlite',
                 storage: testConfig.path,
                 logging: false
             });
-            await sequelize.authenticate();
-            await sequelize.close();
-        } else {
-            return errorResponse(res, '不支持的数据库类型，仅支持 sqlite 和 mysql', 400);
         }
 
-        return successResponse(res, null, '数据库连接成功');
+        await sequelize.authenticate();
+        return successResponse(res, null, 'Database connection succeeded.');
     } catch (error) {
-        console.error('数据库连接测试失败:', error);
-        return errorResponse(res, `数据库连接失败: ${error.message}`, 500);
+        console.error('Database connection test failed:', error);
+        return handleRouteError(res, error, 'Database connection failed.');
+    } finally {
+        if (sequelize) {
+            await sequelize.close().catch(() => {});
+        }
     }
 });
 

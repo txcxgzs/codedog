@@ -8,6 +8,8 @@
             v-if="playerUrl"
             :src="playerUrl"
             class="r-work--player"
+            sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+            referrerpolicy="no-referrer"
             allowfullscreen
           ></iframe>
           <div v-else class="r-work--no_preview">
@@ -356,6 +358,28 @@ const submitting = ref(false)
 const favoriteLoading = ref(false)
 const isFavorited = ref(false)
 const work = ref(null)
+const allowedPlayerHosts = new Set([
+  'player.codemao.cn',
+  'nemo.codemao.cn',
+  'python.codemao.cn',
+  'coco.codemao.cn',
+  'block.codemao.cn',
+  'box.codemao.cn'
+])
+
+const getSafePlayerUrl = (value) => {
+  if (!value) return null
+
+  try {
+    const url = new URL(value)
+    if (url.protocol !== 'https:') return null
+    if (!allowedPlayerHosts.has(url.hostname)) return null
+    return url.href
+  } catch (error) {
+    return null
+  }
+}
+
 const playerUrl = computed(() => {
   if (!work.value) return null
   const workId = work.value.codemao_work_id
@@ -381,9 +405,8 @@ const playerUrl = computed(() => {
   }
   
   // 如果有原始播放地址则优先使用
-  if (work.value.work_url && work.value.work_url.startsWith('http')) {
-    return work.value.work_url
-  }
+  const safeWorkUrl = getSafePlayerUrl(work.value.work_url)
+  if (safeWorkUrl) return safeWorkUrl
   
   // 默认兜底使用 K4 播放器
   return `https://player.codemao.cn/new/${workId}`
@@ -442,9 +465,24 @@ const getTypeName = (workType) => {
   return typeMap[type] || workType
 }
 
+const isValidCodemaoWorkId = (value) => /^\d{1,20}$/.test(String(value || ''))
+
 const fetchWork = async () => {
-  const codemaoId = route.params.codemaoId
-  if (!codemaoId) return
+  const codemaoId = String(route.params.codemaoId || '')
+  work.value = null
+  comments.value = []
+  relatedWorks.value = []
+
+  if (!codemaoId) {
+    loading.value = false
+    return
+  }
+
+  if (!isValidCodemaoWorkId(codemaoId)) {
+    loading.value = false
+    ElMessage.error('作品ID格式不正确')
+    return
+  }
   
   loading.value = true
   try {

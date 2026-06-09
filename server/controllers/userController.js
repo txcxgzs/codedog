@@ -7,6 +7,7 @@ const { User, Work, SystemConfig } = require('../models');
 const { successResponse, errorResponse } = require('../middleware/response');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
 const { JWT_SECRET, JWT_EXPIRES_IN } = require('../config/auth');
 const codemaoApi = require('../services/codemaoApi');
 const path = require('path');
@@ -18,6 +19,36 @@ const GeetestService = require('../services/geetestService');
 const uploadDir = path.join(__dirname, '../uploads/avatars');
 if (!fs.existsSync(uploadDir)) {
     fs.mkdirSync(uploadDir, { recursive: true });
+}
+
+function cleanupUploadedFile(file) {
+    if (file?.path) {
+        fs.unlink(file.path, () => {});
+    }
+}
+
+function constantTimeEquals(a, b) {
+    if (!a || !b) return false;
+    const left = Buffer.from(String(a));
+    const right = Buffer.from(String(b));
+    return left.length === right.length && crypto.timingSafeEqual(left, right);
+}
+
+function shouldPromoteInitialAdmin(req, codemaoUserId, userCount) {
+    if (userCount !== 1) return false;
+
+    const configuredAdminId = process.env.INITIAL_ADMIN_CODEMAO_ID || process.env.INITIAL_SUPERADMIN_CODEMAO_ID;
+    if (configuredAdminId && String(codemaoUserId) === String(configuredAdminId)) {
+        return true;
+    }
+
+    const bootstrapToken = process.env.INITIAL_ADMIN_BOOTSTRAP_TOKEN;
+    const providedToken = req.headers['x-bootstrap-token'] || req.body.bootstrap_token;
+    if (bootstrapToken && constantTimeEquals(providedToken, bootstrapToken)) {
+        return true;
+    }
+
+    return process.env.NODE_ENV !== 'production' && process.env.ALLOW_FIRST_USER_SUPERADMIN === 'true';
 }
 
 /**
@@ -40,6 +71,7 @@ async function login(req, res) {
         );
         
         if (!result.success) {
+            cleanupUploadedFile(req.file);
             return errorResponse(res, result.reason || '请完成验证码验证', 400, 'CAPTCHA_FAILED');
         }
         
@@ -107,19 +139,26 @@ async function codemaoLogin(req, res, identity, password) {
             }
         }
         
-        // 如果是新创建的用户，检查是否是第一个用户（自动成为管理员）
+        // Production should not let a random first visitor claim superadmin.
         let isFirstUser = false;
-        if (created) {
-            const userCount = await DbAdapter.count(User, {});
-            if (userCount === 1) {
-                isFirstUser = true;
-                await DbAdapter.update(User, { role: 'superadmin' }, { where: { id: DbAdapter.getId(user) } });
-                user.role = 'superadmin';
-                console.log(`✅ 第一个用户 ${codemaoUser.nickname} 已自动成为超级管理员`);
-            }
+        const userCount = created ? await DbAdapter.count(User, {}) : null;
+        const promotedToInitialAdmin = shouldPromoteInitialAdmin(req, codemaoUser.id, userCount)
+            && user.role !== 'superadmin';
+
+        if (promotedToInitialAdmin) {
+            isFirstUser = true;
+            await DbAdapter.update(User, { role: 'superadmin' }, { where: { id: DbAdapter.getId(user) } });
+            user.role = 'superadmin';
+            console.log(`Initial administrator promoted: ${codemaoUser.nickname} (${codemaoUser.id})`);
+        } else if (created && userCount === 1) {
+            console.warn('Initial user was not promoted. Set INITIAL_ADMIN_CODEMAO_ID or INITIAL_ADMIN_BOOTSTRAP_TOKEN to bootstrap a superadmin.');
         }
         
         // 更新用户信息
+        if (user.status !== 'active') {
+            return errorResponse(res, '账号已被禁用，请联系管理员', 403);
+        }
+
         if (!created) {
             await DbAdapter.update(User, {
                 nickname: codemaoUser.nickname,
@@ -142,7 +181,7 @@ async function codemaoLogin(req, res, identity, password) {
         // 构建返回消息
         let message = '编程猫登录成功';
         if (isFirstUser) {
-            message = '编程猫登录成功，您是第一个用户，已自动成为管理员';
+            message = '编程猫登录成功，您已被设为初始管理员';
         }
         
         return successResponse(res, {
@@ -249,15 +288,17 @@ async function syncUserWorks(codemaoUserId, localUserId) {
 async function getCurrentUser(req, res) {
     try {
         const user = await DbAdapter.findByPk(User, DbAdapter.getId(req.user), {
-            attributes: { exclude: ['password'] }
+            attributes: { exclude: ['password', 'codemao_token'] }
         });
         
         if (!user) {
+            cleanupUploadedFile(req.file);
             return errorResponse(res, '用户不存在', 404);
         }
         
         return successResponse(res, user);
     } catch (error) {
+        cleanupUploadedFile(req.file);
         console.error('获取用户信息错误:', error);
         return errorResponse(res, '获取用户信息失败', 500);
     }
@@ -279,11 +320,13 @@ async function updateProfile(req, res) {
         );
         
         if (!result.success) {
+            cleanupUploadedFile(req.file);
             return errorResponse(res, '请完成验证码验证', 400);
         }
         
         const user = await DbAdapter.findByPk(User, DbAdapter.getId(req.user));
         if (!user) {
+            cleanupUploadedFile(req.file);
             return errorResponse(res, '用户不存在', 404);
         }
         
@@ -310,6 +353,7 @@ async function updateProfile(req, res) {
             doing: updatedUser.doing
         }, '资料更新成功');
     } catch (error) {
+        cleanupUploadedFile(req.file);
         console.error('更新资料错误:', error);
         return errorResponse(res, '更新资料失败', 500);
     }

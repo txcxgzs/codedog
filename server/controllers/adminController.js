@@ -21,6 +21,17 @@ const MAX_LOG_ENTRIES = 500;
 const realtimeLogs = [];
 const MAX_REALTIME_LOGS = 1000;
 
+const VALID_USER_ROLES = ['user', 'reviewer', 'moderator', 'admin', 'superadmin'];
+const VALID_USER_STATUSES = ['active', 'disabled'];
+
+function isSelf(req, user) {
+    return String(DbAdapter.getId(req.user)) === String(DbAdapter.getId(user));
+}
+
+function canManageExistingUser(req, user) {
+    return !isSelf(req, user) && canManageUser(req.user.role, user.role);
+}
+
 // 重写console.log和console.error以捕获日志
 const originalConsoleLog = console.log;
 const originalConsoleError = console.error;
@@ -277,6 +288,10 @@ async function updateUserPassword(req, res) {
             return errorResponse(res, '用户不存在', 404);
         }
         
+        if (!canManageExistingUser(req, user)) {
+            return errorResponse(res, 'Cannot manage this user', 403);
+        }
+
         const hashedPassword = await bcrypt.hash(newPassword, 10);
         await DbAdapter.update(User, { password: hashedPassword }, { where: { id: userId } });
         
@@ -303,10 +318,21 @@ async function updateUser(req, res) {
         }
 
         // 检查权限
+        if (!canManageExistingUser(req, user)) {
+            return errorResponse(res, 'Cannot manage this user', 403);
+        }
+
         if (role && role !== user.role) {
+            if (!VALID_USER_ROLES.includes(role)) {
+                return errorResponse(res, 'Invalid role', 400);
+            }
             if (!canManageUser(operatorRole, user.role) || !canManageUser(operatorRole, role)) {
                 return errorResponse(res, '权限不足', 403);
             }
+        }
+
+        if (status !== undefined && !VALID_USER_STATUSES.includes(status)) {
+            return errorResponse(res, 'Invalid status', 400);
         }
 
         const updateData = {};
@@ -351,6 +377,12 @@ async function impersonateUser(req, res) {
         if (!user) {
             return errorResponse(res, '用户不存在', 404);
         }
+        if (!canManageUser(operatorRole, user.role)) {
+            return errorResponse(res, '您没有权限以该用户身份登录', 403);
+        }
+        if (user.status !== 'active') {
+            return errorResponse(res, '目标账号已被禁用', 403);
+        }
 
         // 生成 Token
         const token = jwt.sign(
@@ -389,6 +421,13 @@ async function updateUserStatus(req, res) {
         const user = await DbAdapter.findByPk(User, userId);
         if (!user) {
             return errorResponse(res, '用户不存在', 404);
+        }
+
+        if (!canManageExistingUser(req, user)) {
+            return errorResponse(res, 'Cannot manage this user', 403);
+        }
+        if (!VALID_USER_STATUSES.includes(status)) {
+            return errorResponse(res, 'Invalid status', 400);
         }
 
         await DbAdapter.update(User, { status }, { where: { id: userId } });
@@ -474,6 +513,10 @@ async function deleteUser(req, res) {
 
         if (DbAdapter.getId(user) === DbAdapter.getId(req.user)) {
             return errorResponse(res, '不能删除自己', 400);
+        }
+
+        if (!canManageExistingUser(req, user)) {
+            return errorResponse(res, 'Cannot manage this user', 403);
         }
 
         await DbAdapter.destroy(User, { where: { id: DbAdapter.getId(user) } });
@@ -691,7 +734,8 @@ async function crawlHotWorks(req, res) {
     const taskId = Date.now().toString();
     try {
         const { count = 20 } = req.body;
-        const targetCount = Math.max(count, 1);
+        const requestedCount = parseInt(count, 10);
+        const targetCount = Math.min(Math.max(Number.isFinite(requestedCount) ? requestedCount : 20, 1), 100);
         const results = [];
         let offset = 0;
         const pageSize = 50;
@@ -914,7 +958,8 @@ async function crawlUserWorks(req, res) {
         
         console.log(`开始爬取用户 ${userId} 的作品...`);
         
-        const targetLimit = Math.min(limit, 500);
+        const parsedLimit = parseInt(limit, 10);
+        const targetLimit = Math.min(Math.max(Number.isFinite(parsedLimit) ? parsedLimit : 100, 1), 100);
         const pageSize = 50;
         let offset = 0;
         let allItems = [];
@@ -1047,7 +1092,10 @@ async function crawlPostWorks(req, res) {
         
         console.log(`从帖子中提取到 ${workIds.size} 个作品ID`);
         
-        for (const workId of Array.from(workIds).slice(0, limit)) {
+        const parsedLimit = parseInt(limit, 10);
+        const targetLimit = Math.min(Math.max(Number.isFinite(parsedLimit) ? parsedLimit : 20, 1), 100);
+
+        for (const workId of Array.from(workIds).slice(0, targetLimit)) {
             try {
                 const existing = await DbAdapter.findOne(Work, { where: { codemao_work_id: workId } });
                 if (existing) continue;
@@ -1792,7 +1840,7 @@ async function updateSystemConfig(req, res) {
             config = await DbAdapter.create(SystemConfig, { config_key: key, config_value: value, description });
         }
         
-        logOperation(req, 'update_config', 'system_config', null, { key, value });
+        logOperation(req, 'update_config', 'system_config', null, redactConfigDetails({ [key]: value }));
         return successResponse(res, config, '更新成功');
     } catch (error) {
         console.error('更新系统设置错误:', error);
@@ -1809,6 +1857,12 @@ async function batchUpdateConfigs(req, res) {
         );
         
         if (hasDbConfig) {
+            for (const [key, value] of Object.entries(configs)) {
+                if (/[\r\n\0]/.test(String(value ?? ''))) {
+                    return errorResponse(res, `${key} 包含非法换行字符`, 400);
+                }
+            }
+
             const fs = require('fs');
             const path = require('path');
             const envPath = path.join(__dirname, '../.env');
@@ -1849,7 +1903,7 @@ async function batchUpdateConfigs(req, res) {
             }
         }
         
-        logOperation(req, 'batch_update_config', 'system_config', null, configs);
+        logOperation(req, 'batch_update_config', 'system_config', null, redactConfigDetails(configs));
         
         if (hasDbConfig) {
             return successResponse(res, null, '数据库配置更新成功，请重启服务器以应用新配置');
@@ -1864,12 +1918,26 @@ async function batchUpdateConfigs(req, res) {
 
 // 辅助函数：更新.env文件中的环境变量
 function updateEnvVariable(content, key, value) {
+    const safeValue = String(value ?? '');
+    if (/[\r\n\0]/.test(safeValue)) {
+        const error = new Error(`${key} 包含非法换行字符`);
+        error.statusCode = 400;
+        throw error;
+    }
     const regex = new RegExp(`^${key}=.*$`, 'gm');
     if (regex.test(content)) {
-        return content.replace(regex, `${key}=${value}`);
+        return content.replace(regex, `${key}=${safeValue}`);
     } else {
-        return content + `\n${key}=${value}`;
+        return content + `\n${key}=${safeValue}`;
     }
+}
+
+function redactConfigDetails(configs = {}) {
+    const redacted = {};
+    for (const [key, value] of Object.entries(configs)) {
+        redacted[key] = /password|secret|token|api[_-]?key|key/i.test(key) ? '***' : value;
+    }
+    return redacted;
 }
 
 // ==================== 操作日志 ====================

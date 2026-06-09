@@ -117,23 +117,23 @@ router.delete('/announcements/:announcementId', requirePermission('announcement:
 /**
  * 系统设置
  */
-router.get('/configs', requireRole('admin'), adminController.getSystemConfigs);
-router.put('/configs/:key', requireRole('admin'), adminController.updateSystemConfig);
-router.post('/configs/batch', requireRole('admin'), adminController.batchUpdateConfigs);
+router.get('/configs', requirePermission('config:manage'), adminController.getSystemConfigs);
+router.put('/configs/:key', requirePermission('config:manage'), adminController.updateSystemConfig);
+router.post('/configs/batch', requirePermission('config:manage'), adminController.batchUpdateConfigs);
 
 /**
  * 操作日志
  */
-router.get('/operation-logs', requireRole('admin'), adminController.getOperationLogs);
+router.get('/operation-logs', requirePermission('log:view'), adminController.getOperationLogs);
 
 /**
  * 敏感词管理
  */
-router.get('/sensitive-words', requireRole('admin'), adminController.getSensitiveWords);
-router.post('/sensitive-words', requireRole('admin'), adminController.addSensitiveWord);
-router.put('/sensitive-words/:wordId', requireRole('admin'), adminController.updateSensitiveWord);
-router.delete('/sensitive-words/:wordId', requireRole('admin'), adminController.deleteSensitiveWord);
-router.post('/sensitive-words/batch-import', requireRole('admin'), adminController.batchImportSensitiveWords);
+router.get('/sensitive-words', requirePermission('sensitive:manage'), adminController.getSensitiveWords);
+router.post('/sensitive-words', requirePermission('sensitive:manage'), adminController.addSensitiveWord);
+router.put('/sensitive-words/:wordId', requirePermission('sensitive:manage'), adminController.updateSensitiveWord);
+router.delete('/sensitive-words/:wordId', requirePermission('sensitive:manage'), adminController.deleteSensitiveWord);
+router.post('/sensitive-words/batch-import', requirePermission('sensitive:manage'), adminController.batchImportSensitiveWords);
 
 /**
  * AI审核

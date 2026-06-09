@@ -6,11 +6,21 @@
         <!-- 轮播图 -->
         <div class="r-home--banner_area" v-if="banners.length > 0">
           <el-carousel height="360px" :interval="5000" indicator-position="outside">
-            <el-carousel-item v-for="banner in banners" :key="banner.id">
-              <a :href="banner.link_url" target="_blank" class="r-home--banner_item">
-                <img :src="banner.image_url" :alt="banner.title">
+            <el-carousel-item v-for="banner in safeBanners" :key="banner.id">
+              <a
+                v-if="banner.safeLink"
+                :href="banner.safeLink"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="r-home--banner_item"
+              >
+                <img :src="banner.safeImage" :alt="banner.title">
                 <div class="r-home--banner_title">{{ banner.title }}</div>
               </a>
+              <div v-else class="r-home--banner_item">
+                <img :src="banner.safeImage" :alt="banner.title">
+                <div class="r-home--banner_title">{{ banner.title }}</div>
+              </div>
             </el-carousel-item>
           </el-carousel>
         </div>
@@ -184,7 +194,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { computed, ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useUserStore } from '@/stores/user'
@@ -215,6 +225,27 @@ const loadingLatest = ref(false)
 const loadingHot = ref(false)
 
 const defaultAvatar = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI0ZFQzQzMyIvPjx0ZXh0IHg9IjUwIiB5PSI2MCIgZm9udC1zaXplPSI0MCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZmlsbD0id2hpdGUiPuahijwvdGV4dD48L3N2Zz4='
+
+const getSafeHttpUrl = (value) => {
+  if (!value) return ''
+  try {
+    const url = new URL(value, window.location.origin)
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return ''
+    return url.href
+  } catch (e) {
+    return ''
+  }
+}
+
+const safeBanners = computed(() => {
+  return banners.value
+    .map((banner) => ({
+      ...banner,
+      safeImage: getSafeHttpUrl(banner.image_url),
+      safeLink: getSafeHttpUrl(banner.link_url)
+    }))
+    .filter((banner) => banner.safeImage)
+})
 
 const formatNum = (n) => {
   if (n >= 10000) return (n / 10000).toFixed(1) + 'w'

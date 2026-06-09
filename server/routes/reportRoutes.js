@@ -42,6 +42,24 @@ router.post('/', authMiddleware, geetestVerify('report'), async (req, res) => {
         if (!target) {
             return errorResponse(res, '举报目标不存在', 404);
         }
+        if ((type === 'work' || type === 'post') && target.status !== 'published') {
+            return errorResponse(res, '举报目标不存在', 404);
+        }
+        if (type === 'comment' && target.status !== 'active') {
+            return errorResponse(res, '举报目标不存在', 404);
+        }
+        if (type === 'comment' && target.work_id) {
+            const work = await DbAdapter.findByPk(Work, target.work_id);
+            if (!work || work.status !== 'published') {
+                return errorResponse(res, '举报目标不存在', 404);
+            }
+        }
+        if (type === 'comment' && target.post_id) {
+            const post = await DbAdapter.findByPk(Post, target.post_id);
+            if (!post || post.status !== 'published') {
+                return errorResponse(res, '举报目标不存在', 404);
+            }
+        }
         
         const existing = await DbAdapter.findOne(Report, {
             where: {
