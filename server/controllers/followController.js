@@ -3,7 +3,7 @@ const DbAdapter = require('../utils/dbAdapter');
  * 关注控制器
  */
 
-const { Follow, User, Notification, sequelize } = require('../models');
+const { Follow, User, Notification } = require('../models');
 const { successResponse, errorResponse, paginateResponse } = require('../middleware/response');
 
 /**
@@ -23,13 +23,13 @@ async function followUser(req, res) {
             return errorResponse(res, '用户不存在', 404);
         }
         
-        if (targetUser.id === req.user.id) {
+        if (targetUser.id === DbAdapter.getId(req.user)) {
             return errorResponse(res, '不能关注自己', 400);
         }
         
         // 检查是否已关注
         const existing = await DbAdapter.findOne(Follow, {
-            where: { follower_id: req.user.id, following_id: targetUser.id }
+            where: { follower_id: DbAdapter.getId(req.user), following_id: targetUser.id }
         });
         
         if (existing) {
@@ -38,12 +38,12 @@ async function followUser(req, res) {
         
         // 创建关注
         await DbAdapter.create(Follow, {
-            follower_id: req.user.id,
+            follower_id: DbAdapter.getId(req.user),
             following_id: targetUser.id
         });
         
         // 使用原子操作更新计数，避免竞态条件
-        const currentUser = await DbAdapter.findByPk(User, req.user.id);
+        const currentUser = await DbAdapter.findByPk(User, DbAdapter.getId(req.user));
         await DbAdapter.increment(currentUser, 'following_count');
         await DbAdapter.increment(targetUser, 'follower_count');
         
@@ -51,7 +51,7 @@ async function followUser(req, res) {
             user_id: targetUser.id,
             type: 'follow',
             title: '关注了你',
-            sender_id: req.user.id
+            sender_id: DbAdapter.getId(req.user)
         });
         
         return successResponse(res, null, '关注成功');
@@ -75,7 +75,7 @@ async function unfollowUser(req, res) {
         }
         
         const follow = await DbAdapter.findOne(Follow, {
-            where: { follower_id: req.user.id, following_id: targetUser.id }
+            where: { follower_id: DbAdapter.getId(req.user), following_id: targetUser.id }
         });
         
         if (!follow) {
@@ -85,7 +85,7 @@ async function unfollowUser(req, res) {
         await DbAdapter.destroy(Follow, { where: { id: DbAdapter.getId(follow) } });
         
         // 使用原子操作更新计数，避免竞态条件
-        const currentUser = await DbAdapter.findByPk(User, req.user.id);
+        const currentUser = await DbAdapter.findByPk(User, DbAdapter.getId(req.user));
         await DbAdapter.decrement(currentUser, 'following_count');
         await DbAdapter.decrement(targetUser, 'follower_count');
         
@@ -182,7 +182,7 @@ async function checkFollow(req, res) {
         }
         
         const follow = await DbAdapter.findOne(Follow, {
-            where: { follower_id: req.user.id, following_id: targetUser.id }
+            where: { follower_id: DbAdapter.getId(req.user), following_id: targetUser.id }
         });
         
         return successResponse(res, { isFollowing: !!follow });

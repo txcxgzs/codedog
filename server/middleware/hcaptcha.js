@@ -18,30 +18,32 @@ async function hcaptchaGuard(req, res, next) {
         '/api/health',
         '/api/hcaptcha',
         '/api/geetest',
-        '/api/admin'
+        '/api/admin',
+        '/api/public'
     ];
-    
+
     if (excludePaths.some(p => req.path.startsWith(p))) {
         return next();
     }
-    
+
     try {
         const enabledConfig = await DbAdapter.findOne(SystemConfig, { where: { config_key: 'hcaptcha_enabled' } });
         if (!enabledConfig || enabledConfig.config_value !== 'true') {
             return next();
         }
-        
+
         const verified = req.session?.hcaptchaVerified;
         const expireTime = req.session?.hcaptchaExpires;
-        
+
         if (verified && expireTime && Date.now() < expireTime) {
             return next();
         }
-        
+
         return errorResponse(res, '需要完成hCaptcha验证', 403, 'HCAPTCHA_REQUIRED');
     } catch (error) {
+        // 数据库故障时拒绝请求而非放行，避免 fail-open 安全风险
         console.error('hCaptcha中间件错误:', error);
-        return next();
+        return errorResponse(res, '验证服务暂时不可用，请稍后重试', 503);
     }
 }
 

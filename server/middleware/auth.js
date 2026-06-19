@@ -76,15 +76,25 @@ async function optionalAuth(req, res, next) {
     next();
 }
 
+/**
+ * 审核员及以上权限中间件
+ * 命名修正：原 adminMiddleware 实际只要求 reviewer+，与"admin"语义不符
+ * 保留原名以兼容既有调用点，但建议新代码使用 reviewerOrAboveMiddleware
+ */
 function adminMiddleware(req, res, next) {
     if (!isRoleAtLeast(req.user.role, 'reviewer')) {
         return res.status(403).json({
             code: 403,
-            msg: '权限不足，需要管理员权限',
+            msg: '权限不足，需要审核员或以上权限',
             data: null
         });
     }
     next();
 }
 
-module.exports = { authMiddleware, adminMiddleware, optionalAuth };
+// 推荐命名（与 adminMiddleware 行为一致）
+function reviewerOrAboveMiddleware(req, res, next) {
+    return adminMiddleware(req, res, next);
+}
+
+module.exports = { authMiddleware, adminMiddleware, optionalAuth, reviewerOrAboveMiddleware };

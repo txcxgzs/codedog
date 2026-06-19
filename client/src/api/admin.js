@@ -362,7 +362,27 @@ export const adminApi = {
   deleteStudio(id) {
     return request.delete(`/admin/studios/${id}`)
   },
-  
+
+  getStudioMembers(studioId) {
+    return request.get(`/admin/studios/${studioId}/members`)
+  },
+
+  getStudioPendingMembers(studioId) {
+    return request.get(`/admin/studios/${studioId}/pending-members`)
+  },
+
+  getStudioPendingWorks(studioId) {
+    return request.get(`/admin/studios/${studioId}/pending-works`)
+  },
+
+  reviewStudioMember(studioId, memberId, action) {
+    return request.put(`/admin/studios/${studioId}/members/${memberId}/review`, { action })
+  },
+
+  reviewStudioWork(studioId, workId, action) {
+    return request.put(`/admin/studios/${studioId}/works/${workId}/review`, { action })
+  },
+
   updateUserLevel(userId, level) {
     return request.put(`/admin/users/${userId}/level`, { level })
   }

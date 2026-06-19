@@ -322,6 +322,7 @@ import { useUserStore } from '@/stores/user'
 import { workApi } from '@/api/work'
 import { commentApi } from '@/api/comment'
 import GeetestDialog from '@/components/GeetestDialog.vue'
+import { geetestApi } from '@/api/geetest'
 import { favoriteApi } from '@/api/favorite'
 import { reportApi } from '@/api/report'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -397,7 +398,7 @@ const playerUrl = computed(() => {
     'COCO': `https://coco.codemao.cn/player/${workId}`,
     'CODE_BLOCK': `https://block.codemao.cn/player/${workId}`,
     'BOX': `https://box.codemao.cn/w/${workId}`,
-    'BOX2': `https://box.codemao.cn/w/${workId}`
+    'BOX2': `https://box2.codemao.cn/w/${workId}`
   }
   
   if (playerMap[type]) {
@@ -567,7 +568,7 @@ const geetestConfig = ref(null)
 
 const fetchGeetestConfig = async () => {
   try {
-    const res = await fetch('/api/geetest/config').then(r => r.json())
+    const res = await geetestApi.getConfig()
     if (res.code === 200) {
       geetestConfig.value = res.data
     }
@@ -674,10 +675,12 @@ const submitComment = async () => {
             parentComment.replies.push(res.data)
           }
         }
+        // 回复不增加顶层评论数
       } else {
         comments.value.unshift(res.data)
+        // 仅顶层评论增加计数
+        work.value.comment_count = (work.value.comment_count || 0) + 1
       }
-      work.value.comment_count = (work.value.comment_count || 0) + 1
       commentContent.value = ''
       cancelReply()
       ElMessage.success('评论成功')
@@ -698,13 +701,10 @@ const cancelReply = () => {
 }
 
 const getReplyToName = (reply) => {
-  if (!reply.reply_to_user_id) return ''
-  const allComments = [...comments.value]
-  comments.value.forEach(c => {
-    if (c.replies) allComments.push(...c.replies)
-  })
-  const targetComment = allComments.find(c => c.user_id === reply.reply_to_user_id)
-  return targetComment?.user?.nickname || targetComment?.user?.username || ''
+  if (!reply || !reply.reply_to_user_id) return ''
+  // 后端已通过 reply_to_user 关联塞入"被回复者"信息
+  const target = reply.reply_to_user
+  return target?.nickname || target?.username || ''
 }
 
 const getVisibleReplies = (comment) => {
@@ -738,7 +738,9 @@ const likeComment = async (comment) => {
   try {
     const res = await commentApi.likeComment(comment.id, geetestData)
     if (res.code === 200) {
-      comment.like_count = (comment.like_count || 0) + 1
+      // 使用服务端返回的真实状态/计数，避免与服务端长期错位
+      comment.like_count = res.data.like_count
+      comment.liked = !!res.data.liked
     }
   } catch (error) {
     console.error('点赞失败:', error)

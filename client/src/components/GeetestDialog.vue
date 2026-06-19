@@ -24,7 +24,7 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, onUnmounted } from 'vue'
 import { Loading, WarningFilled } from '@element-plus/icons-vue'
 import { geetestApi } from '@/api/geetest'
 
@@ -132,33 +132,47 @@ const loadCaptcha = (gt, challenge, offline, newCaptcha, product) => {
   })
 }
 
-const show = async (sceneName) => {
-  return new Promise(async (resolve) => {
+const show = (sceneName) => {
+  return new Promise((resolve) => {
     currentScene.value = sceneName
     resolvePromise.value = resolve
-    
-    try {
-      const configRes = await geetestApi.getConfig()
+
+    geetestApi.getConfig().then(configRes => {
       if (configRes.code !== 200 || !configRes.data.enabled) {
         resolve({})
         resolvePromise.value = null
         return
       }
-      
+
       if (!configRes.data.scenes[sceneName]) {
         resolve({})
         resolvePromise.value = null
         return
       }
-      
-      await geetestApi.recordShow(sceneName)
-    } catch (e) {
+
+      geetestApi.recordShow(sceneName).catch(e => {
+        console.error('记录验证码展示失败:', e)
+      })
+
+      visible.value = true
+    }).catch(e => {
       console.error('检查验证码配置失败:', e)
-    }
-    
-    visible.value = true
+      resolve({})
+      resolvePromise.value = null
+    })
   })
 }
+
+onUnmounted(() => {
+  if (captchaObj.value) {
+    try { captchaObj.value.destroy() } catch (e) { /* ignore */ }
+    captchaObj.value = null
+  }
+  if (resolvePromise.value) {
+    resolvePromise.value({})
+    resolvePromise.value = null
+  }
+})
 
 defineExpose({
   show

@@ -155,21 +155,22 @@ async function refreshRoleCache(RolePermission) {
     try {
         const dbRoles = await RolePermission.findAll();
         cachedRoles = {};
-        
+
         // 先加载默认角色
         Object.entries(DEFAULT_ROLES).forEach(([key, value]) => {
             cachedRoles[key] = value;
         });
-        
-        // 用数据库中的角色覆盖
+
+        // 用数据库中的角色覆盖（仅覆盖 name 与 permissions，level 字段受保护）
         dbRoles.forEach(role => {
+            const fallback = DEFAULT_ROLES[role.role] || DEFAULT_ROLES.user;
             cachedRoles[role.role] = {
-                name: role.name,
-                level: role.level,
+                name: role.name || fallback.name,
+                level: fallback.level, // 受保护：不被 DB 覆盖
                 permissions: JSON.parse(role.permissions || '[]')
             };
         });
-        
+
         return cachedRoles;
     } catch (e) {
         console.error('刷新角色权限缓存失败:', e);

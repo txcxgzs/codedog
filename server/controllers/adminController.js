@@ -12,14 +12,16 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { JWT_SECRET, JWT_EXPIRES_IN } = require('../config/auth');
 const DbAdapter = require('../utils/dbAdapter');
+const { escapeLike } = require('../utils/security');
 
 // 爬取日志存储
 const crawlLogs = new Map();
 const MAX_LOG_ENTRIES = 500;
 
-// 实时日志存储
+// 实时日志存储（不再劫持全局 console，避免污染所有模块的日志）
 const realtimeLogs = [];
 const MAX_REALTIME_LOGS = 1000;
+const MAX_REALTIME_LOG_STRING_LENGTH = 2000;
 
 const VALID_USER_ROLES = ['user', 'reviewer', 'moderator', 'admin', 'superadmin'];
 const VALID_USER_STATUSES = ['active', 'disabled'];
@@ -32,48 +34,40 @@ function canManageExistingUser(req, user) {
     return !isSelf(req, user) && canManageUser(req.user.role, user.role);
 }
 
-// 重写console.log和console.error以捕获日志
-const originalConsoleLog = console.log;
-const originalConsoleError = console.error;
-const originalConsoleWarn = console.warn;
-
+/**
+ * 将日志条目追加到内存环形缓冲；通过专用 API 端点暴露给前端
+ * 不再覆盖全局 console.* 以避免污染其他模块
+ */
 function addRealtimeLog(level, ...args) {
     const message = args.map(arg => {
-        if (typeof arg === 'object') {
-            try {
-                return JSON.stringify(arg);
-            } catch (e) {
-                return String(arg);
-            }
+        if (typeof arg === 'string') return arg;
+        try {
+            return JSON.stringify(arg);
+        } catch (e) {
+            return String(arg);
         }
-        return String(arg);
     }).join(' ');
-    
+
     realtimeLogs.push({
         time: new Date().toISOString(),
         level,
-        message
+        message: message.substring(0, MAX_REALTIME_LOG_STRING_LENGTH)
     });
-    
+
     if (realtimeLogs.length > MAX_REALTIME_LOGS) {
         realtimeLogs.shift();
     }
 }
 
-console.log = function(...args) {
-    addRealtimeLog('info', ...args);
-    originalConsoleLog.apply(console, args);
-};
-
-console.error = function(...args) {
-    addRealtimeLog('error', ...args);
-    originalConsoleError.apply(console, args);
-};
-
-console.warn = function(...args) {
-    addRealtimeLog('warn', ...args);
-    originalConsoleWarn.apply(console, args);
-};
+/**
+ * 统一的管理员操作日志入口：输出到 stdout 并写入实时日志缓冲
+ * 用于替代此前对全局 console.* 的劫持
+ */
+function adminLog(level, ...args) {
+    const fn = level === 'error' ? console.error : (level === 'warn' ? console.warn : console.log);
+    fn.apply(console, args);
+    addRealtimeLog(level, ...args);
+}
 
 function addCrawlLog(taskId, message, type = 'info') {
     if (!crawlLogs.has(taskId)) {
@@ -178,11 +172,12 @@ async function getUsers(req, res) {
         const where = {};
         
         if (keyword) {
+            const safeKeyword = escapeLike(keyword);
             where[Op.or] = [
-                { username: { [Op.like]: `%${keyword}%` } },
-                { nickname: { [Op.like]: `%${keyword}%` } },
-                { email: { [Op.like]: `%${keyword}%` } },
-                { codemao_user_id: { [Op.like]: `%${keyword}%` } }
+                { username: { [Op.like]: `%${safeKeyword}%` } },
+                { nickname: { [Op.like]: `%${safeKeyword}%` } },
+                { email: { [Op.like]: `%${safeKeyword}%` } },
+                { codemao_user_id: { [Op.like]: `%${safeKeyword}%` } }
             ];
         }
         
@@ -544,10 +539,11 @@ async function getWorks(req, res) {
         const where = {};
         
         if (keyword) {
+            const safeKeyword = escapeLike(keyword);
             where[Op.or] = [
-                { name: { [Op.like]: `%${keyword}%` } },
-                { codemao_work_id: { [Op.like]: `%${keyword}%` } },
-                { codemao_author_name: { [Op.like]: `%${keyword}%` } }
+                { name: { [Op.like]: `%${safeKeyword}%` } },
+                { codemao_work_id: { [Op.like]: `%${safeKeyword}%` } },
+                { codemao_author_name: { [Op.like]: `%${safeKeyword}%` } }
             ];
         }
         
@@ -580,7 +576,7 @@ async function getWorks(req, res) {
 async function updateWork(req, res) {
     try {
         const { workId } = req.params;
-        const { name, view_times, praise_times, collection_times, status, is_featured } = req.body;
+        const { name, preview, view_times, praise_times, collection_times, status, is_featured, _reason } = req.body;
 
         const work = await DbAdapter.findByPk(Work, workId);
         if (!work) {
@@ -589,6 +585,7 @@ async function updateWork(req, res) {
 
         const updateData = {};
         if (name !== undefined) updateData.name = name;
+        if (preview !== undefined && preview !== '') updateData.preview = preview;
         if (view_times !== undefined) updateData.view_times = view_times;
         if (praise_times !== undefined) updateData.praise_times = praise_times;
         if (collection_times !== undefined) updateData.collection_times = collection_times;
@@ -596,11 +593,12 @@ async function updateWork(req, res) {
         if (is_featured !== undefined) updateData.is_featured = is_featured;
 
         await DbAdapter.update(Work, updateData, { where: { id: workId } });
-        logOperation(req, 'update_work', 'work', workId, { 
-            name: work.name,
+        logOperation(req, 'update_work', 'work', workId, {
+            reason: _reason || '未说明',
             changes: updateData,
             old_values: {
                 name: work.name,
+                preview: work.preview,
                 view_times: work.view_times,
                 praise_times: work.praise_times,
                 collection_times: work.collection_times,
@@ -746,13 +744,13 @@ async function crawlHotWorks(req, res) {
         const seenWorkIds = new Set();
 
         addCrawlLog(taskId, `开始爬取发现页面作品，目标数量: ${targetCount}`, 'start');
-        console.log(`开始爬取发现页面作品，目标数量: ${targetCount}...`);
+        adminLog('info', `[爬取 ${taskId}] 开始爬取发现页面作品，目标数量: ${targetCount}`);
 
         while (results.length < targetCount && attempts < maxAttempts) {
             attempts++;
             const statusMsg = `第 ${attempts} 次 | 成功: ${results.length}/${targetCount} | 跳过: ${skippedCount} | 错误: ${errorCount}`;
             addCrawlLog(taskId, statusMsg);
-            console.log(statusMsg);
+            adminLog('info', `[爬取 ${taskId}] ${statusMsg}`);
 
             const discoverData = await codemaoApi.getDiscoverWorks(offset, pageSize);
             
@@ -847,7 +845,7 @@ async function crawlHotWorks(req, res) {
                         pageAdded++;
                         const successMsg = `✅ 成功 (${results.length}/${targetCount}): ${work.name}`;
                         addCrawlLog(taskId, successMsg, 'success');
-                        console.log(successMsg);
+                        adminLog('info', `[爬取 ${taskId}] ${successMsg}`);
                     } catch (createError) {
                         if (createError.name === 'SequelizeUniqueConstraintError') {
                             pageSkipped++;
@@ -877,7 +875,7 @@ async function crawlHotWorks(req, res) {
 
         const completeMsg = `爬取完成！成功: ${results.length}，跳过: ${skippedCount}，错误: ${errorCount}`;
         addCrawlLog(taskId, completeMsg, 'complete');
-        console.log(completeMsg);
+        adminLog('info', `[爬取 ${taskId}] ${completeMsg}`);
         
         return successResponse(res, { 
             taskId,
@@ -1097,7 +1095,7 @@ async function crawlPostWorks(req, res) {
 
         for (const workId of Array.from(workIds).slice(0, targetLimit)) {
             try {
-                const existing = await DbAdapter.findOne(Work, { where: { codemao_work_id: workId } });
+                const existing = await DbAdapter.findOne(Work, { where: { codemao_work_id: String(workId) } });
                 if (existing) continue;
                 
                 const workDetail = await codemaoApi.getWorkDetail(workId);
@@ -1321,11 +1319,11 @@ async function getComments(req, res) {
         const where = {};
         
         if (keyword) {
-            where.content = { [Op.like]: `%${keyword}%` };
+            where.content = { [Op.like]: `%${escapeLike(keyword)}%` };
         }
         if (status) where.status = status;
-        if (userId) where.user_id = userId;
-        if (workId) where.work_id = workId;
+        if (userId) where.user_id = parseInt(userId, 10) || userId;
+        if (workId) where.work_id = parseInt(workId, 10) || workId;
 
         const { count, rows } = await DbAdapter.findAndCountAll(Comment, {
             where,
@@ -1361,6 +1359,10 @@ async function updateCommentStatus(req, res) {
     try {
         const { commentId } = req.params;
         const { status } = req.body;
+
+        if (!['active', 'hidden', 'deleted'].includes(status)) {
+            return errorResponse(res, '无效的状态值', 400);
+        }
 
         const comment = await DbAdapter.findByPk(Comment, commentId);
         if (!comment) {
@@ -1831,13 +1833,13 @@ async function getSystemConfigs(req, res) {
 async function updateSystemConfig(req, res) {
     try {
         const { key } = req.params;
-        const { value, description } = req.body;
-        
+        const { value } = req.body;
+
         let config = await DbAdapter.findOne(SystemConfig, { where: { config_key: key } });
         if (config) {
-            await DbAdapter.update(SystemConfig, { config_value: value, description }, { where: { config_key: key } });
+            await DbAdapter.update(SystemConfig, { config_value: value }, { where: { config_key: key } });
         } else {
-            config = await DbAdapter.create(SystemConfig, { config_key: key, config_value: value, description });
+            config = await DbAdapter.create(SystemConfig, { config_key: key, config_value: value });
         }
         
         logOperation(req, 'update_config', 'system_config', null, redactConfigDetails({ [key]: value }));
@@ -1953,7 +1955,7 @@ async function getOperationLogs(req, res) {
         
         const where = {};
         if (userId) where.user_id = userId;
-        if (action) where.action = { [Op.like]: `%${action}%` };
+        if (action) where.action = { [Op.like]: `%${escapeLike(action)}%` };
         if (startDate && endDate) {
             where.created_at = { [Op.between]: [new Date(startDate), new Date(endDate)] };
         }
@@ -2198,13 +2200,15 @@ async function aiAutoHandleReports(req, res) {
     try {
         const { reportIds } = req.body;
         const results = { handled: 0, passed: 0, deleted: 0 };
-        
+
+        // 敏感词表只查询一次，避免 N+1 问题
+        const sensitiveWords = await DbAdapter.findAll(SensitiveWord, { where: { status: 'active' } });
+
         for (const reportId of reportIds) {
             const report = await DbAdapter.findByPk(Report, reportId);
             if (!report || report.status !== 'pending') continue;
-            
+
             // AI审核
-            const sensitiveWords = await DbAdapter.findAll(SensitiveWord, { where: { status: 'active' } });
             let riskLevel = 'low';
             let content = report.description || '';
             
@@ -2406,7 +2410,7 @@ async function getStudios(req, res) {
         const where = {};
         
         if (keyword) {
-            where.name = { [Op.like]: `%${keyword}%` };
+            where.name = { [Op.like]: `%${escapeLike(keyword)}%` };
         }
         if (status) {
             where.status = status;
@@ -2494,16 +2498,17 @@ async function setWorkScore(req, res) {
         
         const oldScore = studioWork.score || 0;
         await DbAdapter.update(StudioWork, { score }, { where: { id } });
-        
+
         const studio = await DbAdapter.findByPk(Studio, studioWork.studio_id);
+        let totalScore = 0;
         if (studio) {
-            const totalScore = await DbAdapter.sum(StudioWork, 'score', { where: { studio_id: studioWork.studio_id, status: 'approved' } }) || 0;
+            totalScore = await DbAdapter.sum(StudioWork, 'score', { where: { studio_id: studioWork.studio_id, status: 'approved' } }) || 0;
             await DbAdapter.update(Studio, { total_score: totalScore }, { where: { id: DbAdapter.getId(studio) } });
         }
-        
+
         logOperation(req, 'set_work_score', 'studio_work', id, { oldScore, newScore: score });
-        
-        return successResponse(res, { score, totalScore: studio?.total_score || 0 }, '积分已更新');
+
+        return successResponse(res, { score, totalScore }, '积分已更新');
     } catch (error) {
         console.error('设置作品积分错误:', error);
         return errorResponse(res, '设置失败', 500);
@@ -2515,14 +2520,15 @@ async function updateUserLevel(req, res) {
         const { userId } = req.params;
         const { level } = req.body;
         const operatorRole = req.user.role;
-        
+
         // 只有超级管理员可以修改用户等级
         if (operatorRole !== 'superadmin') {
             return errorResponse(res, '只有超级管理员可以修改用户等级', 403);
         }
-        
-        if (level < 1 || level > 100) {
-            return errorResponse(res, '等级必须在1-100之间', 400);
+
+        const numLevel = Number(level);
+        if (!Number.isInteger(numLevel) || numLevel < 1 || numLevel > 100) {
+            return errorResponse(res, '等级必须在1-100之间的整数', 400);
         }
         
         const user = await DbAdapter.findByPk(User, userId);
@@ -2544,15 +2550,17 @@ async function updateUserLevel(req, res) {
 async function deleteStudio(req, res) {
     try {
         const { id } = req.params;
-        
+
         const studio = await DbAdapter.findByPk(Studio, id);
         if (!studio) {
             return errorResponse(res, '工作室不存在', 404);
         }
-        
+
+        // 先删除关联的成员和作品，再删除工作室本身，避免孤立数据
         await DbAdapter.destroy(StudioMember, { where: { studio_id: id } });
+        await DbAdapter.destroy(StudioWork, { where: { studio_id: id } });
         await DbAdapter.destroy(Studio, { where: { id: DbAdapter.getId(studio) } });
-        
+
         logOperation(req, 'delete_studio', 'studio', id);
         return successResponse(res, null, '工作室已删除');
     } catch (error) {
@@ -2603,14 +2611,18 @@ async function updateStudioMember(req, res) {
     try {
         const { studioId, userId } = req.params;
         const { role } = req.body;
-        
+
+        if (!['owner', 'vice_owner', 'admin', 'member'].includes(role)) {
+            return errorResponse(res, '无效的角色值', 400);
+        }
+
         const member = await DbAdapter.findOne(StudioMember, {
             where: { studio_id: studioId, user_id: userId }
         });
         if (!member) {
             return errorResponse(res, '成员不存在', 404);
         }
-        
+
         if (member.role === 'owner') {
             return errorResponse(res, '不能修改室长角色', 400);
         }
@@ -2951,9 +2963,10 @@ async function getPosts(req, res) {
 
         const where = {};
         if (keyword) {
+            const safeKeyword = escapeLike(keyword);
             where[Op.or] = [
-                { title: { [Op.like]: `%${keyword}%` } },
-                { content: { [Op.like]: `%${keyword}%` } }
+                { title: { [Op.like]: `%${safeKeyword}%` } },
+                { content: { [Op.like]: `%${safeKeyword}%` } }
             ];
         }
         if (category) where.category = category;

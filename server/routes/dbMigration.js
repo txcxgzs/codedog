@@ -18,6 +18,22 @@ function routeError(message, statusCode = 400) {
     return error;
 }
 
+/**
+ * 按 key 排序的稳定 JSON 序列化，避免属性顺序差异导致误判。
+ * 对数组内元素也递归排序对象键，确保 [ {a:1, b:2} ] 和 [ {b:2, a:1} ] 生成相同字符串。
+ */
+function stableStringify(value) {
+    if (value === null || value === undefined) return JSON.stringify(value);
+    if (typeof value !== 'object') return JSON.stringify(value);
+    if (Array.isArray(value)) {
+        // 对数组内每个元素递归处理，确保对象键也排序
+        const sorted = value.map(stableStringify);
+        return '[' + sorted.join(',') + ']';
+    }
+    const keys = Object.keys(value).sort();
+    return '{' + keys.map(k => JSON.stringify(k) + ':' + stableStringify(value[k])).join(',') + '}';
+}
+
 function handleRouteError(res, error, fallbackMessage) {
     const statusCode = error.statusCode || 500;
     const message = statusCode < 500 ? error.message : fallbackMessage;
@@ -84,13 +100,12 @@ function assertValidDbType(dbType) {
 
 router.get('/stats', async (req, res) => {
     try {
-        const { dbType, ...config } = req.query;
-        if (!dbType) {
-            throw routeError('dbType is required.');
-        }
-
+        // 仅允许读取当前应用已配置的数据库，不接受用户输入的连接参数
+        const dbType = process.env.DB_TYPE || 'sqlite';
         assertValidDbType(dbType);
-        const dbConfig = buildDbConfig(dbType, config);
+
+        // 使用当前应用的数据库配置，不从 query 参数构建
+        const dbConfig = buildDbConfig(dbType, {});
         const result = await dbMigration.getStats(dbType, dbConfig);
 
         if (!result.success) {
@@ -115,7 +130,7 @@ router.post('/migrate', async (req, res) => {
         assertValidDbType(sourceType);
         assertValidDbType(targetType);
 
-        if (sourceType === targetType && JSON.stringify(sourceConfig || {}) === JSON.stringify(targetConfig || {})) {
+        if (sourceType === targetType && stableStringify(sourceConfig || {}) === stableStringify(targetConfig || {})) {
             throw routeError('Source and target databases cannot be identical.');
         }
 

@@ -42,9 +42,9 @@
           <el-switch v-model="row.is_top" @change="toggleTop(row)" />
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="150" fixed="right">
+      <el-table-column label="操作" width="160" fixed="right">
         <template #default="{ row }">
-          <el-button size="small" @click="$router.push(`/post/${row.id}`)">查看</el-button>
+          <el-button size="small" type="primary" @click="$router.push(`/post/${row.id}`)">查看</el-button>
           <el-button size="small" type="danger" @click="deletePost(row)">删除</el-button>
         </template>
       </el-table-column>
@@ -129,7 +129,10 @@ const deletePost = async (post) => {
     await ElMessageBox.confirm('确定删除该帖子？', '提示', { type: 'warning' })
     const res = await adminApi.deletePost(post.id)
     if (res.code === 200) { ElMessage.success('删除成功'); fetchPosts() }
-  } catch (e) {}
+    else { ElMessage.error(res.msg || '删除失败') }
+  } catch (e) {
+    if (e !== 'cancel') ElMessage.error('删除失败')
+  }
 }
 
 onMounted(fetchPosts)

@@ -15,10 +15,9 @@
         @submit.prevent="handlePublish"
       >
         <el-form-item label="作品ID" prop="codemaoWorkId">
-          <el-input 
-            v-model="form.codemaoWorkId" 
+          <el-input
+            v-model="form.codemaoWorkId"
             placeholder="请输入编程猫作品ID"
-            type="number"
             class="r-publish--input"
           >
             <template #append>

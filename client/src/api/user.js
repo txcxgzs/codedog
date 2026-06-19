@@ -31,11 +31,7 @@ export const userApi = {
    * 更新头像
    */
   updateAvatar(formData) {
-    return request.put('/users/profile', formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data'
-      }
-    })
+    return request.put('/users/profile', formData)
   },
   
   /**

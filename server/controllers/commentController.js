@@ -7,6 +7,16 @@ function sameId(a, b) {
     return String(a) === String(b);
 }
 
+/**
+ * 通过本地主键查找已发布作品
+ * 注意：comment.work_id 是本地主键，与"通过编程猫 ID 查找"的工具分开
+ */
+async function resolvePublishedWorkByLocalId(workId) {
+    if (!workId) return null;
+    const work = await DbAdapter.findByPk(Work, workId);
+    return work && work.status === 'published' ? work : null;
+}
+
 async function resolvePublishedWork(workId) {
     let work = null;
     if (Number.isNaN(Number(workId)) || String(workId).length > 10) {
@@ -70,7 +80,10 @@ async function createComment(req, res) {
         });
 
         if (work) {
-            await DbAdapter.increment(work, 'comment_count');
+            // 仅顶层评论（无 parent_id）才递增 comment_count，与前端保持一致
+            if (!parent_id) {
+                await DbAdapter.increment(work, 'comment_count');
+            }
             if (work.user_id != null && !sameId(work.user_id, DbAdapter.getId(req.user))) {
                 await DbAdapter.create(Notification, {
                     user_id: work.user_id,
@@ -85,7 +98,10 @@ async function createComment(req, res) {
         }
 
         if (post) {
-            await DbAdapter.increment(post, 'comment_count');
+            // 仅顶层评论（无 parent_id）才递增 comment_count，与前端保持一致
+            if (!parent_id) {
+                await DbAdapter.increment(post, 'comment_count');
+            }
             if (!sameId(post.user_id, DbAdapter.getId(req.user))) {
                 await DbAdapter.create(Notification, {
                     user_id: post.user_id,
@@ -116,6 +132,11 @@ async function createComment(req, res) {
                 model: User,
                 as: 'user',
                 attributes: ['id', 'username', 'nickname', 'avatar']
+            }, {
+                model: User,
+                as: 'reply_to_user',
+                attributes: ['id', 'username', 'nickname'],
+                required: false
             }]
         });
 
@@ -144,6 +165,11 @@ async function getWorkComments(req, res) {
                 as: 'user',
                 attributes: ['id', 'username', 'nickname', 'avatar']
             }, {
+                model: User,
+                as: 'reply_to_user',
+                attributes: ['id', 'username', 'nickname'],
+                required: false
+            }, {
                 model: Comment,
                 as: 'replies',
                 where: { status: 'active' },
@@ -152,6 +178,11 @@ async function getWorkComments(req, res) {
                     model: User,
                     as: 'user',
                     attributes: ['id', 'username', 'nickname', 'avatar']
+                }, {
+                    model: User,
+                    as: 'reply_to_user',
+                    attributes: ['id', 'username', 'nickname'],
+                    required: false
                 }]
             }],
             order: [['created_at', 'DESC']],
@@ -181,13 +212,16 @@ async function deleteComment(req, res) {
 
         await DbAdapter.update(Comment, { status: 'deleted' }, { where: { id } });
 
-        if (comment.work_id) {
-            const work = await DbAdapter.findByPk(Work, comment.work_id);
-            if (work) await DbAdapter.decrement(work, 'comment_count');
-        }
-        if (comment.post_id) {
-            const post = await DbAdapter.findByPk(Post, comment.post_id);
-            if (post) await DbAdapter.decrement(post, 'comment_count');
+        // 仅顶层评论（无 parent_id）才递减 comment_count，与 createComment 保持一致
+        if (!comment.parent_id) {
+            if (comment.work_id) {
+                const work = await DbAdapter.findByPk(Work, comment.work_id);
+                if (work) await DbAdapter.decrement(work, 'comment_count');
+            }
+            if (comment.post_id) {
+                const post = await DbAdapter.findByPk(Post, comment.post_id);
+                if (post) await DbAdapter.decrement(post, 'comment_count');
+            }
         }
 
         return successResponse(res, null, 'Comment deleted');
@@ -206,7 +240,7 @@ async function likeComment(req, res) {
         if (!comment || comment.status !== 'active') {
             return errorResponse(res, 'Comment not found', 404);
         }
-        if (comment.work_id && !await resolvePublishedWork(comment.work_id)) {
+        if (comment.work_id && !await resolvePublishedWorkByLocalId(comment.work_id)) {
             return errorResponse(res, 'Comment not found', 404);
         }
         if (comment.post_id && !await resolvePublishedPost(comment.post_id)) {
@@ -219,7 +253,11 @@ async function likeComment(req, res) {
         });
 
         if (existing) {
-            return errorResponse(res, 'Already liked', 400);
+            // 已点赞 → 取消点赞（toggle）
+            await DbAdapter.destroy(Like, { where: { id: DbAdapter.getId(existing) } });
+            const newCount = Math.max(0, (comment.like_count || 0) - 1);
+            await DbAdapter.update(Comment, { like_count: newCount }, { where: { id: DbAdapter.getId(comment) } });
+            return successResponse(res, { like_count: newCount, liked: false }, 'Unliked');
         }
 
         await DbAdapter.create(Like, {
@@ -230,7 +268,7 @@ async function likeComment(req, res) {
         const likeCount = (comment.like_count || 0) + 1;
         await DbAdapter.update(Comment, { like_count: likeCount }, { where: { id: DbAdapter.getId(comment) } });
 
-        return successResponse(res, { like_count: likeCount }, 'Liked');
+        return successResponse(res, { like_count: likeCount, liked: true }, 'Liked');
     } catch (error) {
         console.error('Like comment error:', error);
         return errorResponse(res, 'Failed to like comment', 500);

@@ -45,7 +45,7 @@ request.interceptors.response.use(
         if (!hcaptchaChecking) {
           hcaptchaChecking = true
           window.dispatchEvent(new CustomEvent('hcaptcha-required'))
-          setTimeout(() => { hcaptchaChecking = false }, 2000)
+          setTimeout(() => { hcaptchaChecking = false }, 5000)
         }
         return Promise.reject(error)
       }
@@ -53,7 +53,7 @@ request.interceptors.response.use(
       if (status === 401 && !url.includes('/login') && !url.includes('/register')) {
         ElMessage.error('登录已过期，请重新登录')
         localStorage.removeItem('token')
-        window.location.href = '/login'
+        // 不使用 window.location.href，由路由守卫处理跳转
       } else if (status === 403) {
         if (!url.includes('/hcaptcha/')) {
           ElMessage.error(message || '权限不足')

@@ -152,6 +152,7 @@ import { reportApi } from '@/api/report'
 import { followApi } from '@/api/follow'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import GeetestDialog from '@/components/GeetestDialog.vue'
+import { geetestApi } from '@/api/geetest'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import hljs from 'highlight.js'
@@ -263,8 +264,8 @@ const likePost = async () => {
   try {
     const res = await postApi.likePost(post.value.id, geetestData)
     if (res.code === 200) {
-      liked.value = !liked.value
-      post.value.like_count += liked.value ? 1 : -1
+      liked.value = !!res.data.liked
+      post.value.like_count = res.data.like_count
     }
   } catch (e) {
     console.error('点赞失败:', e)
@@ -331,7 +332,8 @@ const likeComment = async (comment) => {
   try {
     const res = await commentApi.likeComment(comment.id, geetestData)
     if (res.code === 200) {
-      comment.like_count = (comment.like_count || 0) + 1
+      comment.like_count = res.data.like_count
+      comment.liked = !!res.data.liked
     }
   } catch (e) {
     console.error('点赞失败:', e)
@@ -478,7 +480,7 @@ watch(showShareDialog, (val) => {
 watch(() => route.params.id, fetchPost)
 const fetchGeetestConfig = async () => {
   try {
-    const res = await fetch('/api/geetest/config').then(r => r.json())
+    const res = await geetestApi.getConfig()
     if (res.code === 200) {
       geetestConfig.value = res.data
     }

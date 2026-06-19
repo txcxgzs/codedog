@@ -19,18 +19,19 @@ async function fetchAndSaveWork(workId) {
             return null;
         }
         
-        const existing = await Work.findOne({ where: { codemao_work_id: data.id } });
+        const existing = await Work.findOne({ where: { codemao_work_id: String(data.id) } });
         if (existing) {
             return existing;
         }
-        
+
         // 使用编程猫用户ID查找或创建用户
-        let user = await User.findOne({ where: { codemao_user_id: data.user_info.id } });
+        const codemaoUserId = String(data.user_info.id);
+        let user = await User.findOne({ where: { codemao_user_id: codemaoUserId } });
         if (!user) {
             user = await User.create({
-                codemao_user_id: data.user_info.id,
-                username: `codemao_${data.user_info.id}`,
-                email: `codemao_${data.user_info.id}@placeholder.com`,
+                codemao_user_id: codemaoUserId,
+                username: `codemao_${codemaoUserId}`,
+                email: `codemao_${codemaoUserId}@placeholder.com`,
                 password: '$2a$10$placeholder',
                 nickname: data.user_info.nickname,
                 avatar: data.user_info.avatar,
@@ -39,13 +40,13 @@ async function fetchAndSaveWork(workId) {
                 status: 'active'
             });
         }
-        
-        const type = data.work_label_list && data.work_label_list[0] 
-            ? data.work_label_list[0].label_name 
+
+        const type = data.work_label_list && data.work_label_list[0]
+            ? data.work_label_list[0].label_name
             : '其他';
-        
+
         const work = await Work.create({
-            codemao_work_id: data.id,
+            codemao_work_id: String(data.id),
             name: data.work_name,
             description: data.description,
             preview: data.preview,
@@ -53,7 +54,7 @@ async function fetchAndSaveWork(workId) {
             ide_type: data.ide_type,
             work_url: data.player_url,
             user_id: user.id,
-            codemao_author_id: data.user_info.id,
+            codemao_author_id: codemaoUserId,
             codemao_author_name: data.user_info.nickname,
             view_times: data.view_times || 0,
             praise_times: data.liked_times || 0,
@@ -61,9 +62,9 @@ async function fetchAndSaveWork(workId) {
             comment_count: data.comment_times || 0,
             status: 'published'
         });
-        
-        console.log(`✅ 作品: ${data.work_name} (作者ID: ${data.user_info.id})`);
-        return { work, authorId: data.user_info.id };
+
+        console.log(`✅ 作品: ${data.work_name} (作者ID: ${codemaoUserId})`);
+        return { work, authorId: codemaoUserId };
     } catch (error) {
         return null;
     }
@@ -83,8 +84,8 @@ async function fetchBanners() {
                     title: item.title,
                     image_url: item.background_url,
                     link_url: item.target_url,
-                    sort_order: parseInt(item.id) || 0,
-                    status: 'active'
+                    sort: parseInt(item.id) || 0,
+                    is_active: true
                 });
                 console.log(`✅ 轮播图: ${item.title}`);
             }

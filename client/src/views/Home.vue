@@ -281,60 +281,33 @@ const goUser = (author) => {
 }
 
 onMounted(async () => {
-  try {
-    const bRes = await publicApi.getBanners()
-    if (bRes.code === 200) banners.value = bRes.data
-  } catch (e) {}
-  
-  try {
-    const aRes = await publicApi.getAnnouncements()
-    if (aRes.code === 200) announcements.value = aRes.data
-  } catch (e) {}
+  // 侧边栏数据（并行加载）
+  Promise.all([
+    publicApi.getBanners().then(res => { if (res.code === 200) banners.value = res.data }).catch(() => {}),
+    publicApi.getAnnouncements().then(res => { if (res.code === 200) announcements.value = res.data }).catch(() => {}),
+    publicApi.getActiveUsers().then(res => { if (res.code === 200) activeUsers.value = res.data }).catch(() => {}),
+    postApi.getPosts({ page: 1, pageSize: 4, category: 'essence' }).then(res => { if (res.code === 200) featuredPosts.value = res.data.list }).catch(() => {}),
+    postApi.getPosts({ page: 1, pageSize: 2, isTop: true, category: 'official' }).then(res => { if (res.code === 200) importantPosts.value = res.data.list }).catch(() => {})
+  ])
 
-  try {
-    const uRes = await publicApi.getActiveUsers()
-    if (uRes.code === 200) activeUsers.value = uRes.data
-  } catch (e) {}
-
-  try {
-    const pRes = await postApi.getPosts({ page: 1, pageSize: 4, category: 'essence' }) 
-    if (pRes.code === 200) {
-      featuredPosts.value = pRes.data.list
-    }
-  } catch (e) {
-    console.error('Fetch Featured Posts Error:', e)
-  }
-
-  // 获取官方/重要通知 (置顶或官方分类)
-  try {
-    const impRes = await postApi.getPosts({ page: 1, pageSize: 2, isTop: true, category: 'official' })
-    if (impRes.code === 200) {
-      importantPosts.value = impRes.data.list
-    }
-  } catch (e) {
-    console.error('Fetch Important Posts Error:', e)
-  }
-  
+  // 作品数据（并行加载，立即显示 loading）
   loadingFeatured.value = true
-  try {
-    const res = await workApi.getFeatured()
-    if (res.code === 200) featuredWorks.value = res.data.slice(0, 15)
-  } catch (e) {}
-  loadingFeatured.value = false
-  
   loadingLatest.value = true
-  try {
-    const res = await workApi.getList({ page: 1, pageSize: 15 })
-    if (res.code === 200) latestWorks.value = res.data.list
-  } catch (e) {}
-  loadingLatest.value = false
-  
   loadingHot.value = true
-  try {
-    const res = await workApi.getList({ page: 1, pageSize: 15, sortBy: 'popular' })
-    if (res.code === 200) hotWorks.value = res.data.list
-  } catch (e) {}
-  loadingHot.value = false
+
+  Promise.all([
+    workApi.getFeatured().then(res => {
+      if (res.code === 200) featuredWorks.value = res.data.slice(0, 15)
+    }).catch(() => {}).finally(() => { loadingFeatured.value = false }),
+
+    workApi.getList({ page: 1, pageSize: 15 }).then(res => {
+      if (res.code === 200) latestWorks.value = res.data.list
+    }).catch(() => {}).finally(() => { loadingLatest.value = false }),
+
+    workApi.getList({ page: 1, pageSize: 15, sortBy: 'popular' }).then(res => {
+      if (res.code === 200) hotWorks.value = res.data.list
+    }).catch(() => {}).finally(() => { loadingHot.value = false })
+  ])
 })
 </script>
 

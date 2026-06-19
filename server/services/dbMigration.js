@@ -54,48 +54,68 @@ class DatabaseMigration {
     getSqlModels(sequelize) {
         const User = sequelize.define('User', {
             id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
-            codemao_user_id: { type: DataTypes.STRING, unique: true },
-            codemao_id: DataTypes.STRING,
-            username: { type: DataTypes.STRING, allowNull: false, unique: true },
-            email: { type: DataTypes.STRING, allowNull: false, unique: true },
-            password: { type: DataTypes.STRING, allowNull: false },
-            nickname: DataTypes.STRING,
-            avatar: DataTypes.STRING,
-            bio: DataTypes.TEXT,
-            doing: DataTypes.STRING,
-            role: { type: DataTypes.STRING, defaultValue: 'user' },
-            status: { type: DataTypes.STRING, defaultValue: 'active' },
+            codemao_user_id: { type: DataTypes.STRING(50), unique: true },
+            username: { type: DataTypes.STRING(50), allowNull: false, unique: true },
+            email: { type: DataTypes.STRING(100), allowNull: false, unique: true },
+            password: { type: DataTypes.STRING(255), allowNull: false },
+            nickname: { type: DataTypes.STRING(50) },
+            avatar: { type: DataTypes.STRING(500) },
+            bio: { type: DataTypes.TEXT },
+            doing: { type: DataTypes.STRING(200) },
+            gender: { type: DataTypes.STRING(20), defaultValue: 'unknown' },
             level: { type: DataTypes.INTEGER, defaultValue: 1 },
+            experience: { type: DataTypes.INTEGER, defaultValue: 0 },
             follower_count: { type: DataTypes.INTEGER, defaultValue: 0 },
             following_count: { type: DataTypes.INTEGER, defaultValue: 0 },
             work_count: { type: DataTypes.INTEGER, defaultValue: 0 },
             codemao_token: DataTypes.TEXT,
-            last_login_at: DataTypes.DATE,
+            role: { type: DataTypes.STRING(20), defaultValue: 'user' },
+            status: { type: DataTypes.STRING(20), defaultValue: 'active' },
+            is_active_dalao: { type: DataTypes.BOOLEAN, defaultValue: false },
             created_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW },
             updated_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW }
         }, { tableName: 'users', timestamps: false });
 
         const Work = sequelize.define('Work', {
             id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
-            codemao_work_id: { type: DataTypes.STRING, unique: true },
-            name: { type: DataTypes.STRING, allowNull: false },
+            codemao_work_id: { type: DataTypes.STRING(50), unique: true },
+            name: { type: DataTypes.STRING(200), allowNull: false },
             description: DataTypes.TEXT,
-            preview: DataTypes.STRING,
-            type: DataTypes.STRING,
-            ide_type: DataTypes.STRING,
-            work_url: DataTypes.STRING,
+            preview: { type: DataTypes.STRING(500) },
+            type: { type: DataTypes.STRING(50) },
+            ide_type: { type: DataTypes.STRING(50) },
+            work_url: { type: DataTypes.STRING(500) },
             user_id: DataTypes.INTEGER,
-            codemao_author_id: DataTypes.STRING,
-            codemao_author_name: DataTypes.STRING,
+            codemao_author_id: { type: DataTypes.STRING(50) },
+            codemao_author_name: { type: DataTypes.STRING(100) },
             view_times: { type: DataTypes.INTEGER, defaultValue: 0 },
             praise_times: { type: DataTypes.INTEGER, defaultValue: 0 },
             collection_times: { type: DataTypes.INTEGER, defaultValue: 0 },
             comment_count: { type: DataTypes.INTEGER, defaultValue: 0 },
             is_featured: { type: DataTypes.BOOLEAN, defaultValue: false },
-            status: { type: DataTypes.STRING, defaultValue: 'published' },
+            status: { type: DataTypes.STRING(20), defaultValue: 'published' },
             created_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW },
             updated_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW }
         }, { tableName: 'works', timestamps: false });
+
+        const Post = sequelize.define('Post', {
+            id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+            title: { type: DataTypes.STRING(200), allowNull: false },
+            content: { type: DataTypes.TEXT, allowNull: false },
+            user_id: { type: DataTypes.INTEGER, allowNull: false },
+            view_count: { type: DataTypes.INTEGER, defaultValue: 0 },
+            like_count: { type: DataTypes.INTEGER, defaultValue: 0 },
+            comment_count: { type: DataTypes.INTEGER, defaultValue: 0 },
+            collection_count: { type: DataTypes.INTEGER, defaultValue: 0 },
+            is_top: { type: DataTypes.BOOLEAN, defaultValue: false },
+            is_essence: { type: DataTypes.BOOLEAN, defaultValue: false },
+            category: { type: DataTypes.STRING(50), defaultValue: 'discussion' },
+            cover: { type: DataTypes.STRING(500) },
+            status: { type: DataTypes.STRING(20), defaultValue: 'published' },
+            tags: DataTypes.TEXT,
+            created_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW },
+            updated_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW }
+        }, { tableName: 'posts', timestamps: false });
 
         const Comment = sequelize.define('Comment', {
             id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
@@ -104,20 +124,20 @@ class DatabaseMigration {
             work_id: DataTypes.INTEGER,
             post_id: DataTypes.INTEGER,
             parent_id: DataTypes.INTEGER,
+            reply_to_user_id: DataTypes.INTEGER,
             like_count: { type: DataTypes.INTEGER, defaultValue: 0 },
-            status: { type: DataTypes.STRING, defaultValue: 'normal' },
-            created_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW },
-            updated_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW }
+            status: { type: DataTypes.STRING(20), defaultValue: 'active' },
+            created_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW }
         }, { tableName: 'comments', timestamps: false });
 
         const Notification = sequelize.define('Notification', {
             id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
             user_id: { type: DataTypes.INTEGER, allowNull: false },
-            type: { type: DataTypes.STRING, allowNull: false },
-            title: DataTypes.STRING,
+            type: { type: DataTypes.STRING(50), allowNull: false },
+            title: { type: DataTypes.STRING(200) },
             content: DataTypes.TEXT,
             related_id: DataTypes.INTEGER,
-            related_type: DataTypes.STRING,
+            related_type: { type: DataTypes.STRING(50) },
             sender_id: DataTypes.INTEGER,
             is_read: { type: DataTypes.BOOLEAN, defaultValue: false },
             created_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW }
@@ -125,7 +145,7 @@ class DatabaseMigration {
 
         const SystemConfig = sequelize.define('SystemConfig', {
             id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
-            config_key: { type: DataTypes.STRING, allowNull: false, unique: true },
+            config_key: { type: DataTypes.STRING(100), allowNull: false, unique: true },
             config_value: DataTypes.TEXT,
             created_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW },
             updated_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW }
@@ -133,29 +153,27 @@ class DatabaseMigration {
 
         const Banner = sequelize.define('Banner', {
             id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
-            title: { type: DataTypes.STRING, allowNull: false },
-            image_url: { type: DataTypes.STRING, allowNull: false },
-            link_url: DataTypes.STRING,
-            sort_order: { type: DataTypes.INTEGER, defaultValue: 0 },
-            status: { type: DataTypes.STRING, defaultValue: 'active' },
-            created_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW },
-            updated_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW }
+            title: { type: DataTypes.STRING(200), allowNull: false },
+            image_url: { type: DataTypes.STRING(500), allowNull: false },
+            link_url: { type: DataTypes.STRING(500) },
+            sort: { type: DataTypes.INTEGER, defaultValue: 0 },
+            is_active: { type: DataTypes.BOOLEAN, defaultValue: true },
+            created_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW }
         }, { tableName: 'banners', timestamps: false });
 
         const Announcement = sequelize.define('Announcement', {
             id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
-            title: { type: DataTypes.STRING, allowNull: false },
+            title: { type: DataTypes.STRING(200), allowNull: false },
             content: { type: DataTypes.TEXT, allowNull: false },
-            type: { type: DataTypes.STRING, defaultValue: 'normal' },
-            status: { type: DataTypes.STRING, defaultValue: 'published' },
-            created_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW },
-            updated_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW }
+            type: { type: DataTypes.STRING(20), defaultValue: 'notice' },
+            is_active: { type: DataTypes.BOOLEAN, defaultValue: true },
+            created_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW }
         }, { tableName: 'announcements', timestamps: false });
 
         const IpBan = sequelize.define('IpBan', {
             id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
-            ip: { type: DataTypes.STRING, allowNull: false, unique: true },
-            reason: DataTypes.STRING,
+            ip: { type: DataTypes.STRING(50), allowNull: false, unique: true },
+            reason: { type: DataTypes.STRING(500) },
             banned_by: DataTypes.INTEGER,
             expires_at: DataTypes.DATE,
             created_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW }
@@ -163,29 +181,35 @@ class DatabaseMigration {
 
         const Report = sequelize.define('Report', {
             id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+            type: { type: DataTypes.STRING(20), allowNull: false },
+            target_id: { type: DataTypes.INTEGER, allowNull: false },
             reporter_id: { type: DataTypes.INTEGER, allowNull: false },
-            reported_user_id: DataTypes.INTEGER,
-            reported_work_id: DataTypes.INTEGER,
-            reported_comment_id: DataTypes.INTEGER,
-            type: { type: DataTypes.STRING, allowNull: false },
-            reason: DataTypes.TEXT,
-            status: { type: DataTypes.STRING, defaultValue: 'pending' },
-            handled_by: DataTypes.INTEGER,
-            handle_result: DataTypes.TEXT,
+            reason: { type: DataTypes.STRING(200), allowNull: false },
+            description: DataTypes.TEXT,
+            status: { type: DataTypes.STRING(20), defaultValue: 'pending' },
+            handler_id: DataTypes.INTEGER,
+            handle_note: DataTypes.TEXT,
+            ai_result: DataTypes.TEXT,
             created_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW },
             updated_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW }
         }, { tableName: 'reports', timestamps: false });
 
         const Studio = sequelize.define('Studio', {
             id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
-            name: { type: DataTypes.STRING, allowNull: false },
+            name: { type: DataTypes.STRING(100), allowNull: false },
             description: DataTypes.TEXT,
-            logo: DataTypes.STRING,
-            cover: DataTypes.STRING,
+            cover: { type: DataTypes.STRING(500) },
+            cover_url: { type: DataTypes.STRING(500) },
             owner_id: { type: DataTypes.INTEGER, allowNull: false },
+            vice_owner_id: DataTypes.INTEGER,
             member_count: { type: DataTypes.INTEGER, defaultValue: 1 },
             work_count: { type: DataTypes.INTEGER, defaultValue: 0 },
-            status: { type: DataTypes.STRING, defaultValue: 'active' },
+            total_score: { type: DataTypes.INTEGER, defaultValue: 0 },
+            points: { type: DataTypes.INTEGER, defaultValue: 0 },
+            level: { type: DataTypes.INTEGER, defaultValue: 1 },
+            is_public: { type: DataTypes.BOOLEAN, defaultValue: true },
+            join_type: { type: DataTypes.STRING(20), defaultValue: 'public' },
+            status: { type: DataTypes.STRING(20), defaultValue: 'active' },
             created_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW },
             updated_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW }
         }, { tableName: 'studios', timestamps: false });
@@ -194,15 +218,37 @@ class DatabaseMigration {
             id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
             studio_id: { type: DataTypes.INTEGER, allowNull: false },
             user_id: { type: DataTypes.INTEGER, allowNull: false },
-            role: { type: DataTypes.STRING, defaultValue: 'member' },
-            status: { type: DataTypes.STRING, defaultValue: 'active' },
+            role: { type: DataTypes.STRING(20), defaultValue: 'member' },
+            status: { type: DataTypes.STRING(20), defaultValue: 'active' },
             joined_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW }
         }, { tableName: 'studio_members', timestamps: false });
+
+        const StudioWork = sequelize.define('StudioWork', {
+            id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+            studio_id: { type: DataTypes.INTEGER, allowNull: false },
+            work_id: { type: DataTypes.INTEGER, allowNull: false },
+            user_id: { type: DataTypes.INTEGER, allowNull: false },
+            score: { type: DataTypes.INTEGER, defaultValue: 0 },
+            status: { type: DataTypes.STRING(20), defaultValue: 'pending' },
+            reviewed_by: DataTypes.INTEGER,
+            reviewed_at: DataTypes.DATE,
+            added_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW }
+        }, { tableName: 'studio_works', timestamps: false });
+
+        const Like = sequelize.define('Like', {
+            id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+            user_id: { type: DataTypes.INTEGER, allowNull: false },
+            work_id: DataTypes.INTEGER,
+            post_id: DataTypes.INTEGER,
+            comment_id: DataTypes.INTEGER,
+            created_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW }
+        }, { tableName: 'likes', timestamps: false });
 
         const Favorite = sequelize.define('Favorite', {
             id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
             user_id: { type: DataTypes.INTEGER, allowNull: false },
-            work_id: { type: DataTypes.INTEGER, allowNull: false },
+            work_id: DataTypes.INTEGER,
+            post_id: DataTypes.INTEGER,
             created_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW }
         }, { tableName: 'favorites', timestamps: false });
 
@@ -213,10 +259,61 @@ class DatabaseMigration {
             created_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW }
         }, { tableName: 'follows', timestamps: false });
 
+        const CaptchaStats = sequelize.define('CaptchaStats', {
+            id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+            type: { type: DataTypes.STRING(20), allowNull: false },
+            scene: { type: DataTypes.STRING(50) },
+            action: { type: DataTypes.STRING(20) },
+            ip: { type: DataTypes.STRING(50), allowNull: false },
+            user_agent: DataTypes.TEXT,
+            created_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW }
+        }, { tableName: 'captcha_stats', timestamps: false });
+
+        const OperationLog = sequelize.define('OperationLog', {
+            id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+            user_id: DataTypes.INTEGER,
+            action: { type: DataTypes.STRING(100), allowNull: false },
+            target_type: { type: DataTypes.STRING(50) },
+            target_id: DataTypes.INTEGER,
+            details: DataTypes.TEXT,
+            ip_address: { type: DataTypes.STRING(50) },
+            created_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW }
+        }, { tableName: 'operation_logs', timestamps: false });
+
+        const RolePermission = sequelize.define('RolePermission', {
+            id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+            role: { type: DataTypes.STRING(50), allowNull: false, unique: true },
+            name: { type: DataTypes.STRING(100) },
+            level: { type: DataTypes.INTEGER, defaultValue: 0 },
+            permissions: DataTypes.TEXT,
+            created_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW },
+            updated_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW }
+        }, { tableName: 'role_permissions', timestamps: false });
+
+        const Statistics = sequelize.define('Statistics', {
+            id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+            stat_key: { type: DataTypes.STRING(100), allowNull: false, unique: true },
+            stat_value: { type: DataTypes.BIGINT, defaultValue: 0 },
+            stat_date: DataTypes.DATE,
+            created_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW },
+            updated_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW }
+        }, { tableName: 'statistics', timestamps: false });
+
+        const SensitiveWord = sequelize.define('SensitiveWord', {
+            id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+            word: { type: DataTypes.STRING(200), allowNull: false },
+            category: { type: DataTypes.STRING(50) },
+            level: { type: DataTypes.INTEGER, defaultValue: 1 },
+            replacement: { type: DataTypes.STRING(200) },
+            status: { type: DataTypes.STRING(20), defaultValue: 'active' },
+            created_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW }
+        }, { tableName: 'sensitive_words', timestamps: false });
+
         return {
-            User, Work, Comment, Notification, SystemConfig,
+            User, Work, Post, Comment, Notification, SystemConfig,
             Banner, Announcement, IpBan, Report, Studio,
-            StudioMember, Favorite, Follow
+            StudioMember, StudioWork, Like, Favorite, Follow,
+            CaptchaStats, OperationLog, RolePermission, Statistics, SensitiveWord
         };
     }
 
@@ -234,6 +331,7 @@ class DatabaseMigration {
 
             data.users = await sqlModels.User.findAll({ raw: true });
             data.works = await sqlModels.Work.findAll({ raw: true });
+            data.posts = await sqlModels.Post.findAll({ raw: true });
             data.comments = await sqlModels.Comment.findAll({ raw: true });
             data.notifications = await sqlModels.Notification.findAll({ raw: true });
             data.systemConfigs = await sqlModels.SystemConfig.findAll({ raw: true });
@@ -243,8 +341,15 @@ class DatabaseMigration {
             data.reports = await sqlModels.Report.findAll({ raw: true });
             data.studios = await sqlModels.Studio.findAll({ raw: true });
             data.studioMembers = await sqlModels.StudioMember.findAll({ raw: true });
+            data.studioWorks = await sqlModels.StudioWork.findAll({ raw: true });
+            data.likes = await sqlModels.Like.findAll({ raw: true });
             data.favorites = await sqlModels.Favorite.findAll({ raw: true });
             data.follows = await sqlModels.Follow.findAll({ raw: true });
+            data.captchaStats = await sqlModels.CaptchaStats.findAll({ raw: true });
+            data.operationLogs = await sqlModels.OperationLog.findAll({ raw: true });
+            data.rolePermissions = await sqlModels.RolePermission.findAll({ raw: true });
+            data.statistics = await sqlModels.Statistics.findAll({ raw: true });
+            data.sensitiveWords = await sqlModels.SensitiveWord.findAll({ raw: true });
         } finally {
             await connection.close();
         }
@@ -266,6 +371,7 @@ class DatabaseMigration {
 
             if (data.users.length > 0) await sqlModels.User.bulkCreate(data.users, { ignoreDuplicates: true });
             if (data.works.length > 0) await sqlModels.Work.bulkCreate(data.works, { ignoreDuplicates: true });
+            if (data.posts.length > 0) await sqlModels.Post.bulkCreate(data.posts, { ignoreDuplicates: true });
             if (data.comments.length > 0) await sqlModels.Comment.bulkCreate(data.comments, { ignoreDuplicates: true });
             if (data.notifications.length > 0) await sqlModels.Notification.bulkCreate(data.notifications, { ignoreDuplicates: true });
             if (data.systemConfigs.length > 0) await sqlModels.SystemConfig.bulkCreate(data.systemConfigs, { ignoreDuplicates: true });
@@ -275,8 +381,15 @@ class DatabaseMigration {
             if (data.reports.length > 0) await sqlModels.Report.bulkCreate(data.reports, { ignoreDuplicates: true });
             if (data.studios.length > 0) await sqlModels.Studio.bulkCreate(data.studios, { ignoreDuplicates: true });
             if (data.studioMembers.length > 0) await sqlModels.StudioMember.bulkCreate(data.studioMembers, { ignoreDuplicates: true });
+            if (data.studioWorks.length > 0) await sqlModels.StudioWork.bulkCreate(data.studioWorks, { ignoreDuplicates: true });
+            if (data.likes.length > 0) await sqlModels.Like.bulkCreate(data.likes, { ignoreDuplicates: true });
             if (data.favorites.length > 0) await sqlModels.Favorite.bulkCreate(data.favorites, { ignoreDuplicates: true });
             if (data.follows.length > 0) await sqlModels.Follow.bulkCreate(data.follows, { ignoreDuplicates: true });
+            if (data.captchaStats.length > 0) await sqlModels.CaptchaStats.bulkCreate(data.captchaStats, { ignoreDuplicates: true });
+            if (data.operationLogs.length > 0) await sqlModels.OperationLog.bulkCreate(data.operationLogs, { ignoreDuplicates: true });
+            if (data.rolePermissions.length > 0) await sqlModels.RolePermission.bulkCreate(data.rolePermissions, { ignoreDuplicates: true });
+            if (data.statistics.length > 0) await sqlModels.Statistics.bulkCreate(data.statistics, { ignoreDuplicates: true });
+            if (data.sensitiveWords.length > 0) await sqlModels.SensitiveWord.bulkCreate(data.sensitiveWords, { ignoreDuplicates: true });
         } finally {
             await connection.close();
         }
@@ -310,6 +423,7 @@ class DatabaseMigration {
                 stats: {
                     users: data.users.length,
                     works: data.works.length,
+                    posts: data.posts.length,
                     comments: data.comments.length,
                     notifications: data.notifications.length,
                     systemConfigs: data.systemConfigs.length,
@@ -319,8 +433,15 @@ class DatabaseMigration {
                     reports: data.reports.length,
                     studios: data.studios.length,
                     studioMembers: data.studioMembers.length,
+                    studioWorks: data.studioWorks.length,
+                    likes: data.likes.length,
                     favorites: data.favorites.length,
-                    follows: data.follows.length
+                    follows: data.follows.length,
+                    captchaStats: data.captchaStats.length,
+                    operationLogs: data.operationLogs.length,
+                    rolePermissions: data.rolePermissions.length,
+                    statistics: data.statistics.length,
+                    sensitiveWords: data.sensitiveWords.length
                 }
             };
         } catch (error) {
@@ -344,6 +465,7 @@ class DatabaseMigration {
                 stats: {
                     users: data.users.length,
                     works: data.works.length,
+                    posts: data.posts.length,
                     comments: data.comments.length,
                     notifications: data.notifications.length,
                     systemConfigs: data.systemConfigs.length,
@@ -353,8 +475,15 @@ class DatabaseMigration {
                     reports: data.reports.length,
                     studios: data.studios.length,
                     studioMembers: data.studioMembers.length,
+                    studioWorks: data.studioWorks.length,
+                    likes: data.likes.length,
                     favorites: data.favorites.length,
-                    follows: data.follows.length
+                    follows: data.follows.length,
+                    captchaStats: data.captchaStats.length,
+                    operationLogs: data.operationLogs.length,
+                    rolePermissions: data.rolePermissions.length,
+                    statistics: data.statistics.length,
+                    sensitiveWords: data.sensitiveWords.length
                 }
             };
         } catch (error) {

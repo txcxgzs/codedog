@@ -37,9 +37,18 @@ function createSequelizeSessionStore(session, sequelize, { ttlMs = 30 * 60 * 100
                 timestamps: false
             });
 
-            setInterval(() => {
+            // 保存 interval 句柄到 this 上，方便 stopCleanup() 时清理
+            this._cleanupTimer = setInterval(() => {
                 this.clearExpired(() => {});
-            }, 15 * 60 * 1000).unref();
+            }, 15 * 60 * 1000);
+            this._cleanupTimer.unref();
+        }
+
+        stopCleanup() {
+            if (this._cleanupTimer) {
+                clearInterval(this._cleanupTimer);
+                this._cleanupTimer = null;
+            }
         }
 
         sync() {

@@ -259,8 +259,14 @@ async function fallbackReview(content) {
         for (const sw of sensitiveWords) {
             if (content.includes(sw.word)) {
                 foundWords.push(sw.word);
-                if (sw.level === 'high') riskLevel = 'high';
-                else if (sw.level === 'medium' && riskLevel !== 'high') riskLevel = 'medium';
+                // SensitiveWord.level 字段在模型中定义为 INTEGER（默认 1）
+                // 约定: 1=low, 2=medium, 3=high
+                const level = Number(sw.level) || 1;
+                if (level >= 3) {
+                    riskLevel = 'high';
+                } else if (level === 2 && riskLevel !== 'high') {
+                    riskLevel = 'medium';
+                }
             }
         }
         
