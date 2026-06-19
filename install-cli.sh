@@ -16,11 +16,19 @@ else
     SUDO="sudo"
 fi
 
-# 创建执行脚本
-cat > "/tmp/$CLI_NAME" <<EOF
+# 创建执行脚本 - 使用绝对路径
+cat > "/tmp/$CLI_NAME" <<'WRAPPER'
 #!/bin/bash
-cd "$SCRIPT_DIR"
-bash "$SCRIPT_DIR/codedog.sh" "\$@"
+WRAPPER
+
+# 写入实际路径
+cat >> "/tmp/$CLI_NAME" <<EOF
+# CodeDog CLI 包装脚本
+cd "$SCRIPT_DIR" || {
+    echo "❌ 项目目录不存在: $SCRIPT_DIR"
+    exit 1
+}
+exec bash "$SCRIPT_DIR/codedog.sh" "\$@"
 EOF
 
 # 安装到系统路径
@@ -38,15 +46,15 @@ if command -v $CLI_NAME &> /dev/null; then
     echo "  在任意终端输入: $CLI_NAME"
     echo ""
     echo "功能菜单："
-    echo "  1) 查看系统状态"
-    echo "  2) 查看服务日志"
-    echo "  3) 检查更新"
-    echo "  4) 执行更新"
-    echo "  5) 修复问题"
-    echo "  6) 数据库管理"
-    echo "  7) 敏感词管理"
-    echo "  8) 系统配置"
-    echo "  9) 清理缓存"
+    echo "  1) 📊 查看系统状态"
+    echo "  2) 📝 查看服务日志"
+    echo "  3) 🔄 检查更新"
+    echo "  4) ⬆️  执行更新"
+    echo "  5) 🔧 修复问题"
+    echo "  6) 🗄️  数据库管理"
+    echo "  7) 🛡️  敏感词管理"
+    echo "  8) ⚙️  系统配置"
+    echo "  9) 🧹 清理缓存"
 else
     echo "❌ 安装失败，请手动将以下脚本添加到 PATH："
     echo "  $SCRIPT_DIR/codedog.sh"
