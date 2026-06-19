@@ -1352,13 +1352,9 @@
                   </el-radio-group>
                   <div class="r-admin--config_hint">
                     <span v-if="configForm.sensitive_check_mode === 'builtin'">使用系统内置的 87,000+ 敏感词库</span>
-                    <span v-else-if="configForm.sensitive_check_mode === 'api'">使用外部 API 进行敏感词检测</span>
+                    <span v-else-if="configForm.sensitive_check_mode === 'api'">使用外部 API (wordcheck.txcxgzs.com) 进行检测</span>
                     <span v-else>同时使用内置词库和外部 API，取最高风险等级</span>
                   </div>
-                </el-form-item>
-                <el-form-item label="API 地址" v-if="configForm.sensitive_check_mode !== 'builtin'">
-                  <el-input v-model="configForm.sensitive_api_url" placeholder="https://wordcheck.txcxgzs.com/api/check" />
-                  <div class="r-admin--config_hint">请求格式: POST {"text": "要检测的文本"}</div>
                 </el-form-item>
                 <el-form-item label="测试检测">
                   <div style="display: flex; gap: 8px;">
@@ -2477,8 +2473,7 @@ const configForm = ref({
   mysql_database: '',
   mysql_username: '',
   mysql_password: '',
-  sensitive_check_mode: 'builtin',
-  sensitive_api_url: ''
+  sensitive_check_mode: 'builtin'
 })
 const loadingConfigs = ref(false)
 const hcaptchaExpireMinutes = ref(20)
@@ -2685,7 +2680,6 @@ const fetchConfigs = async () => {
       form.mysql_username = data.mysql_username || ''
       form.mysql_password = data.mysql_password || ''
       form.sensitive_check_mode = data.sensitive_check_mode || 'builtin'
-      form.sensitive_api_url = data.sensitive_api_url || ''
       if (data.hcaptcha_expire_minutes) {
         hcaptchaExpireMinutes.value = parseInt(data.hcaptcha_expire_minutes) || 20
       }
@@ -2719,8 +2713,7 @@ const testSensitiveCheck = async () => {
   try {
     const res = await adminApi.testSensitiveCheck({
       text: sensitiveTestText.value,
-      mode: configForm.value.sensitive_check_mode,
-      apiUrl: configForm.value.sensitive_api_url
+      mode: configForm.value.sensitive_check_mode
     })
     if (res.code === 200) {
       sensitiveTestResult.value = res.data

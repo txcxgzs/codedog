@@ -131,7 +131,7 @@ function validateAIEndpoint(apiUrl) {
 
 async function getAIConfig() {
     const configs = await DbAdapter.findAll(SystemConfig, {
-        where: { config_key: { [Op.in]: ['ai_enabled', 'ai_api_url', 'ai_api_key', 'ai_model', 'ai_prompt', 'sensitive_check_mode', 'sensitive_api_url'] } }
+        where: { config_key: { [Op.in]: ['ai_enabled', 'ai_api_url', 'ai_api_key', 'ai_model', 'ai_prompt', 'sensitive_check_mode'] } }
     });
 
     const configMap = {};
@@ -143,8 +143,7 @@ async function getAIConfig() {
         apiKey: configMap.ai_api_key || '',
         model: configMap.ai_model || 'gpt-3.5-turbo',
         prompt: configMap.ai_prompt || DEFAULT_PROMPT,
-        sensitiveCheckMode: configMap.sensitive_check_mode || 'builtin', // builtin, api, both
-        sensitiveApiUrl: configMap.sensitive_api_url || ''
+        sensitiveCheckMode: configMap.sensitive_check_mode || 'builtin' // builtin, api, both
     };
 }
 
@@ -268,8 +267,8 @@ async function fallbackReview(content) {
         }
 
         // 外部 API 检测
-        if ((checkMode === 'api' || checkMode === 'both') && config.sensitiveApiUrl) {
-            apiResult = await externalSensitiveCheck(content, config.sensitiveApiUrl);
+        if (checkMode === 'api' || checkMode === 'both') {
+            apiResult = await externalSensitiveCheck(content);
         }
 
         // 合并结果
@@ -331,31 +330,44 @@ async function builtinSensitiveCheck(content) {
 }
 
 // 外部 API 检测
-async function externalSensitiveCheck(content, apiUrl) {
+const SENSITIVE_API_URL = 'https://wordcheck.txcxgzs.com/api/check';
+
+async function externalSensitiveCheck(content) {
     try {
-        const response = await axios.post(apiUrl, { text: content }, {
+        const response = await axios.post(SENSITIVE_API_URL, { text: content }, {
             headers: { 'Content-Type': 'application/json' },
             timeout: 10000
         });
 
         const data = response.data;
 
-        // 解析 API 响应（根据实际 API 格式调整）
-        if (data.code === 200 || data.success) {
-            const violations = data.data?.words || data.words || [];
-            const riskLevel = data.data?.riskLevel || data.riskLevel || (violations.length > 0 ? 'medium' : 'low');
+        // API 返回格式：
+        // {
+        //   "text": "...",
+        //   "sensitivity": { "level": 0, "label": "安全", "score": 0 },
+        //   "matchedWords": [],
+        //   "matchCount": 0,
+        //   "uniqueMatchCount": 0
+        // }
 
-            return {
-                riskLevel: riskLevel,
-                violations: violations,
-                reason: violations.length > 0 ? `外部API检测: ${violations.join(', ')}` : '外部API未发现敏感词',
-                recommendation: riskLevel === 'high' ? 'delete' : (riskLevel === 'medium' ? 'review' : 'pass'),
-                confidence: data.data?.confidence || data.confidence || 0.8,
-                source: 'api'
-            };
-        }
+        const sensitivity = data.sensitivity || {};
+        const level = sensitivity.level || 0; // 0=安全, 1=低风险, 2=中风险, 3=高风险
+        const matchedWords = data.matchedWords || [];
 
-        return null;
+        // 转换风险等级
+        let riskLevel = 'low';
+        if (level >= 3) riskLevel = 'high';
+        else if (level >= 2) riskLevel = 'medium';
+        else if (level >= 1) riskLevel = 'low';
+
+        return {
+            riskLevel,
+            violations: matchedWords,
+            reason: matchedWords.length > 0 ? `外部API检测: ${matchedWords.join(', ')}` : '外部API未发现敏感词',
+            recommendation: riskLevel === 'high' ? 'delete' : (riskLevel === 'medium' ? 'review' : 'pass'),
+            confidence: matchedWords.length > 0 ? 0.8 : 0.9,
+            source: 'api'
+        };
     } catch (e) {
         console.error('外部敏感词API调用失败:', e.message);
         return null;
