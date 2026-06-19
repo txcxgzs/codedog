@@ -1,6 +1,8 @@
 #!/bin/bash
 
 # CodeDog 一键部署脚本
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 echo "🚀 CodeDog 部署脚本"
 echo "===================="
 
@@ -26,11 +28,25 @@ docker compose build
 echo "🚀 启动服务..."
 docker compose up -d
 
+# 安装 CLI 工具箱
+echo ""
+echo "🛠️ 安装管理工具箱..."
+if [ -f "$SCRIPT_DIR/install-cli.sh" ]; then
+    chmod +x "$SCRIPT_DIR/install-cli.sh"
+    bash "$SCRIPT_DIR/install-cli.sh"
+else
+    echo "⚠ 安装脚本不存在，跳过工具箱安装"
+fi
+
 echo ""
 echo "✅ 部署完成！"
-echo "访问地址: http://localhost:3001"
+echo ""
+echo "📍 访问地址: http://localhost:3001"
+echo ""
+echo "🛠️ 管理工具: 输入 codedog 启动管理工具箱"
 echo ""
 echo "常用命令："
+echo "  管理工具箱: codedog"
 echo "  查看日志: docker compose logs -f"
 echo "  停止服务: docker compose down"
 echo "  重启服务: docker compose restart"
