@@ -2178,13 +2178,13 @@ async function aiReviewReport(req, res) {
 
 async function testSensitiveCheck(req, res) {
     try {
-        const { text, mode, apiUrl } = req.body;
+        const { text, mode } = req.body;
 
         if (!text) {
             return errorResponse(res, '请输入要测试的内容', 400);
         }
 
-        const result = await aiReview.fallbackReview(text);
+        const result = await aiReview.fallbackReview(text, mode);
 
         return successResponse(res, result);
     } catch (error) {

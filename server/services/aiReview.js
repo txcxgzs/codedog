@@ -251,12 +251,12 @@ async function reviewContent(type, content) {
     }
 }
 
-async function fallbackReview(content) {
+async function fallbackReview(content, overrideMode) {
     try {
         const config = await getAIConfig();
 
-        // 根据配置选择检测方式
-        const checkMode = config.sensitiveCheckMode || 'builtin'; // builtin, api, both
+        // 根据配置选择检测方式，如果传入了 overrideMode 则使用它
+        const checkMode = overrideMode || config.sensitiveCheckMode || 'builtin'; // builtin, api, both
 
         let builtinResult = null;
         let apiResult = null;
