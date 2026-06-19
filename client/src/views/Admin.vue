@@ -1336,6 +1336,48 @@
                 </el-form-item>
               </el-form>
             </div>
+
+            <!-- 敏感词检测 -->
+            <div class="r-admin--config_section" id="config-sensitive">
+              <div class="r-admin--config_section_title">
+                <span class="r-admin--config_section_icon">🛡️</span>
+                <span>敏感词检测</span>
+              </div>
+              <el-form :model="configForm" label-width="90px" class="r-admin--config_form">
+                <el-form-item label="检测模式">
+                  <el-radio-group v-model="configForm.sensitive_check_mode">
+                    <el-radio value="builtin">内置词库</el-radio>
+                    <el-radio value="api">外部 API</el-radio>
+                    <el-radio value="both">两者都用</el-radio>
+                  </el-radio-group>
+                  <div class="r-admin--config_hint">
+                    <span v-if="configForm.sensitive_check_mode === 'builtin'">使用系统内置的 87,000+ 敏感词库</span>
+                    <span v-else-if="configForm.sensitive_check_mode === 'api'">使用外部 API 进行敏感词检测</span>
+                    <span v-else>同时使用内置词库和外部 API，取最高风险等级</span>
+                  </div>
+                </el-form-item>
+                <el-form-item label="API 地址" v-if="configForm.sensitive_check_mode !== 'builtin'">
+                  <el-input v-model="configForm.sensitive_api_url" placeholder="https://wordcheck.txcxgzs.com/api/check" />
+                  <div class="r-admin--config_hint">请求格式: POST {"text": "要检测的文本"}</div>
+                </el-form-item>
+                <el-form-item label="测试检测">
+                  <div style="display: flex; gap: 8px;">
+                    <el-input v-model="sensitiveTestText" placeholder="输入要测试的内容" />
+                    <el-button type="primary" @click="testSensitiveCheck" :loading="sensitiveTestLoading">测试</el-button>
+                  </div>
+                  <div v-if="sensitiveTestResult" style="margin-top: 8px;">
+                    <el-tag :type="sensitiveTestResult.riskLevel === 'high' ? 'danger' : sensitiveTestResult.riskLevel === 'medium' ? 'warning' : 'success'">
+                      {{ sensitiveTestResult.riskLevel === 'high' ? '高风险' : sensitiveTestResult.riskLevel === 'medium' ? '中风险' : '低风险' }}
+                    </el-tag>
+                    <span v-if="sensitiveTestResult.violations?.length" style="margin-left: 8px; color: #e6a23c;">
+                      命中: {{ sensitiveTestResult.violations.join(', ') }}
+                    </span>
+                    <span v-else style="margin-left: 8px; color: #67c23a;">未命中敏感词</span>
+                    <span style="margin-left: 8px; color: #909399; font-size: 12px;">来源: {{ sensitiveTestResult.source === 'builtin' ? '内置词库' : sensitiveTestResult.source === 'api' ? '外部API' : '两者合并' }}</span>
+                  </div>
+                </el-form-item>
+              </el-form>
+            </div>
             
             <el-dialog v-model="showPromptHelp" title="AI审核提示词帮助" width="700px">
               <div class="r-admin--prompt_help">
@@ -2434,11 +2476,18 @@ const configForm = ref({
   mysql_port: '',
   mysql_database: '',
   mysql_username: '',
-  mysql_password: ''
+  mysql_password: '',
+  sensitive_check_mode: 'builtin',
+  sensitive_api_url: ''
 })
 const loadingConfigs = ref(false)
 const hcaptchaExpireMinutes = ref(20)
 const captchaStats = ref(null)
+
+// 敏感词测试
+const sensitiveTestText = ref('')
+const sensitiveTestLoading = ref(false)
+const sensitiveTestResult = ref(null)
 
 // 数据库迁移
 const migrationForm = ref({
@@ -2635,6 +2684,8 @@ const fetchConfigs = async () => {
       form.mysql_database = data.mysql_database || ''
       form.mysql_username = data.mysql_username || ''
       form.mysql_password = data.mysql_password || ''
+      form.sensitive_check_mode = data.sensitive_check_mode || 'builtin'
+      form.sensitive_api_url = data.sensitive_api_url || ''
       if (data.hcaptcha_expire_minutes) {
         hcaptchaExpireMinutes.value = parseInt(data.hcaptcha_expire_minutes) || 20
       }
@@ -2654,6 +2705,32 @@ const fetchCaptchaStats = async () => {
     }
   } catch (e) {
     console.error('获取验证码统计失败:', e)
+  }
+}
+
+// 敏感词测试
+const testSensitiveCheck = async () => {
+  if (!sensitiveTestText.value.trim()) {
+    ElMessage.warning('请输入要测试的内容')
+    return
+  }
+  sensitiveTestLoading.value = true
+  sensitiveTestResult.value = null
+  try {
+    const res = await adminApi.testSensitiveCheck({
+      text: sensitiveTestText.value,
+      mode: configForm.value.sensitive_check_mode,
+      apiUrl: configForm.value.sensitive_api_url
+    })
+    if (res.code === 200) {
+      sensitiveTestResult.value = res.data
+    } else {
+      ElMessage.error(res.msg || '测试失败')
+    }
+  } catch (e) {
+    ElMessage.error('测试请求失败')
+  } finally {
+    sensitiveTestLoading.value = false
   }
 }
 
@@ -4316,6 +4393,12 @@ $sidebar-width: 200px;
 
 .r-admin--config_form {
   padding: 20px;
+}
+
+.r-admin--config_hint {
+  font-size: 12px;
+  color: #909399;
+  margin-top: 4px;
 }
 
 .r-admin--switch_grid {

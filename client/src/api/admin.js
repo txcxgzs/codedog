@@ -291,15 +291,22 @@ export const adminApi = {
   aiReviewReport(reportId) {
     return request.post(`/admin/ai/review/${reportId}`)
   },
-  
+
   aiBatchReviewReports(reportIds) {
     return request.post('/admin/ai/batch-review', { reportIds })
   },
-  
+
   aiAutoHandleReports(reportIds) {
     return request.post('/admin/ai/auto-handle', { reportIds })
   },
-  
+
+  /**
+   * 敏感词测试
+   */
+  testSensitiveCheck(data) {
+    return request.post('/admin/sensitive/test', data)
+  },
+
   /**
    * 权限管理
    */

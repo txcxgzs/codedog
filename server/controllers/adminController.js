@@ -2176,6 +2176,23 @@ async function aiReviewReport(req, res) {
     }
 }
 
+async function testSensitiveCheck(req, res) {
+    try {
+        const { text, mode, apiUrl } = req.body;
+
+        if (!text) {
+            return errorResponse(res, '请输入要测试的内容', 400);
+        }
+
+        const result = await aiReview.fallbackReview(text);
+
+        return successResponse(res, result);
+    } catch (error) {
+        console.error('敏感词测试错误:', error);
+        return errorResponse(res, '测试失败', 500);
+    }
+}
+
 async function aiBatchReviewReports(req, res) {
     try {
         const { reportIds } = req.body;
@@ -2894,6 +2911,7 @@ module.exports = {
     aiReviewReport,
     aiBatchReviewReports,
     aiAutoHandleReports,
+    testSensitiveCheck,
     getPermissions,
     getRolePermissionsList,
     updateRolePermissions,

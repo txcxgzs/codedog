@@ -131,18 +131,20 @@ function validateAIEndpoint(apiUrl) {
 
 async function getAIConfig() {
     const configs = await DbAdapter.findAll(SystemConfig, {
-        where: { config_key: { [Op.in]: ['ai_enabled', 'ai_api_url', 'ai_api_key', 'ai_model', 'ai_prompt'] } }
+        where: { config_key: { [Op.in]: ['ai_enabled', 'ai_api_url', 'ai_api_key', 'ai_model', 'ai_prompt', 'sensitive_check_mode', 'sensitive_api_url'] } }
     });
-    
+
     const configMap = {};
     configs.forEach(c => { configMap[c.config_key] = c.config_value; });
-    
+
     return {
         enabled: configMap.ai_enabled === 'true',
         apiUrl: configMap.ai_api_url || '',
         apiKey: configMap.ai_api_key || '',
         model: configMap.ai_model || 'gpt-3.5-turbo',
-        prompt: configMap.ai_prompt || DEFAULT_PROMPT
+        prompt: configMap.ai_prompt || DEFAULT_PROMPT,
+        sensitiveCheckMode: configMap.sensitive_check_mode || 'builtin', // builtin, api, both
+        sensitiveApiUrl: configMap.sensitive_api_url || ''
     };
 }
 
@@ -252,6 +254,51 @@ async function reviewContent(type, content) {
 
 async function fallbackReview(content) {
     try {
+        const config = await getAIConfig();
+
+        // 根据配置选择检测方式
+        const checkMode = config.sensitiveCheckMode || 'builtin'; // builtin, api, both
+
+        let builtinResult = null;
+        let apiResult = null;
+
+        // 内置词库检测
+        if (checkMode === 'builtin' || checkMode === 'both') {
+            builtinResult = await builtinSensitiveCheck(content);
+        }
+
+        // 外部 API 检测
+        if ((checkMode === 'api' || checkMode === 'both') && config.sensitiveApiUrl) {
+            apiResult = await externalSensitiveCheck(content, config.sensitiveApiUrl);
+        }
+
+        // 合并结果
+        if (checkMode === 'both' && builtinResult && apiResult) {
+            return mergeResults(builtinResult, apiResult);
+        }
+
+        return apiResult || builtinResult || {
+            riskLevel: 'low',
+            violations: [],
+            reason: '未发现敏感词',
+            recommendation: 'pass',
+            confidence: 0.9
+        };
+    } catch (e) {
+        console.error('敏感词检测失败:', e.message);
+        return {
+            riskLevel: 'low',
+            violations: [],
+            reason: '敏感词检测失败',
+            recommendation: 'review',
+            confidence: 0.5
+        };
+    }
+}
+
+// 内置词库检测
+async function builtinSensitiveCheck(content) {
+    try {
         const sensitiveWords = await DbAdapter.findAll(SensitiveWord, { where: { status: 'active' } });
         const foundWordsSet = new Set();
         let riskLevel = 'low';
@@ -259,8 +306,6 @@ async function fallbackReview(content) {
         for (const sw of sensitiveWords) {
             if (content.includes(sw.word)) {
                 foundWordsSet.add(sw.word);
-                // SensitiveWord.level 字段在模型中定义为 INTEGER（默认 1）
-                // 约定: 1=low, 2=medium, 3=high
                 const level = Number(sw.level) || 1;
                 if (level >= 3) {
                     riskLevel = 'high';
@@ -277,21 +322,72 @@ async function fallbackReview(content) {
             violations: foundWords,
             reason: foundWords.length > 0 ? `包含敏感词: ${foundWords.join(', ')}` : '未发现敏感词',
             recommendation: riskLevel === 'high' ? 'delete' : (riskLevel === 'medium' ? 'review' : 'pass'),
-            confidence: foundWords.length > 0 ? 0.7 : 0.9
+            confidence: foundWords.length > 0 ? 0.7 : 0.9,
+            source: 'builtin'
         };
     } catch (e) {
-        return {
-            riskLevel: 'low',
-            violations: [],
-            reason: '敏感词检测失败',
-            recommendation: 'review',
-            confidence: 0.5
-        };
+        return null;
     }
+}
+
+// 外部 API 检测
+async function externalSensitiveCheck(content, apiUrl) {
+    try {
+        const response = await axios.post(apiUrl, { text: content }, {
+            headers: { 'Content-Type': 'application/json' },
+            timeout: 10000
+        });
+
+        const data = response.data;
+
+        // 解析 API 响应（根据实际 API 格式调整）
+        if (data.code === 200 || data.success) {
+            const violations = data.data?.words || data.words || [];
+            const riskLevel = data.data?.riskLevel || data.riskLevel || (violations.length > 0 ? 'medium' : 'low');
+
+            return {
+                riskLevel: riskLevel,
+                violations: violations,
+                reason: violations.length > 0 ? `外部API检测: ${violations.join(', ')}` : '外部API未发现敏感词',
+                recommendation: riskLevel === 'high' ? 'delete' : (riskLevel === 'medium' ? 'review' : 'pass'),
+                confidence: data.data?.confidence || data.confidence || 0.8,
+                source: 'api'
+            };
+        }
+
+        return null;
+    } catch (e) {
+        console.error('外部敏感词API调用失败:', e.message);
+        return null;
+    }
+}
+
+// 合并两种检测结果
+function mergeResults(builtin, api) {
+    const allViolations = [...new Set([...builtin.violations, ...api.violations])];
+
+    // 取更高的风险等级
+    const riskLevels = { low: 1, medium: 2, high: 3 };
+    const builtinLevel = riskLevels[builtin.riskLevel] || 1;
+    const apiLevel = riskLevels[api.riskLevel] || 1;
+    const maxLevel = Math.max(builtinLevel, apiLevel);
+    const riskLevel = maxLevel >= 3 ? 'high' : (maxLevel >= 2 ? 'medium' : 'low');
+
+    return {
+        riskLevel,
+        violations: allViolations,
+        reason: allViolations.length > 0 ? `检测发现敏感词: ${allViolations.join(', ')}` : '未发现敏感词',
+        recommendation: riskLevel === 'high' ? 'delete' : (riskLevel === 'medium' ? 'review' : 'pass'),
+        confidence: Math.max(builtin.confidence || 0, api.confidence || 0),
+        source: 'both'
+    };
 }
 
 module.exports = {
     reviewContent,
     getAIConfig,
-    DEFAULT_PROMPT
+    DEFAULT_PROMPT,
+    fallbackReview,
+    builtinSensitiveCheck,
+    externalSensitiveCheck
 };

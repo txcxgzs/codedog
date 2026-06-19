@@ -143,6 +143,11 @@ router.post('/ai/batch-review', requirePermission('report:handle'), adminControl
 router.post('/ai/auto-handle', requirePermission('report:handle'), adminController.aiAutoHandleReports);
 
 /**
+ * 敏感词测试
+ */
+router.post('/sensitive/test', requireRole('admin'), adminController.testSensitiveCheck);
+
+/**
  * 权限管理（仅超级管理员）
  */
 router.get('/permissions', requireRole('superadmin'), adminController.getPermissions);
