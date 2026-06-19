@@ -6,6 +6,7 @@ const DbAdapter = require('../utils/dbAdapter');
 const { Favorite, Work, User, sequelize } = require('../models');
 const { successResponse, errorResponse } = require('../middleware/response');
 const { Op } = require('sequelize');
+const { escapeLike } = require('../utils/security');
 
 function canInteractWithWork(work) {
     return work && work.status === 'published';
@@ -49,14 +50,12 @@ async function addFavorite(req, res) {
             user_id: req.user.id,
             work_id: localWorkId
         });
-        
-        // 更新作品收藏数
-        await DbAdapter.update(Work,
-            { collection_times: (work.collection_times || 0) + 1 },
-            { where: { id: DbAdapter.getId(work) } }
-        );
-        
-        return successResponse(res, null, '收藏成功');
+
+        // 原子 +1 避免 read-modify-write 竞态
+        await DbAdapter.increment(work, 'collection_times');
+        await work.reload();
+
+        return successResponse(res, { collection_times: work.collection_times || 0, favorited: true }, '收藏成功');
     } catch (error) {
         console.error('收藏错误:', error);
         return errorResponse(res, '收藏失败', 500);
@@ -87,16 +86,18 @@ async function removeFavorite(req, res) {
         }
         
         await DbAdapter.destroy(Favorite, { where: { id: DbAdapter.getId(favorite) } });
-        
+
         const work = await DbAdapter.findByPk(Work, localWorkId);
         if (work) {
-            await DbAdapter.update(Work,
-                { collection_times: Math.max(0, (work.collection_times || 0) - 1) },
-                { where: { id: DbAdapter.getId(work) } }
-            );
+            // 原子 -1 避免 read-modify-write 竞态
+            await DbAdapter.decrement(work, 'collection_times');
+            await work.reload();
         }
-        
-        return successResponse(res, null, '已取消收藏');
+
+        return successResponse(res, {
+            collection_times: work ? Math.max(0, work.collection_times || 0) : 0,
+            favorited: false
+        }, '已取消收藏');
     } catch (error) {
         console.error('取消收藏错误:', error);
         return errorResponse(res, '取消收藏失败', 500);
@@ -114,9 +115,10 @@ async function getMyFavorites(req, res) {
         
         const workWhere = { status: 'published' };
         if (keyword) {
+            const safeKeyword = escapeLike(keyword);
             workWhere[Op.or] = [
-                { name: { [Op.like]: `%${keyword}%` } },
-                { description: { [Op.like]: `%${keyword}%` } }
+                { name: { [Op.like]: `%${safeKeyword}%` } },
+                { description: { [Op.like]: `%${safeKeyword}%` } }
             ];
         }
         

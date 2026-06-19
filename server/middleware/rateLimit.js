@@ -41,6 +41,26 @@ function pruneRateLimitBuckets() {
     }
 }
 
-setInterval(pruneRateLimitBuckets, 60 * 1000).unref();
+/**
+ * 内存桶硬上限：超过 MAX_BUCKETS 时驱逐最早的 20% 桶，
+ * 防止攻击者用海量 IP 撑爆内存（DoS）
+ */
+const MAX_BUCKETS = 10000;
+
+function evictIfFull() {
+    if (buckets.size > MAX_BUCKETS) {
+        const toDelete = Math.floor(MAX_BUCKETS * 0.2);
+        let i = 0;
+        for (const key of buckets.keys()) {
+            buckets.delete(key);
+            if (++i >= toDelete) break;
+        }
+    }
+}
+
+setInterval(() => {
+    pruneRateLimitBuckets();
+    evictIfFull();
+}, 60 * 1000).unref();
 
 module.exports = { createRateLimiter };

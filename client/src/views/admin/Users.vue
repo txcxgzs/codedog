@@ -55,17 +55,20 @@
           {{ formatTime(row.created_at) }}
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="280" fixed="right">
+      <el-table-column label="操作" width="200" fixed="right">
         <template #default="{ row }">
-          <el-button size="small" @click="editUser(row)">编辑</el-button>
-          <el-button 
-            size="small" 
-            :type="row.status === 'active' ? 'danger' : 'success'"
-            @click="toggleStatus(row)"
-          >
-            {{ row.status === 'active' ? '禁用' : '启用' }}
-          </el-button>
-          <el-button size="small" type="warning" @click="impersonateUser(row)">一键登录</el-button>
+          <el-button size="small" type="primary" @click="editUser(row)">编辑</el-button>
+          <el-dropdown trigger="click" @command="(cmd) => handleUserCommand(cmd, row)">
+            <el-button size="small">更多</el-button>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item command="toggle">
+                  {{ row.status === 'active' ? '禁用账号' : '启用账号' }}
+                </el-dropdown-item>
+                <el-dropdown-item command="impersonate">一键登录</el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
         </template>
       </el-table-column>
     </el-table>
@@ -97,7 +100,7 @@
           <el-select v-model="editForm.role">
             <el-option label="普通用户" value="user" />
             <el-option label="管理员" value="admin" />
-            <el-option label="超级管理员" value="superadmin" />
+            <el-option v-if="userStore.user?.role === 'superadmin'" label="超级管理员" value="superadmin" />
           </el-select>
         </el-form-item>
         <el-form-item label="活跃大佬">
@@ -115,7 +118,10 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { adminApi } from '@/api/admin'
+import { useUserStore } from '@/stores/user'
 import { ElMessage, ElMessageBox } from 'element-plus'
+
+const userStore = useUserStore()
 
 const loading = ref(false)
 const users = ref([])
@@ -198,6 +204,11 @@ const saveUser = async () => {
   }
 }
 
+const handleUserCommand = (cmd, user) => {
+  if (cmd === 'toggle') toggleStatus(user)
+  else if (cmd === 'impersonate') impersonateUser(user)
+}
+
 const toggleStatus = async (user) => {
   const action = user.status === 'active' ? '禁用' : '启用'
   try {
@@ -223,10 +234,13 @@ const impersonateUser = async (user) => {
     await ElMessageBox.confirm(`确定要以 ${user.nickname || user.username} 的身份登录吗？该操作将生成一个临时登录 Token。`, '一键登录', { type: 'warning' })
     const res = await adminApi.impersonateUser(user.id)
     if (res.code === 200) {
-      // 保存 Token 并刷新页面实现真实登录
+      // 保存管理员 Token 以便恢复身份
+      const adminToken = localStorage.getItem('token')
+      localStorage.setItem('admin_token', adminToken)
+      // 设置被模拟用户的 Token
       localStorage.setItem('token', res.data.token)
       ElMessage.success(`正在以 ${user.nickname || user.username} 身份登录...`)
-      
+
       // 强制刷新页面以更新所有状态
       setTimeout(() => {
         window.location.href = '/'
@@ -255,7 +269,7 @@ onMounted(fetchUsers)
   display: flex;
   gap: 12px;
   margin-bottom: 20px;
-  
+
   .r-admin-users--search {
     width: 300px;
   }
@@ -272,5 +286,14 @@ onMounted(fetchUsers)
   display: flex;
   justify-content: flex-end;
   margin-top: 20px;
+}
+
+:deep(.el-table) {
+  .el-button + .el-button {
+    margin-left: 8px;
+  }
+  .el-dropdown {
+    margin-left: 8px;
+  }
 }
 </style>

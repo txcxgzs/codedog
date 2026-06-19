@@ -102,7 +102,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, watch } from 'vue'
 import { useUserStore } from '@/stores/user'
 import { userApi } from '@/api/user'
 import { geetestApi } from '@/api/geetest'
@@ -247,49 +247,26 @@ const saveProfile = async () => {
     }
   } catch (error) {
     console.error('保存失败:', error)
+    ElMessage.error('保存失败，请重试')
   } finally {
     loading.value = false
   }
 }
 
 const changePassword = async () => {
+  // 当前仅支持编程猫账号登录，自助改密功能未启用
   ElMessage.info('当前仅支持编程猫账号登录，请前往编程猫修改密码')
   return
-
-  const valid = await passwordFormRef.value.validate().catch(() => false)
-  if (!valid) return
-  
-  let geetestData = {}
-  if (geetestConfig.value?.enabled && geetestConfig.value?.scenes?.update_profile) {
-    geetestData = await geetestDialogRef.value.show('update_profile')
-    if (!geetestData) return
-  }
-  
-  passwordLoading.value = true
-  try {
-    const res = await userApi.changePassword(
-      passwordForm.oldPassword,
-      passwordForm.newPassword,
-      geetestData
-    )
-    if (res.code === 200) {
-      ElMessage.success('密码修改成功')
-      passwordForm.oldPassword = ''
-      passwordForm.newPassword = ''
-      passwordForm.confirmPassword = ''
-    } else {
-      ElMessage.error(res.msg || '修改失败')
-    }
-  } catch (error) {
-    console.error('修改密码失败:', error)
-  } finally {
-    passwordLoading.value = false
-  }
 }
 
+watch(() => userStore.user, (user) => {
+  if (user) {
+    form.nickname = user.nickname || ''
+    form.bio = user.bio || ''
+  }
+}, { immediate: true })
+
 onMounted(() => {
-  form.nickname = userStore.user?.nickname || ''
-  form.bio = userStore.user?.bio || ''
   fetchGeetestConfig()
 })
 </script>

@@ -356,7 +356,7 @@ const showDetailDialog = async (studio) => {
   
   try {
     const [detailRes, pendingMembersRes, pendingWorksRes] = await Promise.all([
-      studioApi.getStudio(studio.id),
+      adminApi.getStudioDetail(studio.id),
       studioApi.getPendingMembers(studio.id),
       studioApi.getPendingWorks(studio.id)
     ])

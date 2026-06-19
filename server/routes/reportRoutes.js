@@ -5,6 +5,7 @@ const { successResponse, errorResponse } = require('../middleware/response');
 const { authMiddleware } = require('../middleware/auth');
 const { geetestVerify } = require('../middleware/geetest');
 const DbAdapter = require('../utils/dbAdapter');
+const { escapeHtml } = require('../utils/security');
 
 const typeNames = {
     work: '作品',
@@ -104,15 +105,44 @@ router.post('/', authMiddleware, geetestVerify('report'), async (req, res) => {
             targetName = target.nickname || target.username;
         }
 
+        const safeTargetName = escapeHtml(targetName);
+        const safeReason = escapeHtml(reason);
+
         await DbAdapter.create(Notification, {
             user_id: req.user.id,
             type: 'system',
             title: '举报已提交',
-            content: `您举报的${typeNames[type]}「${targetName}」已提交成功，我们会尽快审核处理。举报原因：${reason}`,
+            content: `您举报的${typeNames[type]}「${safeTargetName}」已提交成功，我们会尽快审核处理。举报原因：${safeReason}`,
             related_id: linkId,
             related_type: linkType
         });
-        
+
+        // 通知审核员/管理员有新的举报待处理
+        try {
+            const { Op } = require('sequelize');
+            const reviewers = await DbAdapter.findAll(User, {
+                where: {
+                    role: { [Op.in]: ['reviewer', 'moderator', 'admin', 'superadmin'] },
+                    status: 'active'
+                },
+                attributes: ['id'],
+                limit: 50
+            });
+            if (reviewers.length > 0) {
+                await DbAdapter.bulkCreate(Notification, reviewers.map(r => ({
+                    user_id: r.id,
+                    type: 'report',
+                    title: '收到新举报',
+                    content: `有用户举报了${typeNames[type]}「${safeTargetName}」，原因：${safeReason}`,
+                    related_id: linkId,
+                    related_type: linkType
+                })));
+            }
+        } catch (notifyErr) {
+            // 通知失败不应回滚举报主流程
+            console.error('Create report reviewer notification error:', notifyErr);
+        }
+
         return successResponse(res, report, '举报成功，我们会尽快处理');
     } catch (error) {
         console.error('创建举报错误:', error);

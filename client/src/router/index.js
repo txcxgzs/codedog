@@ -100,13 +100,19 @@ const routes = [
     path: '/admin/init',
     name: 'AdminInit',
     component: () => import('@/views/admin/Init.vue'),
-    meta: { title: '初始化说明' }
+    meta: { title: '初始化说明', requiresAuth: true, requiresAdmin: true }
   },
   {
     path: '/notifications',
     name: 'Notifications',
     component: () => import('@/views/Notification.vue'),
     meta: { title: '消息通知', requiresAuth: true }
+  },
+  {
+    path: '/:pathMatch(.*)*',
+    name: 'NotFound',
+    component: () => import('@/views/Home.vue'),
+    meta: { title: '页面不存在' }
   }
 ]
 
@@ -126,8 +132,12 @@ router.beforeEach(async (to, from, next) => {
       await userStore.fetchCurrentUser()
     } catch (error) {
       console.error('Failed to fetch user info:', error)
-      userStore.logout()
-      next({ name: 'Login', query: { redirect: to.fullPath } })
+      // 仅在 401 时跳转登录页，网络错误时留在当前页面
+      if (error?.response?.status === 401) {
+        next({ name: 'Login', query: { redirect: to.fullPath } })
+      } else {
+        next(false)
+      }
       return
     }
   }

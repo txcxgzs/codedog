@@ -3,13 +3,36 @@ const DbAdapter = require('../utils/dbAdapter');
  * 社区帖子控制器
  */
 
-const { Post, User, Comment, sequelize } = require('../models');
+const { Post, User, Comment } = require('../models');
 const { successResponse, errorResponse, paginateResponse } = require('../middleware/response');
 const { Op } = require('sequelize');
 const { isRoleAtLeast } = require('../config/permissions');
+const { escapeLike } = require('../utils/security');
 
 function canInteractWithPost(post) {
     return post && post.status === 'published';
+}
+
+/**
+ * 规范化帖子输出：tags 字段统一转换为数组
+ * （Sequelize 自定义 setter 仅在通过实例写时生效；
+ *  通过 findAll/raw 拿到的 records 仍可能为字符串）
+ */
+function normalizePostOutput(post) {
+    if (!post) return post;
+    const json = post.toJSON ? post.toJSON() : post;
+    if (typeof json.tags === 'string') {
+        try {
+            const parsed = JSON.parse(json.tags);
+            json.tags = Array.isArray(parsed) ? parsed : [];
+        } catch (e) {
+            json.tags = [];
+        }
+    }
+    if (!Array.isArray(json.tags)) {
+        json.tags = [];
+    }
+    return json;
 }
 
 /**
@@ -26,7 +49,7 @@ async function createPost(req, res) {
         const post = await DbAdapter.create(Post, {
             title,
             content,
-            user_id: req.user.id,
+            user_id: DbAdapter.getId(req.user),
             category: category || 'discussion',
             tags,
             cover
@@ -75,9 +98,10 @@ async function getPosts(req, res) {
         }
         
         if (keyword) {
+            const safeKeyword = escapeLike(keyword);
             where[Op.or] = [
-                { title: { [Op.like]: `%${keyword}%` } },
-                { content: { [Op.like]: `%${keyword}%` } }
+                { title: { [Op.like]: `%${safeKeyword}%` } },
+                { content: { [Op.like]: `%${safeKeyword}%` } }
             ];
         }
         
@@ -101,7 +125,7 @@ async function getPosts(req, res) {
             offset: (page - 1) * pageSize
         });
         
-        return paginateResponse(res, rows, count, page, pageSize);
+        return paginateResponse(res, rows.map(normalizePostOutput), count, page, pageSize);
     } catch (error) {
         console.error('获取帖子列表错误:', error);
         return errorResponse(res, '获取帖子列表失败', 500);
@@ -131,10 +155,8 @@ async function getPostDetail(req, res) {
             return errorResponse(res, '帖子不存在', 404);
         }
 
-        await DbAdapter.update(Post, 
-            { view_count: (post.view_count || 0) + 1 },
-            { where: { id: DbAdapter.getId(post) } }
-        );
+        // 原子 +1 避免 read-modify-write 竞态
+        await DbAdapter.increment(post, 'view_count');
         
         const comments = await DbAdapter.findAll(Comment, {
             where: { post_id: id, status: 'active', parent_id: null },
@@ -156,7 +178,7 @@ async function getPostDetail(req, res) {
             order: [['created_at', 'DESC']]
         });
         
-        return successResponse(res, { ...post.toJSON(), comments });
+        return successResponse(res, normalizePostOutput({ ...post.toJSON(), view_count: (post.view_count || 0) + 1, comments }));
     } catch (error) {
         console.error('获取帖子详情错误:', error);
         return errorResponse(res, '获取帖子详情失败', 500);
@@ -176,7 +198,7 @@ async function updatePost(req, res) {
             return errorResponse(res, '帖子不存在', 404);
         }
         
-        if (post.user_id !== req.user.id) {
+        if (post.user_id !== DbAdapter.getId(req.user)) {
             return errorResponse(res, '无权修改此帖子', 403);
         }
         
@@ -215,7 +237,7 @@ async function deletePost(req, res) {
             return errorResponse(res, '帖子不存在', 404);
         }
         
-        if (post.user_id !== req.user.id && !isRoleAtLeast(req.user.role, 'moderator')) {
+        if (post.user_id !== DbAdapter.getId(req.user) && !isRoleAtLeast(req.user.role, 'moderator')) {
             return errorResponse(res, '无权删除此帖子', 403);
         }
         
@@ -235,7 +257,7 @@ async function likePost(req, res) {
     try {
         const { id } = req.params;
         const { Like } = require('../models');
-        const userId = req.user.id;
+        const userId = DbAdapter.getId(req.user);
         
         const post = await DbAdapter.findByPk(Post, id);
         if (!post) {
@@ -252,26 +274,42 @@ async function likePost(req, res) {
         
         if (existingLike) {
             await DbAdapter.destroy(Like, { where: { id: DbAdapter.getId(existingLike) } });
-            const newCount = Math.max(0, (post.like_count || 0) - 1);
-            await DbAdapter.update(Post, 
-                { like_count: newCount },
-                { where: { id: DbAdapter.getId(post) } }
-            );
+            // 原子 -1 避免 read-modify-write 竞态
+            await DbAdapter.decrement(post, 'like_count');
+            await post.reload();
+            const newCount = Math.max(0, post.like_count || 0);
             return successResponse(res, { like_count: newCount, liked: false }, '已取消点赞');
         }
-        
+
         await DbAdapter.create(Like, {
             user_id: userId,
             post_id: DbAdapter.getId(post)
         });
-        
-        const newCount = (post.like_count || 0) + 1;
-        await DbAdapter.update(Post, 
-            { like_count: newCount },
-            { where: { id: DbAdapter.getId(post) } }
-        );
-        
-        return successResponse(res, { like_count: newCount, liked: true }, '点赞成功');
+
+        // 原子 +1 避免 read-modify-write 竞态
+        await DbAdapter.increment(post, 'like_count');
+        await post.reload();
+
+        // 通知帖子作者（与 work like 行为保持一致）
+        if (post.user_id != null && String(post.user_id) !== String(userId)) {
+            try {
+                const { Notification } = require('../models');
+                await DbAdapter.create(Notification, {
+                    user_id: post.user_id,
+                    type: 'like',
+                    title: '点赞了你的帖子',
+                    content: post.title,
+                    related_id: DbAdapter.getId(post),
+                    related_type: 'post',
+                    sender_id: userId
+                });
+            } catch (notifyErr) {
+                // 通知失败不应回滚点赞主流程
+                console.error('Create post like notification error:', notifyErr);
+            }
+        }
+
+        return successResponse(res, { like_count: post.like_count || 0, liked: true }, '点赞成功');
     } catch (error) {
         console.error('点赞错误:', error);
         return errorResponse(res, '点赞失败', 500);
@@ -285,7 +323,7 @@ async function favoritePost(req, res) {
     try {
         const { id } = req.params;
         const { Favorite } = require('../models');
-        const userId = req.user.id;
+        const userId = DbAdapter.getId(req.user);
         
         const post = await DbAdapter.findByPk(Post, id);
         if (!post) {
@@ -329,7 +367,7 @@ async function unfavoritePost(req, res) {
     try {
         const { id } = req.params;
         const { Favorite } = require('../models');
-        const userId = req.user.id;
+        const userId = DbAdapter.getId(req.user);
         
         const post = await DbAdapter.findByPk(Post, id);
         if (!post) {
@@ -372,13 +410,13 @@ async function getMyPosts(req, res) {
         const pageSize = parseInt(req.query.pageSize) || 10;
         
         const { count, rows } = await DbAdapter.findAndCountAll(Post, {
-            where: { user_id: req.user.id },
+            where: { user_id: DbAdapter.getId(req.user) },
             order: [['created_at', 'DESC']],
             limit: pageSize,
             offset: (page - 1) * pageSize
         });
         
-        return paginateResponse(res, rows, count, page, pageSize);
+        return paginateResponse(res, rows.map(normalizePostOutput), count, page, pageSize);
     } catch (error) {
         console.error('获取我的帖子错误:', error);
         return errorResponse(res, '获取我的帖子失败', 500);

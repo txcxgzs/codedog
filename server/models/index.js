@@ -255,6 +255,7 @@ const OperationLog = sequelize.define('OperationLog', {
     target_id: { type: DataTypes.INTEGER },
     details: { type: DataTypes.TEXT },
     ip_address: { type: DataTypes.STRING(50) },
+    user_agent: { type: DataTypes.TEXT },
     created_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW }
 }, { tableName: 'operation_logs', timestamps: false });
 
@@ -293,6 +294,7 @@ User.hasMany(Post, { foreignKey: 'user_id', as: 'posts' });
 Post.belongsTo(User, { foreignKey: 'user_id', as: 'author' });
 User.hasMany(Comment, { foreignKey: 'user_id', as: 'comments' });
 Comment.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
+Comment.belongsTo(User, { foreignKey: 'reply_to_user_id', as: 'reply_to_user' });
 Comment.belongsTo(Work, { foreignKey: 'work_id', as: 'work' });
 Work.hasMany(Comment, { foreignKey: 'work_id', as: 'comments' });
 Comment.belongsTo(Post, { foreignKey: 'post_id', as: 'post' });
@@ -333,7 +335,6 @@ User.hasMany(Follow, { foreignKey: 'following_id', as: 'follower_list' });
 
 Comment.hasMany(Comment, { foreignKey: 'parent_id', as: 'replies' });
 Comment.belongsTo(Comment, { foreignKey: 'parent_id', as: 'parent' });
-Comment.belongsTo(User, { foreignKey: 'reply_to_user_id', as: 'reply_to_user' });
 
 module.exports = {
     sequelize,

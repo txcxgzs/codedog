@@ -257,6 +257,7 @@ import { studioApi } from '@/api/studio'
 import { workApi } from '@/api/work'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import GeetestDialog from '@/components/GeetestDialog.vue'
+import { useGeetestConfig } from '@/composables/useGeetestConfig'
 
 const route = useRoute()
 const router = useRouter()
@@ -290,6 +291,7 @@ const submitWorkDialogVisible = ref(false)
 const myWorks = ref([])
 const myWorksLoading = ref(false)
 const geetestDialog = ref(null)
+const { geetestEnabled, fetchGeetestConfig } = useGeetestConfig()
 
 const defaultCover = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMDAgMTUwIj48cmVjdCB3aWR0aD0iMzAwIiBoZWlnaHQ9IjE1MCIgZmlsbD0iI2Y1ZjVmNSIvPjx0ZXh0IHg9IjE1MCIgeT0iNzUiIGZvbnQtc2l6ZT0iMjAiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGZpbGw9IiM5OTkiPuWbvueJh+WKoOi9veWksei0pTwvdGV4dD48L3N2Zz4='
 const defaultAvatar = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHBhdGggZmlsbD0iIzk5OSIgZD0iTTEyIDJDNi40OCAyIDIgNi40OCAyIDEyczQuNDggMTAgMTAgMTAgMTAtNC40OCAxMC0xMFMxNy41MiAyIDEyIDJ6bTAgM2MxLjY2IDAgMyAxLjM0IDMgM3MtMS4zNCAzLTMgMy0zLTEuMzQtMy0zIDEuMzQtMyAzLTN6bTAgMTQuMmMtMi41IDAtNC43MS0xLjI4LTYtMy4yMi4wMy0xLjk5IDQtMy4wOCA2LTMuMDggMS45OSAwIDUuOTcgMS4wOSA2IDMuMDgtMS4yOSAxLjk0LTMuNSAzLjIyLTYgMy4yMnoiLz48L3N2Zz4='
@@ -366,6 +368,7 @@ const fetchStudio = async () => {
       studio.value = res.data.studio
       members.value = res.data.members
       works.value = res.data.works
+      worksTotal.value = res.data.works?.length || 0
       userRole.value = res.data.userRole
       userMemberStatus.value = res.data.userMemberStatus
     } else {
@@ -532,8 +535,11 @@ const handleCommand = (command) => {
 }
 
 const handleReviewMember = async (memberId, action) => {
-  const geetestData = await geetestDialog.value?.show('review_member')
-  if (!geetestData) return
+  let geetestData = {}
+  if (geetestEnabled('review_member')) {
+    geetestData = await geetestDialog.value?.show('review_member')
+    if (!geetestData) return
+  }
   try {
     const res = await studioApi.reviewMember(route.params.id, memberId, action, geetestData)
     if (res.code === 200) {

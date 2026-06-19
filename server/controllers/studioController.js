@@ -3,6 +3,7 @@ const { Studio, StudioMember, StudioWork, User, Work, Notification, sequelize } 
 const { successResponse, errorResponse, paginateResponse } = require('../middleware/response');
 const { Op } = require('sequelize');
 const { isRoleAtLeast } = require('../config/permissions');
+const { escapeLike } = require('../utils/security');
 
 const VALID_JOIN_TYPES = ['public', 'apply', 'invite'];
 
@@ -101,7 +102,7 @@ async function getStudios(req, res) {
         
         const where = { status: 'active', is_public: true };
         if (keyword) {
-            where.name = { [Op.like]: `%${keyword}%` };
+            where.name = { [Op.like]: `%${escapeLike(keyword)}%` };
         }
         
         const { count, rows } = await DbAdapter.findAndCountAll(Studio, {
@@ -266,11 +267,10 @@ async function joinStudio(req, res) {
             });
             return successResponse(res, member, '申请已提交，请等待审核');
         } else {
-            await DbAdapter.update(Studio, 
-                { member_count: (studio.member_count || 0) + 1 },
-                { where: { id: DbAdapter.getId(studio) } }
-            );
-            return successResponse(res, member, '加入成功');
+            // 原子 +1 避免 read-modify-write 竞态
+            await DbAdapter.increment(studio, 'member_count');
+            await studio.reload();
+            return successResponse(res, { ...member.toJSON ? member.toJSON() : member, member_count: studio.member_count || 0 }, '加入成功');
         }
     } catch (error) {
         console.error('加入工作室错误:', error);
@@ -295,15 +295,13 @@ async function leaveStudio(req, res) {
         }
         
         await DbAdapter.destroy(StudioMember, { where: { id: DbAdapter.getId(member) } });
-        
+
         const studio = await DbAdapter.findByPk(Studio, id);
         if (studio) {
-            await DbAdapter.update(Studio, 
-                { member_count: Math.max(0, (studio.member_count || 0) - 1) },
-                { where: { id: DbAdapter.getId(studio) } }
-            );
+            // 原子 -1 避免 read-modify-write 竞态
+            await DbAdapter.decrement(studio, 'member_count');
         }
-        
+
         return successResponse(res, null, '已退出工作室');
     } catch (error) {
         console.error('退出工作室错误:', error);
@@ -375,8 +373,10 @@ async function updateStudio(req, res) {
             is_public: is_public !== undefined ? is_public : studio.is_public,
             join_type: join_type || studio.join_type
         }, { where: { id: DbAdapter.getId(studio) } });
-        
-        return successResponse(res, studio, '工作室信息已更新');
+
+        // 重新查询更新后的数据，避免返回旧对象
+        const updatedStudio = await DbAdapter.findByPk(Studio, DbAdapter.getId(studio));
+        return successResponse(res, updatedStudio, '工作室信息已更新');
     } catch (error) {
         console.error('更新工作室错误:', error);
         return errorResponse(res, '更新工作室失败', 500);
@@ -408,19 +408,21 @@ async function reviewMember(req, res) {
             await DbAdapter.update(StudioMember, { status: 'active' }, { where: { id: DbAdapter.getId(member) } });
             const studio = await DbAdapter.findByPk(Studio, id);
             if (studio) {
-                await DbAdapter.update(Studio, 
-                    { member_count: (studio.member_count || 0) + 1 },
-                    { where: { id: DbAdapter.getId(studio) } }
-                );
+                // 原子 +1 避免 read-modify-write 竞态
+                await DbAdapter.increment(studio, 'member_count');
             }
-            
-            await DbAdapter.create(Notification, {
-                user_id: member.user_id,
-                type: 'system',
-                title: '工作室申请通过',
-                content: `您申请加入的工作室「${studio.name}」已通过审核`
-            });
-            
+
+            try {
+                await DbAdapter.create(Notification, {
+                    user_id: member.user_id,
+                    type: 'system',
+                    title: '工作室申请通过',
+                    content: `您申请加入的工作室「${studio?.name || '工作室'}」已通过审核`
+                });
+            } catch (notifyErr) {
+                console.error('Create review notification error:', notifyErr);
+            }
+
             return successResponse(res, null, '已通过申请');
         } else {
             await DbAdapter.update(StudioMember, { status: 'rejected' }, { where: { id: DbAdapter.getId(member) } });
@@ -605,7 +607,7 @@ async function reviewWork(req, res) {
                 user_id: studioWork.user_id,
                 type: 'system',
                 title: '作品审核通过',
-                content: `您投稿到「${studio.name}」的作品已通过审核`
+                content: `您投稿到「${studio?.name || '工作室'}」的作品已通过审核`
             });
             
             return successResponse(res, null, '作品已通过');

@@ -95,10 +95,11 @@ import { useUserStore } from '@/stores/user'
 import { studioApi } from '@/api/studio'
 import { ElMessage } from 'element-plus'
 import GeetestDialog from '@/components/GeetestDialog.vue'
+import { useGeetestConfig } from '@/composables/useGeetestConfig'
 import { Search, Plus } from '@element-plus/icons-vue'
 
 const userStore = useUserStore()
-const loading = ref(false)
+const loading = ref(true)
 const createLoading = ref(false)
 const activeTab = ref('all')
 const studios = ref([])
@@ -109,6 +110,7 @@ const createDialogVisible = ref(false)
 const createFormRef = ref(null)
 const geetestDialog = ref(null)
 const searchKeyword = ref('')
+const { geetestEnabled } = useGeetestConfig()
 
 const defaultCover = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMDAgMTUwIj48cmVjdCB3aWR0aD0iMzAwIiBoZWlnaHQ9IjE1MCIgZmlsbD0iI2Y1ZjVmNSIvPjx0ZXh0IHg9IjE1MCIgeT0iNzUiIGZvbnQtc2l6ZT0iMjAiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGZpbGw9IiM5OTkiPuWbvueJh+WKoOi9veWksei0pTwvdGV4dD48L3N2Zz4='
 
@@ -170,7 +172,7 @@ const handleCreate = async () => {
   if (!valid) return
   
   let geetestData = {}
-  if (geetestDialog.value) {
+  if (geetestEnabled('create_studio') && geetestDialog.value) {
     const result = await geetestDialog.value.show('create_studio')
     if (!result) return
     geetestData = result

@@ -116,12 +116,15 @@ const searchWorks = () => { page.value = 1; fetchWorks() }
 watch(() => route.query, (q) => {
   if (q.keyword) keyword.value = q.keyword
   if (q.type) currentType.value = q.type
+  if (q.sortBy) sortBy.value = q.sortBy
+  page.value = 1
   fetchWorks()
 }, { immediate: false })
 
 onMounted(() => {
   if (route.query.keyword) keyword.value = route.query.keyword
   if (route.query.type) currentType.value = route.query.type
+  if (route.query.sortBy) sortBy.value = route.query.sortBy
   fetchWorks()
 })
 </script>

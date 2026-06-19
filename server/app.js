@@ -61,7 +61,7 @@ function setSecurityHeaders(res) {
         "base-uri 'self'",
         "object-src 'none'",
         "frame-ancestors 'none'",
-        "script-src 'self'",
+        "script-src 'self' https://static.geetest.com https://*.geetest.com https://hcaptcha.com https://*.hcaptcha.com",
         "style-src 'self' 'unsafe-inline'",
         "img-src 'self' data: http: https:",
         "font-src 'self' data:",
@@ -119,7 +119,8 @@ app.use((req, res, next) => {
 const loginRateLimiter = createRateLimiter({
     windowMs: 15 * 60 * 1000,
     max: 10,
-    keyPrefix: 'login'
+    keyPrefix: 'login',
+    keyGenerator: req => `${req.ip}:${String(req.body?.username || '').toLowerCase()}`
 });
 
 const codemaoImportRateLimiter = createRateLimiter({
@@ -285,7 +286,7 @@ app.use((err, req, res, next) => {
     });
 });
 
-const PORT = process.env.PORT || process.env.SERVER_PORT || 3000;
+const PORT = process.env.PORT || process.env.SERVER_PORT || 3001;
 
 async function startServer() {
     try {
@@ -295,6 +296,16 @@ async function startServer() {
             await sessionStore.sync();
         }
         console.log('Database models synchronized.');
+
+        // 启动时刷新角色权限缓存，避免热更新后 getRoleSync 永远走默认值
+        try {
+            const { refreshRoleCache } = require('./config/permissions');
+            const { RolePermission } = require('./models');
+            await refreshRoleCache(RolePermission);
+            console.log('Role permission cache refreshed.');
+        } catch (e) {
+            console.warn('Refresh role permission cache failed:', e.message);
+        }
 
         const userCount = await DbAdapter.count(User, {});
         if (userCount === 0) {

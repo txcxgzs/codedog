@@ -22,7 +22,7 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, onUnmounted } from 'vue'
 import { hcaptchaApi } from '@/api/hcaptcha'
 import { ElMessage } from 'element-plus'
 
@@ -153,6 +153,16 @@ const onVerify = async (token) => {
 const onError = () => {
   error.value = '验证出错，请重试'
 }
+
+onUnmounted(() => {
+  if (window.hcaptcha && widgetId.value !== null) {
+    try { window.hcaptcha.remove(widgetId.value) } catch (e) { /* ignore */ }
+    widgetId.value = null
+  }
+  if (resolvePromise.value) {
+    settle({ verified: false, cancelled: true })
+  }
+})
 
 defineExpose({ show })
 </script>

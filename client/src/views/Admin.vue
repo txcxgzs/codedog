@@ -218,12 +218,9 @@
             <el-table-column prop="last_login_at" label="最后登录" width="110">
               <template #default="{ row }">{{ formatDate(row.last_login_at) }}</template>
             </el-table-column>
-            <el-table-column label="操作" width="200" fixed="right">
+            <el-table-column label="操作" width="100" fixed="right">
               <template #default="{ row }">
                 <el-button size="small" type="primary" @click="showUserDetail(row)">详情</el-button>
-                <el-button size="small" :type="row.status === 'active' ? 'danger' : 'success'" @click="toggleUserStatus(row)">
-                  {{ row.status === 'active' ? '禁用' : '启用' }}
-                </el-button>
               </template>
             </el-table-column>
           </el-table>
@@ -540,12 +537,9 @@
             <el-table-column prop="created_at" label="发布时间" width="110">
               <template #default="{ row }">{{ formatDate(row.created_at) }}</template>
             </el-table-column>
-            <el-table-column label="操作" width="150" fixed="right">
+            <el-table-column label="操作" width="100" fixed="right">
               <template #default="{ row }">
-                <el-button size="small" :type="row.is_featured ? 'info' : 'warning'" @click="toggleWorkFeatured(row)">
-                  {{ row.is_featured ? '取消精选' : '设为精选' }}
-                </el-button>
-                <el-button size="small" type="danger" @click="handleDeleteWork(row)">删除</el-button>
+                <el-button size="small" type="primary" @click="showWorkDetail(row)">详情</el-button>
               </template>
             </el-table-column>
           </el-table>
@@ -562,6 +556,82 @@
           </div>
         </div>
         
+        <!-- 作品详情弹窗 -->
+        <el-dialog v-model="workDetailVisible" title="作品详情" width="700px" destroy-on-close>
+          <div v-if="workDetail">
+            <!-- 查看模式 -->
+            <template v-if="!workEditing">
+              <div style="display: flex; gap: 20px; margin-bottom: 20px;">
+                <img :src="workDetail.preview" style="width: 200px; height: 150px; object-fit: cover; border-radius: 8px; background: #f0f0f0;" />
+                <div style="flex: 1;">
+                  <h3 style="margin: 0 0 8px;">{{ workDetail.name }}</h3>
+                  <p style="color: #666; margin: 0 0 8px;">作者: {{ workDetail.codemao_author_name }}</p>
+                  <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                    <el-tag>{{ getTypeName(workDetail.type) }}</el-tag>
+                    <el-tag :type="workDetail.is_featured ? 'warning' : 'info'">{{ workDetail.is_featured ? '已精选' : '未精选' }}</el-tag>
+                    <el-tag :type="workDetail.status === 'published' ? 'success' : 'info'">{{ workDetail.status === 'published' ? '已发布' : workDetail.status }}</el-tag>
+                  </div>
+                </div>
+              </div>
+              <el-descriptions :column="3" border size="small">
+                <el-descriptions-item label="作品ID">{{ workDetail.id }}</el-descriptions-item>
+                <el-descriptions-item label="编程猫ID">{{ workDetail.codemao_work_id }}</el-descriptions-item>
+                <el-descriptions-item label="作者ID">{{ workDetail.codemao_author_id }}</el-descriptions-item>
+                <el-descriptions-item label="浏览量">{{ workDetail.view_times }}</el-descriptions-item>
+                <el-descriptions-item label="点赞数">{{ workDetail.praise_times }}</el-descriptions-item>
+                <el-descriptions-item label="收藏数">{{ workDetail.collection_times }}</el-descriptions-item>
+                <el-descriptions-item label="评论数">{{ workDetail.comment_count }}</el-descriptions-item>
+                <el-descriptions-item label="发布时间">{{ formatDate(workDetail.created_at) }}</el-descriptions-item>
+                <el-descriptions-item label="作品链接">
+                  <a :href="workDetail.work_url" target="_blank" style="color: #409eff;">查看原作品</a>
+                </el-descriptions-item>
+              </el-descriptions>
+              <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px;">
+                <el-button type="danger" plain @click="handleDeleteWork(workDetail)">删除作品</el-button>
+                <el-button type="primary" @click="enterWorkEdit">编辑</el-button>
+              </div>
+            </template>
+
+            <!-- 编辑模式 -->
+            <template v-else>
+              <el-form :model="workEditForm" label-width="80px">
+                <el-form-item label="封面图">
+                  <div style="display: flex; gap: 12px; align-items: flex-start;">
+                    <img :src="workEditForm.preview || workDetail.preview" style="width: 160px; height: 120px; object-fit: cover; border-radius: 6px; background: #f0f0f0;" />
+                    <div style="flex: 1;">
+                      <el-input v-model="workEditForm.preview" placeholder="输入新的封面图片URL" />
+                      <p style="font-size: 12px; color: #999; margin: 4px 0 0;">留空则保持原封面</p>
+                    </div>
+                  </div>
+                </el-form-item>
+                <el-form-item label="作品名称"><el-input v-model="workEditForm.name" /></el-form-item>
+                <el-row :gutter="16">
+                  <el-col :span="8"><el-form-item label="浏览量"><el-input-number v-model="workEditForm.view_times" :min="0" style="width: 100%" /></el-form-item></el-col>
+                  <el-col :span="8"><el-form-item label="点赞数"><el-input-number v-model="workEditForm.praise_times" :min="0" style="width: 100%" /></el-form-item></el-col>
+                  <el-col :span="8"><el-form-item label="收藏数"><el-input-number v-model="workEditForm.collection_times" :min="0" style="width: 100%" /></el-form-item></el-col>
+                </el-row>
+                <el-row :gutter="16">
+                  <el-col :span="8"><el-form-item label="状态">
+                    <el-select v-model="workEditForm.status" style="width: 100%">
+                      <el-option label="已发布" value="published" />
+                      <el-option label="草稿" value="draft" />
+                      <el-option label="已删除" value="deleted" />
+                    </el-select>
+                  </el-form-item></el-col>
+                  <el-col :span="8"><el-form-item label="精选"><el-switch v-model="workEditForm.is_featured" /></el-form-item></el-col>
+                </el-row>
+                <el-form-item label="修改原因">
+                  <el-input v-model="workEditReason" type="textarea" :rows="2" placeholder="请简要说明修改原因（会记录到操作日志）" />
+                </el-form-item>
+              </el-form>
+              <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px;">
+                <el-button @click="workEditing = false">取消</el-button>
+                <el-button type="primary" @click="saveWorkDetail" :loading="workDetailSaving">保存修改</el-button>
+              </div>
+            </template>
+          </div>
+        </el-dialog>
+
         <!-- 评论管理 -->
         <div v-if="activeMenu === 'comments'" class="r-admin--section">
           <div class="r-admin--header">
@@ -613,7 +683,7 @@
             <el-table-column prop="created_at" label="时间" width="110">
               <template #default="{ row }">{{ formatDate(row.created_at) }}</template>
             </el-table-column>
-            <el-table-column label="操作" width="150" fixed="right">
+            <el-table-column label="操作" width="120" fixed="right">
               <template #default="{ row }">
                 <el-button size="small" :type="row.status === 'active' ? 'warning' : 'success'" @click="toggleCommentStatus(row)">
                   {{ row.status === 'active' ? '隐藏' : '显示' }}
@@ -700,7 +770,7 @@
                     {{ row.aiResult.riskLevel === 'high' ? '高风险' : row.aiResult.riskLevel === 'medium' ? '中风险' : '低风险' }}
                   </el-tag>
                   <div style="font-size: 12px; color: #666;">{{ row.aiResult.recommendation === 'delete' ? '建议删除' : row.aiResult.recommendation === 'review' ? '需审核' : '正常' }}</div>
-                  <el-button size="small" link @click="quickAIReview(row)" :loading="row.aiLoading" style="padding: 0;">重新审核</el-button>
+                  <el-button size="small" @click="quickAIReview(row)" :loading="row.aiLoading" style="padding: 0;">重新审核</el-button>
                 </div>
                 <el-button v-else size="small" @click="quickAIReview(row)" :loading="row.aiLoading">审核</el-button>
               </template>
@@ -715,11 +785,18 @@
             <el-table-column prop="created_at" label="时间" width="110">
               <template #default="{ row }">{{ formatDate(row.created_at) }}</template>
             </el-table-column>
-            <el-table-column label="操作" width="200" fixed="right">
+            <el-table-column label="操作" width="160" fixed="right">
               <template #default="{ row }">
-                <el-button size="small" @click="showReportDialog(row)" :disabled="row.status !== 'pending'">处理</el-button>
-                <el-button size="small" type="danger" @click="quickHandle(row, 'delete')" :disabled="row.status !== 'pending'">删除</el-button>
-                <el-button size="small" type="info" @click="quickHandle(row, 'reject')" :disabled="row.status !== 'pending'">驳回</el-button>
+                <el-button size="small" type="primary" @click="showReportDialog(row)" :disabled="row.status !== 'pending'">处理</el-button>
+                <el-dropdown trigger="click" :disabled="row.status !== 'pending'" @command="(cmd) => quickHandle(row, cmd)">
+                  <el-button size="small" link type="info" :disabled="row.status !== 'pending'">更多</el-button>
+                  <template #dropdown>
+                    <el-dropdown-menu>
+                      <el-dropdown-item command="delete">删除内容</el-dropdown-item>
+                      <el-dropdown-item command="reject">驳回举报</el-dropdown-item>
+                    </el-dropdown-menu>
+                  </template>
+                </el-dropdown>
               </template>
             </el-table-column>
           </el-table>
@@ -857,9 +934,9 @@
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="150" fixed="right">
+            <el-table-column label="操作" width="120" fixed="right">
               <template #default="{ row }">
-                <el-button size="small" @click="showBannerDialog(row)">编辑</el-button>
+                <el-button size="small" type="primary" @click="showBannerDialog(row)">编辑</el-button>
                 <el-button size="small" type="danger" @click="handleDeleteBanner(row)">删除</el-button>
               </template>
             </el-table-column>
@@ -942,12 +1019,13 @@
                 {{ new Date(row.created_at).toLocaleString() }}
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="200" fixed="right">
+            <el-table-column label="操作" width="160" fixed="right">
               <template #default="{ row }">
                 <el-button size="small" type="primary" @click="showStudioDetail(row)">详情</el-button>
-                <el-button 
-                  size="small" 
+                <el-button
+                  size="small"
                   :type="row.status === 'active' ? 'warning' : 'success'"
+                  link
                   @click="handleStudioStatus(row)"
                 >
                   {{ row.status === 'active' ? '禁用' : '启用' }}
@@ -1019,7 +1097,7 @@
                   <el-table-column prop="joined_at" label="加入时间" width="110">
                     <template #default="{ row }">{{ formatDate(row.joined_at) }}</template>
                   </el-table-column>
-                  <el-table-column label="操作" width="150" fixed="right">
+                  <el-table-column label="操作" width="120" fixed="right">
                     <template #default="{ row }">
                       <el-button v-if="row.role !== 'owner'" size="small" type="primary" @click="changeMemberRole(row)">改角色</el-button>
                       <el-button v-if="row.role !== 'owner'" size="small" type="danger" @click="removeMember(row)">移除</el-button>
@@ -1146,9 +1224,9 @@
             <el-table-column prop="created_at" label="发布时间" width="150">
               <template #default="{ row }">{{ formatDate(row.created_at) }}</template>
             </el-table-column>
-            <el-table-column label="操作" width="150">
+            <el-table-column label="操作" width="120">
               <template #default="{ row }">
-                <el-button size="small" @click="showAnnouncementDialog(row)">编辑</el-button>
+                <el-button size="small" type="primary" @click="showAnnouncementDialog(row)">编辑</el-button>
                 <el-button size="small" type="danger" @click="handleDeleteAnnouncement(row)">删除</el-button>
               </template>
             </el-table-column>
@@ -1181,9 +1259,9 @@
                 <el-tag :type="row.status === 'active' ? 'success' : 'info'">{{ row.status === 'active' ? '启用' : '禁用' }}</el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="150">
+            <el-table-column label="操作" width="120">
               <template #default="{ row }">
-                <el-button size="small" @click="showSensitiveDialog(row)">编辑</el-button>
+                <el-button size="small" type="primary" @click="showSensitiveDialog(row)">编辑</el-button>
                 <el-button size="small" type="danger" @click="handleDeleteSensitiveWord(row)">删除</el-button>
               </template>
             </el-table-column>
@@ -1191,48 +1269,54 @@
         </div>
         
         <!-- 系统设置 -->
-        <div v-if="activeMenu === 'configs'" class="r-admin--section">
-          <div class="r-admin--header">
-            <h2 class="r-admin--title">系统设置</h2>
-            <el-button type="primary" @click="saveConfigs" :loading="savingConfigs">保存设置</el-button>
+        <div v-if="activeMenu === 'configs'" class="r-admin--section r-admin--configs_page" v-loading="loadingConfigs">
+          <!-- 固定顶部栏 -->
+          <div class="r-admin--configs_sticky">
+            <h2 class="r-admin--title">⚙️ 系统设置</h2>
+            <el-button type="primary" size="large" @click="saveConfigs" :loading="savingConfigs">
+              <el-icon class="el-icon--left"><Check /></el-icon>保存全部设置
+            </el-button>
           </div>
-          <el-form :model="configForm" label-width="120px" v-loading="loadingConfigs">
-            <el-form-item label="网站名称">
-              <el-input v-model="configForm.site_name" placeholder="编程猫社区" />
-            </el-form-item>
-            <el-form-item label="网站描述">
-              <el-input v-model="configForm.site_description" type="textarea" :rows="2" placeholder="网站简介" />
-            </el-form-item>
-            <el-form-item label="网站关键词">
-              <el-input v-model="configForm.site_keywords" placeholder="SEO关键词，逗号分隔" />
-            </el-form-item>
-            <el-form-item label="联系邮箱">
-              <el-input v-model="configForm.contact_email" placeholder="admin@example.com" />
-            </el-form-item>
-            <el-form-item label="备案号">
-              <el-input v-model="configForm.icp_number" placeholder="京ICP备xxx号" />
-            </el-form-item>
-            
-            <el-divider>AI审核配置</el-divider>
-            <el-form-item label="启用AI审核">
-              <el-switch v-model="configForm.ai_enabled" active-text="开启" inactive-text="关闭" active-value="true" inactive-value="false" />
-            </el-form-item>
-            <el-form-item label="API地址">
-              <el-input v-model="configForm.ai_api_url" placeholder="如: https://api.openai.com/v1/chat/completions" />
-            </el-form-item>
-            <el-form-item label="API密钥">
-              <el-input v-model="configForm.ai_api_key" placeholder="API Key" show-password />
-            </el-form-item>
-            <el-form-item label="模型名称">
-              <el-input v-model="configForm.ai_model" placeholder="如: gpt-3.5-turbo, deepseek-chat" />
-            </el-form-item>
-            <el-form-item label="审核提示词">
-              <div class="r-admin--prompt_actions">
-                <el-button size="small" @click="useDefaultPrompt">使用默认提示词</el-button>
-                <el-button size="small" @click="showPromptHelp = true">查看帮助</el-button>
+
+          <div class="r-admin--configs_body">
+            <!-- 基本信息 -->
+            <div class="r-admin--config_section" id="config-basic">
+              <div class="r-admin--config_section_title">
+                <span class="r-admin--config_section_icon">🌐</span>
+                <span>网站基本信息</span>
               </div>
-              <el-input v-model="configForm.ai_prompt" type="textarea" :rows="12" placeholder="自定义审核提示词，使用{{type}}和{{content}}作为占位符" />
-            </el-form-item>
+              <el-form :model="configForm" label-width="90px" class="r-admin--config_form">
+                <el-row :gutter="20">
+                  <el-col :span="12"><el-form-item label="网站名称"><el-input v-model="configForm.site_name" placeholder="编程狗社区" /></el-form-item></el-col>
+                  <el-col :span="12"><el-form-item label="联系邮箱"><el-input v-model="configForm.contact_email" placeholder="admin@example.com" /></el-form-item></el-col>
+                </el-row>
+                <el-form-item label="网站描述"><el-input v-model="configForm.site_description" type="textarea" :rows="2" placeholder="一句话描述你的网站" /></el-form-item>
+                <el-row :gutter="20">
+                  <el-col :span="16"><el-form-item label="SEO关键词"><el-input v-model="configForm.site_keywords" placeholder="关键词1,关键词2" /></el-form-item></el-col>
+                  <el-col :span="8"><el-form-item label="备案号"><el-input v-model="configForm.icp_number" placeholder="京ICP备xxx号" /></el-form-item></el-col>
+                </el-row>
+              </el-form>
+            </div>
+
+            <!-- AI 审核 -->
+            <div class="r-admin--config_section" id="config-ai">
+              <div class="r-admin--config_section_title">
+                <span class="r-admin--config_section_icon">🤖</span>
+                <span>AI 内容审核</span>
+                <el-switch v-model="configForm.ai_enabled" active-text="开启" inactive-text="关闭" active-value="true" inactive-value="false" class="r-admin--config_section_switch" />
+              </div>
+              <el-form :model="configForm" label-width="90px" class="r-admin--config_form">
+                <el-row :gutter="20">
+                  <el-col :span="10"><el-form-item label="API 地址"><el-input v-model="configForm.ai_api_url" placeholder="https://api.openai.com/v1/chat/completions" /></el-form-item></el-col>
+                  <el-col :span="6"><el-form-item label="模型"><el-input v-model="configForm.ai_model" placeholder="gpt-3.5-turbo" /></el-form-item></el-col>
+                  <el-col :span="8"><el-form-item label="API Key"><el-input v-model="configForm.ai_api_key" show-password placeholder="sk-..." /></el-form-item></el-col>
+                </el-row>
+                <el-form-item label="审核提示词">
+                  <div style="margin-bottom: 8px;"><el-button size="small" @click="useDefaultPrompt">填充默认提示词</el-button><el-button size="small" @click="showPromptHelp = true">查看帮助</el-button></div>
+                  <el-input v-model="configForm.ai_prompt" type="textarea" :rows="8" placeholder="自定义审核提示词" />
+                </el-form-item>
+              </el-form>
+            </div>
             
             <el-dialog v-model="showPromptHelp" title="AI审核提示词帮助" width="700px">
               <div class="r-admin--prompt_help">
@@ -1268,152 +1352,76 @@
               </div>
             </el-dialog>
             
-            <el-divider>极验验证码配置</el-divider>
-            <el-form-item label="启用验证码">
-              <el-switch v-model="configForm.geetest_enabled" active-text="开启" inactive-text="关闭" active-value="true" inactive-value="false" />
-            </el-form-item>
-            <el-form-item label="极验ID">
-              <el-input v-model="configForm.geetest_id" placeholder="极验后台获取的ID" />
-            </el-form-item>
-            <el-form-item label="极验KEY">
-              <el-input v-model="configForm.geetest_key" placeholder="极验后台获取的KEY" show-password />
-            </el-form-item>
-            <el-form-item label="展现形式">
-              <el-select v-model="configForm.geetest_product" placeholder="选择验证码展现形式">
-                <el-option label="弹出式 (popup)" value="popup" />
-                <el-option label="浮动式 (float)" value="float" />
-                <el-option label="隐藏按钮式 (bind)" value="bind" />
-              </el-select>
-            </el-form-item>
-            
-            <el-divider content-position="left">验证场景开关</el-divider>
-            <el-row :gutter="20">
-              <el-col :span="8">
-                <el-form-item label="登录验证">
-                  <el-switch v-model="configForm.geetest_login" active-value="true" inactive-value="false" />
+            <!-- 极验验证码 -->
+            <div class="r-admin--config_section" id="config-geetest">
+              <div class="r-admin--config_section_title">
+                <span class="r-admin--config_section_icon">🔐</span>
+                <span>极验验证码</span>
+                <el-switch v-model="configForm.geetest_enabled" active-text="开启" inactive-text="关闭" active-value="true" inactive-value="false" class="r-admin--config_section_switch" />
+              </div>
+              <el-form :model="configForm" label-width="90px" class="r-admin--config_form">
+                <el-row :gutter="20">
+                  <el-col :span="8"><el-form-item label="极验 ID"><el-input v-model="configForm.geetest_id" placeholder="后台获取" /></el-form-item></el-col>
+                  <el-col :span="8"><el-form-item label="极验 KEY"><el-input v-model="configForm.geetest_key" show-password placeholder="后台获取" /></el-form-item></el-col>
+                  <el-col :span="8"><el-form-item label="展现形式"><el-select v-model="configForm.geetest_product" style="width:100%"><el-option label="弹出式" value="popup" /><el-option label="浮动式" value="float" /><el-option label="隐藏按钮式" value="bind" /></el-select></el-form-item></el-col>
+                </el-row>
+                <div class="r-admin--switch_grid">
+                  <div class="r-admin--switch_item" v-for="item in [
+                    {key:'geetest_login',label:'登录'},{key:'geetest_register',label:'注册'},{key:'geetest_like',label:'点赞'},
+                    {key:'geetest_comment',label:'评论'},{key:'geetest_reply',label:'回复'},{key:'geetest_report',label:'举报'},
+                    {key:'geetest_publish_work',label:'发布作品'},{key:'geetest_publish_post',label:'发布帖子'},{key:'geetest_favorite',label:'收藏'},
+                    {key:'geetest_update_profile',label:'修改资料'},{key:'geetest_create_studio',label:'创建工作室'},{key:'geetest_join_studio',label:'加入工作室'},
+                    {key:'geetest_submit_work',label:'投稿作品'},{key:'geetest_review_member',label:'审核成员'}
+                  ]" :key="item.key">
+                    <span class="r-admin--switch_label">{{ item.label }}</span>
+                    <el-switch v-model="configForm[item.key]" active-value="true" inactive-value="false" />
+                  </div>
+                </div>
+              </el-form>
+            </div>
+
+            <!-- 数据库配置 -->
+            <div class="r-admin--config_section" id="config-db">
+              <div class="r-admin--config_section_title">
+                <span class="r-admin--config_section_icon">🗄️</span>
+                <span>数据库配置</span>
+              </div>
+              <el-form :model="configForm" label-width="90px" class="r-admin--config_form">
+                <el-form-item label="数据库类型">
+                  <el-radio-group v-model="configForm.db_type">
+                    <el-radio-button value="sqlite">SQLite</el-radio-button>
+                    <el-radio-button value="mysql">MySQL</el-radio-button>
+                  </el-radio-group>
                 </el-form-item>
-              </el-col>
-              <el-col :span="8">
-                <el-form-item label="注册验证">
-                  <el-switch v-model="configForm.geetest_register" active-value="true" inactive-value="false" />
-                </el-form-item>
-              </el-col>
-              <el-col :span="8">
-                <el-form-item label="点赞验证">
-                  <el-switch v-model="configForm.geetest_like" active-value="true" inactive-value="false" />
-                </el-form-item>
-              </el-col>
-            </el-row>
-            <el-row :gutter="20">
-              <el-col :span="8">
-                <el-form-item label="评论验证">
-                  <el-switch v-model="configForm.geetest_comment" active-value="true" inactive-value="false" />
-                </el-form-item>
-              </el-col>
-              <el-col :span="8">
-                <el-form-item label="回复验证">
-                  <el-switch v-model="configForm.geetest_reply" active-value="true" inactive-value="false" />
-                </el-form-item>
-              </el-col>
-              <el-col :span="8">
-                <el-form-item label="举报验证">
-                  <el-switch v-model="configForm.geetest_report" active-value="true" inactive-value="false" />
-                </el-form-item>
-              </el-col>
-            </el-row>
-            <el-row :gutter="20">
-              <el-col :span="8">
-                <el-form-item label="发布作品验证">
-                  <el-switch v-model="configForm.geetest_publish_work" active-value="true" inactive-value="false" />
-                </el-form-item>
-              </el-col>
-              <el-col :span="8">
-                <el-form-item label="发布帖子验证">
-                  <el-switch v-model="configForm.geetest_publish_post" active-value="true" inactive-value="false" />
-                </el-form-item>
-              </el-col>
-              <el-col :span="8">
-                <el-form-item label="收藏验证">
-                  <el-switch v-model="configForm.geetest_favorite" active-value="true" inactive-value="false" />
-                </el-form-item>
-              </el-col>
-            </el-row>
-            <el-row :gutter="20">
-              <el-col :span="8">
-                <el-form-item label="修改个人信息验证">
-                  <el-switch v-model="configForm.geetest_update_profile" active-value="true" inactive-value="false" />
-                </el-form-item>
-              </el-col>
-            </el-row>
-            
-            <el-divider content-position="left">工作室验证场景</el-divider>
-            <el-row :gutter="20">
-              <el-col :span="8">
-                <el-form-item label="创建工作室验证">
-                  <el-switch v-model="configForm.geetest_create_studio" active-value="true" inactive-value="false" />
-                </el-form-item>
-              </el-col>
-              <el-col :span="8">
-                <el-form-item label="加入工作室验证">
-                  <el-switch v-model="configForm.geetest_join_studio" active-value="true" inactive-value="false" />
-                </el-form-item>
-              </el-col>
-              <el-col :span="8">
-                <el-form-item label="投稿作品验证">
-                  <el-switch v-model="configForm.geetest_submit_work" active-value="true" inactive-value="false" />
-                </el-form-item>
-              </el-col>
-            </el-row>
-            <el-row :gutter="20">
-              <el-col :span="8">
-                <el-form-item label="审核成员验证">
-                  <el-switch v-model="configForm.geetest_review_member" active-value="true" inactive-value="false" />
-                </el-form-item>
-              </el-col>
-            </el-row>
-            
-            <el-divider>数据库配置</el-divider>
-            <el-form-item label="数据库类型">
-              <el-select v-model="configForm.db_type" placeholder="选择数据库类型">
-                <el-option label="SQLite" value="sqlite" />
-                <el-option label="MySQL" value="mysql" />
-              </el-select>
-            </el-form-item>
-            <el-form-item label="MySQL主机" v-if="configForm.db_type === 'mysql'">
-              <el-input v-model="configForm.mysql_host" placeholder="MySQL服务器地址" />
-            </el-form-item>
-            <el-form-item label="MySQL端口" v-if="configForm.db_type === 'mysql'">
-              <el-input v-model="configForm.mysql_port" placeholder="MySQL端口，默认3306" />
-            </el-form-item>
-            <el-form-item label="MySQL数据库" v-if="configForm.db_type === 'mysql'">
-              <el-input v-model="configForm.mysql_database" placeholder="MySQL数据库名称" />
-            </el-form-item>
-            <el-form-item label="MySQL用户名" v-if="configForm.db_type === 'mysql'">
-              <el-input v-model="configForm.mysql_username" placeholder="MySQL用户名" />
-            </el-form-item>
-            <el-form-item label="MySQL密码" v-if="configForm.db_type === 'mysql'">
-              <el-input v-model="configForm.mysql_password" type="password" placeholder="MySQL密码" show-password />
-            </el-form-item>
-            
-            <el-divider>数据库迁移</el-divider>
-            <el-alert type="warning" :closable="false" style="margin-bottom: 20px;">
-              <template #title>
-                <strong>⚠️ 注意事项</strong>
-              </template>
-              <ul style="margin: 10px 0; padding-left: 20px;">
-                <li>数据库迁移会将源数据库的数据复制到目标数据库</li>
-                <li>如果勾选"清空目标数据库"，目标数据库的所有数据将被删除</li>
-                <li>迁移操作不会自动执行，需要手动点击"开始迁移"按钮</li>
-                <li>迁移完成后需要手动修改数据库配置并重启服务器</li>
-              </ul>
-            </el-alert>
-            
-            <el-row :gutter="20">
-              <el-col :span="12">
-                <el-card shadow="hover" class="migration-card">
-                  <template #header>
-                    <span>📥 源数据库</span>
-                  </template>
+                <template v-if="configForm.db_type === 'mysql'">
+                  <el-row :gutter="20">
+                    <el-col :span="10"><el-form-item label="主机地址"><el-input v-model="configForm.mysql_host" placeholder="localhost" /></el-form-item></el-col>
+                    <el-col :span="4"><el-form-item label="端口"><el-input v-model="configForm.mysql_port" placeholder="3306" /></el-form-item></el-col>
+                    <el-col :span="10"><el-form-item label="数据库"><el-input v-model="configForm.mysql_database" placeholder="coding_dog" /></el-form-item></el-col>
+                  </el-row>
+                  <el-row :gutter="20">
+                    <el-col :span="12"><el-form-item label="用户名"><el-input v-model="configForm.mysql_username" placeholder="root" /></el-form-item></el-col>
+                    <el-col :span="12"><el-form-item label="密码"><el-input v-model="configForm.mysql_password" type="password" show-password placeholder="密码" /></el-form-item></el-col>
+                  </el-row>
+                </template>
+              </el-form>
+            </div>
+
+            <!-- 数据库迁移 -->
+            <div class="r-admin--config_section" id="config-migration">
+              <div class="r-admin--config_section_title">
+                <span class="r-admin--config_section_icon">📦</span>
+                <span>数据库迁移</span>
+              </div>
+              <div class="r-admin--config_form">
+                <el-alert type="warning" :closable="false" style="margin-bottom: 16px;">
+                  <template #title>迁移会将源数据库数据复制到目标数据库。勾选"清空目标"将删除目标所有数据。完成后需手动重启服务器。</template>
+                </el-alert>
+
+                <el-row :gutter="16">
+                  <el-col :span="12">
+                    <el-card shadow="hover" class="migration-card">
+                      <template #header><span>📥 源数据库</span></template>
                   <el-form-item label="数据库类型">
                     <el-select v-model="migrationForm.sourceType" placeholder="选择源数据库">
                       <el-option label="SQLite" value="sqlite" />
@@ -1447,9 +1455,7 @@
               </el-col>
               <el-col :span="12">
                 <el-card shadow="hover" class="migration-card">
-                  <template #header>
-                    <span>📤 目标数据库</span>
-                  </template>
+                  <template #header><span>📤 目标数据库</span></template>
                   <el-form-item label="数据库类型">
                     <el-select v-model="migrationForm.targetType" placeholder="选择目标数据库">
                       <el-option label="SQLite" value="sqlite" />
@@ -1483,42 +1489,33 @@
               </el-col>
             </el-row>
             
-            <el-form-item style="margin-top: 20px;">
-              <el-checkbox v-model="migrationForm.clearExisting">
-                清空目标数据库（删除所有现有数据）
-              </el-checkbox>
-            </el-form-item>
-            
-            <el-form-item>
-              <el-button type="danger" @click="startMigration" :loading="migrating" :disabled="!migrationForm.sourceType || !migrationForm.targetType">
-                🚀 开始迁移
-              </el-button>
-              <el-button @click="getMigrationStats" :loading="loadingStats">
-                查看数据统计
-              </el-button>
-            </el-form-item>
-            
-            <el-card v-if="migrationResult" shadow="hover" style="margin-top: 20px;">
-              <template #header>
-                <span>📊 迁移结果</span>
-              </template>
-              <el-descriptions :column="4" border>
-                <el-descriptions-item label="用户">{{ migrationResult.users || 0 }}</el-descriptions-item>
-                <el-descriptions-item label="作品">{{ migrationResult.works || 0 }}</el-descriptions-item>
-                <el-descriptions-item label="评论">{{ migrationResult.comments || 0 }}</el-descriptions-item>
-                <el-descriptions-item label="通知">{{ migrationResult.notifications || 0 }}</el-descriptions-item>
-                <el-descriptions-item label="系统配置">{{ migrationResult.systemConfigs || 0 }}</el-descriptions-item>
-                <el-descriptions-item label="轮播图">{{ migrationResult.banners || 0 }}</el-descriptions-item>
-                <el-descriptions-item label="公告">{{ migrationResult.announcements || 0 }}</el-descriptions-item>
-                <el-descriptions-item label="IP封禁">{{ migrationResult.ipBans || 0 }}</el-descriptions-item>
-                <el-descriptions-item label="举报">{{ migrationResult.reports || 0 }}</el-descriptions-item>
-                <el-descriptions-item label="工作室">{{ migrationResult.studios || 0 }}</el-descriptions-item>
-                <el-descriptions-item label="工作室成员">{{ migrationResult.studioMembers || 0 }}</el-descriptions-item>
-                <el-descriptions-item label="收藏">{{ migrationResult.favorites || 0 }}</el-descriptions-item>
-                <el-descriptions-item label="关注">{{ migrationResult.follows || 0 }}</el-descriptions-item>
-              </el-descriptions>
-            </el-card>
-          </el-form>
+                <div style="margin-top: 16px; display: flex; align-items: center; gap: 16px;">
+                  <el-checkbox v-model="migrationForm.clearExisting">清空目标数据库（删除所有现有数据）</el-checkbox>
+                  <el-button type="danger" @click="startMigration" :loading="migrating" :disabled="!migrationForm.sourceType || !migrationForm.targetType">🚀 开始迁移</el-button>
+                  <el-button @click="getMigrationStats" :loading="loadingStats">📊 查看数据统计</el-button>
+                </div>
+
+                <el-card v-if="migrationResult" shadow="hover" style="margin-top: 16px;">
+                  <template #header><span>📊 迁移结果</span></template>
+                  <el-descriptions :column="4" border size="small">
+                    <el-descriptions-item label="用户">{{ migrationResult.users || 0 }}</el-descriptions-item>
+                    <el-descriptions-item label="作品">{{ migrationResult.works || 0 }}</el-descriptions-item>
+                    <el-descriptions-item label="评论">{{ migrationResult.comments || 0 }}</el-descriptions-item>
+                    <el-descriptions-item label="通知">{{ migrationResult.notifications || 0 }}</el-descriptions-item>
+                    <el-descriptions-item label="系统配置">{{ migrationResult.systemConfigs || 0 }}</el-descriptions-item>
+                    <el-descriptions-item label="轮播图">{{ migrationResult.banners || 0 }}</el-descriptions-item>
+                    <el-descriptions-item label="公告">{{ migrationResult.announcements || 0 }}</el-descriptions-item>
+                    <el-descriptions-item label="IP封禁">{{ migrationResult.ipBans || 0 }}</el-descriptions-item>
+                    <el-descriptions-item label="举报">{{ migrationResult.reports || 0 }}</el-descriptions-item>
+                    <el-descriptions-item label="工作室">{{ migrationResult.studios || 0 }}</el-descriptions-item>
+                    <el-descriptions-item label="工作室成员">{{ migrationResult.studioMembers || 0 }}</el-descriptions-item>
+                    <el-descriptions-item label="收藏">{{ migrationResult.favorites || 0 }}</el-descriptions-item>
+                    <el-descriptions-item label="关注">{{ migrationResult.follows || 0 }}</el-descriptions-item>
+                  </el-descriptions>
+                </el-card>
+              </div>
+            </div>
+          </div>
         </div>
         
         <!-- hCaptcha配置 -->
@@ -1898,8 +1895,9 @@ import { ref, onMounted, onBeforeUnmount, nextTick, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/user'
 import { adminApi } from '@/api/admin'
+import request from '@/api/request'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { DataAnalysis, User, UserFilled, Document, Download, Search, Picture, ChatDotRound, Warning, Lock, Bell, Filter, Setting, List, Key, OfficeBuilding, Loading, Cpu, Postcard, Monitor } from '@element-plus/icons-vue'
+import { DataAnalysis, User, UserFilled, Document, Download, Search, Picture, ChatDotRound, Warning, Lock, Bell, Filter, Setting, List, Key, OfficeBuilding, Loading, Cpu, Postcard, Monitor, Check } from '@element-plus/icons-vue'
 import Posts from './admin/Posts.vue'
 
 const router = useRouter()
@@ -1921,6 +1919,13 @@ const recalibrating = ref(false)
 
 const userDetailVisible = ref(false)
 const userDetailLoading = ref(false)
+
+const workDetailVisible = ref(false)
+const workDetail = ref(null)
+const workDetailSaving = ref(false)
+const workEditing = ref(false)
+const workEditReason = ref('')
+const workEditForm = ref({ name: '', preview: '', view_times: 0, praise_times: 0, collection_times: 0, status: 'published', is_featured: false })
 const userDetail = ref(null)
 const passwordDialogVisible = ref(false)
 const passwordLoading = ref(false)
@@ -1987,10 +1992,7 @@ const handleReportSelection = (selection) => {
 const quickAIReview = async (row) => {
   row.aiLoading = true
   try {
-    const res = await fetch(`/api/admin/ai/review/${row.id}`, {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${userStore.token}` }
-    }).then(r => r.json())
+    const res = await adminApi.aiReviewReport(row.id)
     if (res.code === 200) {
       row.aiResult = res.data
     } else {
@@ -2009,15 +2011,14 @@ const batchAIReview = async () => {
   let success = 0
   for (const row of selectedReports.value) {
     try {
-      const res = await fetch(`/api/admin/ai/review/${row.id}`, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${userStore.token}` }
-      }).then(r => r.json())
+      const res = await adminApi.aiReviewReport(row.id)
       if (res.code === 200) {
         row.aiResult = res.data
         success++
       }
-    } catch (e) {}
+    } catch (e) {
+      console.error('批量AI审核单条失败:', e)
+    }
   }
   batchAILoading.value = false
   ElMessage.success(`批量审核完成，成功 ${success}/${selectedReports.value.length}`)
@@ -2027,22 +2028,20 @@ const quickHandle = async (row, action) => {
   const actionText = action === 'delete' ? '删除内容' : '驳回举报'
   try {
     await ElMessageBox.confirm(`确定要${actionText}吗？`, '确认操作')
-    const res = await fetch(`/api/admin/reports/${row.id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${userStore.token}` },
-      body: JSON.stringify({
-        status: action === 'delete' ? 'resolved' : 'rejected',
-        handleNote: action === 'delete' ? 'AI审核建议删除' : 'AI审核建议通过',
-        takeAction: action === 'delete'
-      })
-    }).then(r => r.json())
+    const res = await adminApi.handleReport(row.id, {
+      status: action === 'delete' ? 'resolved' : 'rejected',
+      handleNote: action === 'delete' ? 'AI审核建议删除' : 'AI审核建议通过',
+      takeAction: action === 'delete'
+    })
     if (res.code === 200) {
       ElMessage.success('处理成功')
       fetchReports()
     } else {
       ElMessage.error(res.msg || '处理失败')
     }
-  } catch (e) {}
+  } catch (e) {
+    if (e !== 'cancel') ElMessage.error('处理失败')
+  }
 }
 
 const autoHandleByAI = async () => {
@@ -2131,7 +2130,7 @@ const bannerForm = ref({
   image_url: '',
   link_url: '',
   sort_order: 0,
-  status: 'active'
+  is_active: true
 })
 
 const ipBans = ref([])
@@ -2552,18 +2551,57 @@ const fetchConfigs = async () => {
   loadingConfigs.value = true
   try {
     const res = await adminApi.getConfigs()
-    if (res.code === 200) {
-      Object.keys(configForm.value).forEach(key => {
-        if (res.data[key] !== undefined) {
-          configForm.value[key] = res.data[key]
-        }
-      })
-      if (res.data.hcaptcha_expire_minutes) {
-        hcaptchaExpireMinutes.value = parseInt(res.data.hcaptcha_expire_minutes) || 20
+    if (res.code === 200 && res.data) {
+      const data = res.data
+      // 逐个更新表单字段
+      const form = configForm.value
+      form.site_name = data.site_name || ''
+      form.site_description = data.site_description || ''
+      form.site_keywords = data.site_keywords || ''
+      form.contact_email = data.contact_email || ''
+      form.icp_number = data.icp_number || ''
+      form.ai_enabled = String(data.ai_enabled ?? 'false')
+      form.ai_api_url = data.ai_api_url || ''
+      form.ai_api_key = data.ai_api_key || ''
+      form.ai_model = data.ai_model || 'gpt-3.5-turbo'
+      form.ai_prompt = data.ai_prompt || ''
+      form.geetest_enabled = String(data.geetest_enabled ?? 'false')
+      form.geetest_id = data.geetest_id || ''
+      form.geetest_key = data.geetest_key || ''
+      form.geetest_product = data.geetest_product || 'popup'
+      form.geetest_login = String(data.geetest_login ?? 'false')
+      form.geetest_register = String(data.geetest_register ?? 'false')
+      form.geetest_like = String(data.geetest_like ?? 'false')
+      form.geetest_comment = String(data.geetest_comment ?? 'false')
+      form.geetest_reply = String(data.geetest_reply ?? 'false')
+      form.geetest_report = String(data.geetest_report ?? 'false')
+      form.geetest_publish_work = String(data.geetest_publish_work ?? 'false')
+      form.geetest_publish_post = String(data.geetest_publish_post ?? 'false')
+      form.geetest_favorite = String(data.geetest_favorite ?? 'false')
+      form.geetest_update_profile = String(data.geetest_update_profile ?? 'false')
+      form.geetest_create_studio = String(data.geetest_create_studio ?? 'false')
+      form.geetest_join_studio = String(data.geetest_join_studio ?? 'false')
+      form.geetest_submit_work = String(data.geetest_submit_work ?? 'false')
+      form.geetest_review_member = String(data.geetest_review_member ?? 'false')
+      form.hcaptcha_enabled = String(data.hcaptcha_enabled ?? 'false')
+      form.hcaptcha_site_key = data.hcaptcha_site_key || ''
+      form.hcaptcha_secret_key = data.hcaptcha_secret_key || ''
+      form.hcaptcha_expire_minutes = data.hcaptcha_expire_minutes || '20'
+      form.db_type = data.db_type || 'sqlite'
+      form.mysql_host = data.mysql_host || ''
+      form.mysql_port = data.mysql_port || ''
+      form.mysql_database = data.mysql_database || ''
+      form.mysql_username = data.mysql_username || ''
+      form.mysql_password = data.mysql_password || ''
+      if (data.hcaptcha_expire_minutes) {
+        hcaptchaExpireMinutes.value = parseInt(data.hcaptcha_expire_minutes) || 20
       }
     }
-  } catch (e) {}
-  finally { loadingConfigs.value = false }
+  } catch (e) {
+    console.error('加载配置失败:', e)
+  } finally {
+    loadingConfigs.value = false
+  }
 }
 
 const fetchCaptchaStats = async () => {
@@ -3192,6 +3230,46 @@ const showUserDetail = async (user) => {
     ElMessage.error('获取用户详情失败')
   }
   userDetailLoading.value = false
+}
+
+const showWorkDetail = (work) => {
+  workDetail.value = work
+  workEditing.value = false
+  workEditReason.value = ''
+  workDetailVisible.value = true
+}
+
+const enterWorkEdit = () => {
+  workEditForm.value = {
+    name: workDetail.value.name,
+    preview: workDetail.value.preview || '',
+    view_times: workDetail.value.view_times || 0,
+    praise_times: workDetail.value.praise_times || 0,
+    collection_times: workDetail.value.collection_times || 0,
+    status: workDetail.value.status || 'published',
+    is_featured: workDetail.value.is_featured || false
+  }
+  workEditing.value = true
+}
+
+const saveWorkDetail = async () => {
+  workDetailSaving.value = true
+  try {
+    const payload = { ...workEditForm.value }
+    if (workEditReason.value) payload._reason = workEditReason.value
+    const res = await adminApi.updateWork(workDetail.value.id, payload)
+    if (res.code === 200) {
+      ElMessage.success('保存成功')
+      workEditing.value = false
+      workDetailVisible.value = false
+      fetchWorks()
+    } else {
+      ElMessage.error(res.msg || '保存失败')
+    }
+  } catch (e) {
+    ElMessage.error('保存失败')
+  }
+  workDetailSaving.value = false
 }
 
 const showPasswordDialog = () => {
@@ -4134,6 +4212,104 @@ $sidebar-width: 200px;
   code { background: #f5f5f5; padding: 2px 6px; border-radius: 4px; color: #e6a23c; }
   pre { background: #1e1e1e; color: #d4d4d4; padding: 12px; border-radius: 6px; overflow-x: auto; font-size: 12px; }
   p { color: #666; margin: 8px 0; }
+}
+
+.r-admin--configs_page {
+  padding: 0 !important;
+  background: #f5f7fa !important;
+}
+
+.r-admin--configs_sticky {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 24px;
+  background: #fff;
+  border-bottom: 1px solid #e4e7ed;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+
+  .r-admin--title {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 600;
+  }
+}
+
+.r-admin--configs_body {
+  padding: 20px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.r-admin--config_section {
+  background: #fff;
+  border-radius: 8px;
+  border: 1px solid #e4e7ed;
+  overflow: hidden;
+}
+
+.r-admin--config_section_title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 20px;
+  background: #fafbfc;
+  border-bottom: 1px solid #e4e7ed;
+  font-size: 15px;
+  font-weight: 600;
+  color: #303133;
+}
+
+.r-admin--config_section_icon {
+  font-size: 18px;
+}
+
+.r-admin--config_section_switch {
+  margin-left: auto;
+}
+
+.r-admin--config_form {
+  padding: 20px;
+}
+
+.r-admin--switch_grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 8px;
+  padding: 12px 0;
+}
+
+.r-admin--switch_item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  background: #f5f7fa;
+  border-radius: 6px;
+  transition: background 0.2s;
+
+  &:hover {
+    background: #ecf5ff;
+  }
+}
+
+.r-admin--switch_label {
+  font-size: 13px;
+  color: #606266;
+}
+
+.migration-card {
+  :deep(.el-card__header) {
+    padding: 10px 16px;
+    font-weight: 600;
+  }
+  :deep(.el-card__body) {
+    padding: 16px;
+  }
 }
 
 .r-admin--realtime_logs {

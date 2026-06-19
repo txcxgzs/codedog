@@ -58,7 +58,10 @@ export const useUserStore = defineStore('user', () => {
       }
     } catch (error) {
       console.error('获取用户信息失败:', error)
-      logout()
+      // 仅在 401 认证失败时清除登录状态，网络错误不清除
+      if (error?.response?.status === 401) {
+        logout()
+      }
       return null
     }
   }

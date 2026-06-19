@@ -8,6 +8,7 @@ const { Op } = require('sequelize');
 const DbAdapter = require('../utils/dbAdapter');
 const codemaoApi = require('../services/codemaoApi');
 const { isRoleAtLeast } = require('../config/permissions');
+const { escapeLike } = require('../utils/security');
 
 /**
  * 从编程猫API获取作品信息
@@ -195,9 +196,10 @@ async function getWorks(req, res) {
         const where = { status: 'published' };
         
         if (keyword) {
+            const safeKeyword = escapeLike(keyword);
             where[Op.or] = [
-                { name: { [Op.like]: `%${keyword}%` } },
-                { description: { [Op.like]: `%${keyword}%` } }
+                { name: { [Op.like]: `%${safeKeyword}%` } },
+                { description: { [Op.like]: `%${safeKeyword}%` } }
             ];
         }
         
@@ -587,29 +589,36 @@ async function likeWork(req, res) {
         if (existingLike) {
             await DbAdapter.destroy(Like, { where: { id: DbAdapter.getId(existingLike) } });
             await DbAdapter.decrement(work, 'praise_times');
-            const praiseTimes = (work.praise_times || 1) - 1;
-            return successResponse(res, { praise_times: Math.max(0, praiseTimes), liked: false }, '已取消点赞');
+            await work.reload();
+            const praiseTimes = Math.max(0, work.praise_times || 0);
+            return successResponse(res, { praise_times: praiseTimes, liked: false }, '已取消点赞');
         }
-        
+
         await DbAdapter.create(Like, {
             user_id: DbAdapter.getId(req.user),
             work_id: DbAdapter.getId(work)
         });
         await DbAdapter.increment(work, 'praise_times');
-        
+        await work.reload();
+
         if (work.user_id != null && String(work.user_id) !== String(DbAdapter.getId(req.user))) {
-            await DbAdapter.create(Notification, {
-                user_id: work.user_id,
-                type: 'like',
-                title: '点赞了你的作品',
-                content: work.name,
-                related_id: DbAdapter.getId(work),
-                related_type: 'work',
-                sender_id: DbAdapter.getId(req.user)
-            });
+            try {
+                await DbAdapter.create(Notification, {
+                    user_id: work.user_id,
+                    type: 'like',
+                    title: '点赞了你的作品',
+                    content: work.name,
+                    related_id: DbAdapter.getId(work),
+                    related_type: 'work',
+                    sender_id: DbAdapter.getId(req.user)
+                });
+            } catch (notifyErr) {
+                // 通知失败不应回滚点赞主流程
+                console.error('Create like notification error:', notifyErr);
+            }
         }
-        
-        return successResponse(res, { praise_times: (work.praise_times || 0) + 1, liked: true }, '点赞成功');
+
+        return successResponse(res, { praise_times: work.praise_times || 0, liked: true }, '点赞成功');
     } catch (error) {
         console.error('点赞作品错误:', error);
         return errorResponse(res, '点赞失败', 500);

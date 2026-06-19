@@ -45,10 +45,13 @@
           {{ formatTime(row.created_at) }}
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="220" fixed="right">
+      <el-table-column label="操作" width="280" fixed="right">
         <template #default="{ row }">
-          <el-button size="small" @click="$router.push(`/work/${row.codemao_work_id}`)">查看</el-button>
+          <el-button size="small" type="primary" @click="$router.push(`/work/${row.codemao_work_id}`)">查看</el-button>
           <el-button size="small" @click="editWork(row)">编辑</el-button>
+          <el-button size="small" :type="row.is_featured ? 'info' : 'warning'" @click="toggleFeatured(row, !row.is_featured)">
+            {{ row.is_featured ? '取消精选' : '精选' }}
+          </el-button>
           <el-button size="small" type="danger" @click="deleteWork(row)">删除</el-button>
         </template>
       </el-table-column>
@@ -172,6 +175,20 @@ const saveWork = async () => {
   }
 }
 
+const toggleFeatured = async (work, featured) => {
+  try {
+    const res = await adminApi.setWorkFeatured(work.id, featured)
+    if (res.code === 200) {
+      ElMessage.success(featured ? '已设为精选' : '已取消精选')
+      fetchWorks()
+    } else {
+      ElMessage.error(res.msg || '操作失败')
+    }
+  } catch (e) {
+    ElMessage.error('操作失败')
+  }
+}
+
 const deleteWork = async (work) => {
   try {
     await ElMessageBox.confirm('确定要删除该作品吗？', '提示', { type: 'warning' })
@@ -203,7 +220,7 @@ onMounted(fetchWorks)
   display: flex;
   gap: 12px;
   margin-bottom: 20px;
-  
+
   .r-admin-works--search {
     width: 300px;
   }
@@ -220,5 +237,11 @@ onMounted(fetchWorks)
   display: flex;
   justify-content: flex-end;
   margin-top: 20px;
+}
+
+:deep(.el-table) {
+  .el-button + .el-button {
+    margin-left: 6px;
+  }
 }
 </style>

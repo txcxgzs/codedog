@@ -9,6 +9,7 @@ const { createRateLimiter } = require('../middleware/rateLimit');
 
 const allowedAvatarTypes = new Set(['image/jpeg', 'image/png', 'image/webp']);
 
+// 登录限流（按 IP+username 限速，防御暴力登录）
 const loginRateLimit = createRateLimiter({
     windowMs: 15 * 60 * 1000,
     max: 10,

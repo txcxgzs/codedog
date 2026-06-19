@@ -13,7 +13,6 @@ const codemaoApi = require('../services/codemaoApi');
 const path = require('path');
 const fs = require('fs');
 const DbAdapter = require('../utils/dbAdapter');
-const { Op } = require('sequelize');
 const GeetestService = require('../services/geetestService');
 
 const uploadDir = path.join(__dirname, '../uploads/avatars');
@@ -361,33 +360,23 @@ async function updateProfile(req, res) {
 
 /**
  * 获取用户公开信息（使用编程猫用户ID）
+ * 注意：仅按 codemao_user_id 查询，禁止通过本地主键枚举
  */
 async function getUserById(req, res) {
     try {
         const { codemaoId } = req.params;
-        
-        // 同时支持通过编程猫ID和本地ID查询
-        const where = {};
-        if (isNaN(codemaoId)) {
-            // 如果不是数字，可能是编程猫的特殊ID（虽然通常是数字）
-            where.codemao_user_id = codemaoId;
-        } else {
-            // 如果是数字，尝试匹配本地ID或编程猫ID
-            where[Op.or] = [
-                { id: codemaoId },
-                { codemao_user_id: codemaoId }
-            ];
-        }
 
+        // 仅允许通过编程猫用户ID查询；防止外部通过本地主键遍历用户
+        // 公开接口不返回本地主键 id，避免用户枚举/关联分析风险
         const user = await DbAdapter.findOne(User, {
-            where,
-            attributes: ['id', 'codemao_user_id', 'username', 'nickname', 'avatar', 'bio', 'doing', 'level', 'follower_count', 'following_count', 'work_count', 'created_at']
+            where: { codemao_user_id: String(codemaoId) },
+            attributes: ['codemao_user_id', 'username', 'nickname', 'avatar', 'bio', 'doing', 'level', 'follower_count', 'following_count', 'work_count', 'created_at']
         });
-        
+
         if (!user) {
             return errorResponse(res, '用户不存在', 404);
         }
-        
+
         return successResponse(res, user);
     } catch (error) {
         console.error('获取用户信息错误:', error);

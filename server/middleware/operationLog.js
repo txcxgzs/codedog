@@ -31,7 +31,7 @@ function logAction(action, getTargetType = null, getTargetId = null, getDetails 
         const originalJson = res.json.bind(res);
         
         res.json = (data) => {
-            if (data.code === 200 || data.code === 200) {
+            if (data.code === 200) {
                 const targetType = getTargetType ? getTargetType(req) : null;
                 const targetId = getTargetId ? getTargetId(req, data) : null;
                 const details = getDetails ? getDetails(req, data) : null;

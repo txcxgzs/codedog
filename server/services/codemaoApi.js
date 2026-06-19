@@ -134,7 +134,7 @@ const codemaoApi = {
      */
     async login(identity, password) {
         try {
-            console.log('[编程猫] 尝试登录:', identity);
+            console.log('[编程猫] 尝试登录');
             
             const proxyAgent = getProxyAgent();
             const config = {
@@ -153,7 +153,7 @@ const codemaoApi = {
                 config
             );
             
-            console.log('[编程猫] 登录成功, 用户:', response.data?.user_info?.nickname);
+            console.log('[编程猫] 登录成功');
             return response.data;
         } catch (error) {
             console.error('[编程猫] 登录失败:', error.message);
