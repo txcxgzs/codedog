@@ -15,8 +15,8 @@
         
         <div class="r-post--content markdown-body" v-html="renderedContent"></div>
         
-        <div class="r-post--tags" v-if="post.tags">
-          <el-tag v-for="tag in post.tags.split(',')" :key="tag" size="small">{{ tag }}</el-tag>
+        <div class="r-post--tags" v-if="post.tags && post.tags.length > 0">
+          <el-tag v-for="tag in (Array.isArray(post.tags) ? post.tags : post.tags.split(','))" :key="tag" size="small">{{ tag }}</el-tag>
         </div>
         
         <div class="r-post--actions">

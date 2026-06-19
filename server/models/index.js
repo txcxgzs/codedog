@@ -311,6 +311,7 @@ Report.belongsTo(User, { foreignKey: 'reporter_id', as: 'reporter' });
 Report.belongsTo(User, { foreignKey: 'handler_id', as: 'handler' });
 Report.belongsTo(Work, { foreignKey: 'target_id', as: 'work', constraints: false });
 Report.belongsTo(Comment, { foreignKey: 'target_id', as: 'comment', constraints: false });
+Report.belongsTo(Post, { foreignKey: 'target_id', as: 'post', constraints: false });
 User.hasMany(Report, { foreignKey: 'reporter_id', as: 'reports' });
 User.hasMany(Report, { foreignKey: 'handler_id', as: 'handled_reports' });
 Favorite.belongsTo(User, { foreignKey: 'user_id', as: 'user' });

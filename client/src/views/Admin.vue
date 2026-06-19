@@ -763,14 +763,22 @@
               </template>
             </el-table-column>
             <el-table-column prop="reason" label="原因" min-width="120" />
-            <el-table-column label="AI审核" width="140">
+            <el-table-column label="AI审核" width="220">
               <template #default="{ row }">
-                <div v-if="row.aiResult">
+                <div v-if="row.aiResult" style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+                  <el-tooltip v-if="row.aiResult.isFallback" placement="top">
+                    <template #content>
+                      <div>AI未配置，使用敏感词检测</div>
+                      <div v-if="row.aiResult.violations?.length">命中: {{ row.aiResult.violations.join(', ') }}</div>
+                      <div v-else>未命中任何敏感词</div>
+                    </template>
+                    <el-tag type="warning" size="small">敏感词</el-tag>
+                  </el-tooltip>
                   <el-tag :type="row.aiResult.riskLevel === 'high' ? 'danger' : row.aiResult.riskLevel === 'medium' ? 'warning' : 'success'" size="small">
                     {{ row.aiResult.riskLevel === 'high' ? '高风险' : row.aiResult.riskLevel === 'medium' ? '中风险' : '低风险' }}
                   </el-tag>
-                  <div style="font-size: 12px; color: #666;">{{ row.aiResult.recommendation === 'delete' ? '建议删除' : row.aiResult.recommendation === 'review' ? '需审核' : '正常' }}</div>
-                  <el-button size="small" @click="quickAIReview(row)" :loading="row.aiLoading" style="padding: 0;">重新审核</el-button>
+                  <span v-if="row.aiResult.violations?.length" style="font-size: 11px; color: #e6a23c;">命中{{ row.aiResult.violations.length }}个</span>
+                  <el-button size="small" @click="quickAIReview(row)" :loading="row.aiLoading" style="padding: 0;">重审</el-button>
                 </div>
                 <el-button v-else size="small" @click="quickAIReview(row)" :loading="row.aiLoading">审核</el-button>
               </template>
@@ -787,9 +795,9 @@
             </el-table-column>
             <el-table-column label="操作" width="160" fixed="right">
               <template #default="{ row }">
-                <el-button size="small" type="primary" @click="showReportDialog(row)" :disabled="row.status !== 'pending'">处理</el-button>
-                <el-dropdown trigger="click" :disabled="row.status !== 'pending'" @command="(cmd) => quickHandle(row, cmd)">
-                  <el-button size="small" link type="info" :disabled="row.status !== 'pending'">更多</el-button>
+                <el-button size="small" type="primary" @click="showReportDialog(row)" :disabled="row.status === 'resolved' || row.status === 'rejected'">处理</el-button>
+                <el-dropdown trigger="click" :disabled="row.status === 'resolved' || row.status === 'rejected'" @command="(cmd) => quickHandle(row, cmd)">
+                  <el-button size="small" link type="info" :disabled="row.status === 'resolved' || row.status === 'rejected'">更多</el-button>
                   <template #dropdown>
                     <el-dropdown-menu>
                       <el-dropdown-item command="delete">删除内容</el-dropdown-item>
@@ -1259,13 +1267,24 @@
                 <el-tag :type="row.status === 'active' ? 'success' : 'info'">{{ row.status === 'active' ? '启用' : '禁用' }}</el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="120">
+            <el-table-column label="操作" width="160">
               <template #default="{ row }">
-                <el-button size="small" type="primary" @click="showSensitiveDialog(row)">编辑</el-button>
-                <el-button size="small" type="danger" @click="handleDeleteSensitiveWord(row)">删除</el-button>
+                <div style="display: flex; gap: 8px;">
+                  <el-button size="small" type="primary" @click="showSensitiveDialog(row)">编辑</el-button>
+                  <el-button size="small" type="danger" @click="handleDeleteSensitiveWord(row)">删除</el-button>
+                </div>
               </template>
             </el-table-column>
           </el-table>
+          <div style="margin-top: 16px; display: flex; justify-content: flex-end;">
+            <el-pagination
+              v-model:current-page="sensitivePage"
+              :page-size="sensitivePageSize"
+              :total="sensitiveTotal"
+              layout="total, prev, pager, next"
+              @current-change="handleSensitivePageChange"
+            />
+          </div>
         </div>
         
         <!-- 系统设置 -->
@@ -1729,18 +1748,21 @@
           </el-button>
         </el-divider>
         <div v-if="aiReviewResult" class="r-admin--ai_result">
+          <el-alert v-if="aiReviewResult.isFallback" type="warning" :closable="false" style="margin-bottom: 12px;">
+            AI未配置，使用敏感词检测
+          </el-alert>
           <el-descriptions :column="2" border size="small">
             <el-descriptions-item label="风险等级">
               <el-tag :type="aiReviewResult.riskLevel === 'high' ? 'danger' : aiReviewResult.riskLevel === 'medium' ? 'warning' : 'success'">
                 {{ aiReviewResult.riskLevel === 'high' ? '高风险' : aiReviewResult.riskLevel === 'medium' ? '中风险' : '低风险' }}
               </el-tag>
             </el-descriptions-item>
-            <el-descriptions-item label="置信度">{{ (aiReviewResult.confidence * 100).toFixed(0) }}%</el-descriptions-item>
+            <el-descriptions-item label="置信度">{{ aiReviewResult.confidence ? (aiReviewResult.confidence * 100).toFixed(0) + '%' : '-' }}</el-descriptions-item>
             <el-descriptions-item label="违规类型" :span="2">
               <el-tag v-for="v in aiReviewResult.violations" :key="v" size="small" type="danger" style="margin-right: 4px;">{{ v }}</el-tag>
               <span v-if="!aiReviewResult.violations?.length">无</span>
             </el-descriptions-item>
-            <el-descriptions-item label="判定原因" :span="2">{{ aiReviewResult.reason }}</el-descriptions-item>
+            <el-descriptions-item label="判定原因" :span="2">{{ aiReviewResult.reason || '无' }}</el-descriptions-item>
             <el-descriptions-item label="处理建议" :span="2">
               <el-tag :type="aiReviewResult.recommendation === 'delete' ? 'danger' : aiReviewResult.recommendation === 'review' ? 'warning' : 'success'">
                 {{ aiReviewResult.recommendation === 'delete' ? '建议删除' : aiReviewResult.recommendation === 'review' ? '需人工审核' : '内容正常' }}
@@ -1995,6 +2017,9 @@ const quickAIReview = async (row) => {
     const res = await adminApi.aiReviewReport(row.id)
     if (res.code === 200) {
       row.aiResult = res.data
+      if (res.data.isFallback) {
+        ElMessage.warning('AI未配置，已使用敏感词检测')
+      }
     } else {
       ElMessage.error(res.msg || 'AI审核失败')
     }
@@ -2009,19 +2034,25 @@ const batchAIReview = async () => {
   if (selectedReports.value.length === 0) return
   batchAILoading.value = true
   let success = 0
+  let fallbackCount = 0
   for (const row of selectedReports.value) {
     try {
       const res = await adminApi.aiReviewReport(row.id)
       if (res.code === 200) {
         row.aiResult = res.data
         success++
+        if (res.data.isFallback) fallbackCount++
       }
     } catch (e) {
       console.error('批量AI审核单条失败:', e)
     }
   }
   batchAILoading.value = false
-  ElMessage.success(`批量审核完成，成功 ${success}/${selectedReports.value.length}`)
+  if (fallbackCount > 0) {
+    ElMessage.warning(`批量审核完成，${fallbackCount}条使用敏感词检测（AI未配置）`)
+  } else {
+    ElMessage.success(`批量审核完成，成功 ${success}/${selectedReports.value.length}`)
+  }
 }
 
 const quickHandle = async (row, action) => {
@@ -2278,14 +2309,25 @@ const sensitiveForm = ref({ word: '', category: 'other', level: 'medium', replac
 const importCategory = ref('other')
 const importLevel = ref('medium')
 const importWords = ref('')
+const sensitivePage = ref(1)
+const sensitivePageSize = ref(20)
+const sensitiveTotal = ref(0)
 
-const fetchSensitiveWords = async () => {
+const fetchSensitiveWords = async (page = 1) => {
   loadingSensitiveWords.value = true
+  sensitivePage.value = page
   try {
-    const res = await adminApi.getSensitiveWords()
-    if (res.code === 200) sensitiveWords.value = res.data.list
+    const res = await adminApi.getSensitiveWords({ page, pageSize: sensitivePageSize.value })
+    if (res.code === 200) {
+      sensitiveWords.value = res.data.list
+      sensitiveTotal.value = res.data.total
+    }
   } catch (e) {}
   finally { loadingSensitiveWords.value = false }
+}
+
+const handleSensitivePageChange = (page) => {
+  fetchSensitiveWords(page)
 }
 
 const showSensitiveDialog = (word = null) => {

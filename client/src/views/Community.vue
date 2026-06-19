@@ -401,11 +401,27 @@ $border-color: #eee;
   border-radius: 12px;
   padding: 16px;
   margin-bottom: 16px;
-  
+
+  :deep(.el-radio-group) {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  :deep(.el-radio-button) {
+    margin: 0;
+  }
+
   :deep(.el-radio-button__inner) {
     border-radius: 16px;
     border: none;
     padding: 8px 20px;
+    margin: 0;
+    border-left: none;
+  }
+
+  :deep(.el-radio-button:first-child .el-radio-button__inner) {
+    border-left: none;
   }
   
   :deep(.el-radio-button__original-radio:checked + .el-radio-button__inner) {

@@ -253,12 +253,12 @@ async function reviewContent(type, content) {
 async function fallbackReview(content) {
     try {
         const sensitiveWords = await DbAdapter.findAll(SensitiveWord, { where: { status: 'active' } });
-        const foundWords = [];
+        const foundWordsSet = new Set();
         let riskLevel = 'low';
-        
+
         for (const sw of sensitiveWords) {
             if (content.includes(sw.word)) {
-                foundWords.push(sw.word);
+                foundWordsSet.add(sw.word);
                 // SensitiveWord.level 字段在模型中定义为 INTEGER（默认 1）
                 // 约定: 1=low, 2=medium, 3=high
                 const level = Number(sw.level) || 1;
@@ -269,7 +269,9 @@ async function fallbackReview(content) {
                 }
             }
         }
-        
+
+        const foundWords = [...foundWordsSet];
+
         return {
             riskLevel,
             violations: foundWords,
