@@ -1365,11 +1365,14 @@
                     <el-tag :type="sensitiveTestResult.riskLevel === 'high' ? 'danger' : sensitiveTestResult.riskLevel === 'medium' ? 'warning' : 'success'">
                       {{ sensitiveTestResult.riskLevel === 'high' ? '高风险' : sensitiveTestResult.riskLevel === 'medium' ? '中风险' : '低风险' }}
                     </el-tag>
-                    <span v-if="sensitiveTestResult.violations?.length" style="margin-left: 8px; color: #e6a23c;">
-                      命中: {{ sensitiveTestResult.violations.join(', ') }}
+                    <span style="margin-left: 8px; color: #909399; font-size: 12px;">
+                      来源: {{ sensitiveTestResult.source === 'builtin' ? '内置词库' : sensitiveTestResult.source === 'api' ? '外部API' : '两者合并' }}
                     </span>
-                    <span v-else style="margin-left: 8px; color: #67c23a;">未命中敏感词</span>
-                    <span style="margin-left: 8px; color: #909399; font-size: 12px;">来源: {{ sensitiveTestResult.source === 'builtin' ? '内置词库' : sensitiveTestResult.source === 'api' ? '外部API' : '两者合并' }}</span>
+                    <div v-if="sensitiveTestResult.violations?.length" style="margin-top: 4px;">
+                      <span style="color: #606266; font-size: 13px;">命中敏感词：</span>
+                      <el-tag v-for="word in sensitiveTestResult.violations" :key="word" type="danger" size="small" style="margin-right: 4px; margin-top: 4px;">{{ word }}</el-tag>
+                    </div>
+                    <div v-else style="margin-top: 4px; color: #67c23a; font-size: 13px;">✓ 未命中任何敏感词</div>
                   </div>
                 </el-form-item>
               </el-form>
