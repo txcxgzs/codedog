@@ -352,7 +352,14 @@ async function externalSensitiveCheck(content) {
 
         const sensitivity = data.sensitivity || {};
         const level = sensitivity.level || 0; // 0=安全, 1=低风险, 2=中风险, 3=高风险
-        const matchedWords = data.matchedWords || [];
+        const matchedWordsRaw = data.matchedWords || [];
+
+        // 提取词字符串（可能是字符串数组或对象数组）
+        const matchedWords = matchedWordsRaw.map(item => {
+            if (typeof item === 'string') return item;
+            if (typeof item === 'object' && item.word) return item.word;
+            return String(item);
+        });
 
         // 转换风险等级
         let riskLevel = 'low';
@@ -376,7 +383,18 @@ async function externalSensitiveCheck(content) {
 
 // 合并两种检测结果
 function mergeResults(builtin, api) {
-    const allViolations = [...new Set([...builtin.violations, ...api.violations])];
+    const builtinWords = new Set(builtin.violations || []);
+    const apiWords = new Set(api.violations || []);
+    const allViolations = [...new Set([...builtinWords, ...apiWords])];
+
+    // 记录每个词的来源
+    const violationSources = {};
+    allViolations.forEach(word => {
+        const sources = [];
+        if (builtinWords.has(word)) sources.push('builtin');
+        if (apiWords.has(word)) sources.push('api');
+        violationSources[word] = sources;
+    });
 
     // 取更高的风险等级
     const riskLevels = { low: 1, medium: 2, high: 3 };
@@ -388,6 +406,7 @@ function mergeResults(builtin, api) {
     return {
         riskLevel,
         violations: allViolations,
+        violationSources,
         reason: allViolations.length > 0 ? `检测发现敏感词: ${allViolations.join(', ')}` : '未发现敏感词',
         recommendation: riskLevel === 'high' ? 'delete' : (riskLevel === 'medium' ? 'review' : 'pass'),
         confidence: Math.max(builtin.confidence || 0, api.confidence || 0),

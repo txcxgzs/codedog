@@ -1368,9 +1368,29 @@
                     <span style="margin-left: 8px; color: #909399; font-size: 12px;">
                       来源: {{ sensitiveTestResult.source === 'builtin' ? '内置词库' : sensitiveTestResult.source === 'api' ? '外部API' : '两者合并' }}
                     </span>
-                    <div v-if="sensitiveTestResult.violations?.length" style="margin-top: 4px;">
-                      <span style="color: #606266; font-size: 13px;">命中敏感词：</span>
-                      <el-tag v-for="word in sensitiveTestResult.violations" :key="word" type="danger" size="small" style="margin-right: 4px; margin-top: 4px;">{{ word }}</el-tag>
+                    <div v-if="sensitiveTestResult.violations?.length" style="margin-top: 8px;">
+                      <div style="color: #606266; font-size: 13px; margin-bottom: 4px;">命中敏感词：</div>
+                      <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+                        <el-tooltip v-for="word in sensitiveTestResult.violations" :key="word" placement="top">
+                          <template #content>
+                            <span v-if="sensitiveTestResult.source === 'both' && sensitiveTestResult.violationSources?.[word]">
+                              来源: {{ sensitiveTestResult.violationSources[word].map(s => s === 'builtin' ? '内置词库' : '外部API').join(' + ') }}
+                            </span>
+                            <span v-else>来源: {{ sensitiveTestResult.source === 'builtin' ? '内置词库' : '外部API' }}</span>
+                          </template>
+                          <el-tag
+                            :type="sensitiveTestResult.source === 'both' && sensitiveTestResult.violationSources?.[word]?.length > 1 ? 'danger' : 'warning'"
+                            size="small"
+                            style="cursor: help;"
+                          >
+                            {{ word }}
+                            <span v-if="sensitiveTestResult.source === 'both' && sensitiveTestResult.violationSources?.[word]?.length > 1" style="font-size: 10px;">✓✓</span>
+                          </el-tag>
+                        </el-tooltip>
+                      </div>
+                      <div v-if="sensitiveTestResult.source === 'both'" style="margin-top: 6px; font-size: 11px; color: #909399;">
+                        <span style="color: #e6a23c;">✓✓</span> = 内置词库和外部API都命中
+                      </div>
                     </div>
                     <div v-else style="margin-top: 4px; color: #67c23a; font-size: 13px;">✓ 未命中任何敏感词</div>
                   </div>
