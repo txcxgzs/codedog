@@ -303,8 +303,12 @@ async function builtinSensitiveCheck(content) {
         let riskLevel = 'low';
 
         for (const sw of sensitiveWords) {
-            if (content.includes(sw.word)) {
-                foundWordsSet.add(sw.word);
+            const word = sw.word;
+            // 过滤太短的词（少于2个字符）避免误判
+            if (word.length < 2) continue;
+
+            if (content.includes(word)) {
+                foundWordsSet.add(word);
                 const level = Number(sw.level) || 1;
                 if (level >= 3) {
                     riskLevel = 'high';
