@@ -3,16 +3,16 @@
     <div class="r-profile--container">
       <!-- 个人信息头部 -->
       <div class="r-profile--header">
-        <div class="r-profile--avatar_section">
+        <div class="r-profile--avatar_section" @click="changeAvatar">
           <img :src="userStore.user?.avatar || defaultAvatar" class="r-profile--avatar" />
-          <input 
-            type="file" 
-            ref="avatarInput" 
-            accept="image/*" 
-            style="display: none" 
+          <div class="r-profile--avatar_overlay">更换头像</div>
+          <input
+            type="file"
+            ref="avatarInput"
+            accept="image/*"
+            style="display: none"
             @change="handleAvatarChange"
           />
-          <el-button size="small" class="r-profile--change_avatar" @click="changeAvatar">更换头像</el-button>
         </div>
         <div class="r-profile--info_section">
           <h2>{{ userStore.user?.nickname || userStore.user?.username }}</h2>
@@ -311,18 +311,43 @@ $border-color: #eee;
   .r-profile--avatar_section {
     text-align: center;
     flex-shrink: 0;
-    
+    position: relative;
+    cursor: pointer;
+
     .r-profile--avatar {
       width: 100px;
       height: 100px;
       border-radius: 50%;
       object-fit: cover;
       border: 4px solid $primary-light;
+      transition: opacity 0.3s;
     }
-    
-    .r-profile--change_avatar {
-      margin-top: 12px;
-      border-radius: 16px;
+
+    .r-profile--avatar_overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100px;
+      height: 100px;
+      border-radius: 50%;
+      background: rgba(0, 0, 0, 0.5);
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+
+    &:hover {
+      .r-profile--avatar {
+        opacity: 0.8;
+      }
+
+      .r-profile--avatar_overlay {
+        opacity: 1;
+      }
     }
   }
   

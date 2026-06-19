@@ -90,13 +90,15 @@ router.post('/', authMiddleware, geetestVerify('report'), async (req, res) => {
 
         if (type === 'work') {
             targetName = target.name;
+            linkId = target.codemao_work_id || target.id;
         } else if (type === 'post') {
             targetName = target.title;
         } else if (type === 'comment') {
             targetName = target.content.substring(0, 20) + (target.content.length > 20 ? '...' : '');
             if (target.work_id) {
                 linkType = 'work';
-                linkId = target.work_id;
+                const work = await DbAdapter.findByPk(Work, target.work_id);
+                linkId = work ? (work.codemao_work_id || work.id) : target.work_id;
             } else if (target.post_id) {
                 linkType = 'post';
                 linkId = target.post_id;

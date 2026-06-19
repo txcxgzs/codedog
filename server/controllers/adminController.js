@@ -1520,11 +1520,18 @@ async function handleReport(req, res) {
         })();
 
         if (target) {
-            if (report.type === 'work') targetName = target.name;
+            if (report.type === 'work') {
+                targetName = target.name;
+                linkId = target.codemao_work_id || target.id;
+            }
             else if (report.type === 'post') targetName = target.title;
             else if (report.type === 'comment') {
                 targetName = target.content.substring(0, 20) + (target.content.length > 20 ? '...' : '');
-                if (target.work_id) { linkType = 'work'; linkId = target.work_id; }
+                if (target.work_id) {
+                    linkType = 'work';
+                    const work = await DbAdapter.findByPk(Work, target.work_id);
+                    linkId = work ? (work.codemao_work_id || work.id) : target.work_id;
+                }
                 else if (target.post_id) { linkType = 'post'; linkId = target.post_id; }
             }
             else if (report.type === 'user') targetName = target.nickname || target.username;
@@ -1537,7 +1544,7 @@ async function handleReport(req, res) {
             user_id: report.reporter_id,
             type: 'system',
             title: `举报${statusText}`,
-            content: `您举报的${typeNames[report.type]}「${targetName}」已${statusText}。${handleNote ? '处理说明：' + handleNote : ''}`,
+            content: `您举报的${typeNames[report.type]}「${targetName}」${statusText}。${handleNote ? '处理说明：' + handleNote : ''}`,
             related_id: linkId,
             related_type: linkType
         });
@@ -2108,6 +2115,7 @@ async function aiReviewReport(req, res) {
         const report = await DbAdapter.findByPk(Report, reportId, {
             include: [
                 { model: Work, as: 'work', attributes: ['id', 'name', 'description'] },
+                { model: Post, as: 'post', attributes: ['id', 'title', 'content'] },
                 { model: Comment, as: 'comment', attributes: ['id', 'content'] }
             ]
         });
@@ -2121,6 +2129,9 @@ async function aiReviewReport(req, res) {
         if (report.type === 'work') {
             content = `作品名称: ${report.work?.name || ''}\n作品描述: ${report.work?.description || ''}`;
             type = '作品';
+        } else if (report.type === 'post') {
+            content = `帖子标题: ${report.post?.title || ''}\n帖子内容: ${report.post?.content || ''}`;
+            type = '帖子';
         } else if (report.type === 'comment') {
             content = report.comment?.content || '';
             type = '评论';
@@ -2130,15 +2141,26 @@ async function aiReviewReport(req, res) {
         }
         
         const result = await aiReview.reviewContent(type, content);
-        
+
         logOperation(req, 'ai_review', 'report', reportId, {
             type,
-            riskLevel: result.riskLevel,
-            violations: result.violations,
-            recommendation: result.recommendation,
-            confidence: result.confidence
+            riskLevel: result.riskLevel || result.fallback?.riskLevel,
+            violations: result.violations || result.fallback?.violations,
+            recommendation: result.recommendation || result.fallback?.recommendation,
+            confidence: result.confidence || result.fallback?.confidence,
+            isFallback: !!result.fallback
         });
-        
+
+        // 如果AI未启用或失败，返回fallback结果并标记
+        if (result.fallback) {
+            return successResponse(res, {
+                success: false,
+                isFallback: true,
+                error: result.error,
+                ...result.fallback
+            });
+        }
+
         return successResponse(res, {
             success: result.success,
             riskLevel: result.riskLevel,
@@ -2163,16 +2185,20 @@ async function aiBatchReviewReports(req, res) {
             const report = await DbAdapter.findByPk(Report, reportId, {
                 include: [
                     { model: Work, as: 'work', attributes: ['name', 'description'] },
+                    { model: Post, as: 'post', attributes: ['title', 'content'] },
                     { model: Comment, as: 'comment', attributes: ['content'] }
                 ]
             });
             if (!report) continue;
-            
+
             let content = '';
             let type = '作品';
             if (report.type === 'work') {
                 content = `作品名称: ${report.work?.name || ''}\n作品描述: ${report.work?.description || ''}`;
                 type = '作品';
+            } else if (report.type === 'post') {
+                content = `帖子标题: ${report.post?.title || ''}\n帖子内容: ${report.post?.content || ''}`;
+                type = '帖子';
             } else if (report.type === 'comment') {
                 content = report.comment?.content || '';
                 type = '评论';

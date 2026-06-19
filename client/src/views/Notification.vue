@@ -116,13 +116,20 @@ const handleClick = async (item) => {
   if (!item.is_read) {
     await notificationStore.markAsRead(item.id)
   }
-  
-  if (item.related_type === 'work' && item.related_id) {
-    router.push(`/work/${item.related_id}`)
-  } else if (item.related_type === 'post' && item.related_id) {
-    router.push(`/post/${item.related_id}`)
-  } else if (item.related_type === 'user' && item.related_id) {
-    router.push(`/user/${item.related_id}`)
+
+  // 系统通知（如举报处理结果）不跳转
+  if (item.type === 'system' && !item.related_type) {
+    return
+  }
+
+  // 有关联内容的通知才跳转
+  if (item.related_type && item.related_id) {
+    // 被处理的内容（帖子/作品被删除）不跳转
+    if (item.title?.includes('已被处理') || item.title?.includes('已处理')) {
+      ElMessage.info('该内容已被处理')
+      return
+    }
+    router.push(`/${item.related_type}/${item.related_id}`)
   }
 }
 
