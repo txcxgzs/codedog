@@ -131,6 +131,7 @@ router.get('/operation-logs', requirePermission('log:view'), adminController.get
  */
 router.get('/sensitive-words', requirePermission('sensitive:manage'), adminController.getSensitiveWords);
 router.post('/sensitive-words', requirePermission('sensitive:manage'), adminController.addSensitiveWord);
+router.post('/sensitive-words/test', requireRole('admin'), adminController.testSensitiveCheck);
 router.put('/sensitive-words/:wordId', requirePermission('sensitive:manage'), adminController.updateSensitiveWord);
 router.delete('/sensitive-words/:wordId', requirePermission('sensitive:manage'), adminController.deleteSensitiveWord);
 router.post('/sensitive-words/batch-import', requirePermission('sensitive:manage'), adminController.batchImportSensitiveWords);
@@ -141,11 +142,6 @@ router.post('/sensitive-words/batch-import', requirePermission('sensitive:manage
 router.post('/ai/review/:reportId', requirePermission('report:handle'), adminController.aiReviewReport);
 router.post('/ai/batch-review', requirePermission('report:handle'), adminController.aiBatchReviewReports);
 router.post('/ai/auto-handle', requirePermission('report:handle'), adminController.aiAutoHandleReports);
-
-/**
- * 敏感词测试
- */
-router.post('/sensitive/test', requireRole('admin'), adminController.testSensitiveCheck);
 
 /**
  * 权限管理（仅超级管理员）

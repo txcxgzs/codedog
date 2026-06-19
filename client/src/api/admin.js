@@ -304,7 +304,7 @@ export const adminApi = {
    * 敏感词测试
    */
   testSensitiveCheck(data) {
-    return request.post('/admin/sensitive/test', data)
+    return request.post('/admin/sensitive-words/test', data)
   },
 
   /**
