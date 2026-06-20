@@ -385,10 +385,9 @@ const playerUrl = computed(() => {
   if (!work.value) return null
   const workId = work.value.codemao_work_id
   if (!workId) return null
-  
+
   const type = (work.value.type || '').toUpperCase()
-  console.log('type:', type, 'workId:', workId)
-  
+
   // 核心播放器逻辑映射 (基于 type 字段)
   const playerMap = {
     'KITTEN': `https://player.codemao.cn/new/${workId}`,
