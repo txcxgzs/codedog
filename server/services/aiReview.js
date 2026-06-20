@@ -344,28 +344,39 @@ async function externalSensitiveCheck(content) {
         // API 返回格式：
         // {
         //   "text": "...",
-        //   "sensitivity": { "level": 0, "label": "安全", "score": 0 },
-        //   "matchedWords": [],
-        //   "matchCount": 0,
-        //   "uniqueMatchCount": 0
+        //   "sensitivity": { "level": 1, "label": "低风险", "score": 3 },
+        //   "matchedWords": [{ "word": "傻逼", "severity": 3 }],
+        //   "matchCount": 1,
+        //   "uniqueMatchCount": 1
         // }
 
         const sensitivity = data.sensitivity || {};
-        const level = sensitivity.level || 0; // 0=安全, 1=低风险, 2=中风险, 3=高风险
         const matchedWordsRaw = data.matchedWords || [];
 
-        // 提取词字符串（可能是字符串数组或对象数组）
-        const matchedWords = matchedWordsRaw.map(item => {
-            if (typeof item === 'string') return item;
-            if (typeof item === 'object' && item.word) return item.word;
-            return String(item);
+        // 提取词和严重程度
+        const matchedWords = [];
+        let maxSeverity = 0;
+
+        matchedWordsRaw.forEach(item => {
+            if (typeof item === 'string') {
+                matchedWords.push(item);
+            } else if (typeof item === 'object' && item.word) {
+                matchedWords.push(item.word);
+                if (item.severity > maxSeverity) {
+                    maxSeverity = item.severity;
+                }
+            }
         });
+
+        // 使用 matchedWords 的最高 severity 来确定风险等级
+        // 如果没有 severity，则使用 sensitivity.level
+        const effectiveLevel = maxSeverity > 0 ? maxSeverity : (sensitivity.level || 0);
 
         // 转换风险等级
         let riskLevel = 'low';
-        if (level >= 3) riskLevel = 'high';
-        else if (level >= 2) riskLevel = 'medium';
-        else if (level >= 1) riskLevel = 'low';
+        if (effectiveLevel >= 3) riskLevel = 'high';
+        else if (effectiveLevel >= 2) riskLevel = 'medium';
+        else if (matchedWords.length > 0) riskLevel = 'low'; // 有匹配但级别低
 
         return {
             riskLevel,
