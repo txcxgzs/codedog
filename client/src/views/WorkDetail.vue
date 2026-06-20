@@ -55,14 +55,15 @@
           </div>
           
           <div class="r-work--actions">
-            <el-button 
-              :type="work.liked ? 'danger' : 'primary'" 
-              class="r-work--action_btn r-work--action_btn_like" 
+            <el-button
+              :type="work.liked ? 'danger' : 'primary'"
+              class="r-work--action_btn r-work--action_btn_like"
               @click="likeWork"
+              :loading="likeLoading"
               :style="{ width: 'auto' }"
             >
-              <el-icon class="el-icon--left" v-if="!work.liked"><Pointer /></el-icon>
-              <el-icon class="el-icon--left" v-else><StarFilled /></el-icon>
+              <el-icon class="el-icon--left" v-if="!work.liked && !likeLoading"><Pointer /></el-icon>
+              <el-icon class="el-icon--left" v-else-if="work.liked && !likeLoading"><StarFilled /></el-icon>
               {{ work.liked ? '已点赞' : '点赞' }}
             </el-button>
             <el-button 
@@ -357,6 +358,7 @@ const loadingRelated = ref(false)
 const loadingComments = ref(false)
 const submitting = ref(false)
 const favoriteLoading = ref(false)
+const likeLoading = ref(false)
 const isFavorited = ref(false)
 const work = ref(null)
 const allowedPlayerHosts = new Set([
@@ -581,15 +583,22 @@ const likeWork = async () => {
     ElMessage.warning('请先登录')
     return
   }
-  
+
+  // 防止重复点击
+  if (likeLoading.value) return
+  likeLoading.value = true
+
   let geetestData = {}
-  
+
   // 检查是否需要验证码
   if (geetestConfig.value?.enabled && geetestConfig.value?.scenes?.like) {
     geetestData = await geetestDialogRef.value.show('like')
-    if (!geetestData) return
+    if (!geetestData) {
+      likeLoading.value = false
+      return
+    }
   }
-  
+
   try {
     const res = await workApi.like(work.value.codemao_work_id, geetestData)
     if (res.code === 200) {
@@ -599,6 +608,8 @@ const likeWork = async () => {
     }
   } catch (error) {
     ElMessage.error('操作失败')
+  } finally {
+    likeLoading.value = false
   }
 }
 
@@ -721,19 +732,28 @@ const collapseReplies = (commentId) => {
   expandedComments.value.delete(commentId)
 }
 
+const likingComments = ref(new Set())
+
 const likeComment = async (comment) => {
   if (!userStore.isLoggedIn) {
     ElMessage.warning('请先登录')
     return
   }
-  
+
+  // 防止重复点击
+  if (likingComments.value.has(comment.id)) return
+  likingComments.value.add(comment.id)
+
   let geetestData = {}
-  
+
   if (geetestConfig.value?.enabled && geetestConfig.value?.scenes?.like) {
     geetestData = await geetestDialogRef.value.show('like')
-    if (!geetestData) return
+    if (!geetestData) {
+      likingComments.value.delete(comment.id)
+      return
+    }
   }
-  
+
   try {
     const res = await commentApi.likeComment(comment.id, geetestData)
     if (res.code === 200) {
@@ -743,6 +763,8 @@ const likeComment = async (comment) => {
     }
   } catch (error) {
     console.error('点赞失败:', error)
+  } finally {
+    likingComments.value.delete(comment.id)
   }
 }
 

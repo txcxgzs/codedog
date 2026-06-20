@@ -248,19 +248,28 @@ const fetchRelatedPosts = async () => {
   } catch (e) {}
 }
 
+const likeLoading = ref(false)
+
 const likePost = async () => {
   if (!userStore.isLoggedIn) {
     ElMessage.warning('请先登录')
     return
   }
-  
+
+  // 防止重复点击
+  if (likeLoading.value) return
+  likeLoading.value = true
+
   let geetestData = {}
-  
+
   if (geetestConfig.value?.enabled && geetestConfig.value?.scenes?.like) {
     geetestData = await geetestDialogRef.value.show('like')
-    if (!geetestData) return
+    if (!geetestData) {
+      likeLoading.value = false
+      return
+    }
   }
-  
+
   try {
     const res = await postApi.likePost(post.value.id, geetestData)
     if (res.code === 200) {
@@ -269,6 +278,8 @@ const likePost = async () => {
     }
   } catch (e) {
     console.error('点赞失败:', e)
+  } finally {
+    likeLoading.value = false
   }
 }
 
