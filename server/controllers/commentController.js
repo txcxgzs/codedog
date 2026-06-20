@@ -37,19 +37,19 @@ async function createComment(req, res) {
         const { content, work_id, post_id, parent_id, reply_to_user_id } = req.body;
 
         if (!content || !String(content).trim()) {
-            return errorResponse(res, 'Please enter comment content', 400);
+            return errorResponse(res, '请输入评论内容', 400);
         }
 
         const hasWorkTarget = work_id !== undefined && work_id !== null && work_id !== '';
         const hasPostTarget = post_id !== undefined && post_id !== null && post_id !== '';
         if (hasWorkTarget === hasPostTarget) {
-            return errorResponse(res, 'Please choose exactly one comment target', 400);
+            return errorResponse(res, '请选择一个评论目标', 400);
         }
 
         const work = hasWorkTarget ? await resolvePublishedWork(work_id) : null;
         const post = hasPostTarget ? await resolvePublishedPost(post_id) : null;
         if ((hasWorkTarget && !work) || (hasPostTarget && !post)) {
-            return errorResponse(res, 'Comment target not found', 404);
+            return errorResponse(res, '评论目标不存在', 404);
         }
 
         const localWorkId = work ? DbAdapter.getId(work) : null;
@@ -64,7 +64,7 @@ async function createComment(req, res) {
                 && sameId(parent.post_id || '', localPostId || '');
 
             if (!parentMatchesTarget) {
-                return errorResponse(res, 'Parent comment not found', 404);
+                return errorResponse(res, '父评论不存在', 404);
             }
             replyToUserId = replyToUserId || parent.user_id;
         }
@@ -88,7 +88,7 @@ async function createComment(req, res) {
                 await DbAdapter.create(Notification, {
                     user_id: work.user_id,
                     type: 'comment',
-                    title: 'New work comment',
+                    title: '评论了你的作品',
                     content: String(content).substring(0, 100),
                     related_id: localWorkId,
                     related_type: 'work',
@@ -106,7 +106,7 @@ async function createComment(req, res) {
                 await DbAdapter.create(Notification, {
                     user_id: post.user_id,
                     type: 'comment',
-                    title: 'New post comment',
+                    title: '评论了你的帖子',
                     content: String(content).substring(0, 100),
                     related_id: localPostId,
                     related_type: 'post',
@@ -119,7 +119,7 @@ async function createComment(req, res) {
             await DbAdapter.create(Notification, {
                 user_id: replyToUserId,
                 type: 'reply',
-                title: 'New comment reply',
+                title: '回复了你的评论',
                 content: String(content).substring(0, 100),
                 related_id: localWorkId || localPostId,
                 related_type: localWorkId ? 'work' : 'post',
@@ -140,7 +140,7 @@ async function createComment(req, res) {
             }]
         });
 
-        return successResponse(res, result, 'Comment created');
+        return successResponse(res, result, '评论成功');
     } catch (error) {
         console.error('Create comment error:', error);
         return errorResponse(res, 'Failed to create comment', 500);
@@ -203,11 +203,11 @@ async function deleteComment(req, res) {
         const comment = await DbAdapter.findByPk(Comment, id);
 
         if (!comment) {
-            return errorResponse(res, 'Comment not found', 404);
+            return errorResponse(res, '评论不存在', 404);
         }
 
         if (!sameId(comment.user_id, DbAdapter.getId(req.user)) && !isRoleAtLeast(req.user.role, 'moderator')) {
-            return errorResponse(res, 'No permission to delete this comment', 403);
+            return errorResponse(res, '无权删除此评论', 403);
         }
 
         await DbAdapter.update(Comment, { status: 'deleted' }, { where: { id } });
@@ -224,10 +224,10 @@ async function deleteComment(req, res) {
             }
         }
 
-        return successResponse(res, null, 'Comment deleted');
+        return successResponse(res, null, '评论已删除');
     } catch (error) {
-        console.error('Delete comment error:', error);
-        return errorResponse(res, 'Failed to delete comment', 500);
+        console.error('删除评论错误:', error);
+        return errorResponse(res, '删除评论失败', 500);
     }
 }
 
@@ -238,13 +238,13 @@ async function likeComment(req, res) {
         const comment = await DbAdapter.findByPk(Comment, id);
 
         if (!comment || comment.status !== 'active') {
-            return errorResponse(res, 'Comment not found', 404);
+            return errorResponse(res, '评论不存在', 404);
         }
         if (comment.work_id && !await resolvePublishedWorkByLocalId(comment.work_id)) {
-            return errorResponse(res, 'Comment not found', 404);
+            return errorResponse(res, '评论不存在', 404);
         }
         if (comment.post_id && !await resolvePublishedPost(comment.post_id)) {
-            return errorResponse(res, 'Comment not found', 404);
+            return errorResponse(res, '评论不存在', 404);
         }
 
         const { Like } = require('../models');
@@ -257,7 +257,7 @@ async function likeComment(req, res) {
             await DbAdapter.destroy(Like, { where: { id: DbAdapter.getId(existing) } });
             const newCount = Math.max(0, (comment.like_count || 0) - 1);
             await DbAdapter.update(Comment, { like_count: newCount }, { where: { id: DbAdapter.getId(comment) } });
-            return successResponse(res, { like_count: newCount, liked: false }, 'Unliked');
+            return successResponse(res, { like_count: newCount, liked: false }, '已取消点赞');
         }
 
         await DbAdapter.create(Like, {
@@ -268,10 +268,10 @@ async function likeComment(req, res) {
         const likeCount = (comment.like_count || 0) + 1;
         await DbAdapter.update(Comment, { like_count: likeCount }, { where: { id: DbAdapter.getId(comment) } });
 
-        return successResponse(res, { like_count: likeCount, liked: true }, 'Liked');
+        return successResponse(res, { like_count: likeCount, liked: true }, '点赞成功');
     } catch (error) {
-        console.error('Like comment error:', error);
-        return errorResponse(res, 'Failed to like comment', 500);
+        console.error('点赞评论错误:', error);
+        return errorResponse(res, '点赞失败', 500);
     }
 }
 
