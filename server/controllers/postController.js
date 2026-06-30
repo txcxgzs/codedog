@@ -3,11 +3,11 @@ const DbAdapter = require('../utils/dbAdapter');
  * 社区帖子控制器
  */
 
-const { Post, User, Comment } = require('../models');
+const { Post, User, Comment, sequelize } = require('../models');
 const { successResponse, errorResponse, paginateResponse } = require('../middleware/response');
 const { Op } = require('sequelize');
 const { isRoleAtLeast } = require('../config/permissions');
-const { escapeLike } = require('../utils/security');
+const { likeContains } = require('../utils/security');
 
 function canInteractWithPost(post) {
     return post && post.status === 'published';
@@ -106,11 +106,8 @@ async function getPosts(req, res) {
         }
         
         if (keyword) {
-            const safeKeyword = escapeLike(keyword);
-            where[Op.or] = [
-                { title: { [Op.like]: `%${safeKeyword}%` } },
-                { content: { [Op.like]: `%${safeKeyword}%` } }
-            ];
+            const keywordWhere = likeContains(sequelize, ['title', 'content'], keyword);
+            if (keywordWhere) Object.assign(where, keywordWhere);
         }
         
         let order = [['is_top', 'DESC'], ['created_at', 'DESC']];
