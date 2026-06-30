@@ -11,7 +11,7 @@ const { authMiddleware } = require('../middleware/auth');
 router.post('/', authMiddleware, favoriteController.addFavorite);
 router.delete('/:workId', authMiddleware, favoriteController.removeFavorite);
 router.get('/my', authMiddleware, favoriteController.getMyFavorites);
-router.get('/user/:codemaoUserId', favoriteController.getUserFavorites);
+router.get('/user/:codemaoUserId', authMiddleware, favoriteController.getUserFavorites);
 router.get('/check/:workId', authMiddleware, favoriteController.checkFavorite);
 
 module.exports = router;

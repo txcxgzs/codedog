@@ -90,15 +90,17 @@ async function createComment(req, res) {
                 await DbAdapter.increment(work, 'comment_count');
             }
             if (work.user_id != null && !sameId(work.user_id, DbAdapter.getId(req.user))) {
-                await DbAdapter.create(Notification, {
-                    user_id: work.user_id,
-                    type: 'comment',
-                    title: '评论了你的作品',
-                    content: String(content).substring(0, 100),
-                    related_id: localWorkId,
-                    related_type: 'work',
-                    sender_id: DbAdapter.getId(req.user)
-                });
+                try {
+                    await DbAdapter.create(Notification, {
+                        user_id: work.user_id,
+                        type: 'comment',
+                        title: '评论了你的作品',
+                        content: String(content).substring(0, 100),
+                        related_id: localWorkId,
+                        related_type: 'work',
+                        sender_id: DbAdapter.getId(req.user)
+                    });
+                } catch (e) { console.error('创建评论通知失败:', e.message); }
             }
         }
 
@@ -108,28 +110,32 @@ async function createComment(req, res) {
                 await DbAdapter.increment(post, 'comment_count');
             }
             if (!sameId(post.user_id, DbAdapter.getId(req.user))) {
-                await DbAdapter.create(Notification, {
-                    user_id: post.user_id,
-                    type: 'comment',
-                    title: '评论了你的帖子',
-                    content: String(content).substring(0, 100),
-                    related_id: localPostId,
-                    related_type: 'post',
-                    sender_id: DbAdapter.getId(req.user)
-                });
+                try {
+                    await DbAdapter.create(Notification, {
+                        user_id: post.user_id,
+                        type: 'comment',
+                        title: '评论了你的帖子',
+                        content: String(content).substring(0, 100),
+                        related_id: localPostId,
+                        related_type: 'post',
+                        sender_id: DbAdapter.getId(req.user)
+                    });
+                } catch (e) { console.error('创建评论通知失败:', e.message); }
             }
         }
 
         if (parent_id && replyToUserId && !sameId(replyToUserId, DbAdapter.getId(req.user))) {
-            await DbAdapter.create(Notification, {
-                user_id: replyToUserId,
-                type: 'reply',
-                title: '回复了你的评论',
-                content: String(content).substring(0, 100),
-                related_id: localWorkId || localPostId,
-                related_type: localWorkId ? 'work' : 'post',
-                sender_id: DbAdapter.getId(req.user)
-            });
+            try {
+                await DbAdapter.create(Notification, {
+                    user_id: replyToUserId,
+                    type: 'reply',
+                    title: '回复了你的评论',
+                    content: String(content).substring(0, 100),
+                    related_id: localWorkId || localPostId,
+                    related_type: localWorkId ? 'work' : 'post',
+                    sender_id: DbAdapter.getId(req.user)
+                });
+            } catch (e) { console.error('创建回复通知失败:', e.message); }
         }
 
         const result = await DbAdapter.findByPk(Comment, DbAdapter.getId(comment), {
@@ -195,7 +201,30 @@ async function getWorkComments(req, res) {
             offset: (page - 1) * pageSize
         });
 
-        return successResponse(res, { list: rows, total: count });
+        const { Like } = require('../models');
+        const { Op } = require('sequelize');
+
+        const commentIds = rows.flatMap(c => [
+            DbAdapter.getId(c),
+            ...(c.replies || []).map(r => DbAdapter.getId(r))
+        ]);
+
+        let likedSet = new Set();
+        if (req.user && commentIds.length > 0) {
+            const likedRows = await DbAdapter.findAll(Like, {
+                where: { user_id: DbAdapter.getId(req.user), comment_id: { [Op.in]: commentIds } }
+            });
+            likedSet = new Set(likedRows.map(l => String(l.comment_id)));
+        }
+
+        const list = rows.map(c => {
+            const json = c.toJSON ? c.toJSON() : c;
+            json.liked = likedSet.has(String(json.id));
+            if (json.replies) json.replies.forEach(r => { r.liked = likedSet.has(String(r.id)); });
+            return json;
+        });
+
+        return successResponse(res, { list, total: count });
     } catch (error) {
         console.error('Get comments error:', error);
         return errorResponse(res, 'Failed to get comments', 500);
@@ -263,8 +292,10 @@ async function likeComment(req, res) {
 
         if (existing) {
             // 已点赞 → 取消点赞（toggle）
-            await DbAdapter.destroy(Like, { where: { id: DbAdapter.getId(existing) } });
-            await DbAdapter.decrement(comment, 'like_count');
+            const removed = await DbAdapter.destroy(Like, { where: { id: DbAdapter.getId(existing) } });
+            if (removed && (comment.like_count || 0) > 0) {
+                await DbAdapter.decrement(comment, 'like_count');
+            }
             await comment.reload();
             const newCount = Math.max(0, comment.like_count || 0);
             return successResponse(res, { like_count: newCount, liked: false }, '已取消点赞');

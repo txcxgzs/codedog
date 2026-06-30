@@ -82,7 +82,7 @@ const Post = sequelize.define('Post', {
     is_essence: { type: DataTypes.BOOLEAN, defaultValue: false },
     category: { type: DataTypes.STRING(50), defaultValue: 'discussion' },
     cover: { type: DataTypes.STRING(500) },
-    status: { type: DataTypes.ENUM('active', 'published', 'draft', 'hidden', 'deleted'), defaultValue: 'published' },
+    status: { type: DataTypes.ENUM('published', 'draft', 'hidden', 'deleted'), defaultValue: 'published' },
     tags: {
         type: DataTypes.TEXT,
         get() {
@@ -171,8 +171,9 @@ const Like = sequelize.define('Like', {
     timestamps: false,
     validate: {
         hasTarget() {
-            if (!this.work_id && !this.post_id && !this.comment_id) {
-                throw new Error('点赞记录必须关联一个作品、帖子或评论');
+            const targets = [this.work_id, this.post_id, this.comment_id].filter(Boolean);
+            if (targets.length !== 1) {
+                throw new Error('点赞记录必须且只能关联一个目标');
             }
         }
     },
@@ -194,8 +195,9 @@ const Favorite = sequelize.define('Favorite', {
     timestamps: false,
     validate: {
         hasTarget() {
-            if (!this.work_id && !this.post_id) {
-                throw new Error('收藏记录必须关联一个作品或帖子');
+            const targets = [this.work_id, this.post_id].filter(Boolean);
+            if (targets.length !== 1) {
+                throw new Error('收藏记录必须且只能关联一个目标');
             }
         }
     },
@@ -346,8 +348,10 @@ User.hasMany(Report, { foreignKey: 'reporter_id', as: 'reports' });
 User.hasMany(Report, { foreignKey: 'handler_id', as: 'handled_reports' });
 Favorite.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
 Favorite.belongsTo(Work, { foreignKey: 'work_id', as: 'work' });
+Favorite.belongsTo(Post, { foreignKey: 'post_id', as: 'post' });
 User.hasMany(Favorite, { foreignKey: 'user_id', as: 'favorites' });
 Work.hasMany(Favorite, { foreignKey: 'work_id', as: 'favorites' });
+Post.hasMany(Favorite, { foreignKey: 'post_id', as: 'favorites' });
 Notification.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
 Notification.belongsTo(User, { foreignKey: 'sender_id', as: 'sender' });
 User.hasMany(Notification, { foreignKey: 'user_id', as: 'notifications' });
@@ -356,8 +360,12 @@ User.hasMany(OperationLog, { foreignKey: 'user_id', as: 'operation_logs' });
 
 Like.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
 Like.belongsTo(Work, { foreignKey: 'work_id', as: 'work' });
+Like.belongsTo(Post, { foreignKey: 'post_id', as: 'post' });
+Like.belongsTo(Comment, { foreignKey: 'comment_id', as: 'comment' });
 User.hasMany(Like, { foreignKey: 'user_id', as: 'likes' });
 Work.hasMany(Like, { foreignKey: 'work_id', as: 'likes' });
+Post.hasMany(Like, { foreignKey: 'post_id', as: 'likes' });
+Comment.hasMany(Like, { foreignKey: 'comment_id', as: 'likes' });
 
 Follow.belongsTo(User, { foreignKey: 'follower_id', as: 'follower' });
 Follow.belongsTo(User, { foreignKey: 'following_id', as: 'following' });

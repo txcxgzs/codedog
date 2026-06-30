@@ -2623,8 +2623,8 @@ async function updateStudioStatus(req, res) {
 async function updateStudio(req, res) {
     try {
         const { id } = req.params;
-        const { name, description, cover, join_type, status, vice_owner_id } = req.body;
-        
+        const { name, description, cover, is_public, join_type, status, vice_owner_id } = req.body;
+
         const studio = await DbAdapter.findByPk(Studio, id);
         if (!studio) {
             return errorResponse(res, '工作室不存在', 404);
@@ -2634,6 +2634,7 @@ async function updateStudio(req, res) {
             name: name || studio.name,
             description: description !== undefined ? description : studio.description,
             cover: cover !== undefined ? cover : studio.cover,
+            is_public: is_public !== undefined ? is_public : studio.is_public,
             join_type: join_type || studio.join_type,
             status: status || studio.status,
             vice_owner_id: vice_owner_id !== undefined ? vice_owner_id : studio.vice_owner_id

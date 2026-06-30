@@ -11,7 +11,7 @@ let sequelize = null;
 
 if (dbType === 'mysql') {
     console.log('🗄️ 使用MySQL数据库');
-    const connectWithRetry = () => {
+    const initSequelize = () => {
         try {
             sequelize = new Sequelize(
                 process.env.DB_NAME,
@@ -53,7 +53,7 @@ if (dbType === 'mysql') {
             process.exit(1);
         }
     };
-    connectWithRetry();
+    initSequelize();
 } else {
     console.log('📦 使用SQLite数据库');
     sequelize = new Sequelize({

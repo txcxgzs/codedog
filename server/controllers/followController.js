@@ -54,12 +54,14 @@ async function followUser(req, res) {
         await DbAdapter.increment(currentUser, 'following_count');
         await DbAdapter.increment(targetUser, 'follower_count');
         
-        await DbAdapter.create(Notification, {
-            user_id: targetUser.id,
-            type: 'follow',
-            title: '关注了你',
-            sender_id: DbAdapter.getId(req.user)
-        });
+        try {
+            await DbAdapter.create(Notification, {
+                user_id: targetUser.id,
+                type: 'follow',
+                title: '关注了你',
+                sender_id: DbAdapter.getId(req.user)
+            });
+        } catch (e) { console.error('创建关注通知失败:', e.message); }
         
         return successResponse(res, null, '关注成功');
     } catch (error) {

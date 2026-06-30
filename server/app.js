@@ -31,6 +31,7 @@ const { createSequelizeSessionStore } = require('./services/sessionStore');
 
 const app = express();
 app.disable('x-powered-by');
+app.set('trust proxy', 1);
 
 const isProduction = process.env.NODE_ENV === 'production';
 const configuredOrigins = process.env.CORS_ORIGIN

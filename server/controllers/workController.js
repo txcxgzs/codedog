@@ -316,7 +316,7 @@ async function getWorkByCodemaoId(req, res) {
                 ide_type: workInfo.ideType || 'KITTEN',
                 work_url: workInfo.playerUrl,
                 user_id: author ? DbAdapter.getId(author) : null,
-                codemao_author_id: String(workInfo.codemaoAuthorId),
+                codemao_author_id: workInfo.codemaoAuthorId != null ? String(workInfo.codemaoAuthorId) : null,
                 codemao_author_name: workInfo.codemaoAuthorName,
                 view_times: workInfo.viewTimes || 1,
                 praise_times: workInfo.praiseTimes || 0,
@@ -593,8 +593,10 @@ async function likeWork(req, res) {
         });
         
         if (existingLike) {
-            await DbAdapter.destroy(Like, { where: { id: DbAdapter.getId(existingLike) } });
-            await DbAdapter.decrement(work, 'praise_times');
+            const removed = await DbAdapter.destroy(Like, { where: { id: DbAdapter.getId(existingLike) } });
+            if (removed && (work.praise_times || 0) > 0) {
+                await DbAdapter.decrement(work, 'praise_times');
+            }
             await work.reload();
             const praiseTimes = Math.max(0, work.praise_times || 0);
             return successResponse(res, { praise_times: praiseTimes, liked: false }, '已取消点赞');
@@ -655,6 +657,10 @@ async function deleteWork(req, res) {
             return errorResponse(res, '无权删除此作品', 403);
         }
         
+        const { Like, Favorite, Comment } = require('../models');
+        await DbAdapter.destroy(Like, { where: { work_id: DbAdapter.getId(work) } });
+        await DbAdapter.destroy(Favorite, { where: { work_id: DbAdapter.getId(work) } });
+        await DbAdapter.destroy(Comment, { where: { work_id: DbAdapter.getId(work) } });
         await DbAdapter.destroy(Work, { where: { id: DbAdapter.getId(work) } });
         return successResponse(res, null, '作品已删除');
     } catch (error) {

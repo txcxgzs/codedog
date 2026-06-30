@@ -162,7 +162,20 @@ async function getPostDetail(req, res) {
 
         // 原子 +1 避免 read-modify-write 竞态
         await DbAdapter.increment(post, 'view_count');
-        
+
+        const { Like, Favorite } = require('../models');
+
+        let liked = false;
+        let favorited = false;
+        if (req.user) {
+            const [existingLike, existingFav] = await Promise.all([
+                DbAdapter.findOne(Like, { where: { user_id: DbAdapter.getId(req.user), post_id: DbAdapter.getId(post) } }),
+                DbAdapter.findOne(Favorite, { where: { user_id: DbAdapter.getId(req.user), post_id: DbAdapter.getId(post) } })
+            ]);
+            liked = !!existingLike;
+            favorited = !!existingFav;
+        }
+
         const comments = await DbAdapter.findAll(Comment, {
             where: { post_id: id, status: 'active', parent_id: null },
             include: [{
@@ -182,8 +195,27 @@ async function getPostDetail(req, res) {
             }],
             order: [['created_at', 'DESC']]
         });
-        
-        return successResponse(res, normalizePostOutput({ ...post.toJSON(), view_count: (post.view_count || 0) + 1, comments }));
+
+        const postJson = normalizePostOutput({ ...post.toJSON(), view_count: (post.view_count || 0) + 1, comments, liked, favorited });
+
+        const commentIds = comments.flatMap(c => [
+            DbAdapter.getId(c),
+            ...(c.replies || []).map(r => DbAdapter.getId(r))
+        ]);
+        if (req.user && commentIds.length > 0) {
+            const likedRows = await DbAdapter.findAll(Like, {
+                where: { user_id: DbAdapter.getId(req.user), comment_id: { [Op.in]: commentIds } }
+            });
+            const likedSet = new Set(likedRows.map(l => String(l.comment_id)));
+            if (postJson.comments) {
+                postJson.comments.forEach(c => {
+                    c.liked = likedSet.has(String(c.id));
+                    if (c.replies) c.replies.forEach(r => { r.liked = likedSet.has(String(r.id)); });
+                });
+            }
+        }
+
+        return successResponse(res, postJson);
     } catch (error) {
         console.error('获取帖子详情错误:', error);
         return errorResponse(res, '获取帖子详情失败', 500);
@@ -286,9 +318,11 @@ async function likePost(req, res) {
         });
         
         if (existingLike) {
-            await DbAdapter.destroy(Like, { where: { id: DbAdapter.getId(existingLike) } });
+            const removed = await DbAdapter.destroy(Like, { where: { id: DbAdapter.getId(existingLike) } });
             // 原子 -1 避免 read-modify-write 竞态
-            await DbAdapter.decrement(post, 'like_count');
+            if (removed && (post.like_count || 0) > 0) {
+                await DbAdapter.decrement(post, 'like_count');
+            }
             await post.reload();
             const newCount = Math.max(0, post.like_count || 0);
             return successResponse(res, { like_count: newCount, liked: false }, '已取消点赞');
@@ -410,9 +444,11 @@ async function unfavoritePost(req, res) {
             return errorResponse(res, '未收藏该帖子', 400);
         }
         
-        await DbAdapter.destroy(Favorite, { where: { id: DbAdapter.getId(existing) } });
-        
-        await DbAdapter.decrement(post, 'collection_count');
+        const removed = await DbAdapter.destroy(Favorite, { where: { id: DbAdapter.getId(existing) } });
+
+        if (removed && (post.collection_count || 0) > 0) {
+            await DbAdapter.decrement(post, 'collection_count');
+        }
         await post.reload();
         const newCount = Math.max(0, post.collection_count || 0);
         

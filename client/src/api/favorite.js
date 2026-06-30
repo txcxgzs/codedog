@@ -8,11 +8,11 @@ export const favoriteApi = {
   add(workId) {
     return request.post('/favorites', { workId })
   },
-  
+
   remove(workId) {
     return request.delete(`/favorites/${workId}`)
   },
-  
+
   getMyFavorites(params = {}) {
     return request.get('/favorites/my', { params })
   },
@@ -20,8 +20,16 @@ export const favoriteApi = {
   getUserFavorites(codemaoUserId, params = {}) {
     return request.get(`/favorites/user/${codemaoUserId}`, { params })
   },
-  
+
   check(workId) {
     return request.get(`/favorites/check/${workId}`)
+  },
+
+  favoritePost(postId, geetestData = {}) {
+    return request.post(`/posts/${postId}/favorite`, geetestData)
+  },
+
+  unfavoritePost(postId, geetestData = {}) {
+    return request.delete(`/posts/${postId}/favorite`, { data: geetestData })
   }
 }

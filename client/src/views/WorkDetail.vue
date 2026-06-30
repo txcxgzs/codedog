@@ -625,14 +625,14 @@ const toggleFavorite = async () => {
       const res = await favoriteApi.remove(work.value.id)
       if (res.code === 200) {
         isFavorited.value = false
-        work.value.collection_times = Math.max(0, (work.value.collection_times || 0) - 1)
+        work.value.collection_times = res.data.collection_times
         ElMessage.success('已取消收藏')
       }
     } else {
       const res = await favoriteApi.add(work.value.id)
       if (res.code === 200) {
         isFavorited.value = true
-        work.value.collection_times = (work.value.collection_times || 0) + 1
+        work.value.collection_times = res.data.collection_times
         ElMessage.success('收藏成功')
       }
     }

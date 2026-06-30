@@ -20,7 +20,7 @@
         </div>
         
         <div class="r-post--actions">
-          <el-button :type="liked ? 'primary' : 'default'" @click="likePost">
+          <el-button :type="liked ? 'primary' : 'default'" :loading="likeLoading" @click="likePost">
             <span class="r-post--action_icon r-post--action_icon_like"></span>
             点赞 {{ post.like_count }}
           </el-button>
@@ -31,6 +31,10 @@
           <el-button @click="showShareDialog = true">
             <span class="r-post--action_icon r-post--action_icon_share"></span>
             分享
+          </el-button>
+          <el-button :type="isFavorited ? 'warning' : 'default'" :loading="favoriteLoading" @click="toggleFavorite">
+            <span class="r-post--action_icon r-post--action_icon_favorite"></span>
+            {{ isFavorited ? '已收藏' : '收藏' }} {{ post.collection_count || 0 }}
           </el-button>
           <el-dropdown @command="handleMoreAction" class="r-post--more">
             <el-button>
@@ -148,6 +152,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/user'
 import { postApi } from '@/api/post'
 import { commentApi } from '@/api/comment'
+import { favoriteApi } from '@/api/favorite'
 import { reportApi } from '@/api/report'
 import { followApi } from '@/api/follow'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -227,6 +232,8 @@ const fetchPost = async () => {
     const res = await postApi.getPost(route.params.id)
     if (res.code === 200) {
       post.value = res.data
+      liked.value = !!res.data.liked
+      isFavorited.value = !!res.data.favorited
       comments.value = res.data.comments || []
       fetchRelatedPosts()
     }
@@ -249,6 +256,37 @@ const fetchRelatedPosts = async () => {
 }
 
 const likeLoading = ref(false)
+const isFavorited = ref(false)
+const favoriteLoading = ref(false)
+
+const toggleFavorite = async () => {
+  if (!userStore.isLoggedIn) {
+    ElMessage.warning('请先登录')
+    return
+  }
+  favoriteLoading.value = true
+  try {
+    if (isFavorited.value) {
+      const res = await favoriteApi.unfavoritePost(post.value.id)
+      if (res.code === 200) {
+        isFavorited.value = false
+        post.value.collection_count = res.data.collection_count
+        ElMessage.success('已取消收藏')
+      }
+    } else {
+      const res = await favoriteApi.favoritePost(post.value.id)
+      if (res.code === 200) {
+        isFavorited.value = true
+        post.value.collection_count = res.data.collection_count
+        ElMessage.success('收藏成功')
+      }
+    }
+  } catch (e) {
+    ElMessage.error('操作失败')
+  } finally {
+    favoriteLoading.value = false
+  }
+}
 
 const likePost = async () => {
   if (!userStore.isLoggedIn) {
@@ -310,9 +348,15 @@ const submitComment = async () => {
   }
   commentLoading.value = true
   try {
+    let geetestData = {}
+    if (geetestConfig.value?.enabled && geetestConfig.value?.scenes?.comment) {
+      geetestData = await geetestDialogRef.value.show('comment')
+      if (!geetestData) { commentLoading.value = false; return }
+    }
     const res = await commentApi.createComment({
       content: commentContent.value,
-      post_id: post.value.id
+      post_id: post.value.id,
+      ...geetestData
     })
     if (res.code === 200) {
       comments.value.unshift(res.data)

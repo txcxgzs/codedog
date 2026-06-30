@@ -601,12 +601,14 @@ async function reviewWork(req, res) {
                 await DbAdapter.increment(studio, 'work_count');
             }
             
-            await DbAdapter.create(Notification, {
-                user_id: studioWork.user_id,
-                type: 'system',
-                title: '作品审核通过',
-                content: `您投稿到「${studio?.name || '工作室'}」的作品已通过审核`
-            });
+            try {
+                await DbAdapter.create(Notification, {
+                    user_id: studioWork.user_id,
+                    type: 'system',
+                    title: '作品审核通过',
+                    content: `您投稿到「${studio?.name || '工作室'}」的作品已通过审核`
+                });
+            } catch (e) { console.error('创建审核通知失败:', e.message); }
             
             return successResponse(res, null, '作品已通过');
         } else {

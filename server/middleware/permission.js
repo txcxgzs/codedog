@@ -92,6 +92,5 @@ module.exports = {
     requirePermission,
     requireRole,
     requireAdmin,
-    requireSuperAdmin,
-    canManageTargetUser
+    requireSuperAdmin
 };

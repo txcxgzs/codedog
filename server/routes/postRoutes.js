@@ -1,13 +1,13 @@
 const express = require('express');
 const router = express.Router();
 const postController = require('../controllers/postController');
-const { authMiddleware } = require('../middleware/auth');
+const { authMiddleware, optionalAuth } = require('../middleware/auth');
 const { geetestVerify } = require('../middleware/geetest');
 
 // 公开路由
 router.get('/', postController.getPosts);
 router.get('/my/list', authMiddleware, postController.getMyPosts);
-router.get('/:id', postController.getPostDetail);
+router.get('/:id', optionalAuth, postController.getPostDetail);
 
 // 需要登录的路由
 router.post('/', authMiddleware, geetestVerify('publish_post'), postController.createPost);
