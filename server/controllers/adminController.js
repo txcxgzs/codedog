@@ -861,7 +861,7 @@ async function crawlHotWorks(req, res) {
                             preview: workDetail.preview || item.preview_url || '',
                             type: workDetail.type || workDetail.work_label_list?.[0]?.label_name || 'KITTEN',
                             ide_type: workDetail.ide_type || 'KITTEN',
-                            work_url: workDetail.player_url || `{{https://player.codemao.cn/new/${workId}}}`,
+                            work_url: workDetail.player_url || `https://player.codemao.cn/new/${workId}`,
                             user_id: DbAdapter.getId(user),
                             codemao_author_id: String(item.user_id),
                             codemao_author_name: item.nickname || workDetail.user_info?.nickname || '未知',
@@ -2643,4 +2643,617 @@ async function updateStudio(req, res) {
         
         const updatedStudio = await DbAdapter.findByPk(Studio, id);
         return successResponse(res, updatedStudio, '工作室已更新');
-    } catch
+    } catch (error) {
+        console.error('更新工作室错误:', error);
+        return errorResponse(res, '更新失败', 500);
+    }
+}
+
+async function setWorkScore(req, res) {
+    try {
+        const { id } = req.params;
+        const { score } = req.body;
+        
+        const StudioWork = require('../models').StudioWork;
+        const studioWork = await DbAdapter.findByPk(StudioWork, id);
+        if (!studioWork) {
+            return errorResponse(res, '作品记录不存在', 404);
+        }
+        
+        const oldScore = studioWork.score || 0;
+        await DbAdapter.update(StudioWork, { score }, { where: { id } });
+
+        const studio = await DbAdapter.findByPk(Studio, studioWork.studio_id);
+        let totalScore = 0;
+        if (studio) {
+            totalScore = await DbAdapter.sum(StudioWork, 'score', { where: { studio_id: studioWork.studio_id, status: 'approved' } }) || 0;
+            await DbAdapter.update(Studio, { total_score: totalScore }, { where: { id: DbAdapter.getId(studio) } });
+        }
+
+        logOperation(req, 'set_work_score', 'studio_work', id, { oldScore, newScore: score });
+
+        return successResponse(res, { score, totalScore }, '积分已更新');
+    } catch (error) {
+        console.error('设置作品积分错误:', error);
+        return errorResponse(res, '设置失败', 500);
+    }
+}
+
+async function updateUserLevel(req, res) {
+    try {
+        const { userId } = req.params;
+        const { level } = req.body;
+        const operatorRole = req.user.role;
+
+        // 只有超级管理员可以修改用户等级
+        if (operatorRole !== 'superadmin') {
+            return errorResponse(res, '只有超级管理员可以修改用户等级', 403);
+        }
+
+        const numLevel = Number(level);
+        if (!Number.isInteger(numLevel) || numLevel < 1 || numLevel > 100) {
+            return errorResponse(res, '等级必须在1-100之间的整数', 400);
+        }
+        
+        const user = await DbAdapter.findByPk(User, userId);
+        if (!user) {
+            return errorResponse(res, '用户不存在', 404);
+        }
+        
+        const oldLevel = user.level || 1;
+        await DbAdapter.update(User, { level }, { where: { id: userId } });
+        logOperation(req, 'update_user_level', 'user', userId, { oldLevel, newLevel: level });
+        
+        return successResponse(res, { id: DbAdapter.getId(user), level }, '用户等级已更新');
+    } catch (error) {
+        console.error('更新用户等级错误:', error);
+        return errorResponse(res, '更新失败', 500);
+    }
+}
+
+async function deleteStudio(req, res) {
+    try {
+        const { id } = req.params;
+
+        const studio = await DbAdapter.findByPk(Studio, id);
+        if (!studio) {
+            return errorResponse(res, '工作室不存在', 404);
+        }
+
+        // 先删除关联的成员和作品，再删除工作室本身，避免孤立数据
+        await DbAdapter.destroy(StudioMember, { where: { studio_id: id } });
+        await DbAdapter.destroy(StudioWork, { where: { studio_id: id } });
+        await DbAdapter.destroy(Studio, { where: { id: DbAdapter.getId(studio) } });
+
+        logOperation(req, 'delete_studio', 'studio', id);
+        return successResponse(res, null, '工作室已删除');
+    } catch (error) {
+        console.error('删除工作室错误:', error);
+        return errorResponse(res, '删除失败', 500);
+    }
+}
+
+async function getStudioDetail(req, res) {
+    try {
+        const { id } = req.params;
+        
+        const studio = await DbAdapter.findByPk(Studio, id, {
+            include: [{ model: User, as: 'owner', attributes: ['id', 'username', 'nickname', 'avatar'] }]
+        });
+        if (!studio) {
+            return errorResponse(res, '工作室不存在', 404);
+        }
+        
+        const members = await DbAdapter.findAll(StudioMember, {
+            where: { studio_id: id },
+            include: [{ model: User, as: 'user', attributes: ['id', 'username', 'nickname', 'avatar'] }],
+            order: [['role', 'ASC']]
+        });
+        
+        const studioWorks = await DbAdapter.findAll(StudioWork, {
+            where: { studio_id: id },
+            include: [{ model: Work, as: 'work', include: [{ model: User, as: 'author', attributes: ['id', 'nickname'] }] }],
+            order: [['added_at', 'DESC']],
+            limit: 50
+        });
+        
+        logOperation(req, 'view_studio_detail', 'studio', id, { name: studio.name });
+        
+        return successResponse(res, {
+            studio,
+            owner: studio.owner,
+            members,
+            works: studioWorks.map(sw => sw.work).filter(w => w)
+        });
+    } catch (error) {
+        console.error('获取工作室详情错误:', error);
+        return errorResponse(res, '获取工作室详情失败', 500);
+    }
+}
+
+async function updateStudioMember(req, res) {
+    try {
+        const { studioId, userId } = req.params;
+        const { role } = req.body;
+
+        if (!['owner', 'vice_owner', 'admin', 'member'].includes(role)) {
+            return errorResponse(res, '无效的角色值', 400);
+        }
+
+        const member = await DbAdapter.findOne(StudioMember, {
+            where: { studio_id: studioId, user_id: userId }
+        });
+        if (!member) {
+            return errorResponse(res, '成员不存在', 404);
+        }
+
+        if (member.role === 'owner') {
+            return errorResponse(res, '不能修改室长角色', 400);
+        }
+        
+        await DbAdapter.update(StudioMember, { role }, { where: { id: DbAdapter.getId(member) } });
+        logOperation(req, 'update_studio_member', 'studio_member', DbAdapter.getId(member), { role });
+        
+        return successResponse(res, null, '成员角色已更新');
+    } catch (error) {
+        console.error('更新成员角色错误:', error);
+        return errorResponse(res, '更新失败', 500);
+    }
+}
+
+async function removeStudioMember(req, res) {
+    try {
+        const { studioId, userId } = req.params;
+        
+        const member = await DbAdapter.findOne(StudioMember, {
+            where: { studio_id: studioId, user_id: userId }
+        });
+        if (!member) {
+            return errorResponse(res, '成员不存在', 404);
+        }
+        
+        if (member.role === 'owner') {
+            return errorResponse(res, '不能移除室长', 400);
+        }
+        
+        const studio = await DbAdapter.findByPk(Studio, studioId);
+        
+        await DbAdapter.destroy(StudioMember, { where: { id: DbAdapter.getId(member) } });
+        if (studio) {
+            await DbAdapter.decrement(studio, 'member_count');
+        }
+        
+        logOperation(req, 'remove_studio_member', 'studio_member', DbAdapter.getId(member));
+        return successResponse(res, null, '成员已移除');
+    } catch (error) {
+        console.error('移除成员错误:', error);
+        return errorResponse(res, '移除失败', 500);
+    }
+}
+
+async function removeStudioWork(req, res) {
+    try {
+        const { studioId, workId } = req.params;
+        
+        const studioWork = await DbAdapter.findOne(StudioWork, {
+            where: { studio_id: studioId, work_id: workId }
+        });
+        if (!studioWork) {
+            return errorResponse(res, '作品不存在于工作室', 404);
+        }
+        
+        await DbAdapter.destroy(StudioWork, { where: { id: DbAdapter.getId(studioWork) } });
+        
+        logOperation(req, 'remove_studio_work', 'studio_work', DbAdapter.getId(studioWork));
+        return successResponse(res, null, '作品已移除');
+    } catch (error) {
+        console.error('移除作品错误:', error);
+        return errorResponse(res, '移除失败', 500);
+    }
+}
+
+async function sendUserNotification(req, res) {
+    try {
+        const { userId } = req.params;
+        const { title, content } = req.body;
+        
+        if (!title || !content) {
+            return errorResponse(res, '标题和内容不能为空', 400);
+        }
+        
+        const user = await DbAdapter.findByPk(User, userId);
+        if (!user) {
+            return errorResponse(res, '用户不存在', 404);
+        }
+        
+        await DbAdapter.create(Notification, {
+            user_id: userId,
+            type: 'system',
+            title,
+            content,
+            sender_id: DbAdapter.getId(req.user)
+        });
+        
+        logOperation(req, 'send_notification', 'user', userId, { title });
+        return successResponse(res, null, '站内信发送成功');
+    } catch (error) {
+        console.error('发送站内信错误:', error);
+        return errorResponse(res, '发送失败', 500);
+    }
+}
+
+async function sendBatchNotifications(req, res) {
+    try {
+        const { userIds, title, content } = req.body;
+        
+        if (!userIds || !Array.isArray(userIds) || userIds.length === 0) {
+            return errorResponse(res, '请选择接收用户', 400);
+        }
+
+        if (userIds.length > 500) {
+            return errorResponse(res, '单次最多发送500条通知', 400);
+        }
+
+        if (!title || !content) {
+            return errorResponse(res, '标题和内容不能为空', 400);
+        }
+        
+        const notifications = userIds.map(userId => ({
+            user_id: userId,
+            type: 'system',
+            title,
+            content,
+            sender_id: DbAdapter.getId(req.user)
+        }));
+        
+        await DbAdapter.bulkCreate(Notification, notifications);
+        
+        logOperation(req, 'send_batch_notifications', 'notification', null, { count: userIds.length, title });
+        return successResponse(res, { count: userIds.length }, `成功发送给 ${userIds.length} 个用户`);
+    } catch (error) {
+        console.error('批量发送站内信错误:', error);
+        return errorResponse(res, '发送失败', 500);
+    }
+}
+
+async function sendAllUsersNotification(req, res) {
+    try {
+        const { title, content } = req.body;
+        
+        if (!title || !content) {
+            return errorResponse(res, '标题和内容不能为空', 400);
+        }
+        
+        const users = await DbAdapter.findAll(User, {
+            where: { status: 'active' },
+            attributes: ['id']
+        });
+        
+        if (users.length === 0) {
+            return errorResponse(res, '没有可发送的用户', 400);
+        }
+        
+        const notifications = users.map(user => ({
+            user_id: DbAdapter.getId(user),
+            type: 'system',
+            title,
+            content,
+            sender_id: DbAdapter.getId(req.user)
+        }));
+        
+        await DbAdapter.bulkCreate(Notification, notifications);
+        
+        logOperation(req, 'send_all_notification', 'notification', null, { count: users.length, title });
+        return successResponse(res, { count: users.length }, `成功发送给全部 ${users.length} 个用户`);
+    } catch (error) {
+        console.error('全员发送站内信错误:', error);
+        return errorResponse(res, '发送失败', 500);
+    }
+}
+
+async function updateStudioPoints(req, res) {
+    try {
+        const { id } = req.params;
+        const { points, action, note } = req.body;
+        
+        const studio = await DbAdapter.findByPk(Studio, id);
+        if (!studio) {
+            return errorResponse(res, '工作室不存在', 404);
+        }
+
+        const parsedPoints = parseInt(points, 10);
+        if (!Number.isFinite(parsedPoints) || parsedPoints < -10000 || parsedPoints > 10000) {
+            return errorResponse(res, '积分必须是 -10000 到 10000 之间的有效数字', 400);
+        }
+
+        let newPoints;
+        if (action === 'add') {
+            newPoints = Math.max(0, (studio.points || 0) + parsedPoints);
+        } else {
+            newPoints = Math.max(0, parsedPoints);
+        }
+        
+        const newLevel = Math.min(10, Math.floor(newPoints / 100) + 1);
+        
+        await DbAdapter.update(Studio, { points: newPoints, level: newLevel }, { where: { id } });
+        logOperation(req, 'update_studio_points', 'studio', id, { 
+            oldPoints: studio.points, 
+            newPoints, 
+            action, 
+            note 
+        });
+        
+        const updatedStudio = await DbAdapter.findByPk(Studio, id);
+        return successResponse(res, updatedStudio, '积分已更新');
+    } catch (error) {
+        console.error('更新工作室积分错误:', error);
+        return errorResponse(res, '更新失败', 500);
+    }
+}
+
+module.exports = {
+    getStats,
+    getUsers,
+    getUserDetail,
+    updateUserStatus,
+    updateUserRole,
+    updateUserPassword,
+    deleteUser,
+    getWorks,
+    setWorkFeatured,
+    deleteWork,
+    crawlWork,
+    crawlHotWorks,
+    crawlUserWorks,
+    crawlPostWorks,
+    crawlBanners,
+    getCrawlLogs: getCrawlLogsApi,
+    getRealtimeLogs,
+    clearRealtimeLogs,
+    getBanners,
+    createBanner,
+    updateBanner,
+    deleteBanner,
+    getComments,
+    updateCommentStatus,
+    deleteComment,
+    getReports,
+    handleReport,
+    getIpBans,
+    addIpBan,
+    removeIpBan,
+    getTrends,
+    getRoles,
+    getAdminUsers,
+    getAnnouncements,
+    createAnnouncement,
+    updateAnnouncement,
+    deleteAnnouncement,
+    getSystemConfigs,
+    updateSystemConfig,
+    batchUpdateConfigs,
+    getOperationLogs,
+    getSensitiveWords,
+    addSensitiveWord,
+    updateSensitiveWord,
+    deleteSensitiveWord,
+    batchImportSensitiveWords,
+    aiReviewReport,
+    aiBatchReviewReports,
+    aiAutoHandleReports,
+    testSensitiveCheck,
+    getPermissions,
+    getRolePermissionsList,
+    updateRolePermissions,
+    resetRolePermissions,
+    getCaptchaStats,
+    getStudios,
+    getStudioDetail,
+    updateStudio,
+    updateStudioStatus,
+    updateStudioMember,
+    removeStudioMember,
+    removeStudioWork,
+    deleteStudio,
+    sendUserNotification,
+    sendBatchNotifications,
+    sendAllUsersNotification,
+    updateStudioPoints,
+    setWorkScore,
+    updateUserLevel,
+    updateUser,
+    impersonateUser,
+    updateWork,
+    updatePost,
+    getPosts,
+    deletePost,
+    setPostEssence,
+    setPostTop,
+    recalibrateAllWorks
+};
+
+/**
+ * 重新校准全站作品数据 (IDE 类型和播放器)
+ */
+async function recalibrateAllWorks(req, res) {
+    try {
+        const works = await DbAdapter.findAll(Work);
+        let updatedCount = 0;
+        let failedCount = 0;
+
+        console.log(`开始重新校准 ${works.length} 个作品的数据...`);
+
+        // 使用异步循环，但控制并发或分批，避免被编程猫封禁
+        for (const work of works) {
+            try {
+                if (!work.codemao_work_id) continue;
+
+                const workDetail = await codemaoApi.getWorkDetail(work.codemao_work_id);
+                if (!workDetail) {
+                    console.error(`无法获取作品详情: ${work.codemao_work_id}`);
+                    failedCount++;
+                    continue;
+                }
+
+                const updateData = {
+                    ide_type: workDetail.ide_type || work.ide_type || 'KITTEN',
+                    work_url: workDetail.player_url || work.work_url
+                };
+
+                await DbAdapter.update(Work, updateData, { where: { id: DbAdapter.getId(work) } });
+                updatedCount++;
+                
+                if (updatedCount % 10 === 0) {
+                    console.log(`已校准 ${updatedCount}/${works.length} 个作品...`);
+                }
+
+                // 稍微延迟，避免 API 请求过快
+                await new Promise(resolve => setTimeout(resolve, 100));
+            } catch (e) {
+                console.error(`校准作品 ${work.codemao_work_id} 出错:`, e.message);
+                failedCount++;
+            }
+        }
+
+        logOperation(req, 'recalibrate_works', 'work', 'all', { updatedCount, failedCount });
+        
+        return successResponse(res, { updatedCount, failedCount }, `校准完成，成功更新 ${updatedCount} 个作品，失败 ${failedCount} 个`);
+    } catch (error) {
+        console.error('重新校准作品错误:', error);
+        return errorResponse(res, '校准失败', 500);
+    }
+}
+
+/**
+ * 获取帖子列表 (管理)
+ */
+async function getPosts(req, res) {
+    try {
+        const page = parseInt(req.query.page) || 1;
+        const pageSize = parseInt(req.query.pageSize) || 20;
+        const keyword = req.query.keyword || '';
+        const category = req.query.category || '';
+        const status = req.query.status || '';
+
+        const where = {};
+        if (keyword) {
+            const keywordWhere = likeContains(sequelize, ['title', 'content'], keyword);
+            if (keywordWhere) Object.assign(where, keywordWhere);
+        }
+        if (category) where.category = category;
+        if (status) where.status = status;
+
+        const { count, rows } = await DbAdapter.findAndCountAll(Post, {
+            where,
+            include: [{
+                model: User,
+                as: 'author',
+                attributes: ['id', 'username', 'nickname', 'avatar']
+            }],
+            order: [['is_top', 'DESC'], ['created_at', 'DESC']],
+            limit: pageSize,
+            offset: (page - 1) * pageSize
+        });
+
+        return paginateResponse(res, rows, count, page, pageSize);
+    } catch (error) {
+        console.error('获取帖子列表错误:', error);
+        return errorResponse(res, '获取失败', 500);
+    }
+}
+
+/**
+ * 删除帖子 (管理)
+ */
+async function deletePost(req, res) {
+    try {
+        const { postId } = req.params;
+        const post = await DbAdapter.findByPk(Post, postId);
+        if (!post) {
+            return errorResponse(res, '帖子不存在', 404);
+        }
+        await DbAdapter.destroy(Post, { where: { id: postId } });
+        logOperation(req, 'delete_post', 'post', postId, { title: post.title });
+        return successResponse(res, null, '删除成功');
+    } catch (error) {
+        console.error('删除帖子错误:', error);
+        return errorResponse(res, '删除失败', 500);
+    }
+}
+
+/**
+ * 更新帖子信息
+ */
+async function updatePost(req, res) {
+    try {
+        const { postId } = req.params;
+        const { title, content, category, status, is_top, is_essence } = req.body;
+
+        const post = await DbAdapter.findByPk(Post, postId);
+        if (!post) {
+            return errorResponse(res, '帖子不存在', 404);
+        }
+
+        const updateData = {};
+        if (title !== undefined) updateData.title = title;
+        if (content !== undefined) updateData.content = content;
+        if (category !== undefined) updateData.category = category;
+        if (status !== undefined) updateData.status = status;
+        if (is_top !== undefined) updateData.is_top = is_top;
+        if (is_essence !== undefined) updateData.is_essence = is_essence;
+
+        await DbAdapter.update(Post, updateData, { where: { id: postId } });
+        logOperation(req, 'update_post', 'post', postId, updateData);
+
+        return successResponse(res, null, '更新成功');
+    } catch (error) {
+        console.error('更新帖子错误:', error);
+        return errorResponse(res, '更新失败', 500);
+    }
+}
+
+/**
+ * 设置帖子精华
+ */
+async function setPostEssence(req, res) {
+    try {
+        const { postId } = req.params;
+        const { isEssence } = req.body;
+        
+        const post = await DbAdapter.findByPk(Post, postId);
+        if (!post) {
+            return errorResponse(res, '帖子不存在', 404);
+        }
+        
+        await DbAdapter.update(Post, { is_essence: isEssence }, { where: { id: postId } });
+        logOperation(req, 'set_post_essence', 'post', postId, { isEssence });
+        
+        return successResponse(res, null, '设置成功');
+    } catch (error) {
+        console.error('设置精华帖错误:', error);
+        return errorResponse(res, '设置失败', 500);
+    }
+}
+
+/**
+ * 设置帖子置顶
+ */
+async function setPostTop(req, res) {
+    try {
+        const { postId } = req.params;
+        const { isTop } = req.body;
+        
+        const post = await DbAdapter.findByPk(Post, postId);
+        if (!post) {
+            return errorResponse(res, '帖子不存在', 404);
+        }
+        
+        await DbAdapter.update(Post, { is_top: isTop }, { where: { id: postId } });
+        logOperation(req, 'set_post_top', 'post', postId, { isTop });
+        
+        return successResponse(res, null, '设置成功');
+    } catch (error) {
+        console.error('设置置顶帖错误:', error);
+        return errorResponse(res, '设置失败', 500);
+    }
+}
