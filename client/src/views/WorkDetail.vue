@@ -537,7 +537,7 @@ const fetchComments = async () => {
   }
   loadingComments.value = true
   try {
-    const res = await commentApi.getWorkComments(work.value.id)
+    const res = await commentApi.getWorkComments(work.value.codemao_work_id)
     if (res.code === 200) {
       comments.value = res.data.list || []
     }
@@ -629,7 +629,7 @@ const toggleFavorite = async () => {
         ElMessage.success('已取消收藏')
       }
     } else {
-      const res = await favoriteApi.add(work.value.id)
+      const res = await favoriteApi.add(work.value.codemao_work_id)
       if (res.code === 200) {
         isFavorited.value = true
         work.value.collection_times = res.data.collection_times
@@ -667,7 +667,7 @@ const submitComment = async () => {
   try {
     const res = await commentApi.createComment({
       content: commentContent.value,
-      work_id: work.value.id,
+      work_id: work.value.codemao_work_id,
       parent_id: replyingTo.value?.id || null,
       reply_to_user_id: replyingTo.value?.user?.id || null,
       ...geetestData

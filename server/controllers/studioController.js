@@ -259,13 +259,15 @@ async function joinStudio(req, res) {
         }
         
         if (status === 'pending') {
-            await DbAdapter.create(Notification, {
-                user_id: studio.owner_id,
-                type: 'system',
-                title: '新成员申请',
-                content: `有新成员申请加入您的工作室「${studio.name}」`,
-                sender_id: req.user.id
-            });
+            try {
+                await DbAdapter.create(Notification, {
+                    user_id: studio.owner_id,
+                    type: 'system',
+                    title: '新成员申请',
+                    content: `有新成员申请加入您的工作室「${studio.name}」`,
+                    sender_id: req.user.id
+                });
+            } catch (e) { console.error('创建加入通知失败:', e.message); }
             return successResponse(res, member, '申请已提交，请等待审核');
         } else {
             // 原子 +1 避免 read-modify-write 竞态

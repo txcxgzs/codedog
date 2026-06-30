@@ -23,7 +23,7 @@
       <div class="r-favorites--content" v-loading="loading">
         <div class="r-favorites--grid" v-if="works.length > 0">
           <div v-for="work in works" :key="work.id" class="r-favorites--card" :class="{ 'is-selected': selectedWorks.includes(work.id) }">
-            <div class="r-favorites--card_checkbox" v-if="batchMode" @click.stop="toggleSelect(work.id)">
+            <div class="r-favorites--card_checkbox" v-if="batchMode" @click.stop="toggleSelect(work.codemao_work_id)">
               <el-checkbox :model-value="selectedWorks.includes(work.id)" />
             </div>
             <div class="r-favorites--card_cover" :style="{ backgroundImage: `url(${work.preview})` }" @click="goWork(work)"></div>
@@ -147,7 +147,7 @@ const selectAll = () => {
   if (selectedWorks.value.length === works.value.length) {
     selectedWorks.value = []
   } else {
-    selectedWorks.value = works.value.map(w => w.id)
+    selectedWorks.value = works.value.map(w => w.codemao_work_id)
   }
 }
 
@@ -155,7 +155,7 @@ const removeFavorite = async (work) => {
   try {
     await ElMessageBox.confirm('确定要取消收藏该作品吗？', '提示', { type: 'warning' })
 
-    await doRemoveFavorite(work.id)
+    await doRemoveFavorite(work.codemao_work_id)
   } catch (e) {
     if (e !== 'cancel') console.error(e)
   }

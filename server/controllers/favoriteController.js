@@ -1,5 +1,5 @@
 const DbAdapter = require('../utils/dbAdapter');
-const { Favorite, Work, User, sequelize } = require('../models');
+const { Favorite, Work, Post, User, sequelize } = require('../models');
 const { successResponse, errorResponse } = require('../middleware/response');
 const { Op } = require('sequelize');
 const { likeContains } = require('../utils/security');
@@ -27,31 +27,62 @@ async function favoriteWorksForUser(userId, query) {
         if (keywordWhere) Object.assign(workWhere, keywordWhere);
     }
 
-    const { count, rows } = await DbAdapter.findAndCountAll(Favorite, {
-        where: { user_id: userId },
-        include: [{
-            model: Work,
-            as: 'work',
-            where: workWhere,
-            include: [{
-                model: User,
-                as: 'author',
-                attributes: ['id', 'codemao_user_id', 'username', 'nickname', 'avatar']
-            }]
-        }],
-        order: [['created_at', 'DESC']],
-        limit: pageSize,
-        offset: (page - 1) * pageSize
-    });
+    const postWhere = { status: 'published' };
+    if (keyword) {
+        const postKeywordWhere = likeContains(sequelize, ['title', 'content'], keyword);
+        if (postKeywordWhere) Object.assign(postWhere, postKeywordWhere);
+    }
 
-    const works = rows.filter(f => f.work).map(f => ({
+    const [workFavorites, postFavorites] = await Promise.all([
+        DbAdapter.findAndCountAll(Favorite, {
+            where: { user_id: userId, work_id: { [Op.ne]: null } },
+            include: [{
+                model: Work,
+                as: 'work',
+                where: workWhere,
+                include: [{
+                    model: User,
+                    as: 'author',
+                    attributes: ['id', 'codemao_user_id', 'username', 'nickname', 'avatar']
+                }]
+            }],
+            order: [['created_at', 'DESC']]
+        }),
+        DbAdapter.findAndCountAll(Favorite, {
+            where: { user_id: userId, post_id: { [Op.ne]: null } },
+            include: [{
+                model: Post,
+                as: 'post',
+                where: postWhere,
+                include: [{
+                    model: User,
+                    as: 'author',
+                    attributes: ['id', 'username', 'nickname', 'avatar']
+                }]
+            }],
+            order: [['created_at', 'DESC']]
+        })
+    ]);
+
+    const workItems = workFavorites.rows.filter(f => f.work).map(f => ({
         ...f.work.toJSON(),
-        author: f.work.author,
         favoriteId: f.id,
-        favoritedAt: f.created_at
+        favoritedAt: f.created_at,
+        _type: 'work'
     }));
 
-    return { works, count };
+    const postItems = postFavorites.rows.filter(f => f.post).map(f => ({
+        ...f.post.toJSON(),
+        favoriteId: f.id,
+        favoritedAt: f.created_at,
+        _type: 'post'
+    }));
+
+    const allItems = [...workItems, ...postItems].sort((a, b) => new Date(b.favoritedAt) - new Date(a.favoritedAt));
+    const total = workFavorites.count + postFavorites.count;
+    const pagedItems = allItems.slice((page - 1) * pageSize, page * pageSize);
+
+    return { works: pagedItems, count: total };
 }
 
 async function addFavorite(req, res) {

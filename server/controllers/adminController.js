@@ -527,6 +527,18 @@ async function deleteUser(req, res) {
 
         const { Work, Comment, Like, Favorite, Follow, Notification, Post, Studio, StudioMember, StudioWork, Report, OperationLog } = require('../models');
         const uid = DbAdapter.getId(user);
+
+        // 先收集受影响的 work/post ID，用于后续重算计数
+        const userComments = await DbAdapter.findAll(Comment, { where: { user_id: uid }, attributes: ['work_id', 'post_id'] });
+        const affectedWorkIds = [...new Set(userComments.filter(c => c.work_id).map(c => c.work_id))];
+        const affectedPostIds = [...new Set(userComments.filter(c => c.post_id).map(c => c.post_id))];
+
+        const userWorks = await DbAdapter.findAll(Work, { where: { user_id: uid }, attributes: ['id'] });
+        affectedWorkIds.push(...userWorks.map(w => DbAdapter.getId(w)));
+
+        const userPosts = await DbAdapter.findAll(Post, { where: { user_id: uid }, attributes: ['id'] });
+        affectedPostIds.push(...userPosts.map(p => DbAdapter.getId(p)));
+
         await DbAdapter.destroy(Notification, { where: { user_id: uid } });
         await DbAdapter.destroy(OperationLog, { where: { user_id: uid } });
         await DbAdapter.destroy(Report, { where: { reporter_id: uid } });
@@ -544,6 +556,26 @@ async function deleteUser(req, res) {
         await DbAdapter.destroy(StudioMember, { where: { user_id: uid } });
         await DbAdapter.destroy(StudioWork, { where: { user_id: uid } });
         await DbAdapter.destroy(Work, { where: { user_id: uid } });
+
+        // 重算受影响的计数
+        const uniqueWorkIds = [...new Set(affectedWorkIds)].filter(Boolean);
+        for (const wid of uniqueWorkIds) {
+            const [praiseCount, collectionCount, commentCount] = await Promise.all([
+                DbAdapter.count(Like, { where: { work_id: wid } }),
+                DbAdapter.count(Favorite, { where: { work_id: wid } }),
+                DbAdapter.count(Comment, { where: { work_id: wid, status: 'active' } })
+            ]);
+            await DbAdapter.update(Work, { praise_times: praiseCount, collection_times: collectionCount, comment_count: commentCount }, { where: { id: wid } });
+        }
+        const uniquePostIds = [...new Set(affectedPostIds)].filter(Boolean);
+        for (const pid of uniquePostIds) {
+            const [likeCount, collectionCount, commentCount] = await Promise.all([
+                DbAdapter.count(Like, { where: { post_id: pid } }),
+                DbAdapter.count(Favorite, { where: { post_id: pid } }),
+                DbAdapter.count(Comment, { where: { post_id: pid, status: 'active' } })
+            ]);
+            await DbAdapter.update(Post, { like_count: likeCount, collection_count: collectionCount, comment_count: commentCount }, { where: { id: pid } });
+        }
         await DbAdapter.destroy(User, { where: { id: uid } });
         logOperation(req, 'delete_user', 'user', userId, { username: user.username });
 
@@ -676,7 +708,15 @@ async function deleteWork(req, res) {
             return errorResponse(res, '作品不存在', 404);
         }
 
-        await DbAdapter.destroy(Work, { where: { id: DbAdapter.getId(work) } });
+        const { Like, Favorite, Comment, Report, StudioWork, Notification } = require('../models');
+        const wid = DbAdapter.getId(work);
+        await DbAdapter.destroy(Notification, { where: { related_id: wid, related_type: 'work' } });
+        await DbAdapter.destroy(StudioWork, { where: { work_id: wid } });
+        await DbAdapter.destroy(Report, { where: { target_id: wid, type: 'work' } });
+        await DbAdapter.destroy(Like, { where: { work_id: wid } });
+        await DbAdapter.destroy(Favorite, { where: { work_id: wid } });
+        await DbAdapter.destroy(Comment, { where: { work_id: wid } });
+        await DbAdapter.destroy(Work, { where: { id: wid } });
         logOperation(req, 'delete_work', 'work', workId, { name: work.name });
 
         return successResponse(res, null, '删除成功');
@@ -1402,6 +1442,32 @@ async function updateCommentStatus(req, res) {
         }
 
         await DbAdapter.update(Comment, { status }, { where: { id: commentId } });
+
+        // 状态变更时维护 comment_count
+        if (status === 'deleted' || status === 'hidden') {
+            if (!comment.parent_id) {
+                if (comment.work_id) {
+                    const work = await DbAdapter.findByPk(Work, comment.work_id);
+                    if (work && (work.comment_count || 0) > 0) await DbAdapter.decrement(work, 'comment_count');
+                }
+                if (comment.post_id) {
+                    const post = await DbAdapter.findByPk(Post, comment.post_id);
+                    if (post && (post.comment_count || 0) > 0) await DbAdapter.decrement(post, 'comment_count');
+                }
+            }
+        } else if (status === 'active' && (comment.status === 'deleted' || comment.status === 'hidden')) {
+            if (!comment.parent_id) {
+                if (comment.work_id) {
+                    const work = await DbAdapter.findByPk(Work, comment.work_id);
+                    if (work) await DbAdapter.increment(work, 'comment_count');
+                }
+                if (comment.post_id) {
+                    const post = await DbAdapter.findByPk(Post, comment.post_id);
+                    if (post) await DbAdapter.increment(post, 'comment_count');
+                }
+            }
+        }
+
         logOperation(req, 'update_comment_status', 'comment', commentId, { status });
 
         return successResponse(res, null, '更新成功');
@@ -1424,7 +1490,20 @@ async function deleteComment(req, res) {
         }
 
         await DbAdapter.update(Comment, { status: 'deleted' }, { where: { id: commentId } });
-        logOperation(req, 'delete_comment', 'comment', commentId, { 
+
+        // 维护 comment_count
+        if (!comment.parent_id) {
+            if (comment.work_id) {
+                const work = await DbAdapter.findByPk(Work, comment.work_id);
+                if (work && (work.comment_count || 0) > 0) await DbAdapter.decrement(work, 'comment_count');
+            }
+            if (comment.post_id) {
+                const post = await DbAdapter.findByPk(Post, comment.post_id);
+                if (post && (post.comment_count || 0) > 0) await DbAdapter.decrement(post, 'comment_count');
+            }
+        }
+
+        logOperation(req, 'delete_comment', 'comment', commentId, {
             content: comment.content.substring(0, 100),
             user_id: comment.user_id 
         });
