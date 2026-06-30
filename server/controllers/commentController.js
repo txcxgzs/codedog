@@ -18,10 +18,11 @@ async function resolvePublishedWorkByLocalId(workId) {
 }
 
 async function resolvePublishedWork(workId) {
-    let work = null;
-    if (Number.isNaN(Number(workId)) || String(workId).length > 10) {
-        work = await DbAdapter.findOne(Work, { where: { codemao_work_id: String(workId) } });
-    } else {
+    if (workId == null || workId === '') return null;
+    // 前端统一使用编程猫作品 ID，因此优先按 codemao_work_id 精确匹配；
+    // 仅当查不到且入参为纯数字时，才回退按本地主键查找（兼容历史调用）。
+    let work = await DbAdapter.findOne(Work, { where: { codemao_work_id: String(workId) } });
+    if (!work && /^\d+$/.test(String(workId))) {
         work = await DbAdapter.findByPk(Work, workId);
     }
     return work && work.status === 'published' ? work : null;
@@ -284,6 +285,7 @@ async function likeComment(req, res) {
         await DbAdapter.increment(comment, 'like_count');
         await comment.reload();
 
+        const likeCount = Math.max(0, comment.like_count || 0);
         return successResponse(res, { like_count: likeCount, liked: true }, '点赞成功');
     } catch (error) {
         console.error('点赞评论错误:', error);
