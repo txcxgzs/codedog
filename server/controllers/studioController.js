@@ -3,7 +3,7 @@ const { Studio, StudioMember, StudioWork, User, Work, Notification, sequelize } 
 const { successResponse, errorResponse, paginateResponse } = require('../middleware/response');
 const { Op } = require('sequelize');
 const { isRoleAtLeast } = require('../config/permissions');
-const { escapeLike } = require('../utils/security');
+const { likeContains } = require('../utils/security');
 
 const VALID_JOIN_TYPES = ['public', 'apply', 'invite'];
 
@@ -102,7 +102,8 @@ async function getStudios(req, res) {
         
         const where = { status: 'active', is_public: true };
         if (keyword) {
-            where.name = { [Op.like]: `%${escapeLike(keyword)}%` };
+            const keywordWhere = likeContains(sequelize, ['name'], keyword);
+            if (keywordWhere) Object.assign(where, keywordWhere);
         }
         
         const { count, rows } = await DbAdapter.findAndCountAll(Studio, {

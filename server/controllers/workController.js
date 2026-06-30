@@ -2,13 +2,13 @@
  * 作品控制器
  */
 
-const { Work, User } = require('../models');
+const { Work, User, sequelize } = require('../models');
 const { successResponse, errorResponse, paginateResponse } = require('../middleware/response');
 const { Op } = require('sequelize');
 const DbAdapter = require('../utils/dbAdapter');
 const codemaoApi = require('../services/codemaoApi');
 const { isRoleAtLeast } = require('../config/permissions');
-const { escapeLike } = require('../utils/security');
+const { likeContains } = require('../utils/security');
 
 /**
  * 从编程猫API获取作品信息
@@ -196,11 +196,8 @@ async function getWorks(req, res) {
         const where = { status: 'published' };
         
         if (keyword) {
-            const safeKeyword = escapeLike(keyword);
-            where[Op.or] = [
-                { name: { [Op.like]: `%${safeKeyword}%` } },
-                { description: { [Op.like]: `%${safeKeyword}%` } }
-            ];
+            const keywordWhere = likeContains(sequelize, ['name', 'description'], keyword);
+            if (keywordWhere) Object.assign(where, keywordWhere);
         }
         
         if (type) {

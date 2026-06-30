@@ -12,7 +12,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { JWT_SECRET, JWT_EXPIRES_IN } = require('../config/auth');
 const DbAdapter = require('../utils/dbAdapter');
-const { escapeLike } = require('../utils/security');
+const { likeContains } = require('../utils/security');
 
 // 爬取日志存储
 const crawlLogs = new Map();
@@ -185,13 +185,8 @@ async function getUsers(req, res) {
         const where = {};
         
         if (keyword) {
-            const safeKeyword = escapeLike(keyword);
-            where[Op.or] = [
-                { username: { [Op.like]: `%${safeKeyword}%` } },
-                { nickname: { [Op.like]: `%${safeKeyword}%` } },
-                { email: { [Op.like]: `%${safeKeyword}%` } },
-                { codemao_user_id: { [Op.like]: `%${safeKeyword}%` } }
-            ];
+            const keywordWhere = likeContains(sequelize, ['username', 'nickname', 'email', 'codemao_user_id'], keyword);
+            if (keywordWhere) Object.assign(where, keywordWhere);
         }
         
         if (role) where.role = role;
@@ -574,12 +569,8 @@ async function getWorks(req, res) {
         const where = {};
         
         if (keyword) {
-            const safeKeyword = escapeLike(keyword);
-            where[Op.or] = [
-                { name: { [Op.like]: `%${safeKeyword}%` } },
-                { codemao_work_id: { [Op.like]: `%${safeKeyword}%` } },
-                { codemao_author_name: { [Op.like]: `%${safeKeyword}%` } }
-            ];
+            const keywordWhere = likeContains(sequelize, ['name', 'codemao_work_id', 'codemao_author_name'], keyword);
+            if (keywordWhere) Object.assign(where, keywordWhere);
         }
         
         if (status) where.status = status;
@@ -1359,7 +1350,8 @@ async function getComments(req, res) {
         const where = {};
         
         if (keyword) {
-            where.content = { [Op.like]: `%${escapeLike(keyword)}%` };
+            const keywordWhere = likeContains(sequelize, ['content'], keyword);
+            if (keywordWhere) Object.assign(where, keywordWhere);
         }
         if (status) where.status = status;
         if (userId) where.user_id = parseInt(userId, 10) || userId;
@@ -2056,7 +2048,10 @@ async function getOperationLogs(req, res) {
         
         const where = {};
         if (userId) where.user_id = userId;
-        if (action) where.action = { [Op.like]: `%${escapeLike(action)}%` };
+        if (action) {
+            const actionWhere = likeContains(sequelize, ['action'], action);
+            if (actionWhere) Object.assign(where, actionWhere);
+        }
         if (startDate && endDate) {
             where.created_at = { [Op.between]: [new Date(startDate), new Date(endDate)] };
         }
@@ -2573,7 +2568,8 @@ async function getStudios(req, res) {
         const where = {};
         
         if (keyword) {
-            where.name = { [Op.like]: `%${escapeLike(keyword)}%` };
+            const keywordWhere = likeContains(sequelize, ['name'], keyword);
+            if (keywordWhere) Object.assign(where, keywordWhere);
         }
         if (status) {
             where.status = status;
@@ -3141,11 +3137,8 @@ async function getPosts(req, res) {
 
         const where = {};
         if (keyword) {
-            const safeKeyword = escapeLike(keyword);
-            where[Op.or] = [
-                { title: { [Op.like]: `%${safeKeyword}%` } },
-                { content: { [Op.like]: `%${safeKeyword}%` } }
-            ];
+            const keywordWhere = likeContains(sequelize, ['title', 'content'], keyword);
+            if (keywordWhere) Object.assign(where, keywordWhere);
         }
         if (category) where.category = category;
         if (status) where.status = status;
