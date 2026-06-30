@@ -2,7 +2,7 @@
  * 后台管理控制器
  */
 
-const { User, Work, Comment, Post, Favorite, Follow, Banner, Report, IpBan, Notification, Announcement, SystemConfig, OperationLog, SensitiveWord, RolePermission, CaptchaStats, Studio, StudioMember, StudioWork, sequelize } = require('../models');
+const { User, Work, Comment, Post, Favorite, Follow, Banner, Report, IpBan, Notification, Announcement, SystemConfig, OperationLog, SensitiveWord, RolePermission, CaptchaStats, Studio, StudioMember, StudioWork, Like, sequelize } = require('../models');
 const { successResponse, errorResponse, paginateResponse } = require('../middleware/response');
 const { getAllRoles, canManageUser, getRole, hasPermission, getAllPermissions, refreshRoleCache, DEFAULT_ROLES } = require('../config/permissions');
 const { logOperation } = require('../middleware/operationLog');
@@ -491,12 +491,16 @@ async function updateUserRole(req, res) {
             newRole: role 
         });
         
-        await DbAdapter.create(Notification, {
-            user_id: targetUser.id,
-            type: 'system',
-            title: '角色变更通知',
-            content: `您的角色已从「${getRoleSync(oldRole).name}」变更为「${getRoleSync(role).name}」`
-        });
+        try {
+            await DbAdapter.create(Notification, {
+                user_id: targetUser.id,
+                type: 'system',
+                title: '角色变更通知',
+                content: `您的角色已从「${getRoleSync(oldRole).name}」变更为「${getRoleSync(role).name}」`
+            });
+        } catch (notifyErr) {
+            console.error('发送角色变更通知失败:', notifyErr.message);
+        }
 
         return successResponse(res, { role }, '更新成功');
     } catch (error) {
@@ -1172,7 +1176,12 @@ async function crawlPostWorks(req, res) {
                 const workDetail = await codemaoApi.getWorkDetail(workId);
                 if (!workDetail || !workDetail.id) continue;
                 
-                const authorId = String(workDetail.user_info?.id);
+                const rawAuthorId = workDetail.user_info?.id;
+                if (!rawAuthorId) {
+                    console.error(`作品 ${workId} 缺少作者信息，跳过`);
+                    continue;
+                }
+                const authorId = String(rawAuthorId);
                 let user = await DbAdapter.findOne(User, { where: { codemao_user_id: authorId } });
                 if (!user) {
                     user = await DbAdapter.findOne(User, { where: { username: `codemao_${authorId}` } });
@@ -1658,25 +1667,33 @@ async function handleReport(req, res) {
         // 发送举报处理结果通知给举报者
         const { Notification } = require('../models');
         const statusText = status === 'resolved' ? '已处理' : (status === 'rejected' ? '已驳回' : '处理中');
-        await DbAdapter.create(Notification, {
-            user_id: report.reporter_id,
-            type: 'system',
-            title: `举报${statusText}`,
-            content: `您举报的${typeNames[report.type]}「${targetName}」${statusText}。${handleNote ? '处理说明：' + handleNote : ''}`,
-            related_id: linkId,
-            related_type: linkType
-        });
-
-        // 如果采取了行动，通知被处理的用户
-        if (takeAction && status === 'resolved' && targetOwnerId) {
+        try {
             await DbAdapter.create(Notification, {
-                user_id: targetOwnerId,
+                user_id: report.reporter_id,
                 type: 'system',
-                title: `您的${typeNames[report.type]}已被处理`,
-                content: `您的${typeNames[report.type]}「${targetName}」因违反社区规范已被处理。${handleNote ? '处理说明：' + handleNote : '如有疑问请联系管理员。'}`,
+                title: `举报${statusText}`,
+                content: `您举报的${typeNames[report.type]}「${targetName}」${statusText}。${handleNote ? '处理说明：' + handleNote : ''}`,
                 related_id: linkId,
                 related_type: linkType
             });
+        } catch (notifyErr) {
+            console.error('发送举报处理通知失败:', notifyErr.message);
+        }
+
+        // 如果采取了行动，通知被处理的用户
+        if (takeAction && status === 'resolved' && targetOwnerId) {
+            try {
+                await DbAdapter.create(Notification, {
+                    user_id: targetOwnerId,
+                    type: 'system',
+                    title: `您的${typeNames[report.type]}已被处理`,
+                    content: `您的${typeNames[report.type]}「${targetName}」因违反社区规范已被处理。${handleNote ? '处理说明：' + handleNote : '如有疑问请联系管理员。'}`,
+                    related_id: linkId,
+                    related_type: linkType
+                });
+            } catch (notifyErr) {
+                console.error('发送被处理用户通知失败:', notifyErr.message);
+            }
         }
 
         return successResponse(res, null, '处理成功');
@@ -2704,6 +2721,16 @@ async function updateStudio(req, res) {
         const { id } = req.params;
         const { name, description, cover, is_public, join_type, status, vice_owner_id } = req.body;
 
+        const VALID_JOIN_TYPES = ['public', 'apply', 'invite'];
+        const VALID_STUDIO_STATUSES = ['active', 'banned', 'pending'];
+
+        if (join_type !== undefined && !VALID_JOIN_TYPES.includes(join_type)) {
+            return errorResponse(res, '无效的加入方式', 400);
+        }
+        if (status !== undefined && !VALID_STUDIO_STATUSES.includes(status)) {
+            return errorResponse(res, '无效的工作室状态', 400);
+        }
+
         const studio = await DbAdapter.findByPk(Studio, id);
         if (!studio) {
             return errorResponse(res, '工作室不存在', 404);
@@ -2739,9 +2766,10 @@ async function setWorkScore(req, res) {
         if (!studioWork) {
             return errorResponse(res, '作品记录不存在', 404);
         }
-        
+
+        const parsedScore = Math.max(0, parseInt(score, 10) || 0);
         const oldScore = studioWork.score || 0;
-        await DbAdapter.update(StudioWork, { score }, { where: { id } });
+        await DbAdapter.update(StudioWork, { score: parsedScore }, { where: { id } });
 
         const studio = await DbAdapter.findByPk(Studio, studioWork.studio_id);
         let totalScore = 0;
@@ -2750,9 +2778,9 @@ async function setWorkScore(req, res) {
             await DbAdapter.update(Studio, { total_score: totalScore }, { where: { id: DbAdapter.getId(studio) } });
         }
 
-        logOperation(req, 'set_work_score', 'studio_work', id, { oldScore, newScore: score });
+        logOperation(req, 'set_work_score', 'studio_work', id, { oldScore, newScore: parsedScore });
 
-        return successResponse(res, { score, totalScore }, '积分已更新');
+        return successResponse(res, { score: parsedScore, totalScore }, '积分已更新');
     } catch (error) {
         console.error('设置作品积分错误:', error);
         return errorResponse(res, '设置失败', 500);
@@ -2897,9 +2925,10 @@ async function removeStudioMember(req, res) {
         }
         
         const studio = await DbAdapter.findByPk(Studio, studioId);
+        const wasActive = member.status === 'active';
         
         await DbAdapter.destroy(StudioMember, { where: { id: DbAdapter.getId(member) } });
-        if (studio) {
+        if (studio && wasActive && (studio.member_count || 0) > 0) {
             await DbAdapter.decrement(studio, 'member_count');
         }
         
@@ -2921,9 +2950,19 @@ async function removeStudioWork(req, res) {
         if (!studioWork) {
             return errorResponse(res, '作品不存在于工作室', 404);
         }
-        
+
+        const wasApproved = studioWork.status === 'approved';
         await DbAdapter.destroy(StudioWork, { where: { id: DbAdapter.getId(studioWork) } });
-        
+
+        if (wasApproved) {
+            const studio = await DbAdapter.findByPk(Studio, studioId);
+            if (studio) {
+                const workCount = await DbAdapter.count(StudioWork, { where: { studio_id: studioId, status: 'approved' } });
+                const totalScore = await DbAdapter.sum(StudioWork, 'score', { where: { studio_id: studioId, status: 'approved' } }) || 0;
+                await DbAdapter.update(Studio, { work_count: workCount, total_score: totalScore }, { where: { id: DbAdapter.getId(studio) } });
+            }
+        }
+
         logOperation(req, 'remove_studio_work', 'studio_work', DbAdapter.getId(studioWork));
         return successResponse(res, null, '作品已移除');
     } catch (error) {
@@ -3252,7 +3291,13 @@ async function deletePost(req, res) {
         if (!post) {
             return errorResponse(res, '帖子不存在', 404);
         }
-        await DbAdapter.destroy(Post, { where: { id: postId } });
+        const pid = DbAdapter.getId(post);
+        await DbAdapter.destroy(Notification, { where: { related_id: pid, related_type: 'post' } });
+        await DbAdapter.destroy(Report, { where: { target_id: pid, type: 'post' } });
+        await DbAdapter.destroy(Like, { where: { post_id: pid } });
+        await DbAdapter.destroy(Favorite, { where: { post_id: pid } });
+        await DbAdapter.destroy(Comment, { where: { post_id: pid } });
+        await DbAdapter.destroy(Post, { where: { id: pid } });
         logOperation(req, 'delete_post', 'post', postId, { title: post.title });
         return successResponse(res, null, '删除成功');
     } catch (error) {
@@ -3274,9 +3319,23 @@ async function updatePost(req, res) {
             return errorResponse(res, '帖子不存在', 404);
         }
 
+        const VALID_POST_STATUSES = ['active', 'published', 'draft', 'hidden', 'deleted'];
+        if (status !== undefined && !VALID_POST_STATUSES.includes(status)) {
+            return errorResponse(res, '无效的帖子状态', 400);
+        }
+
         const updateData = {};
-        if (title !== undefined) updateData.title = title;
-        if (content !== undefined) updateData.content = content;
+        if (title !== undefined) {
+            const t = String(title).trim();
+            if (t.length === 0) return errorResponse(res, '标题不能为空', 400);
+            if (t.length > 200) return errorResponse(res, '标题不能超过200字', 400);
+            updateData.title = t;
+        }
+        if (content !== undefined) {
+            const c = String(content);
+            if (c.length > 10000) return errorResponse(res, '内容不能超过10000字', 400);
+            updateData.content = c;
+        }
         if (category !== undefined) updateData.category = category;
         if (status !== undefined) updateData.status = status;
         if (is_top !== undefined) updateData.is_top = is_top;

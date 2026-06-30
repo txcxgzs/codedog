@@ -79,14 +79,16 @@ async function createStudio(req, res) {
             is_public: is_public !== false,
             join_type: join_type || 'apply'
         });
-        
-        await DbAdapter.create(StudioMember, {
-            studio_id: studio.id,
-            user_id: req.user.id,
-            role: 'owner',
-            status: 'active'
+
+        await sequelize.transaction(async (t) => {
+            await DbAdapter.create(StudioMember, {
+                studio_id: studio.id,
+                user_id: req.user.id,
+                role: 'owner',
+                status: 'active'
+            });
         });
-        
+
         return successResponse(res, studio, '工作室创建成功');
     } catch (error) {
         console.error('创建工作室错误:', error);
@@ -300,8 +302,7 @@ async function leaveStudio(req, res) {
         await DbAdapter.destroy(StudioMember, { where: { id: DbAdapter.getId(member) } });
 
         const studio = await DbAdapter.findByPk(Studio, id);
-        if (studio && member.status === 'active') {
-            // 原子 -1 避免 read-modify-write 竞态
+        if (studio && member.status === 'active' && (studio.member_count || 0) > 0) {
             await DbAdapter.decrement(studio, 'member_count');
         }
 
@@ -406,7 +407,12 @@ async function reviewMember(req, res) {
         if (!member) {
             return errorResponse(res, '申请不存在', 404);
         }
-        
+
+        const VALID_ACTIONS = ['approve', 'reject'];
+        if (!VALID_ACTIONS.includes(action)) {
+            return errorResponse(res, '无效的操作', 400);
+        }
+
         if (action === 'approve') {
             await DbAdapter.update(StudioMember, { status: 'active' }, { where: { id: DbAdapter.getId(member) } });
             const studio = await DbAdapter.findByPk(Studio, id);
@@ -483,7 +489,13 @@ async function submitWork(req, res) {
             return errorResponse(res, '您不是该工作室成员', 403);
         }
         
-        const work = await DbAdapter.findByPk(Work, workId);
+        let work = null;
+        if (/^\d+$/.test(String(workId))) {
+            work = await DbAdapter.findOne(Work, { where: { codemao_work_id: String(workId) } });
+        }
+        if (!work) {
+            work = await DbAdapter.findByPk(Work, workId);
+        }
         if (!work) {
             return errorResponse(res, '作品不存在', 404);
         }
@@ -591,7 +603,12 @@ async function reviewWork(req, res) {
         if (!studioWork) {
             return errorResponse(res, '作品不存在', 404);
         }
-        
+
+        const VALID_ACTIONS = ['approve', 'reject'];
+        if (!VALID_ACTIONS.includes(action)) {
+            return errorResponse(res, '无效的操作', 400);
+        }
+
         if (action === 'approve') {
             await DbAdapter.update(StudioWork, { 
                 status: 'approved', 
@@ -652,7 +669,7 @@ async function removeWork(req, res) {
         
         if (wasApproved) {
             const studio = await DbAdapter.findByPk(Studio, id);
-            if (studio) {
+            if (studio && (studio.work_count || 0) > 0) {
                 await DbAdapter.decrement(studio, 'work_count');
             }
         }
@@ -686,10 +703,24 @@ async function toggleWorkStatus(req, res) {
         }
         
         if (action === 'down') {
+            const wasApproved = studioWork.status === 'approved';
             await DbAdapter.update(StudioWork, { status: 'down' }, { where: { id: workId } });
+            if (wasApproved) {
+                const studio = await DbAdapter.findByPk(Studio, id);
+                if (studio && (studio.work_count || 0) > 0) {
+                    await DbAdapter.decrement(studio, 'work_count');
+                }
+            }
             return successResponse(res, null, '作品已下架');
         } else if (action === 'up') {
+            const wasDown = studioWork.status !== 'approved';
             await DbAdapter.update(StudioWork, { status: 'approved' }, { where: { id: workId } });
+            if (wasDown) {
+                const studio = await DbAdapter.findByPk(Studio, id);
+                if (studio) {
+                    await DbAdapter.increment(studio, 'work_count');
+                }
+            }
             return successResponse(res, null, '作品已上架');
         }
         
@@ -829,7 +860,7 @@ async function kickMember(req, res) {
         
         await DbAdapter.destroy(StudioMember, { where: { id: DbAdapter.getId(member) } });
         const studio = await DbAdapter.findByPk(Studio, id);
-        if (studio) {
+        if (studio && (studio.member_count || 0) > 0) {
             await DbAdapter.decrement(studio, 'member_count');
         }
         
@@ -854,7 +885,10 @@ async function setViceOwner(req, res) {
         }
         
         const studio = await DbAdapter.findByPk(Studio, id);
-        
+        if (!studio) {
+            return errorResponse(res, '工作室不存在', 404);
+        }
+
         if (user_id) {
             const viceMember = await DbAdapter.findOne(StudioMember, {
                 where: { studio_id: id, user_id: user_id, status: 'active' }
@@ -868,8 +902,9 @@ async function setViceOwner(req, res) {
         } else {
             await DbAdapter.update(Studio, { vice_owner_id: null }, { where: { id: DbAdapter.getId(studio) } });
         }
-        
-        return successResponse(res, studio, '副室长已设置');
+
+        const updatedStudio = await DbAdapter.findByPk(Studio, DbAdapter.getId(studio));
+        return successResponse(res, updatedStudio, '副室长已设置');
     } catch (error) {
         console.error('设置副室长错误:', error);
         return errorResponse(res, '设置失败', 500);

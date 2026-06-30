@@ -353,38 +353,6 @@ const followAuthor = async () => {
   }
 }
 
-const submitComment = async () => {
-  if (!commentContent.value.trim()) {
-    ElMessage.warning('请输入评论内容')
-    return
-  }
-  commentLoading.value = true
-  try {
-    let geetestData = {}
-    if (geetestConfig.value?.enabled && geetestConfig.value?.scenes?.comment) {
-      geetestData = await geetestDialogRef.value.show('comment')
-      if (!geetestData) { commentLoading.value = false; return }
-    }
-    const res = await commentApi.createComment({
-      content: commentContent.value,
-      post_id: post.value.id,
-      ...geetestData
-    })
-    if (res.code === 200) {
-      comments.value.unshift(res.data)
-      post.value.comment_count++
-      commentContent.value = ''
-      replyToCommentId.value = null
-      replyToUserId.value = null
-      ElMessage.success('评论成功')
-    }
-  } catch (e) {
-    ElMessage.error('评论失败')
-  } finally {
-    commentLoading.value = false
-  }
-}
-
 const likingComments = ref(new Set())
 
 const likeComment = async (comment) => {
@@ -444,15 +412,77 @@ const submitComment = async () => {
       reply_to_user_id: replyToUserId.value || undefined,
       ...geetestData
     })
-      if (res.code === 200) {
-        ElMessage.success('举报成功，我们会尽快处理')
+    if (res.code === 200) {
+      if (replyToCommentId.value) {
+        const parent = comments.value.find(c => c.id === replyToCommentId.value)
+        if (parent) {
+          if (!parent.replies) parent.replies = []
+          parent.replies.push(res.data)
+        } else {
+          comments.value.unshift(res.data)
+        }
       } else {
-        ElMessage.error(res.msg || '举报失败')
+        comments.value.unshift(res.data)
       }
-    } catch (e) {
-      ElMessage.error('举报失败')
+      post.value.comment_count++
+      commentContent.value = ''
+      replyToCommentId.value = null
+      replyToUserId.value = null
+      ElMessage.success('评论成功')
     }
-  }).catch(() => {})
+  } catch (e) {
+    ElMessage.error('评论失败')
+  } finally {
+    commentLoading.value = false
+  }
+}
+
+const deleteComment = async (comment) => {
+  try {
+    await ElMessageBox.confirm('确定要删除这条评论吗？', '提示', { type: 'warning' })
+    const res = await commentApi.deleteComment(comment.id)
+    if (res.code === 200) {
+      comments.value = comments.value.filter(c => c.id !== comment.id)
+      post.value.comment_count = Math.max(0, (post.value.comment_count || 0) - 1)
+      ElMessage.success('评论已删除')
+    }
+  } catch (e) {
+    if (e !== 'cancel') ElMessage.error('删除失败')
+  }
+}
+
+const reportComment = async (comment) => {
+  if (!userStore.isLoggedIn) {
+    ElMessage.warning('请先登录')
+    return
+  }
+  let geetestData = {}
+  if (geetestConfig.value?.enabled && geetestConfig.value?.scenes?.report) {
+    geetestData = await geetestDialogRef.value.show('report')
+    if (!geetestData) return
+  }
+  try {
+    const { value: reason } = await ElMessageBox.prompt('举报原因', '举报评论', {
+      inputPlaceholder: '请输入举报原因',
+      inputValidator: v => v && v.trim() ? true : '请输入原因',
+      confirmButtonText: '提交',
+      cancelButtonText: '取消',
+      type: 'warning'
+    })
+    const res = await reportApi.create({
+      type: 'comment',
+      target_id: comment.id,
+      reason,
+      ...geetestData
+    })
+    if (res.code === 200) {
+      ElMessage.success('举报成功，我们会尽快处理')
+    } else {
+      ElMessage.error(res.msg || '举报失败')
+    }
+  } catch (e) {
+    if (e !== 'cancel') ElMessage.error('举报失败')
+  }
 }
 
 const scrollToComment = () => {

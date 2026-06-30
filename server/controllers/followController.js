@@ -95,8 +95,13 @@ async function unfollowUser(req, res) {
         
         // 使用原子操作更新计数，避免竞态条件
         const currentUser = await DbAdapter.findByPk(User, DbAdapter.getId(req.user));
-        await DbAdapter.decrement(currentUser, 'following_count');
-        await DbAdapter.decrement(targetUser, 'follower_count');
+        if (currentUser && (currentUser.following_count || 0) > 0) {
+            await DbAdapter.decrement(currentUser, 'following_count');
+        }
+        const freshTarget = await DbAdapter.findByPk(User, DbAdapter.getId(targetUser));
+        if (freshTarget && (freshTarget.follower_count || 0) > 0) {
+            await DbAdapter.decrement(freshTarget, 'follower_count');
+        }
         
         return successResponse(res, null, '已取消关注');
     } catch (error) {
