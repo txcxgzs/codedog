@@ -73,3 +73,10 @@ temp/
 # 源站API文档（给AI参考用）
 【给ai的】源站编程猫社区的api/
 源站编程猫社区的api/
+
+# AI agent 配置和日志
+AGENTS.md
+.mimocode/
+docs/BUGFIX*.md
+docs/superpowers/
+*Bug*审查报告*.md
