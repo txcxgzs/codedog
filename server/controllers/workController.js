@@ -541,12 +541,21 @@ async function getMyWorks(req, res) {
  */
 async function getUserWorks(req, res) {
     try {
-        const userId = req.params.userId || DbAdapter.getId(req.user);
+        const codemaoUserId = req.params.userId;
         const page = parseInt(req.query.page) || 1;
         const pageSize = parseInt(req.query.pageSize) || 10;
+
+        const user = await DbAdapter.findOne(User, {
+            where: { codemao_user_id: String(codemaoUserId) },
+            attributes: ['id']
+        });
+
+        if (!user) {
+            return paginateResponse(res, [], 0, page, pageSize);
+        }
         
         const { count, rows } = await DbAdapter.findAndCountAll(Work, {
-            where: { user_id: userId, status: 'published' },
+            where: { user_id: DbAdapter.getId(user), status: 'published' },
             include: [{
                 model: User,
                 as: 'author',
@@ -594,10 +603,17 @@ async function likeWork(req, res) {
             return successResponse(res, { praise_times: praiseTimes, liked: false }, '已取消点赞');
         }
 
-        await DbAdapter.create(Like, {
-            user_id: DbAdapter.getId(req.user),
-            work_id: DbAdapter.getId(work)
-        });
+        try {
+            await DbAdapter.create(Like, {
+                user_id: DbAdapter.getId(req.user),
+                work_id: DbAdapter.getId(work)
+            });
+        } catch (createError) {
+            if (createError.name === 'SequelizeUniqueConstraintError') {
+                return errorResponse(res, '已经点赞过了', 400);
+            }
+            throw createError;
+        }
         await DbAdapter.increment(work, 'praise_times');
         await work.reload();
 

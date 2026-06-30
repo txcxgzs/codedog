@@ -125,10 +125,17 @@ async function getRole(roleName, RolePermission = null) {
         try {
             const dbRole = await RolePermission.findOne({ where: { role: roleName } });
             if (dbRole) {
+                let permissions;
+                try {
+                    permissions = JSON.parse(dbRole.permissions || '[]');
+                } catch (parseError) {
+                    console.error('解析角色权限JSON失败:', parseError);
+                    permissions = [];
+                }
                 return {
                     name: dbRole.name,
                     level: dbRole.level,
-                    permissions: JSON.parse(dbRole.permissions || '[]')
+                    permissions
                 };
             }
         } catch (e) {
@@ -164,10 +171,17 @@ async function refreshRoleCache(RolePermission) {
         // 用数据库中的角色覆盖（仅覆盖 name 与 permissions，level 字段受保护）
         dbRoles.forEach(role => {
             const fallback = DEFAULT_ROLES[role.role] || DEFAULT_ROLES.user;
+            let permissions;
+            try {
+                permissions = JSON.parse(role.permissions || '[]');
+            } catch (parseError) {
+                console.error('解析角色权限JSON失败:', parseError);
+                permissions = [];
+            }
             cachedRoles[role.role] = {
                 name: role.name || fallback.name,
                 level: fallback.level, // 受保护：不被 DB 覆盖
-                permissions: JSON.parse(role.permissions || '[]')
+                permissions
             };
         });
 

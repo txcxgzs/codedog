@@ -290,11 +290,11 @@ const followAuthor = async () => {
   }
   try {
     if (following.value) {
-      await followApi.unfollow(post.value.author.id)
+      await followApi.unfollow(post.value.author.codemao_user_id)
       following.value = false
       ElMessage.success('已取消关注')
     } else {
-      await followApi.follow(post.value.author.id)
+      await followApi.follow(post.value.author.codemao_user_id)
       following.value = true
       ElMessage.success('关注成功')
     }

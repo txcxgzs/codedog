@@ -40,6 +40,10 @@ async function createComment(req, res) {
             return errorResponse(res, '请输入评论内容', 400);
         }
 
+        if (String(content).length > 2000) {
+            return errorResponse(res, '评论内容不能超过2000字', 400);
+        }
+
         const hasWorkTarget = work_id !== undefined && work_id !== null && work_id !== '';
         const hasPostTarget = post_id !== undefined && post_id !== null && post_id !== '';
         if (hasWorkTarget === hasPostTarget) {
@@ -49,7 +53,7 @@ async function createComment(req, res) {
         const work = hasWorkTarget ? await resolvePublishedWork(work_id) : null;
         const post = hasPostTarget ? await resolvePublishedPost(post_id) : null;
         if ((hasWorkTarget && !work) || (hasPostTarget && !post)) {
-            return errorResponse(res, '评论目标不存在', 404);
+            return errorResponse(res, 'Comment target not found', 404);
         }
 
         const localWorkId = work ? DbAdapter.getId(work) : null;
@@ -64,7 +68,7 @@ async function createComment(req, res) {
                 && sameId(parent.post_id || '', localPostId || '');
 
             if (!parentMatchesTarget) {
-                return errorResponse(res, '父评论不存在', 404);
+                return errorResponse(res, 'Parent comment not found', 404);
             }
             replyToUserId = replyToUserId || parent.user_id;
         }
@@ -260,10 +264,17 @@ async function likeComment(req, res) {
             return successResponse(res, { like_count: newCount, liked: false }, '已取消点赞');
         }
 
-        await DbAdapter.create(Like, {
-            user_id: userId,
-            comment_id: DbAdapter.getId(comment)
-        });
+        try {
+            await DbAdapter.create(Like, {
+                user_id: userId,
+                comment_id: DbAdapter.getId(comment)
+            });
+        } catch (createError) {
+            if (createError.name === 'SequelizeUniqueConstraintError') {
+                return errorResponse(res, '已经点赞过了', 400);
+            }
+            throw createError;
+        }
 
         const likeCount = (comment.like_count || 0) + 1;
         await DbAdapter.update(Comment, { like_count: likeCount }, { where: { id: DbAdapter.getId(comment) } });

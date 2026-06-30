@@ -16,7 +16,7 @@ let hcaptchaChecking = false
 
 request.interceptors.request.use(
   config => {
-    const token = localStorage.getItem('token')
+    const token = sessionStorage.getItem('token')
     if (token) {
       config.headers.Authorization = `Bearer ${token}`
     }
@@ -52,7 +52,7 @@ request.interceptors.response.use(
       
       if (status === 401 && !url.includes('/login') && !url.includes('/register')) {
         ElMessage.error('登录已过期，请重新登录')
-        localStorage.removeItem('token')
+        sessionStorage.removeItem('token')
         // 不使用 window.location.href，由路由守卫处理跳转
       } else if (status === 403) {
         if (!url.includes('/hcaptcha/')) {

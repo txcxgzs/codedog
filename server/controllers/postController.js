@@ -45,6 +45,14 @@ async function createPost(req, res) {
         if (!title || !content) {
             return errorResponse(res, '请填写标题和内容', 400);
         }
+
+        if (String(title).length > 200) {
+            return errorResponse(res, '标题不能超过200字', 400);
+        }
+
+        if (String(content).length > 50000) {
+            return errorResponse(res, '内容不能超过50000字', 400);
+        }
         
         const post = await DbAdapter.create(Post, {
             title,
@@ -143,7 +151,7 @@ async function getPostDetail(req, res) {
             include: [{
                 model: User,
                 as: 'author',
-                attributes: ['id', 'username', 'nickname', 'avatar', 'bio']
+                attributes: ['id', 'codemao_user_id', 'username', 'nickname', 'avatar', 'bio']
             }]
         });
         
@@ -281,10 +289,17 @@ async function likePost(req, res) {
             return successResponse(res, { like_count: newCount, liked: false }, '已取消点赞');
         }
 
-        await DbAdapter.create(Like, {
-            user_id: userId,
-            post_id: DbAdapter.getId(post)
-        });
+        try {
+            await DbAdapter.create(Like, {
+                user_id: userId,
+                post_id: DbAdapter.getId(post)
+            });
+        } catch (createError) {
+            if (createError.name === 'SequelizeUniqueConstraintError') {
+                return errorResponse(res, '已经点赞过了', 400);
+            }
+            throw createError;
+        }
 
         // 原子 +1 避免 read-modify-write 竞态
         await DbAdapter.increment(post, 'like_count');
@@ -342,18 +357,22 @@ async function favoritePost(req, res) {
             return errorResponse(res, '已收藏该帖子', 400);
         }
         
-        await DbAdapter.create(Favorite, {
-            user_id: userId,
-            post_id: DbAdapter.getId(post)
-        });
+        try {
+            await DbAdapter.create(Favorite, {
+                user_id: userId,
+                post_id: DbAdapter.getId(post)
+            });
+        } catch (createError) {
+            if (createError.name === 'SequelizeUniqueConstraintError') {
+                return errorResponse(res, '已收藏该帖子', 400);
+            }
+            throw createError;
+        }
         
-        const newCount = (post.collection_count || 0) + 1;
-        await DbAdapter.update(Post, 
-            { collection_count: newCount },
-            { where: { id: DbAdapter.getId(post) } }
-        );
+        await DbAdapter.increment(post, 'collection_count');
+        await post.reload();
         
-        return successResponse(res, { collection_count: newCount, favorited: true }, '收藏成功');
+        return successResponse(res, { collection_count: post.collection_count || 0, favorited: true }, '收藏成功');
     } catch (error) {
         console.error('收藏错误:', error);
         return errorResponse(res, '收藏失败', 500);
@@ -388,11 +407,9 @@ async function unfavoritePost(req, res) {
         
         await DbAdapter.destroy(Favorite, { where: { id: DbAdapter.getId(existing) } });
         
-        const newCount = Math.max(0, (post.collection_count || 0) - 1);
-        await DbAdapter.update(Post, 
-            { collection_count: newCount },
-            { where: { id: DbAdapter.getId(post) } }
-        );
+        await DbAdapter.decrement(post, 'collection_count');
+        await post.reload();
+        const newCount = Math.max(0, post.collection_count || 0);
         
         return successResponse(res, { collection_count: newCount, favorited: false }, '已取消收藏');
     } catch (error) {

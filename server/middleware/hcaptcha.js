@@ -7,6 +7,27 @@ const { SystemConfig } = require('../models');
 const { errorResponse } = require('../middleware/response');
 const axios = require('axios');
 
+let hcaptchaEnabledCache = null;
+let hcaptchaCacheExpiry = 0;
+const HCAPTCHA_CACHE_TTL = 60 * 1000;
+
+async function isHcaptchaEnabled() {
+    const now = Date.now();
+    if (hcaptchaEnabledCache !== null && now < hcaptchaCacheExpiry) {
+        return hcaptchaEnabledCache;
+    }
+
+    try {
+        const enabledConfig = await DbAdapter.findOne(SystemConfig, { where: { config_key: 'hcaptcha_enabled' } });
+        hcaptchaEnabledCache = enabledConfig && enabledConfig.config_value === 'true';
+        hcaptchaCacheExpiry = now + HCAPTCHA_CACHE_TTL;
+        return hcaptchaEnabledCache;
+    } catch (error) {
+        console.error('获取hCaptcha配置失败:', error);
+        return hcaptchaEnabledCache ?? false;
+    }
+}
+
 async function hcaptchaGuard(req, res, next) {
     if (!req.path.startsWith('/api/')) {
         return next();
@@ -27,8 +48,8 @@ async function hcaptchaGuard(req, res, next) {
     }
 
     try {
-        const enabledConfig = await DbAdapter.findOne(SystemConfig, { where: { config_key: 'hcaptcha_enabled' } });
-        if (!enabledConfig || enabledConfig.config_value !== 'true') {
+        const enabled = await isHcaptchaEnabled();
+        if (!enabled) {
             return next();
         }
 
@@ -62,4 +83,9 @@ async function verifyHcaptcha(token, secret) {
     }
 }
 
-module.exports = { hcaptchaGuard, verifyHcaptcha };
+function invalidateHcaptchaCache() {
+    hcaptchaEnabledCache = null;
+    hcaptchaCacheExpiry = 0;
+}
+
+module.exports = { hcaptchaGuard, verifyHcaptcha, invalidateHcaptchaCache };

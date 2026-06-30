@@ -30,7 +30,15 @@ function constantTimeEquals(a, b) {
     if (!a || !b) return false;
     const left = Buffer.from(String(a));
     const right = Buffer.from(String(b));
-    return left.length === right.length && crypto.timingSafeEqual(left, right);
+    // 使用长度较大的 buffer 进行比较，避免泄露长度信息
+    const maxLength = Math.max(left.length, right.length);
+    const leftPadded = Buffer.alloc(maxLength, 0);
+    const rightPadded = Buffer.alloc(maxLength, 0);
+    left.copy(leftPadded);
+    right.copy(rightPadded);
+    const isEqual = crypto.timingSafeEqual(leftPadded, rightPadded);
+    // 同时检查长度是否相等
+    return isEqual && left.length === right.length;
 }
 
 function shouldPromoteInitialAdmin(req, codemaoUserId, userCount) {
@@ -174,7 +182,7 @@ async function codemaoLogin(req, res, identity, password) {
         const token = jwt.sign(
             { id: DbAdapter.getId(user), username: user.username, role: user.role },
             JWT_SECRET,
-            { expiresIn: JWT_EXPIRES_IN }
+            { expiresIn: JWT_EXPIRES_IN, issuer: 'codedog-community', audience: 'codedog-frontend' }
         );
         
         // 构建返回消息
@@ -327,6 +335,19 @@ async function updateProfile(req, res) {
         if (!user) {
             cleanupUploadedFile(req.file);
             return errorResponse(res, '用户不存在', 404);
+        }
+
+        if (nickname && String(nickname).length > 50) {
+            cleanupUploadedFile(req.file);
+            return errorResponse(res, '昵称不能超过50字', 400);
+        }
+        if (bio && String(bio).length > 500) {
+            cleanupUploadedFile(req.file);
+            return errorResponse(res, '简介不能超过500字', 400);
+        }
+        if (doing && String(doing).length > 200) {
+            cleanupUploadedFile(req.file);
+            return errorResponse(res, '正在做不能超过200字', 400);
         }
         
         let avatar = user.avatar;

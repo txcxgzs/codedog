@@ -186,7 +186,7 @@ async function getUsers(req, res) {
 
         const { count, rows } = await DbAdapter.findAndCountAll(User, {
             where,
-            attributes: { exclude: ['password'] },
+            attributes: { exclude: ['password', 'codemao_token'] },
             order: [['created_at', 'DESC']],
             limit: pageSize,
             offset: (page - 1) * pageSize
@@ -206,7 +206,7 @@ async function getUserDetail(req, res) {
         const { userId } = req.params;
         
         const user = await DbAdapter.findByPk(User, userId, {
-            attributes: { exclude: ['password'] }
+            attributes: { exclude: ['password', 'codemao_token'] }
         });
         
         if (!user) {
@@ -383,7 +383,7 @@ async function impersonateUser(req, res) {
         const token = jwt.sign(
             { id: DbAdapter.getId(user), username: user.username, role: user.role },
             JWT_SECRET,
-            { expiresIn: JWT_EXPIRES_IN }
+            { expiresIn: JWT_EXPIRES_IN, issuer: 'codedog-community', audience: 'codedog-frontend' }
         );
 
         logOperation(req, 'impersonate_user', 'user', userId);
@@ -1828,8 +1828,15 @@ async function deleteAnnouncement(req, res) {
 async function getSystemConfigs(req, res) {
     try {
         const configs = await DbAdapter.findAll(SystemConfig, {});
+        const sensitiveKeys = ['ai_api_key', 'hcaptcha_secret_key', 'geetest_key', 'SESSION_SECRET', 'JWT_SECRET', 'DATABASE_PASSWORD'];
         const result = {};
-        configs.forEach(c => { result[c.config_key] = c.config_value });
+        configs.forEach(c => {
+            if (sensitiveKeys.includes(c.config_key)) {
+                result[c.config_key] = c.config_value ? '******' : '';
+            } else {
+                result[c.config_key] = c.config_value;
+            }
+        });
         return successResponse(res, result);
     } catch (error) {
         console.error('获取系统设置错误:', error);
@@ -1861,12 +1868,22 @@ async function batchUpdateConfigs(req, res) {
     try {
         const { configs } = req.body;
         
-        const hasDbConfig = Object.keys(configs).some(key => 
+        const maskedValues = ['******', '***'];
+        const sensitiveKeys = ['ai_api_key', 'hcaptcha_secret_key', 'geetest_key', 'mysql_password'];
+        const filteredConfigs = {};
+        for (const [key, value] of Object.entries(configs)) {
+            if (sensitiveKeys.includes(key) && maskedValues.includes(String(value))) {
+                continue;
+            }
+            filteredConfigs[key] = value;
+        }
+
+        const hasDbConfig = Object.keys(filteredConfigs).some(key => 
             key.startsWith('db_') || key.startsWith('mysql_')
         );
         
         if (hasDbConfig) {
-            for (const [key, value] of Object.entries(configs)) {
+            for (const [key, value] of Object.entries(filteredConfigs)) {
                 if (/[\r\n\0]/.test(String(value ?? ''))) {
                     return errorResponse(res, `${key} 包含非法换行字符`, 400);
                 }
@@ -1881,29 +1898,29 @@ async function batchUpdateConfigs(req, res) {
                 envContent = fs.readFileSync(envPath, 'utf8');
             }
             
-            if (configs.db_type) {
-                envContent = updateEnvVariable(envContent, 'DB_TYPE', configs.db_type);
+            if (filteredConfigs.db_type) {
+                envContent = updateEnvVariable(envContent, 'DB_TYPE', filteredConfigs.db_type);
             }
-            if (configs.mysql_host) {
-                envContent = updateEnvVariable(envContent, 'DB_HOST', configs.mysql_host);
+            if (filteredConfigs.mysql_host) {
+                envContent = updateEnvVariable(envContent, 'DB_HOST', filteredConfigs.mysql_host);
             }
-            if (configs.mysql_port) {
-                envContent = updateEnvVariable(envContent, 'DB_PORT', configs.mysql_port);
+            if (filteredConfigs.mysql_port) {
+                envContent = updateEnvVariable(envContent, 'DB_PORT', filteredConfigs.mysql_port);
             }
-            if (configs.mysql_database) {
-                envContent = updateEnvVariable(envContent, 'DB_NAME', configs.mysql_database);
+            if (filteredConfigs.mysql_database) {
+                envContent = updateEnvVariable(envContent, 'DB_NAME', filteredConfigs.mysql_database);
             }
-            if (configs.mysql_username) {
-                envContent = updateEnvVariable(envContent, 'DB_USER', configs.mysql_username);
+            if (filteredConfigs.mysql_username) {
+                envContent = updateEnvVariable(envContent, 'DB_USER', filteredConfigs.mysql_username);
             }
-            if (configs.mysql_password) {
-                envContent = updateEnvVariable(envContent, 'DB_PASSWORD', configs.mysql_password);
+            if (filteredConfigs.mysql_password) {
+                envContent = updateEnvVariable(envContent, 'DB_PASSWORD', filteredConfigs.mysql_password);
             }
             
             fs.writeFileSync(envPath, envContent);
         }
         
-        for (const [key, value] of Object.entries(configs)) {
+        for (const [key, value] of Object.entries(filteredConfigs)) {
             const existing = await DbAdapter.findOne(SystemConfig, { where: { config_key: key } });
             if (existing) {
                 await DbAdapter.update(SystemConfig, { config_value: value }, { where: { config_key: key } });
@@ -1912,7 +1929,7 @@ async function batchUpdateConfigs(req, res) {
             }
         }
         
-        logOperation(req, 'batch_update_config', 'system_config', null, redactConfigDetails(configs));
+        logOperation(req, 'batch_update_config', 'system_config', null, redactConfigDetails(filteredConfigs));
         
         if (hasDbConfig) {
             return successResponse(res, null, '数据库配置更新成功，请重启服务器以应用新配置');
@@ -2352,13 +2369,21 @@ async function updateRolePermissions(req, res) {
         
         // 重新查询获取最新数据
         const updatedRolePerm = await DbAdapter.findOne(RolePermission, { where: { role } });
-        
+
+        let parsedPermissions;
+        try {
+            parsedPermissions = JSON.parse(updatedRolePerm.permissions);
+        } catch (parseError) {
+            console.error('解析角色权限JSON失败:', parseError);
+            parsedPermissions = [];
+        }
+
         logOperation(req, 'update_role_permissions', 'role', null, { role, name, level, permissions });
         return successResponse(res, {
             role,
             name: updatedRolePerm.name,
             level: updatedRolePerm.level,
-            permissions: JSON.parse(updatedRolePerm.permissions)
+            permissions: parsedPermissions
         }, '权限更新成功');
     } catch (error) {
         console.error('更新角色权限错误:', error);

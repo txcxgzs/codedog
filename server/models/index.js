@@ -83,7 +83,22 @@ const Post = sequelize.define('Post', {
     category: { type: DataTypes.STRING(50), defaultValue: 'discussion' },
     cover: { type: DataTypes.STRING(500) },
     status: { type: DataTypes.ENUM('active', 'published', 'draft', 'hidden', 'deleted'), defaultValue: 'published' },
-    tags: { type: DataTypes.TEXT, get() { const val = this.getDataValue('tags'); return val ? JSON.parse(val) : null; }, set(val) { this.setDataValue('tags', val ? JSON.stringify(val) : null); } },
+    tags: {
+        type: DataTypes.TEXT,
+        get() {
+            const val = this.getDataValue('tags');
+            if (!val) return null;
+            try {
+                return JSON.parse(val);
+            } catch (e) {
+                console.error('解析tags JSON失败:', e);
+                return [];
+            }
+        },
+        set(val) {
+            this.setDataValue('tags', val ? JSON.stringify(val) : null);
+        }
+    },
     created_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW },
     updated_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW }
 }, { tableName: 'posts', timestamps: false });
@@ -160,7 +175,12 @@ const Like = sequelize.define('Like', {
                 throw new Error('点赞记录必须关联一个作品、帖子或评论');
             }
         }
-    }
+    },
+    indexes: [
+        { unique: true, fields: ['user_id', 'work_id'], name: 'unique_like_user_work' },
+        { unique: true, fields: ['user_id', 'post_id'], name: 'unique_like_user_post' },
+        { unique: true, fields: ['user_id', 'comment_id'], name: 'unique_like_user_comment' }
+    ]
 });
 
 const Favorite = sequelize.define('Favorite', {
@@ -178,7 +198,11 @@ const Favorite = sequelize.define('Favorite', {
                 throw new Error('收藏记录必须关联一个作品或帖子');
             }
         }
-    }
+    },
+    indexes: [
+        { unique: true, fields: ['user_id', 'work_id'], name: 'unique_favorite_user_work' },
+        { unique: true, fields: ['user_id', 'post_id'], name: 'unique_favorite_user_post' }
+    ]
 });
 
 const Follow = sequelize.define('Follow', {
@@ -186,7 +210,13 @@ const Follow = sequelize.define('Follow', {
     follower_id: { type: DataTypes.INTEGER, allowNull: false },
     following_id: { type: DataTypes.INTEGER, allowNull: false },
     created_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW }
-}, { tableName: 'follows', timestamps: false });
+}, { 
+    tableName: 'follows', 
+    timestamps: false,
+    indexes: [
+        { unique: true, fields: ['follower_id', 'following_id'], name: 'unique_follow_pair' }
+    ]
+});
 
 const Notification = sequelize.define('Notification', {
     id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },

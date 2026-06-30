@@ -5,6 +5,14 @@ const { successResponse, errorResponse } = require('../middleware/response');
 const { HCaptchaService } = require('../services/hcaptcha');
 const DbAdapter = require('../utils/dbAdapter');
 const { Op } = require('sequelize');
+const { createRateLimiter } = require('../middleware/rateLimit');
+
+const hcaptchaVerifyRateLimit = createRateLimiter({
+    windowMs: 60 * 1000,
+    max: 10,
+    keyPrefix: 'hcaptcha-verify',
+    keyGenerator: req => req.ip || req.connection?.remoteAddress || 'unknown'
+});
 
 async function recordStats(type, scene, action, req) {
     try {
@@ -54,7 +62,7 @@ router.post('/show', async (req, res) => {
     }
 });
 
-router.post('/verify', async (req, res) => {
+router.post('/verify', hcaptchaVerifyRateLimit, async (req, res) => {
     let scene = 'global';
     try {
         const { token, scene: reqScene } = req.body;

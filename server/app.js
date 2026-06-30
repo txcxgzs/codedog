@@ -63,10 +63,10 @@ function setSecurityHeaders(res) {
         "frame-ancestors 'none'",
         "script-src 'self' https://static.geetest.com https://*.geetest.com https://hcaptcha.com https://*.hcaptcha.com",
         "style-src 'self' 'unsafe-inline'",
-        "img-src 'self' data: http: https:",
+        "img-src 'self' data: https://*.codemao.cn",
         "font-src 'self' data:",
-        "connect-src 'self' http: https: ws: wss:",
-        "frame-src 'self' http: https:",
+        "connect-src 'self' https://*.codemao.cn wss://*.codemao.cn",
+        "frame-src 'self' https://*.codemao.cn https://www.google.com/recaptcha/ https://hcaptcha.com/",
         "form-action 'self'"
     ].join('; '));
 }
@@ -323,5 +323,13 @@ async function startServer() {
 }
 
 startServer();
+
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
+process.on('uncaughtException', (error) => {
+    console.error('Uncaught Exception:', error);
+});
 
 module.exports = app;

@@ -16,6 +16,10 @@ export const favoriteApi = {
   getMyFavorites(params = {}) {
     return request.get('/favorites/my', { params })
   },
+
+  getUserFavorites(codemaoUserId, params = {}) {
+    return request.get(`/favorites/user/${codemaoUserId}`, { params })
+  },
   
   check(workId) {
     return request.get(`/favorites/check/${workId}`)

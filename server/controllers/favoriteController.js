@@ -1,9 +1,5 @@
 const DbAdapter = require('../utils/dbAdapter');
-/**
- * 收藏控制器
- */
-
-const { Favorite, Work, User, sequelize } = require('../models');
+const { Favorite, Work, User } = require('../models');
 const { successResponse, errorResponse } = require('../middleware/response');
 const { Op } = require('sequelize');
 const { escapeLike } = require('../utils/security');
@@ -12,84 +8,118 @@ function canInteractWithWork(work) {
     return work && work.status === 'published';
 }
 
-/**
- * 收藏作品
- */
+async function resolveWork(workId) {
+    let work = await DbAdapter.findByPk(Work, workId);
+    if (!work) {
+        work = await DbAdapter.findOne(Work, { where: { codemao_work_id: String(workId) } });
+    }
+    return work;
+}
+
+async function favoriteWorksForUser(userId, query) {
+    const page = parseInt(query.page, 10) || 1;
+    const pageSize = parseInt(query.pageSize, 10) || 20;
+    const keyword = query.keyword || '';
+
+    const workWhere = { status: 'published' };
+    if (keyword) {
+        const safeKeyword = escapeLike(keyword);
+        workWhere[Op.or] = [
+            { name: { [Op.like]: `%${safeKeyword}%` } },
+            { description: { [Op.like]: `%${safeKeyword}%` } }
+        ];
+    }
+
+    const { count, rows } = await DbAdapter.findAndCountAll(Favorite, {
+        where: { user_id: userId },
+        include: [{
+            model: Work,
+            as: 'work',
+            where: workWhere,
+            include: [{
+                model: User,
+                as: 'author',
+                attributes: ['id', 'codemao_user_id', 'username', 'nickname', 'avatar']
+            }]
+        }],
+        order: [['created_at', 'DESC']],
+        limit: pageSize,
+        offset: (page - 1) * pageSize
+    });
+
+    const works = rows.filter(f => f.work).map(f => ({
+        ...f.work.toJSON(),
+        author: f.work.author,
+        favoriteId: f.id,
+        favoritedAt: f.created_at
+    }));
+
+    return { works, count };
+}
+
 async function addFavorite(req, res) {
     try {
         const { workId } = req.body;
-        
+
         if (!workId) {
-            return errorResponse(res, '请提供作品ID', 400);
+            return errorResponse(res, 'Please provide a work id', 400);
         }
-        
-        let work = await DbAdapter.findByPk(Work, workId);
-        if (!work) {
-            work = await DbAdapter.findOne(Work, { where: { codemao_work_id: workId } });
-        }
-        
-        if (!work) {
-            return errorResponse(res, '作品不存在', 404);
-        }
-        
-        if (!canInteractWithWork(work)) {
+
+        const work = await resolveWork(workId);
+        if (!work || !canInteractWithWork(work)) {
             return errorResponse(res, 'Work not found', 404);
         }
 
         const localWorkId = DbAdapter.getId(work);
-        
+        const userId = DbAdapter.getId(req.user);
+
         const existing = await DbAdapter.findOne(Favorite, {
-            where: { user_id: req.user.id, work_id: localWorkId }
-        });
-        
-        if (existing) {
-            return errorResponse(res, '已收藏该作品', 400);
-        }
-        
-        await DbAdapter.create(Favorite, {
-            user_id: req.user.id,
-            work_id: localWorkId
+            where: { user_id: userId, work_id: localWorkId }
         });
 
-        // 原子 +1 避免 read-modify-write 竞态
+        if (existing) {
+            return errorResponse(res, 'Already favorited', 400);
+        }
+
+        try {
+            await DbAdapter.create(Favorite, {
+                user_id: userId,
+                work_id: localWorkId
+            });
+        } catch (createError) {
+            if (createError.name === 'SequelizeUniqueConstraintError') {
+                return errorResponse(res, 'Already favorited', 400);
+            }
+            throw createError;
+        }
+
         await DbAdapter.increment(work, 'collection_times');
         await work.reload();
 
-        return successResponse(res, { collection_times: work.collection_times || 0, favorited: true }, '收藏成功');
+        return successResponse(res, { collection_times: work.collection_times || 0, favorited: true }, 'Favorite added');
     } catch (error) {
-        console.error('收藏错误:', error);
-        return errorResponse(res, '收藏失败', 500);
+        console.error('Favorite error:', error);
+        return errorResponse(res, 'Favorite failed', 500);
     }
 }
 
-/**
- * 取消收藏
- */
 async function removeFavorite(req, res) {
     try {
         const { workId } = req.params;
-        
-        let localWorkId = workId;
-        if (isNaN(workId) || workId.length > 10) {
-            const work = await DbAdapter.findOne(Work, { where: { codemao_work_id: workId } });
-            if (work) {
-                localWorkId = DbAdapter.getId(work);
-            }
-        }
-        
-        const favorite = await DbAdapter.findOne(Favorite, {
-            where: { user_id: req.user.id, work_id: localWorkId }
-        });
-        
-        if (!favorite) {
-            return errorResponse(res, '未收藏该作品', 400);
-        }
-        
-        await DbAdapter.destroy(Favorite, { where: { id: DbAdapter.getId(favorite) } });
+        const work = await resolveWork(workId);
+        const localWorkId = work ? DbAdapter.getId(work) : workId;
 
-        const work = await DbAdapter.findByPk(Work, localWorkId);
-        if (work) {
-            // 原子 -1 避免 read-modify-write 竞态
+        const favorite = await DbAdapter.findOne(Favorite, {
+            where: { user_id: DbAdapter.getId(req.user), work_id: localWorkId }
+        });
+
+        if (!favorite) {
+            return errorResponse(res, 'Not favorited', 400);
+        }
+
+        const removed = await DbAdapter.destroy(Favorite, { where: { id: DbAdapter.getId(favorite) } });
+
+        if (removed && work) {
             await DbAdapter.decrement(work, 'collection_times');
             await work.reload();
         }
@@ -97,87 +127,59 @@ async function removeFavorite(req, res) {
         return successResponse(res, {
             collection_times: work ? Math.max(0, work.collection_times || 0) : 0,
             favorited: false
-        }, '已取消收藏');
+        }, 'Favorite removed');
     } catch (error) {
-        console.error('取消收藏错误:', error);
-        return errorResponse(res, '取消收藏失败', 500);
+        console.error('Remove favorite error:', error);
+        return errorResponse(res, 'Remove favorite failed', 500);
     }
 }
 
-/**
- * 获取我的收藏列表
- */
 async function getMyFavorites(req, res) {
     try {
-        const page = parseInt(req.query.page) || 1;
-        const pageSize = parseInt(req.query.pageSize) || 20;
-        const keyword = req.query.keyword || '';
-        
-        const workWhere = { status: 'published' };
-        if (keyword) {
-            const safeKeyword = escapeLike(keyword);
-            workWhere[Op.or] = [
-                { name: { [Op.like]: `%${safeKeyword}%` } },
-                { description: { [Op.like]: `%${safeKeyword}%` } }
-            ];
-        }
-        
-        const { count, rows } = await DbAdapter.findAndCountAll(Favorite, {
-            where: { user_id: req.user.id },
-            include: [{
-                model: Work,
-                as: 'work',
-                where: workWhere,
-                include: [{
-                    model: User,
-                    as: 'author',
-                    attributes: ['id', 'username', 'nickname', 'avatar']
-                }]
-            }],
-            order: [['created_at', 'DESC']],
-            limit: pageSize,
-            offset: (page - 1) * pageSize
-        });
-        
-        const works = rows.filter(f => f.work).map(f => ({
-            ...f.work.toJSON(),
-            author: f.work.author,
-            favoriteId: f.id,
-            favoritedAt: f.created_at
-        }));
-        
+        const { works, count } = await favoriteWorksForUser(DbAdapter.getId(req.user), req.query);
         return successResponse(res, { list: works, total: count });
     } catch (error) {
-        console.error('获取收藏列表错误:', error);
-        return errorResponse(res, '获取收藏列表失败', 500);
+        console.error('Get favorites error:', error);
+        return errorResponse(res, 'Failed to get favorites', 500);
     }
 }
 
-/**
- * 检查是否已收藏
- */
+async function getUserFavorites(req, res) {
+    try {
+        const { codemaoUserId } = req.params;
+        const user = await DbAdapter.findOne(User, {
+            where: { codemao_user_id: String(codemaoUserId) },
+            attributes: ['id']
+        });
+
+        if (!user) {
+            return successResponse(res, { list: [], total: 0 });
+        }
+
+        const { works, count } = await favoriteWorksForUser(DbAdapter.getId(user), req.query);
+        return successResponse(res, { list: works, total: count });
+    } catch (error) {
+        console.error('Get user favorites error:', error);
+        return errorResponse(res, 'Failed to get favorites', 500);
+    }
+}
+
 async function checkFavorite(req, res) {
     try {
         const { workId } = req.params;
-        
-        let localWorkId = workId;
-        if (isNaN(workId) || workId.length > 10) {
-            const work = await DbAdapter.findOne(Work, { where: { codemao_work_id: workId } });
-            if (work) {
-                localWorkId = DbAdapter.getId(work);
-            } else {
-                return successResponse(res, { isFavorited: false });
-            }
+        const work = await resolveWork(workId);
+        if (!work) {
+            return successResponse(res, { isFavorited: false });
         }
-        
+
         const favorite = await DbAdapter.findOne(Favorite, {
-            where: { user_id: req.user.id, work_id: localWorkId }
+            where: { user_id: DbAdapter.getId(req.user), work_id: DbAdapter.getId(work) }
         });
-        
+
         return successResponse(res, { isFavorited: !!favorite });
     } catch (error) {
-        console.error('检查收藏错误:', error);
-        return errorResponse(res, '检查收藏失败', 500);
+        console.error('Check favorite error:', error);
+        return errorResponse(res, 'Check favorite failed', 500);
     }
 }
 
@@ -185,5 +187,6 @@ module.exports = {
     addFavorite,
     removeFavorite,
     getMyFavorites,
+    getUserFavorites,
     checkFavorite
 };

@@ -117,9 +117,9 @@ router.delete('/announcements/:announcementId', requirePermission('announcement:
 /**
  * 系统设置
  */
-router.get('/configs', requirePermission('config:manage'), adminController.getSystemConfigs);
-router.put('/configs/:key', requirePermission('config:manage'), adminController.updateSystemConfig);
-router.post('/configs/batch', requirePermission('config:manage'), adminController.batchUpdateConfigs);
+router.get('/configs', requireRole('superadmin'), adminController.getSystemConfigs);
+router.put('/configs/:key', requireRole('superadmin'), adminController.updateSystemConfig);
+router.post('/configs/batch', requireRole('superadmin'), adminController.batchUpdateConfigs);
 
 /**
  * 操作日志

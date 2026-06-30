@@ -18,7 +18,7 @@ function createRateLimiter({ windowMs, max, keyPrefix = 'rate-limit', keyGenerat
         const current = buckets.get(key);
 
         if (!current || current.resetAt <= now) {
-            buckets.set(key, { count: 1, resetAt: now + windowMs });
+            buckets.set(key, { count: 1, resetAt: now + windowMs, createdAt: now });
             return next();
         }
 
@@ -50,10 +50,10 @@ const MAX_BUCKETS = 10000;
 function evictIfFull() {
     if (buckets.size > MAX_BUCKETS) {
         const toDelete = Math.floor(MAX_BUCKETS * 0.2);
-        let i = 0;
-        for (const key of buckets.keys()) {
-            buckets.delete(key);
-            if (++i >= toDelete) break;
+        const entries = Array.from(buckets.entries());
+        entries.sort((a, b) => (a[1].createdAt || 0) - (b[1].createdAt || 0));
+        for (let i = 0; i < toDelete && i < entries.length; i++) {
+            buckets.delete(entries[i][0]);
         }
     }
 }

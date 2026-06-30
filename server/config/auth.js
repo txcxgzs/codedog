@@ -30,5 +30,6 @@ function resolveJwtSecret() {
 
 module.exports = {
     JWT_SECRET: resolveJwtSecret(),
-    JWT_EXPIRES_IN
+    JWT_EXPIRES_IN,
+    JWT_ISSUER: 'codedog-community'
 };

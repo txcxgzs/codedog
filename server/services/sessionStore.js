@@ -67,7 +67,16 @@ function createSequelizeSessionStore(session, sequelize, { ttlMs = 30 * 60 * 100
                     return callback(null, null);
                 }
 
-                return callback(null, JSON.parse(record.data));
+                let sessionData;
+                try {
+                    sessionData = JSON.parse(record.data);
+                } catch (parseError) {
+                    console.error('解析会话数据失败:', parseError);
+                    await this.destroy(sid, () => {});
+                    return callback(null, null);
+                }
+
+                return callback(null, sessionData);
             } catch (error) {
                 return callback(error);
             }

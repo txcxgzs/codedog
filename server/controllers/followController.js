@@ -37,10 +37,17 @@ async function followUser(req, res) {
         }
         
         // 创建关注
-        await DbAdapter.create(Follow, {
-            follower_id: DbAdapter.getId(req.user),
-            following_id: targetUser.id
-        });
+        try {
+            await DbAdapter.create(Follow, {
+                follower_id: DbAdapter.getId(req.user),
+                following_id: targetUser.id
+            });
+        } catch (createError) {
+            if (createError.name === 'SequelizeUniqueConstraintError') {
+                return errorResponse(res, '已关注该用户', 400);
+            }
+            throw createError;
+        }
         
         // 使用原子操作更新计数，避免竞态条件
         const currentUser = await DbAdapter.findByPk(User, DbAdapter.getId(req.user));

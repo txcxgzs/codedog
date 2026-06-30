@@ -42,14 +42,14 @@ function requireRole(minRole) {
 }
 
 /**
- * 检查是否为管理员（包括所有管理员角色）
+ * 检查是否为管理员（admin 及以上）
  */
 function requireAdmin(req, res, next) {
     if (!req.user) {
         return errorResponse(res, '请先登录', 401);
     }
     
-    if (!isRoleAtLeast(req.user.role, 'reviewer')) {
+    if (!isRoleAtLeast(req.user.role, 'admin')) {
         return errorResponse(res, '需要管理员权限', 403);
     }
     

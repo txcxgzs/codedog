@@ -8,7 +8,7 @@ import { userApi } from '@/api/user'
 import { ref, computed } from 'vue'
 
 export const useUserStore = defineStore('user', () => {
-  const token = ref(localStorage.getItem('token') || '')
+  const token = ref(sessionStorage.getItem('token') || '')
   const user = ref(null)
 
   const isLoggedIn = computed(() => !!token.value)
@@ -23,7 +23,7 @@ export const useUserStore = defineStore('user', () => {
       if (res.code === 200) {
         token.value = res.data.token
         user.value = res.data.user
-        localStorage.setItem('token', res.data.token)
+        sessionStorage.setItem('token', res.data.token)
       }
       return res
     } catch (error) {
@@ -38,7 +38,7 @@ export const useUserStore = defineStore('user', () => {
   function logout() {
     token.value = ''
     user.value = null
-    localStorage.removeItem('token')
+    sessionStorage.removeItem('token')
   }
 
   /**

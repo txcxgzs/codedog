@@ -24,6 +24,10 @@ router.post('/', authMiddleware, geetestVerify('report'), async (req, res) => {
         if (!type || !target_id || !reason) {
             return errorResponse(res, '请填写完整信息', 400);
         }
+
+        if (description && String(description).length > 1000) {
+            return errorResponse(res, '举报描述不能超过1000字', 400);
+        }
         
         if (!['work', 'comment', 'post', 'user'].includes(type)) {
             return errorResponse(res, '无效的举报类型', 400);

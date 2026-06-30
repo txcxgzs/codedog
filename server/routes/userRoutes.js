@@ -14,7 +14,7 @@ const loginRateLimit = createRateLimiter({
     windowMs: 15 * 60 * 1000,
     max: 10,
     keyPrefix: 'login-user',
-    keyGenerator: req => `${req.ip}:${String(req.body?.username || '').toLowerCase()}`
+    keyGenerator: req => `${req.ip}:${String(req.body?.username || '').trim().toLowerCase()}`
 });
 
 function hasAllowedImageSignature(filePath, mimetype) {
@@ -88,7 +88,6 @@ function avatarUpload(req, res, next) {
 router.post('/login', loginRateLimit, userController.login);
 router.get('/me', authMiddleware, userController.getCurrentUser);
 router.put('/profile', authMiddleware, avatarUpload, validateAvatarUpload, userController.updateProfile);
-router.get('/local/:id', userController.getUserByLocalId);
 router.get('/:codemaoId', userController.getUserById);
 
 module.exports = router;

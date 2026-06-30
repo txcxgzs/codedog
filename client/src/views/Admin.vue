@@ -60,7 +60,7 @@
             <el-icon><Filter /></el-icon>
             <span>敏感词管理</span>
           </el-menu-item>
-          <el-menu-item index="configs" v-if="['admin', 'superadmin'].includes(userStore.user?.role)">
+          <el-menu-item index="configs" v-if="userStore.user?.role === 'superadmin'">
             <el-icon><Setting /></el-icon>
             <span>系统设置</span>
           </el-menu-item>
@@ -330,17 +330,6 @@
                   <el-descriptions-item label="最后登录IP">{{ userDetail.user.last_login_ip || '-' }}</el-descriptions-item>
                   <el-descriptions-item label="个人简介">{{ userDetail.user.bio || '-' }}</el-descriptions-item>
                 </el-descriptions>
-                
-                <div v-if="userDetail.user.codemao_token && userStore.user?.role === 'superadmin'" class="r-admin--token_info">
-                  <h4>编程猫Token信息 <el-tag type="danger" size="small">仅超级管理员可见</el-tag></h4>
-                  <el-input 
-                    :model-value="userDetail.user.codemao_token" 
-                    type="textarea" 
-                    :rows="3" 
-                    readonly 
-                    show-word-limit
-                  />
-                </div>
               </el-tab-pane>
               <el-tab-pane label="评优专区">
                 <div style="padding: 20px 0;">
@@ -2835,10 +2824,19 @@ const useDefaultPrompt = () => {
   ElMessage.success('已填充默认提示词')
 }
 
+const MASKED_PLACEHOLDERS = ['******', '***', '']
+const sensitiveConfigKeys = ['ai_api_key', 'geetest_key', 'hcaptcha_secret_key', 'mysql_password']
+
 const saveConfigs = async () => {
   savingConfigs.value = true
   try {
-    const res = await adminApi.batchUpdateConfigs(configForm.value)
+    const payload = { ...configForm.value }
+    sensitiveConfigKeys.forEach(key => {
+      if (MASKED_PLACEHOLDERS.includes(payload[key])) {
+        delete payload[key]
+      }
+    })
+    const res = await adminApi.batchUpdateConfigs(payload)
     if (res.code === 200) {
       ElMessage.success('保存成功')
     } else {
@@ -2854,12 +2852,15 @@ const saveConfig = async () => {
   savingConfigs.value = true
   try {
     configForm.value.hcaptcha_expire_minutes = String(hcaptchaExpireMinutes.value)
-    const res = await adminApi.batchUpdateConfigs({
+    const hcaptchaPayload = {
       hcaptcha_enabled: configForm.value.hcaptcha_enabled,
       hcaptcha_site_key: configForm.value.hcaptcha_site_key,
-      hcaptcha_secret_key: configForm.value.hcaptcha_secret_key,
       hcaptcha_expire_minutes: configForm.value.hcaptcha_expire_minutes
-    })
+    }
+    if (!MASKED_PLACEHOLDERS.includes(configForm.value.hcaptcha_secret_key)) {
+      hcaptchaPayload.hcaptcha_secret_key = configForm.value.hcaptcha_secret_key
+    }
+    const res = await adminApi.batchUpdateConfigs(hcaptchaPayload)
     if (res.code === 200) {
       ElMessage.success('保存成功')
     } else {

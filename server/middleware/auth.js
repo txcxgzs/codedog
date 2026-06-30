@@ -14,7 +14,7 @@ function getBearerToken(req) {
 }
 
 async function resolveUserFromToken(token) {
-    const decoded = jwt.verify(token, JWT_SECRET);
+    const decoded = jwt.verify(token, JWT_SECRET, { issuer: 'codedog-community', audience: 'codedog-frontend' });
     const user = await DbAdapter.findByPk(User, decoded.id);
 
     if (!user) {
@@ -77,11 +77,37 @@ async function optionalAuth(req, res, next) {
 }
 
 /**
- * 审核员及以上权限中间件
- * 命名修正：原 adminMiddleware 实际只要求 reviewer+，与"admin"语义不符
- * 保留原名以兼容既有调用点，但建议新代码使用 reviewerOrAboveMiddleware
+ * 管理员权限中间件（admin 及以上）
  */
 function adminMiddleware(req, res, next) {
+    if (!req.user) {
+        return res.status(401).json({
+            code: 401,
+            msg: '请先登录',
+            data: null
+        });
+    }
+    if (!isRoleAtLeast(req.user.role, 'admin')) {
+        return res.status(403).json({
+            code: 403,
+            msg: '权限不足，需要管理员或以上权限',
+            data: null
+        });
+    }
+    next();
+}
+
+/**
+ * 审核员及以上权限中间件
+ */
+function reviewerOrAboveMiddleware(req, res, next) {
+    if (!req.user) {
+        return res.status(401).json({
+            code: 401,
+            msg: '请先登录',
+            data: null
+        });
+    }
     if (!isRoleAtLeast(req.user.role, 'reviewer')) {
         return res.status(403).json({
             code: 403,
@@ -90,11 +116,6 @@ function adminMiddleware(req, res, next) {
         });
     }
     next();
-}
-
-// 推荐命名（与 adminMiddleware 行为一致）
-function reviewerOrAboveMiddleware(req, res, next) {
-    return adminMiddleware(req, res, next);
 }
 
 module.exports = { authMiddleware, adminMiddleware, optionalAuth, reviewerOrAboveMiddleware };

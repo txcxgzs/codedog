@@ -46,7 +46,7 @@ class GeetestLib {
                 return;
             }
 
-            console.log('[极验] 调用SDK验证...', { challenge, validate, seccode });
+            console.log('[极验] 调用SDK验证...');
             
             // 正确的调用方式: validate(fallback, result, callback)
             // fallback: false 表示正常模式，true表示宕机模式

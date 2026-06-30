@@ -173,7 +173,7 @@ const activeTab = ref('works')
 
 const defaultAvatar = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI0ZFQzQzMyIvPjx0ZXh0IHg9IjUwIiB5PSI2MCIgZm9udC1zaXplPSI0MCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZmlsbD0id2hpdGUiPuahijwvdGV4dD48L3N2Zz4='
 
-const isCurrentUser = computed(() => String(userStore.user?.id) === String(user.value?.id))
+const isCurrentUser = computed(() => String(userStore.user?.codemao_user_id) === String(user.value?.codemao_user_id))
 
 const formatTime = (time) => {
   if (!time) return '未知'
@@ -201,10 +201,10 @@ const fetchUser = async () => {
 }
 
 const fetchWorks = async () => {
-  if (!user.value?.id) return
+  if (!user.value?.codemao_user_id) return
   loadingWorks.value = true
   try {
-    const res = await workApi.getUserWorks(user.value.id, { page: 1, pageSize: 20 })
+    const res = await workApi.getUserWorks(user.value.codemao_user_id, { page: 1, pageSize: 20 })
     if (res.code === 200) {
       works.value = res.data.list
     }
@@ -216,9 +216,10 @@ const fetchWorks = async () => {
 }
 
 const fetchFavorites = async () => {
+  if (!user.value?.codemao_user_id) return
   loadingFavorites.value = true
   try {
-    const res = await favoriteApi.getMyFavorites({ page: 1, pageSize: 20 })
+    const res = await favoriteApi.getUserFavorites(user.value.codemao_user_id, { page: 1, pageSize: 20 })
     if (res.code === 200) {
       favorites.value = res.data.list
     }
