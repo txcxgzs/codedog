@@ -514,7 +514,15 @@ async function deleteUser(req, res) {
             return errorResponse(res, 'Cannot manage this user', 403);
         }
 
-        await DbAdapter.destroy(User, { where: { id: DbAdapter.getId(user) } });
+        const { Work, Comment, Like, Favorite, Follow, Notification } = require('../models');
+        const uid = DbAdapter.getId(user);
+        await DbAdapter.destroy(Notification, { where: { user_id: uid } });
+        await DbAdapter.destroy(Follow, { where: { [Op.or]: [{ follower_id: uid }, { following_id: uid }] } });
+        await DbAdapter.destroy(Favorite, { where: { user_id: uid } });
+        await DbAdapter.destroy(Like, { where: { user_id: uid } });
+        await DbAdapter.destroy(Comment, { where: { user_id: uid } });
+        await DbAdapter.destroy(Work, { where: { user_id: uid } });
+        await DbAdapter.destroy(User, { where: { id: uid } });
         logOperation(req, 'delete_user', 'user', userId, { username: user.username });
 
         return successResponse(res, null, '删除成功');
@@ -1950,7 +1958,8 @@ function updateEnvVariable(content, key, value) {
         error.statusCode = 400;
         throw error;
     }
-    const regex = new RegExp(`^${key}=.*$`, 'gm');
+    const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(`^${escapedKey}=.*$`, 'gm');
     if (regex.test(content)) {
         return content.replace(regex, `${key}=${safeValue}`);
     } else {
@@ -2860,12 +2869,17 @@ async function updateStudioPoints(req, res) {
         if (!studio) {
             return errorResponse(res, '工作室不存在', 404);
         }
-        
+
+        const parsedPoints = parseInt(points, 10);
+        if (!Number.isFinite(parsedPoints)) {
+            return errorResponse(res, '积分必须是有效数字', 400);
+        }
+
         let newPoints;
         if (action === 'add') {
-            newPoints = Math.max(0, (studio.points || 0) + parseInt(points || 0));
+            newPoints = Math.max(0, (studio.points || 0) + parsedPoints);
         } else {
-            newPoints = Math.max(0, parseInt(points) || 0);
+            newPoints = Math.max(0, parsedPoints);
         }
         
         const newLevel = Math.min(10, Math.floor(newPoints / 100) + 1);

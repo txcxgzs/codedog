@@ -37,13 +37,17 @@ async function hcaptchaGuard(req, res, next) {
         '/api/users/login',
         '/api/users/register',
         '/api/health',
+        '/api/hcaptcha/',
         '/api/hcaptcha',
+        '/api/geetest/',
         '/api/geetest',
+        '/api/admin/',
         '/api/admin',
+        '/api/public/',
         '/api/public'
     ];
 
-    if (excludePaths.some(p => req.path.startsWith(p))) {
+    if (excludePaths.includes(req.path)) {
         return next();
     }
 
