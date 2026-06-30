@@ -250,38 +250,44 @@ async function syncUserWorks(codemaoUserId, localUserId) {
         let syncCount = 0;
         
         for (const item of allItems) {
-            const existing = await DbAdapter.findOne(Work, { 
-                where: { codemao_work_id: item.id } 
-            });
-            
-            if (existing) continue;
-            
-            const workDetail = await codemaoApi.getWorkDetail(item.id);
-            if (!workDetail || !workDetail.id) continue;
-            
-            const type = workDetail.work_label_list && workDetail.work_label_list[0] 
-                ? workDetail.work_label_list[0].label_name 
-                : '其他';
-            
-            await DbAdapter.create(Work, {
-                codemao_work_id: workDetail.id,
-                name: workDetail.work_name,
-                description: workDetail.description,
-                preview: workDetail.preview,
-                type: type,
-                ide_type: workDetail.ide_type,
-                work_url: workDetail.player_url,
-                user_id: localUserId,
-                codemao_author_id: codemaoUserId,
-                codemao_author_name: workDetail.user_info?.nickname,
-                view_times: workDetail.view_times || 0,
-                praise_times: workDetail.praise_times || workDetail.liked_times || 0,
-                collection_times: workDetail.collect_times || 0,
-                comment_count: workDetail.comment_times || 0,
-                status: 'published'
-            });
-            
-            syncCount++;
+            try {
+                const workDetail = await codemaoApi.getWorkDetail(item.id);
+                if (!workDetail || !workDetail.id) continue;
+                
+                const type = workDetail.work_label_list && workDetail.work_label_list[0] 
+                    ? workDetail.work_label_list[0].label_name 
+                    : '其他';
+                
+                // 使用 findOrCreate 避免并发唯一键冲突，单条失败不中断同步
+                const [, created] = await DbAdapter.findOrCreate(Work, {
+                    where: { codemao_work_id: workDetail.id },
+                    defaults: {
+                        codemao_work_id: workDetail.id,
+                        name: workDetail.work_name,
+                        description: workDetail.description,
+                        preview: workDetail.preview,
+                        type: type,
+                        ide_type: workDetail.ide_type,
+                        work_url: workDetail.player_url,
+                        user_id: localUserId,
+                        codemao_author_id: codemaoUserId,
+                        codemao_author_name: workDetail.user_info?.nickname,
+                        view_times: workDetail.view_times || 0,
+                        praise_times: workDetail.praise_times || workDetail.liked_times || 0,
+                        collection_times: workDetail.collect_times || 0,
+                        comment_count: 0,
+                        status: 'published'
+                    }
+                });
+
+                if (created) syncCount++;
+
+                // 延迟 200ms 避免被编程猫限流
+                await new Promise(resolve => setTimeout(resolve, 200));
+            } catch (itemError) {
+                console.error(`同步作品 ${item.id} 失败:`, itemError.message);
+                continue;
+            }
         }
         
         const totalWorkCount = await DbAdapter.count(Work, { where: { user_id: localUserId } });

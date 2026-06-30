@@ -25,6 +25,10 @@ router.post('/', authMiddleware, geetestVerify('report'), async (req, res) => {
             return errorResponse(res, '请填写完整信息', 400);
         }
 
+        if (!String(reason).trim() || String(reason).length > 200) {
+            return errorResponse(res, '举报原因长度需在1~200字之间', 400);
+        }
+
         if (description && String(description).length > 1000) {
             return errorResponse(res, '举报描述不能超过1000字', 400);
         }
@@ -114,14 +118,18 @@ router.post('/', authMiddleware, geetestVerify('report'), async (req, res) => {
         const safeTargetName = escapeHtml(targetName);
         const safeReason = escapeHtml(reason);
 
-        await DbAdapter.create(Notification, {
-            user_id: req.user.id,
-            type: 'system',
-            title: '举报已提交',
-            content: `您举报的${typeNames[type]}「${safeTargetName}」已提交成功，我们会尽快审核处理。举报原因：${safeReason}`,
-            related_id: linkId,
-            related_type: linkType
-        });
+        try {
+            await DbAdapter.create(Notification, {
+                user_id: req.user.id,
+                type: 'system',
+                title: '举报已提交',
+                content: `您举报的${typeNames[type]}「${safeTargetName}」已提交成功，我们会尽快审核处理。举报原因：${safeReason}`,
+                related_id: linkId,
+                related_type: linkType
+            });
+        } catch (notifyErr) {
+            console.error('Create report submitter notification error:', notifyErr);
+        }
 
         // 通知审核员/管理员有新的举报待处理
         try {

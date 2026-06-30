@@ -66,7 +66,7 @@ function setSecurityHeaders(res) {
         "style-src 'self' 'unsafe-inline'",
         "img-src 'self' data: https://*.codemao.cn",
         "font-src 'self' data:",
-        "connect-src 'self' https://*.codemao.cn wss://*.codemao.cn",
+        "connect-src 'self' https://*.codemao.cn wss://*.codemao.cn https://*.geetest.com https://hcaptcha.com https://*.hcaptcha.com",
         "frame-src 'self' https://*.codemao.cn https://www.google.com/recaptcha/ https://hcaptcha.com/",
         "form-action 'self'"
     ].join('; '));
@@ -224,7 +224,7 @@ app.use('/api/users/login', loginRateLimiter);
 app.use('/api/works/codemao', codemaoImportRateLimiter);
 app.use('/api', writeRateLimiter);
 
-app.use('/uploads', express.static('uploads', {
+app.use('/uploads', express.static(path.join(__dirname, 'uploads'), {
     setHeaders: setSecurityHeaders,
     dotfiles: 'deny',
     index: false

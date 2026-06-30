@@ -8,8 +8,7 @@ const { successResponse, errorResponse, paginateResponse } = require('../middlew
  */
 async function getNotifications(req, res) {
     try {
-        const page = parseInt(req.query.page) || 1;
-        const pageSize = parseInt(req.query.pageSize) || 20;
+        const { page, pageSize, offset } = DbAdapter.parsePagination(req.query);
         const type = req.query.type;
         const unreadOnly = req.query.unread === 'true';
         
@@ -21,7 +20,7 @@ async function getNotifications(req, res) {
             where,
             order: [['created_at', 'DESC']],
             limit: pageSize,
-            offset: (page - 1) * pageSize,
+            offset,
             include: [
                 { model: User, as: 'sender', attributes: ['id', 'username', 'nickname', 'avatar'] }
             ]

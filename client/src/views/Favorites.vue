@@ -7,32 +7,33 @@
           <span class="r-favorites--count">共 {{ total }} 个收藏</span>
         </div>
         <div class="r-favorites--header_right">
-          <el-input v-model="searchKeyword" placeholder="搜索作品" clearable style="width: 200px;" @keyup.enter="handleSearch">
+          <el-input v-model="searchKeyword" placeholder="搜索收藏" clearable style="width: 200px;" @keyup.enter="handleSearch">
             <template #prefix><el-icon><Search /></el-icon></template>
           </el-input>
           <el-button @click="handleSearch">搜索</el-button>
           <el-button v-if="!batchMode" @click="enterBatchMode">批量管理</el-button>
           <template v-else>
-            <el-button @click="selectAll">全选</el-button>
+            <el-button @click="selectFavorites">全选</el-button>
             <el-button @click="cancelBatchMode">取消</el-button>
-            <el-button type="danger" @click="batchRemove" :disabled="selectedWorks.length === 0">取消收藏 ({{ selectedWorks.length }})</el-button>
+            <el-button type="danger" @click="batchRemove" :disabled="selectedIds.length === 0">取消收藏 ({{ selectedIds.length }})</el-button>
           </template>
         </div>
       </div>
       
       <div class="r-favorites--content" v-loading="loading">
         <div class="r-favorites--grid" v-if="works.length > 0">
-          <div v-for="work in works" :key="work.id" class="r-favorites--card" :class="{ 'is-selected': selectedWorks.includes(work.id) }">
-            <div class="r-favorites--card_checkbox" v-if="batchMode" @click.stop="toggleSelect(work.codemao_work_id)">
-              <el-checkbox :model-value="selectedWorks.includes(work.id)" />
+          <div v-for="item in works" :key="item.favoriteId" class="r-favorites--card" :class="{ 'is-selected': selectedIds.includes(item.favoriteId) }">
+            <div class="r-favorites--card_checkbox" v-if="batchMode" @click.stop="toggleSelect(item.favoriteId)">
+              <el-checkbox :model-value="selectedIds.includes(item.favoriteId)" />
             </div>
-            <div class="r-favorites--card_cover" :style="{ backgroundImage: `url(${work.preview})` }" @click="goWork(work)"></div>
+            <div class="r-favorites--card_cover" :style="{ backgroundImage: `url(${item.preview || item.cover || ''})` }" @click="goItem(item)"></div>
             <div class="r-favorites--card_body">
-              <h4 class="r-favorites--card_title" @click="goWork(work)">{{ work.name }}</h4>
-              <p class="r-favorites--card_author">{{ work.author?.nickname || work.author?.username }}</p>
+              <h4 class="r-favorites--card_title" @click="goItem(item)">{{ item._type === 'post' ? item.title : item.name }}</h4>
+              <p class="r-favorites--card_author">{{ item.author?.nickname || item.author?.username }}</p>
               <div class="r-favorites--card_actions">
-                <span class="r-favorites--card_ide" v-if="work.ide_type">{{ getIdeTypeName(work.ide_type) }}</span>
-                <el-button v-if="!batchMode" size="small" text type="danger" @click.stop="removeFavorite(work)">
+                <span class="r-favorites--card_ide" v-if="item._type === 'work' && item.ide_type">{{ getIdeTypeName(item.ide_type) }}</span>
+                <span class="r-favorites--card_ide" v-else-if="item._type === 'post'">帖子</span>
+                <el-button v-if="!batchMode" size="small" text type="danger" @click.stop="removeFavorite(item)">
                   <el-icon><Delete /></el-icon> 取消收藏
                 </el-button>
               </div>
@@ -73,7 +74,7 @@ const pageSize = ref(20)
 const total = ref(0)
 const searchKeyword = ref('')
 const batchMode = ref(false)
-const selectedWorks = ref([])
+const selectedIds = ref([])
 const geetestDialog = ref(null)
 
 const getIdeTypeName = (ideType) => {
@@ -96,11 +97,15 @@ const getIdeTypeName = (ideType) => {
   return ideMap[type] || ideType
 }
 
-const goWork = (work) => {
+const goItem = (item) => {
   if (batchMode.value) {
-    toggleSelect(work.id)
+    toggleSelect(item.favoriteId)
   } else {
-    router.push(`/work/${work.codemao_work_id}`)
+    if (item._type === 'post') {
+      router.push(`/post/${item.id}`)
+    } else {
+      router.push(`/work/${item.codemao_work_id}`)
+    }
   }
 }
 
@@ -126,46 +131,46 @@ const handleSearch = () => {
 
 const enterBatchMode = () => {
   batchMode.value = true
-  selectedWorks.value = []
+  selectedIds.value = []
 }
 
 const cancelBatchMode = () => {
   batchMode.value = false
-  selectedWorks.value = []
+  selectedIds.value = []
 }
 
-const toggleSelect = (workId) => {
-  const index = selectedWorks.value.indexOf(workId)
+const toggleSelect = (favoriteId) => {
+  const index = selectedIds.value.indexOf(favoriteId)
   if (index > -1) {
-    selectedWorks.value.splice(index, 1)
+    selectedIds.value.splice(index, 1)
   } else {
-    selectedWorks.value.push(workId)
+    selectedIds.value.push(favoriteId)
   }
 }
 
-const selectAll = () => {
-  if (selectedWorks.value.length === works.value.length) {
-    selectedWorks.value = []
+const selectFavorites = () => {
+  if (selectedIds.value.length === works.value.length) {
+    selectedIds.value = []
   } else {
-    selectedWorks.value = works.value.map(w => w.codemao_work_id)
+    selectedIds.value = works.value.map(w => w.favoriteId)
   }
 }
 
-const removeFavorite = async (work) => {
+const removeFavorite = async (item) => {
   try {
-    await ElMessageBox.confirm('确定要取消收藏该作品吗？', '提示', { type: 'warning' })
+    await ElMessageBox.confirm('确定要取消收藏吗？', '提示', { type: 'warning' })
 
-    await doRemoveFavorite(work.codemao_work_id)
+    await doRemoveFavorite(item)
   } catch (e) {
     if (e !== 'cancel') console.error(e)
   }
 }
 
 const batchRemove = async () => {
-  if (selectedWorks.value.length === 0) return
+  if (selectedIds.value.length === 0) return
 
   try {
-    await ElMessageBox.confirm(`确定要取消收藏选中的 ${selectedWorks.value.length} 个作品吗？`, '提示', { type: 'warning' })
+    await ElMessageBox.confirm(`确定要取消收藏选中的 ${selectedIds.value.length} 个内容吗？`, '提示', { type: 'warning' })
 
     await doBatchRemove()
   } catch (e) {
@@ -173,12 +178,17 @@ const batchRemove = async () => {
   }
 }
 
-const doRemoveFavorite = async (workId) => {
+const doRemoveFavorite = async (item) => {
   try {
-    const res = await favoriteApi.remove(workId)
+    let res
+    if (item._type === 'post') {
+      res = await favoriteApi.unfavoritePost(item.id)
+    } else {
+      res = await favoriteApi.remove(item.codemao_work_id)
+    }
     if (res.code === 200) {
       ElMessage.success('已取消收藏')
-      works.value = works.value.filter(w => w.codemao_work_id !== workId)
+      works.value = works.value.filter(w => w.favoriteId !== item.favoriteId)
       total.value--
       if (works.value.length === 0 && currentPage.value > 1) {
         currentPage.value--
@@ -195,11 +205,18 @@ const doRemoveFavorite = async (workId) => {
 const doBatchRemove = async () => {
   try {
     let success = 0
-    for (const workId of selectedWorks.value) {
-      const res = await favoriteApi.remove(workId)
+    for (const favId of selectedIds.value) {
+      const item = works.value.find(w => w.favoriteId === favId)
+      if (!item) continue
+      let res
+      if (item._type === 'post') {
+        res = await favoriteApi.unfavoritePost(item.id)
+      } else {
+        res = await favoriteApi.remove(item.codemao_work_id)
+      }
       if (res.code === 200) success++
     }
-    ElMessage.success(`已取消收藏 ${success} 个作品`)
+    ElMessage.success(`已取消收藏 ${success} 个内容`)
     cancelBatchMode()
     fetchFavorites()
   } catch (e) {

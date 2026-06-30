@@ -3,7 +3,7 @@ const DbAdapter = require('../utils/dbAdapter');
  * 关注控制器
  */
 
-const { Follow, User, Notification } = require('../models');
+const { Follow, User, Notification, sequelize } = require('../models');
 const { successResponse, errorResponse, paginateResponse } = require('../middleware/response');
 
 /**
@@ -36,11 +36,19 @@ async function followUser(req, res) {
             return errorResponse(res, '已关注该用户', 400);
         }
         
-        // 创建关注
+        // 创建关注 + 更新计数（事务保证一致性）
         try {
-            await DbAdapter.create(Follow, {
-                follower_id: DbAdapter.getId(req.user),
-                following_id: targetUser.id
+            await sequelize.transaction(async (t) => {
+                await DbAdapter.create(Follow, {
+                    follower_id: DbAdapter.getId(req.user),
+                    following_id: targetUser.id
+                }, { transaction: t });
+
+                const currentUser = await DbAdapter.findByPk(User, DbAdapter.getId(req.user), { transaction: t });
+                if (currentUser) await DbAdapter.increment(currentUser, 'following_count', { transaction: t });
+
+                const target = await DbAdapter.findByPk(User, DbAdapter.getId(targetUser), { transaction: t });
+                if (target) await DbAdapter.increment(target, 'follower_count', { transaction: t });
             });
         } catch (createError) {
             if (createError.name === 'SequelizeUniqueConstraintError') {
@@ -48,11 +56,6 @@ async function followUser(req, res) {
             }
             throw createError;
         }
-        
-        // 使用原子操作更新计数，避免竞态条件
-        const currentUser = await DbAdapter.findByPk(User, DbAdapter.getId(req.user));
-        await DbAdapter.increment(currentUser, 'following_count');
-        await DbAdapter.increment(targetUser, 'follower_count');
         
         try {
             await DbAdapter.create(Notification, {
@@ -91,17 +94,20 @@ async function unfollowUser(req, res) {
             return errorResponse(res, '未关注该用户', 400);
         }
         
-        await DbAdapter.destroy(Follow, { where: { id: DbAdapter.getId(follow) } });
-        
-        // 使用原子操作更新计数，避免竞态条件
-        const currentUser = await DbAdapter.findByPk(User, DbAdapter.getId(req.user));
-        if (currentUser && (currentUser.following_count || 0) > 0) {
-            await DbAdapter.decrement(currentUser, 'following_count');
-        }
-        const freshTarget = await DbAdapter.findByPk(User, DbAdapter.getId(targetUser));
-        if (freshTarget && (freshTarget.follower_count || 0) > 0) {
-            await DbAdapter.decrement(freshTarget, 'follower_count');
-        }
+        // 取消关注 + 更新计数（事务保证一致性）
+        await sequelize.transaction(async (t) => {
+            await DbAdapter.destroy(Follow, { where: { id: DbAdapter.getId(follow) }, transaction: t });
+
+            const currentUser = await DbAdapter.findByPk(User, DbAdapter.getId(req.user), { transaction: t });
+            if (currentUser && (currentUser.following_count || 0) > 0) {
+                await DbAdapter.decrement(currentUser, 'following_count', { transaction: t });
+            }
+
+            const freshTarget = await DbAdapter.findByPk(User, DbAdapter.getId(targetUser), { transaction: t });
+            if (freshTarget && (freshTarget.follower_count || 0) > 0) {
+                await DbAdapter.decrement(freshTarget, 'follower_count', { transaction: t });
+            }
+        });
         
         return successResponse(res, null, '已取消关注');
     } catch (error) {

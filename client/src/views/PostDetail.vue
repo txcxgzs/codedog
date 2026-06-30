@@ -424,11 +424,12 @@ const submitComment = async () => {
           parent.replies.push(res.data)
         } else {
           comments.value.unshift(res.data)
+          post.value.comment_count = (post.value.comment_count || 0) + 1
         }
       } else {
         comments.value.unshift(res.data)
+        post.value.comment_count = (post.value.comment_count || 0) + 1
       }
-      post.value.comment_count++
       commentContent.value = ''
       replyToCommentId.value = null
       replyToUserId.value = null

@@ -714,6 +714,14 @@ async function deleteWork(req, res) {
 
         const { Like, Favorite, Comment, Report, StudioWork, Notification } = require('../models');
         const wid = DbAdapter.getId(work);
+
+        // 收集受影响的工作室，用于后续重算 work_count
+        const affectedStudioWorks = await DbAdapter.findAll(StudioWork, {
+            where: { work_id: wid, status: 'approved' },
+            attributes: ['studio_id']
+        });
+        const affectedStudioIds = [...new Set(affectedStudioWorks.map(sw => sw.studio_id))];
+
         await DbAdapter.destroy(Notification, { where: { related_id: wid, related_type: 'work' } });
         await DbAdapter.destroy(StudioWork, { where: { work_id: wid } });
         await DbAdapter.destroy(Report, { where: { target_id: wid, type: 'work' } });
@@ -721,6 +729,12 @@ async function deleteWork(req, res) {
         await DbAdapter.destroy(Favorite, { where: { work_id: wid } });
         await DbAdapter.destroy(Comment, { where: { work_id: wid } });
         await DbAdapter.destroy(Work, { where: { id: wid } });
+
+        // 重算受影响工作室的 work_count
+        for (const sid of affectedStudioIds) {
+            const approvedCount = await DbAdapter.count(StudioWork, { where: { studio_id: sid, status: 'approved' } });
+            await DbAdapter.update(Studio, { work_count: approvedCount }, { where: { id: sid } });
+        }
         logOperation(req, 'delete_work', 'work', workId, { name: work.name });
 
         return successResponse(res, null, '删除成功');
@@ -755,22 +769,28 @@ async function crawlWork(req, res) {
             return errorResponse(res, '作品已存在', 400);
         }
 
-        let user = await DbAdapter.findOne(User, { 
-            where: { codemao_user_id: workDetail.user_info?.id } 
-        });
+        const userInfo = workDetail.user_info || {};
+        const codemaoUserId = userInfo.id != null ? String(userInfo.id) : null;
 
-        if (!user) {
-            user = await DbAdapter.create(User, {
-                codemao_user_id: workDetail.user_info.id,
-                username: `codemao_${workDetail.user_info.id}`,
-                email: `codemao_${workDetail.user_info.id}@placeholder.com`,
-                password: '$2a$10$placeholder',
-                nickname: workDetail.user_info.nickname,
-                avatar: workDetail.user_info.avatar,
-                bio: workDetail.user_info.description,
-                role: 'user',
-                status: 'active'
+        let user = null;
+        if (codemaoUserId) {
+            user = await DbAdapter.findOne(User, { 
+                where: { codemao_user_id: codemaoUserId } 
             });
+
+            if (!user) {
+                user = await DbAdapter.create(User, {
+                    codemao_user_id: codemaoUserId,
+                    username: `codemao_${codemaoUserId}`,
+                    email: `codemao_${codemaoUserId}@placeholder.com`,
+                    password: '$2a$10$placeholder',
+                    nickname: userInfo.nickname || `用户${codemaoUserId}`,
+                    avatar: userInfo.avatar || null,
+                    bio: userInfo.description || null,
+                    role: 'user',
+                    status: 'active'
+                });
+            }
         }
 
         // 识别作品类型 (主类型)
@@ -783,9 +803,9 @@ async function crawlWork(req, res) {
             preview: workDetail.preview,
             type: workType,
             work_url: workDetail.player_url,
-            user_id: DbAdapter.getId(user),
-            codemao_author_id: workDetail.user_info.id,
-            codemao_author_name: workDetail.user_info.nickname,
+            user_id: user ? DbAdapter.getId(user) : null,
+            codemao_author_id: codemaoUserId,
+            codemao_author_name: userInfo.nickname || '未知作者',
             view_times: workDetail.view_times || 0,
             praise_times: workDetail.praise_times || workDetail.liked_times || 0,
             collection_times: workDetail.collect_times || 0,
@@ -1258,25 +1278,29 @@ async function crawlBanners(req, res) {
             return errorResponse(res, '没有找到轮播图', 404);
         }
         
-        await DbAdapter.destroy(Banner, { where: {} });
-        
-        let count = 0;
+        // 先创建新轮播图，成功后再删旧数据，避免外部数据异常导致首页轮播丢失
+        const newBanners = [];
         for (let i = 0; i < items.length; i++) {
             const item = items[i];
             console.log(`处理轮播图 ${i + 1}:`, item);
             try {
-                await DbAdapter.create(Banner, {
+                const banner = await DbAdapter.create(Banner, {
                     title: item.title || item.name || item.text || `轮播图${i + 1}`,
                     image_url: item.background_url || item.image_url || item.cover || item.picture || item.image || item.src,
                     link_url: item.target_url || item.link_url || item.url || item.link || '',
                     sort: i,
                     is_active: true
                 });
-                count++;
+                newBanners.push(DbAdapter.getId(banner));
             } catch (e) {
                 console.error('创建轮播图失败:', e.message);
             }
         }
+
+        // 删除旧轮播图（排除刚创建的）
+        await DbAdapter.destroy(Banner, { where: { id: { [Op.notIn]: newBanners } } });
+        
+        const count = newBanners.length;
         
         logOperation(req, 'crawl_banners', 'banner', null, { count });
         console.log(`爬取轮播图完成，共 ${count} 个`);
@@ -1450,11 +1474,16 @@ async function updateCommentStatus(req, res) {
             return errorResponse(res, '评论不存在', 404);
         }
 
+        const oldStatus = comment.status;
         await DbAdapter.update(Comment, { status }, { where: { id: commentId } });
 
-        // 状态变更时维护 comment_count
-        if (status === 'deleted' || status === 'hidden') {
-            if (!comment.parent_id) {
+        // 仅在 active → 非 active 时扣减，非 active → active 时补回，避免重复扣减
+        const wasActive = oldStatus === 'active';
+        const isActive = status === 'active';
+
+        if (!comment.parent_id) {
+            if (wasActive && !isActive) {
+                // active → hidden/deleted: 扣减
                 if (comment.work_id) {
                     const work = await DbAdapter.findByPk(Work, comment.work_id);
                     if (work && (work.comment_count || 0) > 0) await DbAdapter.decrement(work, 'comment_count');
@@ -1463,9 +1492,8 @@ async function updateCommentStatus(req, res) {
                     const post = await DbAdapter.findByPk(Post, comment.post_id);
                     if (post && (post.comment_count || 0) > 0) await DbAdapter.decrement(post, 'comment_count');
                 }
-            }
-        } else if (status === 'active' && (comment.status === 'deleted' || comment.status === 'hidden')) {
-            if (!comment.parent_id) {
+            } else if (!wasActive && isActive) {
+                // hidden/deleted → active: 补回
                 if (comment.work_id) {
                     const work = await DbAdapter.findByPk(Work, comment.work_id);
                     if (work) await DbAdapter.increment(work, 'comment_count');
@@ -1498,18 +1526,24 @@ async function deleteComment(req, res) {
             return errorResponse(res, '评论不存在', 404);
         }
 
-        await DbAdapter.update(Comment, { status: 'deleted' }, { where: { id: commentId } });
+        // 仅在评论当前为 active 时才扣减，避免已 hidden/deleted 的评论重复扣减
+        if (comment.status === 'active') {
+            await DbAdapter.update(Comment, { status: 'deleted' }, { where: { id: commentId } });
+            // 级联软删除子回复
+            await DbAdapter.update(Comment, { status: 'deleted' }, { where: { parent_id: commentId } });
 
-        // 维护 comment_count
-        if (!comment.parent_id) {
-            if (comment.work_id) {
-                const work = await DbAdapter.findByPk(Work, comment.work_id);
-                if (work && (work.comment_count || 0) > 0) await DbAdapter.decrement(work, 'comment_count');
+            if (!comment.parent_id) {
+                if (comment.work_id) {
+                    const work = await DbAdapter.findByPk(Work, comment.work_id);
+                    if (work && (work.comment_count || 0) > 0) await DbAdapter.decrement(work, 'comment_count');
+                }
+                if (comment.post_id) {
+                    const post = await DbAdapter.findByPk(Post, comment.post_id);
+                    if (post && (post.comment_count || 0) > 0) await DbAdapter.decrement(post, 'comment_count');
+                }
             }
-            if (comment.post_id) {
-                const post = await DbAdapter.findByPk(Post, comment.post_id);
-                if (post && (post.comment_count || 0) > 0) await DbAdapter.decrement(post, 'comment_count');
-            }
+        } else {
+            await DbAdapter.update(Comment, { status: 'deleted' }, { where: { id: commentId } });
         }
 
         logOperation(req, 'delete_comment', 'comment', commentId, {
@@ -1614,7 +1648,27 @@ async function handleReport(req, res) {
                 const work = await DbAdapter.findByPk(Work, report.target_id);
                 if (work) {
                     targetOwnerId = work.user_id;
-                    await DbAdapter.update(Work, { status: 'deleted' }, { where: { id: report.target_id } });
+                    const wid = report.target_id;
+                    // 清理关联数据
+                    const { Like, Favorite, Comment, StudioWork, Notification } = require('../models');
+                    const affectedStudioWorks = await DbAdapter.findAll(StudioWork, {
+                        where: { work_id: wid, status: 'approved' },
+                        attributes: ['studio_id']
+                    });
+                    const affectedStudioIds = [...new Set(affectedStudioWorks.map(sw => sw.studio_id))];
+
+                    await DbAdapter.destroy(Notification, { where: { related_id: wid, related_type: 'work' } });
+                    await DbAdapter.destroy(StudioWork, { where: { work_id: wid } });
+                    await DbAdapter.destroy(Like, { where: { work_id: wid } });
+                    await DbAdapter.destroy(Favorite, { where: { work_id: wid } });
+                    await DbAdapter.destroy(Comment, { where: { work_id: wid } });
+                    await DbAdapter.update(Work, { status: 'deleted' }, { where: { id: wid } });
+
+                    // 重算受影响工作室的 work_count
+                    for (const sid of affectedStudioIds) {
+                        const approvedCount = await DbAdapter.count(StudioWork, { where: { studio_id: sid, status: 'approved' } });
+                        await DbAdapter.update(Studio, { work_count: approvedCount }, { where: { id: sid } });
+                    }
                 }
             } else if (report.type === 'comment') {
                 const comment = await DbAdapter.findByPk(Comment, report.target_id);
@@ -1644,7 +1698,14 @@ async function handleReport(req, res) {
                 const post = await DbAdapter.findByPk(Post, report.target_id);
                 if (post) {
                     targetOwnerId = post.user_id;
-                    await DbAdapter.update(Post, { status: 'deleted' }, { where: { id: report.target_id } });
+                    const pid = report.target_id;
+                    // 清理关联数据
+                    const { Like, Favorite, Comment, Notification } = require('../models');
+                    await DbAdapter.destroy(Notification, { where: { related_id: pid, related_type: 'post' } });
+                    await DbAdapter.destroy(Like, { where: { post_id: pid } });
+                    await DbAdapter.destroy(Favorite, { where: { post_id: pid } });
+                    await DbAdapter.destroy(Comment, { where: { post_id: pid } });
+                    await DbAdapter.update(Post, { status: 'deleted' }, { where: { id: pid } });
                 }
             } else if (report.type === 'user') {
                 targetOwnerId = report.target_id;
@@ -1760,6 +1821,14 @@ async function addIpBan(req, res) {
         const IPV6_REGEX = /^([0-9a-fA-F]{0,4}:){2,7}[0-9a-fA-F]{0,4}$/;
         if (!IPV4_REGEX.test(ip_address) && !IPV6_REGEX.test(ip_address)) {
             return errorResponse(res, 'IP地址格式无效', 400);
+        }
+
+        // IPv4 各段必须在 0~255 范围内
+        if (IPV4_REGEX.test(ip_address)) {
+            const parts = ip_address.split('.').map(Number);
+            if (parts.some(p => p > 255)) {
+                return errorResponse(res, 'IP地址格式无效', 400);
+            }
         }
 
         const existing = await DbAdapter.findOne(IpBan, { where: { ip: ip_address } });

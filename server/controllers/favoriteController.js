@@ -46,7 +46,8 @@ async function favoriteWorksForUser(userId, query) {
                     attributes: ['id', 'codemao_user_id', 'username', 'nickname', 'avatar']
                 }]
             }],
-            order: [['created_at', 'DESC']]
+            order: [['created_at', 'DESC']],
+            limit: 500
         }),
         DbAdapter.findAndCountAll(Favorite, {
             where: { user_id: userId, post_id: { [Op.ne]: null } },
@@ -60,7 +61,8 @@ async function favoriteWorksForUser(userId, query) {
                     attributes: ['id', 'username', 'nickname', 'avatar']
                 }]
             }],
-            order: [['created_at', 'DESC']]
+            order: [['created_at', 'DESC']],
+            limit: 500
         })
     ]);
 

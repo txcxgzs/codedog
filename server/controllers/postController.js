@@ -83,8 +83,7 @@ async function createPost(req, res) {
  */
 async function getPosts(req, res) {
     try {
-        const page = parseInt(req.query.page) || 1;
-        const pageSize = parseInt(req.query.pageSize) || 20;
+        const { page, pageSize, offset } = DbAdapter.parsePagination(req.query);
         const category = req.query.category || '';
         const keyword = req.query.keyword || '';
         const sortBy = req.query.sortBy || 'latest';
@@ -127,9 +126,9 @@ async function getPosts(req, res) {
             }],
             order,
             limit: pageSize,
-            offset: (page - 1) * pageSize
+            offset
         });
-        
+
         return paginateResponse(res, rows.map(normalizePostOutput), count, page, pageSize);
     } catch (error) {
         console.error('获取帖子列表错误:', error);
@@ -160,8 +159,21 @@ async function getPostDetail(req, res) {
             return errorResponse(res, '帖子不存在', 404);
         }
 
-        // 原子 +1 避免 read-modify-write 竞态
-        await DbAdapter.increment(post, 'view_count');
+        // 基于会话的浏览数去重，同一会话短时间内不重复计数
+        const viewKey = `post_view_${id}`;
+        const sessionViews = (req.session && req.session.postViews) || {};
+        const now = Date.now();
+        const lastView = sessionViews[viewKey];
+        const VIEW_COOLDOWN = 5 * 60 * 1000; // 5分钟内不重复计数
+
+        if (!lastView || (now - lastView) > VIEW_COOLDOWN) {
+            // 原子 +1 避免 read-modify-write 竞态
+            await DbAdapter.increment(post, 'view_count');
+            if (req.session) {
+                if (!req.session.postViews) req.session.postViews = {};
+                req.session.postViews[viewKey] = now;
+            }
+        }
 
         const { Like, Favorite } = require('../models');
 
@@ -262,7 +274,7 @@ async function updatePost(req, res) {
             content: content || post.content,
             category: category || post.category,
             tags: tags !== undefined ? tags : post.tags,
-            cover: cover || post.cover
+            cover: cover !== undefined ? cover : post.cover
         }, { where: { id } });
         
         const updatedPost = await DbAdapter.findByPk(Post, id, {
@@ -295,8 +307,15 @@ async function deletePost(req, res) {
         if (post.user_id !== DbAdapter.getId(req.user) && !isRoleAtLeast(req.user.role, 'moderator')) {
             return errorResponse(res, '无权删除此帖子', 403);
         }
-        
-        await DbAdapter.update(Post, { status: 'deleted' }, { where: { id } });
+
+        const pid = DbAdapter.getId(post);
+        // 清理关联数据，与 admin 删除策略一致
+        const { Like, Favorite, Comment, Notification } = require('../models');
+        await DbAdapter.destroy(Notification, { where: { related_id: pid, related_type: 'post' } });
+        await DbAdapter.destroy(Like, { where: { post_id: pid } });
+        await DbAdapter.destroy(Favorite, { where: { post_id: pid } });
+        await DbAdapter.destroy(Comment, { where: { post_id: pid } });
+        await DbAdapter.update(Post, { status: 'deleted' }, { where: { id: pid } });
         
         return successResponse(res, null, '帖子已删除');
     } catch (error) {
@@ -474,14 +493,13 @@ async function unfavoritePost(req, res) {
  */
 async function getMyPosts(req, res) {
     try {
-        const page = parseInt(req.query.page) || 1;
-        const pageSize = parseInt(req.query.pageSize) || 10;
-        
+        const { page, pageSize, offset } = DbAdapter.parsePagination(req.query);
+
         const { count, rows } = await DbAdapter.findAndCountAll(Post, {
             where: { user_id: DbAdapter.getId(req.user) },
             order: [['created_at', 'DESC']],
             limit: pageSize,
-            offset: (page - 1) * pageSize
+            offset
         });
         
         return paginateResponse(res, rows.map(normalizePostOutput), count, page, pageSize);

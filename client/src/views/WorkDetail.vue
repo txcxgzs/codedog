@@ -511,9 +511,29 @@ const goUser = (user) => {
 }
 
 const goUserById = (userId) => {
-  if (userId) {
-    router.push(`/user/${userId}`)
+  // 尝试在评论/回复中找到该用户的 codemao_user_id
+  if (!userId) return
+  // 先在回复的 reply_to_user 关联中查找
+  for (const comment of comments.value) {
+    if (comment.reply_to_user && String(comment.reply_to_user.id) === String(userId)) {
+      if (comment.reply_to_user.codemao_user_id) {
+        router.push(`/user/${comment.reply_to_user.codemao_user_id}`)
+        return
+      }
+    }
+    if (comment.replies) {
+      for (const reply of comment.replies) {
+        if (reply.reply_to_user && String(reply.reply_to_user.id) === String(userId)) {
+          if (reply.reply_to_user.codemao_user_id) {
+            router.push(`/user/${reply.reply_to_user.codemao_user_id}`)
+            return
+          }
+        }
+      }
+    }
   }
+  // 回退：直接用 id 跳转
+  router.push(`/user/${userId}`)
 }
 
 const fetchRelatedWorks = async () => {
@@ -670,22 +690,18 @@ const submitComment = async () => {
     const res = await commentApi.createComment({
       content: commentContent.value,
       work_id: work.value.codemao_work_id,
-      parent_id: replyingTo.value?.id || null,
+      parent_id: replyingTo.value ? (replyingTo.value.parent_id || replyingTo.value.id) : null,
       reply_to_user_id: replyingTo.value?.user?.id || null,
       ...geetestData
     })
     if (res.code === 200) {
       if (replyingTo.value) {
-        if (replyingTo.value.parent_id) {
-          const parentComment = comments.value.find(c => c.id === replyingTo.value.parent_id)
-          if (parentComment && parentComment.replies) {
-            parentComment.replies.push(res.data)
-          }
-        } else {
-          const parentComment = comments.value.find(c => c.id === replyingTo.value.id)
-          if (parentComment && parentComment.replies) {
-            parentComment.replies.push(res.data)
-          }
+        // 确定顶层父评论：如果 replyingTo 是回复(有 parent_id)则用其 parent_id，否则用 replyingTo.id
+        const topLevelId = replyingTo.value.parent_id || replyingTo.value.id
+        const parentComment = comments.value.find(c => c.id === topLevelId)
+        if (parentComment) {
+          if (!parentComment.replies) parentComment.replies = []
+          parentComment.replies.push(res.data)
         }
         // 回复不增加顶层评论数
       } else {
@@ -782,10 +798,22 @@ const deleteComment = async (comment) => {
     await ElMessageBox.confirm('确定删除这条评论吗？', '提示', { type: 'warning' })
     const res = await commentApi.deleteComment(comment.id)
     if (res.code === 200) {
+      // 先在顶层评论中查找
       const index = comments.value.findIndex(c => c.id === comment.id)
       if (index > -1) {
         comments.value.splice(index, 1)
         work.value.comment_count = Math.max(0, (work.value.comment_count || 0) - 1)
+      } else {
+        // 在回复列表中查找
+        for (const parent of comments.value) {
+          if (parent.replies) {
+            const replyIndex = parent.replies.findIndex(r => r.id === comment.id)
+            if (replyIndex > -1) {
+              parent.replies.splice(replyIndex, 1)
+              break
+            }
+          }
+        }
       }
       ElMessage.success('删除成功')
     }

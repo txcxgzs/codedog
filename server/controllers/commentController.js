@@ -146,7 +146,7 @@ async function createComment(req, res) {
             }, {
                 model: User,
                 as: 'reply_to_user',
-                attributes: ['id', 'username', 'nickname'],
+                attributes: ['id', 'codemao_user_id', 'username', 'nickname'],
                 required: false
             }]
         });
@@ -162,7 +162,7 @@ async function getWorkComments(req, res) {
     try {
         const { workId } = req.params;
         const page = parseInt(req.query.page, 10) || 1;
-        const pageSize = parseInt(req.query.pageSize, 10) || 20;
+        const pageSize = Math.min(100, Math.max(1, parseInt(req.query.pageSize, 10) || 20));
         const work = await resolvePublishedWork(workId);
 
         if (!work) {
@@ -171,6 +171,7 @@ async function getWorkComments(req, res) {
 
         const { count, rows } = await DbAdapter.findAndCountAll(Comment, {
             where: { work_id: DbAdapter.getId(work), status: 'active', parent_id: null },
+            distinct: true,
             include: [{
                 model: User,
                 as: 'user',
@@ -178,7 +179,7 @@ async function getWorkComments(req, res) {
             }, {
                 model: User,
                 as: 'reply_to_user',
-                attributes: ['id', 'username', 'nickname'],
+                attributes: ['id', 'codemao_user_id', 'username', 'nickname'],
                 required: false
             }, {
                 model: Comment,
@@ -192,7 +193,7 @@ async function getWorkComments(req, res) {
                 }, {
                     model: User,
                     as: 'reply_to_user',
-                    attributes: ['id', 'username', 'nickname'],
+                    attributes: ['id', 'codemao_user_id', 'username', 'nickname'],
                     required: false
                 }]
             }],
@@ -250,15 +251,18 @@ async function deleteComment(req, res) {
 
         await DbAdapter.update(Comment, { status: 'deleted' }, { where: { id } });
 
+        // 级联软删除子回复，避免孤儿回复
+        await DbAdapter.update(Comment, { status: 'deleted' }, { where: { parent_id: id } });
+
         // 仅顶层评论（无 parent_id）才递减 comment_count，与 createComment 保持一致
         if (!comment.parent_id) {
             if (comment.work_id) {
                 const work = await DbAdapter.findByPk(Work, comment.work_id);
-                if (work) await DbAdapter.decrement(work, 'comment_count');
+                if (work && (work.comment_count || 0) > 0) await DbAdapter.decrement(work, 'comment_count');
             }
             if (comment.post_id) {
                 const post = await DbAdapter.findByPk(Post, comment.post_id);
-                if (post) await DbAdapter.decrement(post, 'comment_count');
+                if (post && (post.comment_count || 0) > 0) await DbAdapter.decrement(post, 'comment_count');
             }
         }
 

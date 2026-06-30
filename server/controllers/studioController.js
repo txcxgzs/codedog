@@ -71,22 +71,24 @@ async function createStudio(req, res) {
             return errorResponse(res, '工作室名称已存在', 400);
         }
         
-        const studio = await DbAdapter.create(Studio, {
-            name,
-            description,
-            cover,
-            owner_id: req.user.id,
-            is_public: is_public !== false,
-            join_type: join_type || 'apply'
-        });
+        const studio = await sequelize.transaction(async (t) => {
+            const newStudio = await DbAdapter.create(Studio, {
+                name,
+                description,
+                cover,
+                owner_id: req.user.id,
+                is_public: is_public !== false,
+                join_type: join_type || 'apply'
+            }, { transaction: t });
 
-        await sequelize.transaction(async (t) => {
             await DbAdapter.create(StudioMember, {
-                studio_id: studio.id,
+                studio_id: newStudio.id,
                 user_id: req.user.id,
                 role: 'owner',
                 status: 'active'
-            });
+            }, { transaction: t });
+
+            return newStudio;
         });
 
         return successResponse(res, studio, '工作室创建成功');
@@ -98,8 +100,7 @@ async function createStudio(req, res) {
 
 async function getStudios(req, res) {
     try {
-        const page = parseInt(req.query.page) || 1;
-        const pageSize = parseInt(req.query.pageSize) || 20;
+        const { page, pageSize, offset } = DbAdapter.parsePagination(req.query);
         const keyword = req.query.keyword || '';
         
         const where = { status: 'active', is_public: true };
@@ -117,9 +118,9 @@ async function getStudios(req, res) {
             }],
             order: [['level', 'DESC'], ['points', 'DESC'], ['created_at', 'DESC']],
             limit: pageSize,
-            offset: (page - 1) * pageSize
+            offset
         });
-        
+
         return paginateResponse(res, rows, count, page, pageSize);
     } catch (error) {
         console.error('获取工作室列表错误:', error);
@@ -305,6 +306,10 @@ async function leaveStudio(req, res) {
         if (studio && member.status === 'active' && (studio.member_count || 0) > 0) {
             await DbAdapter.decrement(studio, 'member_count');
         }
+        // 如果退出者是副室长，清除引用
+        if (studio && sameId(studio.vice_owner_id, req.user.id)) {
+            await DbAdapter.update(Studio, { vice_owner_id: null }, { where: { id: DbAdapter.getId(studio) } });
+        }
 
         return successResponse(res, null, '已退出工作室');
     } catch (error) {
@@ -414,19 +419,21 @@ async function reviewMember(req, res) {
         }
 
         if (action === 'approve') {
-            await DbAdapter.update(StudioMember, { status: 'active' }, { where: { id: DbAdapter.getId(member) } });
-            const studio = await DbAdapter.findByPk(Studio, id);
-            if (studio) {
-                // 原子 +1 避免 read-modify-write 竞态
-                await DbAdapter.increment(studio, 'member_count');
-            }
+            await sequelize.transaction(async (t) => {
+                await DbAdapter.update(StudioMember, { status: 'active' }, { where: { id: DbAdapter.getId(member) }, transaction: t });
+                const studio = await DbAdapter.findByPk(Studio, id, { transaction: t });
+                if (studio) {
+                    await DbAdapter.increment(studio, 'member_count', { transaction: t });
+                }
+            });
 
             try {
+                const studioForNotify = await DbAdapter.findByPk(Studio, id);
                 await DbAdapter.create(Notification, {
                     user_id: member.user_id,
                     type: 'system',
                     title: '工作室申请通过',
-                    content: `您申请加入的工作室「${studio?.name || '工作室'}」已通过审核`
+                    content: `您申请加入的工作室「${studioForNotify?.name || '工作室'}」已通过审核`
                 });
             } catch (notifyErr) {
                 console.error('Create review notification error:', notifyErr);
@@ -452,7 +459,7 @@ async function deleteStudio(req, res) {
             return errorResponse(res, '工作室不存在', 404);
         }
         
-        if (studio.owner_id !== req.user.id) {
+        if (!sameId(studio.owner_id, req.user.id)) {
             return errorResponse(res, '只有创建者可以解散工作室', 403);
         }
         
@@ -508,8 +515,10 @@ async function submitWork(req, res) {
             return errorResponse(res, '只能投稿自己的作品', 403);
         }
         
+        const localWorkId = DbAdapter.getId(work);
+        
         const existing = await DbAdapter.findOne(StudioWork, {
-            where: { studio_id: id, work_id: workId }
+            where: { studio_id: id, work_id: localWorkId }
         });
         
         if (existing) {
@@ -525,7 +534,7 @@ async function submitWork(req, res) {
         
         const studioWork = await DbAdapter.create(StudioWork, {
             studio_id: id,
-            work_id: workId,
+            work_id: localWorkId,
             user_id: req.user.id,
             status: 'pending'
         });
@@ -540,8 +549,7 @@ async function submitWork(req, res) {
 async function getStudioWorks(req, res) {
     try {
         const { id } = req.params;
-        const page = parseInt(req.query.page) || 1;
-        const pageSize = parseInt(req.query.pageSize) || 20;
+        const { page, pageSize, offset } = DbAdapter.parsePagination(req.query);
 
         const studio = await DbAdapter.findByPk(Studio, id);
         if (!studio || !await canViewStudio(req, studio)) {
@@ -565,9 +573,9 @@ async function getStudioWorks(req, res) {
             }],
             order: [['added_at', 'DESC']],
             limit: pageSize,
-            offset: (page - 1) * pageSize
+            offset
         });
-        
+
         const list = rows.filter(w => w.work).map(w => ({
             ...w.work.toJSON(),
             studioWorkId: w.id,
@@ -610,22 +618,25 @@ async function reviewWork(req, res) {
         }
 
         if (action === 'approve') {
-            await DbAdapter.update(StudioWork, { 
-                status: 'approved', 
-                reviewed_by: req.user.id,
-                reviewed_at: new Date()
-            }, { where: { id: workId } });
-            const studio = await DbAdapter.findByPk(Studio, id);
-            if (studio) {
-                await DbAdapter.increment(studio, 'work_count');
-            }
+            await sequelize.transaction(async (t) => {
+                await DbAdapter.update(StudioWork, { 
+                    status: 'approved', 
+                    reviewed_by: req.user.id,
+                    reviewed_at: new Date()
+                }, { where: { id: workId }, transaction: t });
+                const studio = await DbAdapter.findByPk(Studio, id, { transaction: t });
+                if (studio) {
+                    await DbAdapter.increment(studio, 'work_count', { transaction: t });
+                }
+            });
             
             try {
+                const studioForNotify = await DbAdapter.findByPk(Studio, id);
                 await DbAdapter.create(Notification, {
                     user_id: studioWork.user_id,
                     type: 'system',
                     title: '作品审核通过',
-                    content: `您投稿到「${studio?.name || '工作室'}」的作品已通过审核`
+                    content: `您投稿到「${studioForNotify?.name || '工作室'}」的作品已通过审核`
                 });
             } catch (e) { console.error('创建审核通知失败:', e.message); }
             
@@ -713,13 +724,14 @@ async function toggleWorkStatus(req, res) {
             }
             return successResponse(res, null, '作品已下架');
         } else if (action === 'up') {
-            const wasDown = studioWork.status !== 'approved';
+            // 仅允许已下架(down)的作品重新上架，防止 pending/rejected 绕过审核
+            if (studioWork.status !== 'down') {
+                return errorResponse(res, '当前状态不允许上架', 400);
+            }
             await DbAdapter.update(StudioWork, { status: 'approved' }, { where: { id: workId } });
-            if (wasDown) {
-                const studio = await DbAdapter.findByPk(Studio, id);
-                if (studio) {
-                    await DbAdapter.increment(studio, 'work_count');
-                }
+            const studio = await DbAdapter.findByPk(Studio, id);
+            if (studio) {
+                await DbAdapter.increment(studio, 'work_count');
             }
             return successResponse(res, null, '作品已上架');
         }
@@ -822,6 +834,14 @@ async function setMemberRole(req, res) {
             return errorResponse(res, '不能修改创建者角色', 400);
         }
         
+        // 如果被修改的成员是副室长且角色降级，清除副室长引用
+        if (member.role === 'vice_owner' && role !== 'vice_owner') {
+            const studio = await DbAdapter.findByPk(Studio, id);
+            if (studio && sameId(studio.vice_owner_id, member.user_id)) {
+                await DbAdapter.update(Studio, { vice_owner_id: null }, { where: { id: DbAdapter.getId(studio) } });
+            }
+        }
+        
         await DbAdapter.update(StudioMember, { role }, { where: { id: DbAdapter.getId(member) } });
         return successResponse(res, null, '角色已更新');
     } catch (error) {
@@ -863,7 +883,11 @@ async function kickMember(req, res) {
         if (studio && (studio.member_count || 0) > 0) {
             await DbAdapter.decrement(studio, 'member_count');
         }
-        
+        // 如果被移除者是副室长，清除引用
+        if (studio && sameId(studio.vice_owner_id, member.user_id)) {
+            await DbAdapter.update(Studio, { vice_owner_id: null }, { where: { id: DbAdapter.getId(studio) } });
+        }
+
         return successResponse(res, null, '成员已移除');
     } catch (error) {
         console.error('移除成员错误:', error);
@@ -898,9 +922,35 @@ async function setViceOwner(req, res) {
                 return errorResponse(res, '该用户不是工作室成员', 400);
             }
             
-            await DbAdapter.update(Studio, { vice_owner_id: user_id }, { where: { id: DbAdapter.getId(studio) } });
+            await sequelize.transaction(async (t) => {
+                // 清除旧副室长角色
+                if (studio.vice_owner_id) {
+                    await DbAdapter.update(StudioMember,
+                        { role: 'member' },
+                        { where: { studio_id: id, user_id: studio.vice_owner_id }, transaction: t }
+                    );
+                }
+                // 设置新副室长
+                await DbAdapter.update(Studio,
+                    { vice_owner_id: user_id },
+                    { where: { id: DbAdapter.getId(studio) }, transaction: t }
+                );
+                await DbAdapter.update(StudioMember,
+                    { role: 'vice_owner' },
+                    { where: { id: DbAdapter.getId(viceMember) }, transaction: t }
+                );
+            });
         } else {
-            await DbAdapter.update(Studio, { vice_owner_id: null }, { where: { id: DbAdapter.getId(studio) } });
+            // 取消副室长
+            if (studio.vice_owner_id) {
+                await sequelize.transaction(async (t) => {
+                    await DbAdapter.update(StudioMember,
+                        { role: 'member' },
+                        { where: { studio_id: id, user_id: studio.vice_owner_id }, transaction: t }
+                    );
+                    await DbAdapter.update(Studio, { vice_owner_id: null }, { where: { id: DbAdapter.getId(studio) }, transaction: t });
+                });
+            }
         }
 
         const updatedStudio = await DbAdapter.findByPk(Studio, DbAdapter.getId(studio));

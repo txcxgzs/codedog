@@ -66,7 +66,7 @@ function buildWorkCreateParams(workInfo, userId) {
         praise_times: workInfo.praiseTimes,
         collection_times: workInfo.collectionTimes,
         view_times: workInfo.viewTimes,
-        comment_count: workInfo.commentTimes,
+        comment_count: 0,
         status: 'published'
     };
 }
@@ -187,8 +187,7 @@ async function publishWork(req, res) {
  */
 async function getWorks(req, res) {
     try {
-        const page = parseInt(req.query.page) || 1;
-        const pageSize = parseInt(req.query.pageSize) || 20;
+        const { page, pageSize, offset } = DbAdapter.parsePagination(req.query);
         const keyword = req.query.keyword || '';
         const type = req.query.type || '';
         const sortBy = req.query.sortBy || 'latest';
@@ -220,9 +219,9 @@ async function getWorks(req, res) {
             }],
             order,
             limit: pageSize,
-            offset: (page - 1) * pageSize
+            offset
         });
-        
+
         return paginateResponse(res, rows, count, page, pageSize);
     } catch (error) {
         console.error('获取作品列表错误:', error);
@@ -254,6 +253,7 @@ async function getWorkDetail(req, res) {
         }
         
         await DbAdapter.increment(work, 'view_times');
+        await work.reload();
         return successResponse(res, await withLikeStatus(req, work));
     } catch (error) {
         console.error('获取作品详情错误:', error);
@@ -282,6 +282,7 @@ async function getWorkByCodemaoId(req, res) {
                 return errorResponse(res, '作品不存在', 404);
             }
             await DbAdapter.increment(work, 'view_times');
+            await work.reload();
             return successResponse(res, await withLikeStatus(req, work));
         }
 
@@ -307,22 +308,7 @@ async function getWorkByCodemaoId(req, res) {
         }
         
         try {
-            work = await DbAdapter.create(Work, {
-                codemao_work_id: String(workInfo.codemaoWorkId),
-                name: workInfo.name,
-                description: workInfo.description,
-                preview: workInfo.preview,
-                type: workInfo.type || '其他',
-                ide_type: workInfo.ideType || 'KITTEN',
-                work_url: workInfo.playerUrl,
-                user_id: author ? DbAdapter.getId(author) : null,
-                codemao_author_id: workInfo.codemaoAuthorId != null ? String(workInfo.codemaoAuthorId) : null,
-                codemao_author_name: workInfo.codemaoAuthorName,
-                view_times: workInfo.viewTimes || 1,
-                praise_times: workInfo.praiseTimes || 0,
-                collection_times: workInfo.collectionTimes || 0,
-                status: 'published'
-            });
+            work = await DbAdapter.create(Work, buildWorkCreateParams(workInfo, author ? DbAdapter.getId(author) : null));
         } catch (createError) {
             if (createError.name === 'SequelizeUniqueConstraintError') {
                 work = await DbAdapter.findOne(Work, {
@@ -511,9 +497,8 @@ async function fetchOrCreateWork(workId) {
  */
 async function getMyWorks(req, res) {
     try {
-        const page = parseInt(req.query.page) || 1;
-        const pageSize = parseInt(req.query.pageSize) || 12;
-        
+        const { page, pageSize, offset } = DbAdapter.parsePagination(req.query);
+
         const { count, rows } = await DbAdapter.findAndCountAll(Work, {
             where: { user_id: DbAdapter.getId(req.user) },
             include: [{
@@ -523,7 +508,7 @@ async function getMyWorks(req, res) {
             }],
             order: [['created_at', 'DESC']],
             limit: pageSize,
-            offset: (page - 1) * pageSize
+            offset
         });
         
         return paginateResponse(res, rows, count, page, pageSize);
@@ -578,7 +563,7 @@ async function likeWork(req, res) {
         const codemaoId = req.params.codemaoId;
         const { Like, Notification } = require('../models');
         
-        const work = await DbAdapter.findOne(Work, { where: { codemao_work_id: codemaoId } });
+        const work = await DbAdapter.findOne(Work, { where: { codemao_work_id: String(codemaoId) } });
         
         if (!work) {
             return errorResponse(res, '作品不存在', 404);
@@ -646,7 +631,7 @@ async function likeWork(req, res) {
 async function deleteWork(req, res) {
     try {
         const codemaoId = req.params.codemaoId;
-        const work = await DbAdapter.findOne(Work, { where: { codemao_work_id: codemaoId } });
+        const work = await DbAdapter.findOne(Work, { where: { codemao_work_id: String(codemaoId) } });
         
         if (!work) {
             return errorResponse(res, '作品不存在', 404);
@@ -657,11 +642,30 @@ async function deleteWork(req, res) {
             return errorResponse(res, '无权删除此作品', 403);
         }
         
-        const { Like, Favorite, Comment } = require('../models');
-        await DbAdapter.destroy(Like, { where: { work_id: DbAdapter.getId(work) } });
-        await DbAdapter.destroy(Favorite, { where: { work_id: DbAdapter.getId(work) } });
-        await DbAdapter.destroy(Comment, { where: { work_id: DbAdapter.getId(work) } });
-        await DbAdapter.destroy(Work, { where: { id: DbAdapter.getId(work) } });
+        const { Like, Favorite, Comment, StudioWork, Notification } = require('../models');
+        const wid = DbAdapter.getId(work);
+
+        // 收集受影响的工作室，用于后续重算 work_count
+        const affectedStudioWorks = await DbAdapter.findAll(StudioWork, {
+            where: { work_id: wid, status: 'approved' },
+            attributes: ['studio_id']
+        });
+        const affectedStudioIds = [...new Set(affectedStudioWorks.map(sw => sw.studio_id))];
+
+        await DbAdapter.destroy(Notification, { where: { related_id: wid, related_type: 'work' } });
+        await DbAdapter.destroy(StudioWork, { where: { work_id: wid } });
+        await DbAdapter.destroy(Like, { where: { work_id: wid } });
+        await DbAdapter.destroy(Favorite, { where: { work_id: wid } });
+        await DbAdapter.destroy(Comment, { where: { work_id: wid } });
+        await DbAdapter.destroy(Work, { where: { id: wid } });
+
+        // 重算受影响工作室的 work_count
+        const { Studio } = require('../models');
+        for (const sid of affectedStudioIds) {
+            const approvedCount = await DbAdapter.count(StudioWork, { where: { studio_id: sid, status: 'approved' } });
+            await DbAdapter.update(Studio, { work_count: approvedCount }, { where: { id: sid } });
+        }
+
         return successResponse(res, null, '作品已删除');
     } catch (error) {
         console.error('删除作品错误:', error);
