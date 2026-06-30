@@ -154,6 +154,9 @@ check(attackTest.includes('unsupported JSON charset does not return 5xx'), 'atta
 check(attackTest.includes('protected route requires auth'), 'attack test should probe protected route auth matrix.');
 check(attackTest.includes('login brute force') && attackTest.includes("'Content-Type': 'text/plain'"), 'login brute-force test should exercise local rate limiting without hitting Codemao.');
 
+const dbMigration = read('server/services/dbMigration.js');
+check(!dbMigration.includes("status: 'active'"), 'dbMigration should not define Post.status with active (migrated to published).');
+
 if (failures.length > 0) {
     console.error('Consistency checks failed:');
     for (const failure of failures) {

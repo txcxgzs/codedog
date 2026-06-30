@@ -28,15 +28,7 @@ export const postApi = {
   likePost(id, geetestData = {}) {
     return request.post(`/posts/${id}/like`, geetestData)
   },
-  
-  favoritePost(id, geetestData = {}) {
-    return request.post(`/posts/${id}/favorite`, geetestData)
-  },
-  
-  unfavoritePost(id, geetestData = {}) {
-    return request.delete(`/posts/${id}/favorite`, { data: geetestData })
-  },
-  
+
   getMyPosts(params = {}) {
     return request.get('/posts/my/list', { params })
   }

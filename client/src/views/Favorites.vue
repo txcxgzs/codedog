@@ -155,11 +155,6 @@ const removeFavorite = async (work) => {
   try {
     await ElMessageBox.confirm('确定要取消收藏该作品吗？', '提示', { type: 'warning' })
 
-    let geetestData = {}
-    if (geetestEnabled('remove_favorite')) {
-      geetestData = await geetestDialog.value?.show('remove_favorite')
-      if (!geetestData) return
-    }
     await doRemoveFavorite(work.id)
   } catch (e) {
     if (e !== 'cancel') console.error(e)
@@ -172,10 +167,6 @@ const batchRemove = async () => {
   try {
     await ElMessageBox.confirm(`确定要取消收藏选中的 ${selectedWorks.value.length} 个作品吗？`, '提示', { type: 'warning' })
 
-    if (geetestEnabled('remove_favorite')) {
-      const geetestData = await geetestDialog.value?.show('remove_favorite')
-      if (!geetestData) return
-    }
     await doBatchRemove()
   } catch (e) {
     if (e !== 'cancel') console.error(e)
@@ -187,7 +178,7 @@ const doRemoveFavorite = async (workId) => {
     const res = await favoriteApi.remove(workId)
     if (res.code === 200) {
       ElMessage.success('已取消收藏')
-      works.value = works.value.filter(w => w.id !== workId)
+      works.value = works.value.filter(w => w.codemao_work_id !== workId)
       total.value--
       if (works.value.length === 0 && currentPage.value > 1) {
         currentPage.value--

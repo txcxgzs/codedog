@@ -300,6 +300,20 @@ async function startServer() {
         }
         console.log('Database models synchronized.');
 
+        // 迁移旧数据：将 Post.status='active' 统一改为 'published'
+        try {
+            const { Post } = require('./models');
+            const [updated] = await Post.update(
+                { status: 'published' },
+                { where: { status: 'active' } }
+            );
+            if (updated > 0) {
+                console.log(`迁移完成：${updated} 条帖子状态从 active 更新为 published`);
+            }
+        } catch (e) {
+            console.warn('帖子状态迁移跳过:', e.message);
+        }
+
         // 启动时刷新角色权限缓存，避免热更新后 getRoleSync 永远走默认值
         try {
             const { refreshRoleCache } = require('./config/permissions');

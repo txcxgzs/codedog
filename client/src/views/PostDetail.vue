@@ -71,7 +71,7 @@
                 </div>
                 <p class="r-post--comment_content">{{ comment.content }}</p>
                 <div class="r-post--comment_actions">
-                  <span @click="likeComment(comment)"><span class="r-post--comment_icon r-post--comment_icon_like"></span>{{ comment.like_count || 0 }}</span>
+                  <span @click="likeComment(comment)" :class="{ 'is-loading': likingComments.has(comment.id) }"><span class="r-post--comment_icon r-post--comment_icon_like"></span>{{ comment.like_count || 0 }}</span>
                   <span @click="replyTo(comment)"><span class="r-post--comment_icon r-post--comment_icon_reply"></span>回复</span>
                   <span v-if="comment.user_id === userStore.user?.id" @click="deleteComment(comment)" class="r-post--comment_delete">删除</span>
                   <span v-else @click="reportComment(comment)" class="r-post--comment_report">举报</span>
@@ -264,17 +264,29 @@ const toggleFavorite = async () => {
     ElMessage.warning('请先登录')
     return
   }
+
+  // 防止重复点击
+  if (favoriteLoading.value) return
+
+  let geetestData = {}
+
+  // 帖子收藏/取消收藏在开启验证码时需要携带 Geetest 数据，否则后端 geetestVerify('favorite') 会拦截
+  if (geetestConfig.value?.enabled && geetestConfig.value?.scenes?.favorite) {
+    geetestData = await geetestDialogRef.value.show('favorite')
+    if (!geetestData) return
+  }
+
   favoriteLoading.value = true
   try {
     if (isFavorited.value) {
-      const res = await favoriteApi.unfavoritePost(post.value.id)
+      const res = await favoriteApi.unfavoritePost(post.value.id, geetestData)
       if (res.code === 200) {
         isFavorited.value = false
         post.value.collection_count = res.data.collection_count
         ElMessage.success('已取消收藏')
       }
     } else {
-      const res = await favoriteApi.favoritePost(post.value.id)
+      const res = await favoriteApi.favoritePost(post.value.id, geetestData)
       if (res.code === 200) {
         isFavorited.value = true
         post.value.collection_count = res.data.collection_count
@@ -362,6 +374,8 @@ const submitComment = async () => {
       comments.value.unshift(res.data)
       post.value.comment_count++
       commentContent.value = ''
+      replyToCommentId.value = null
+      replyToUserId.value = null
       ElMessage.success('评论成功')
     }
   } catch (e) {
@@ -371,19 +385,24 @@ const submitComment = async () => {
   }
 }
 
+const likingComments = ref(new Set())
+
 const likeComment = async (comment) => {
   if (!userStore.isLoggedIn) {
     ElMessage.warning('请先登录')
     return
   }
-  
+
+  if (likingComments.value.has(comment.id)) return
+  likingComments.value.add(comment.id)
+
   let geetestData = {}
-  
+
   if (geetestConfig.value?.enabled && geetestConfig.value?.scenes?.like) {
     geetestData = await geetestDialogRef.value.show('like')
-    if (!geetestData) return
+    if (!geetestData) { likingComments.value.delete(comment.id); return }
   }
-  
+
   try {
     const res = await commentApi.likeComment(comment.id, geetestData)
     if (res.code === 200) {
@@ -392,56 +411,39 @@ const likeComment = async (comment) => {
     }
   } catch (e) {
     console.error('点赞失败:', e)
+  } finally {
+    likingComments.value.delete(comment.id)
   }
 }
 
 const replyTo = (comment) => {
   commentContent.value = `@${comment.user?.nickname || comment.user?.username} `
+  replyToCommentId.value = comment.id
+  replyToUserId.value = comment.user_id
 }
 
-const deleteComment = async (comment) => {
-  try {
-    await ElMessageBox.confirm('确定删除这条评论吗？', '提示', { type: 'warning' })
-    const res = await commentApi.deleteComment(comment.id)
-    if (res.code === 200) {
-      const index = comments.value.findIndex(c => c.id === comment.id)
-      if (index > -1) {
-        comments.value.splice(index, 1)
-        post.value.comment_count = Math.max(0, post.value.comment_count - 1)
-      }
-      ElMessage.success('删除成功')
-    }
-  } catch (e) {
-    if (e !== 'cancel') ElMessage.error('删除失败')
-  }
-}
+const replyToCommentId = ref(null)
+const replyToUserId = ref(null)
 
-const reportComment = async (comment) => {
-  if (!userStore.isLoggedIn) {
-    ElMessage.warning('请先登录')
+const submitComment = async () => {
+  if (!commentContent.value.trim()) {
+    ElMessage.warning('请输入评论内容')
     return
   }
-  
-  let geetestData = {}
-  if (geetestConfig.value?.enabled && geetestConfig.value?.scenes?.report) {
-    geetestData = await geetestDialogRef.value.show('report')
-    if (!geetestData) return
-  }
-  
-  ElMessageBox.prompt('请输入举报原因', '举报评论', {
-    confirmButtonText: '提交',
-    cancelButtonText: '取消',
-    inputPattern: /\S+/,
-    inputErrorMessage: '请输入举报原因'
-  }).then(async ({ value }) => {
-    try {
-      const res = await reportApi.create({
-        type: 'comment',
-        target_id: comment.id,
-        reason: value,
-        description: `评论内容: ${comment.content}`,
-        ...geetestData
-      })
+  commentLoading.value = true
+  try {
+    let geetestData = {}
+    if (geetestConfig.value?.enabled && geetestConfig.value?.scenes?.comment) {
+      geetestData = await geetestDialogRef.value.show('comment')
+      if (!geetestData) { commentLoading.value = false; return }
+    }
+    const res = await commentApi.createComment({
+      content: commentContent.value,
+      post_id: post.value.id,
+      parent_id: replyToCommentId.value || undefined,
+      reply_to_user_id: replyToUserId.value || undefined,
+      ...geetestData
+    })
       if (res.code === 200) {
         ElMessage.success('举报成功，我们会尽快处理')
       } else {
