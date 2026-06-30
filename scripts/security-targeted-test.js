@@ -24,6 +24,8 @@ function signJwt(payload) {
     const body = base64url(JSON.stringify({
         iat: now,
         exp: now + 3600,
+        iss: 'codedog-community',
+        aud: 'codedog-frontend',
         ...payload
     }));
     const unsigned = `${header}.${body}`;

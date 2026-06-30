@@ -196,11 +196,21 @@ async function getPostDetail(req, res) {
             order: [['created_at', 'DESC']]
         });
 
-        const postJson = normalizePostOutput({ ...post.toJSON(), view_count: (post.view_count || 0) + 1, comments, liked, favorited });
+        // 先将评论及回复转换为普通 JSON 对象，否则给 Sequelize 实例挂 liked
+        // 不会进入响应（实例的 toJSON 只输出 dataValues）
+        const commentsJson = comments.map(c => {
+            const json = c.toJSON ? c.toJSON() : c;
+            if (Array.isArray(json.replies)) {
+                json.replies = json.replies.map(r => (r && r.toJSON ? r.toJSON() : r));
+            }
+            return json;
+        });
 
-        const commentIds = comments.flatMap(c => [
-            DbAdapter.getId(c),
-            ...(c.replies || []).map(r => DbAdapter.getId(r))
+        const postJson = normalizePostOutput({ ...post.toJSON(), view_count: (post.view_count || 0) + 1, comments: commentsJson, liked, favorited });
+
+        const commentIds = commentsJson.flatMap(c => [
+            c.id,
+            ...(c.replies || []).map(r => r.id)
         ]);
         if (req.user && commentIds.length > 0) {
             const likedRows = await DbAdapter.findAll(Like, {

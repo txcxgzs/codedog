@@ -1620,7 +1620,25 @@ async function handleReport(req, res) {
                 const comment = await DbAdapter.findByPk(Comment, report.target_id);
                 if (comment) {
                     targetOwnerId = comment.user_id;
-                    await DbAdapter.update(Comment, { status: 'deleted' }, { where: { id: report.target_id } });
+                    // 仅在 active → deleted 时扣减计数，避免重复扣减
+                    if (comment.status !== 'deleted') {
+                        await DbAdapter.update(Comment, { status: 'deleted' }, { where: { id: report.target_id } });
+                        // 仅顶层评论（无 parent_id）才递减 comment_count，与 createComment/deleteComment 保持一致
+                        if (!comment.parent_id) {
+                            if (comment.work_id) {
+                                const work = await DbAdapter.findByPk(Work, comment.work_id);
+                                if (work && (work.comment_count || 0) > 0) {
+                                    await DbAdapter.decrement(work, 'comment_count');
+                                }
+                            }
+                            if (comment.post_id) {
+                                const post = await DbAdapter.findByPk(Post, comment.post_id);
+                                if (post && (post.comment_count || 0) > 0) {
+                                    await DbAdapter.decrement(post, 'comment_count');
+                                }
+                            }
+                        }
+                    }
                 }
             } else if (report.type === 'post') {
                 const post = await DbAdapter.findByPk(Post, report.target_id);
