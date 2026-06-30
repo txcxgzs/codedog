@@ -171,23 +171,22 @@ const codemaoApi = {
 
             if (error.response) {
                 console.error('[编程猫] 响应状态:', error.response.status);
-            }
-                
+
                 if (error.response.status === 405 || error.response.status === 403) {
-                    return { 
-                        error: true, 
-                        status: error.response.status, 
-                        message: '服务器IP被编程猫封禁，请配置代理服务器。在.env文件中设置 HTTPS_PROXY=http://代理IP:端口' 
+                    return {
+                        error: true,
+                        status: error.response.status,
+                        message: '服务器IP被编程猫封禁，请配置代理服务器。在.env文件中设置 HTTPS_PROXY=http://代理IP:端口'
                     };
                 }
-                
-                return { 
-                    error: true, 
-                    status: error.response.status, 
-                    message: error.response.data?.message || '登录请求失败' 
+
+                return {
+                    error: true,
+                    status: error.response.status,
+                    message: error.response.data?.message || '登录请求失败'
                 };
             }
-            
+
             return { error: true, message: error.message || '网络请求失败' };
         }
     },

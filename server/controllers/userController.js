@@ -14,6 +14,7 @@ const path = require('path');
 const fs = require('fs');
 const DbAdapter = require('../utils/dbAdapter');
 const GeetestService = require('../services/geetestService');
+const { escapeHtml } = require('../utils/security');
 
 const uploadDir = path.join(__dirname, '../uploads/avatars');
 if (!fs.existsSync(uploadDir)) {
@@ -55,7 +56,10 @@ function shouldPromoteInitialAdmin(req, codemaoUserId, userCount) {
         return true;
     }
 
-    return process.env.NODE_ENV !== 'production' && process.env.ALLOW_FIRST_USER_SUPERADMIN === 'true';
+    if (process.env.NODE_ENV !== 'production' && process.env.ALLOW_FIRST_USER_SUPERADMIN === 'true') {
+        console.warn('[SECURITY] 开发模式：首个用户将自动提升为超级管理员。生产环境请勿设置 ALLOW_FIRST_USER_SUPERADMIN=true');
+        return true;
+    }
 }
 
 /**
@@ -356,10 +360,10 @@ async function updateProfile(req, res) {
         }
         
         await DbAdapter.update(User, {
-            nickname: nickname || user.nickname,
+            nickname: nickname ? escapeHtml(nickname) : user.nickname,
             avatar: avatar,
-            bio: bio !== undefined ? bio : user.bio,
-            doing: doing !== undefined ? doing : user.doing
+            bio: bio !== undefined ? escapeHtml(bio) : user.bio,
+            doing: doing !== undefined ? escapeHtml(doing) : user.doing
         }, { where: { id: DbAdapter.getId(user) } });
         
         const updatedUser = await DbAdapter.findByPk(User, DbAdapter.getId(user));
@@ -398,28 +402,6 @@ async function getUserById(req, res) {
             return errorResponse(res, '用户不存在', 404);
         }
 
-        return successResponse(res, user);
-    } catch (error) {
-        console.error('获取用户信息错误:', error);
-        return errorResponse(res, '获取用户信息失败', 500);
-    }
-}
-
-/**
- * 通过本地ID获取用户（内部使用）
- */
-async function getUserByLocalId(req, res) {
-    try {
-        const { id } = req.params;
-        
-        const user = await DbAdapter.findByPk(User, id, {
-            attributes: ['id', 'codemao_user_id', 'username', 'nickname', 'avatar', 'bio', 'doing', 'level', 'follower_count', 'following_count', 'work_count', 'created_at']
-        });
-        
-        if (!user) {
-            return errorResponse(res, '用户不存在', 404);
-        }
-        
         return successResponse(res, user);
     } catch (error) {
         console.error('获取用户信息错误:', error);
@@ -479,6 +461,5 @@ module.exports = {
     login,
     getCurrentUser,
     updateProfile,
-    getUserById,
-    getUserByLocalId
+    getUserById
 };

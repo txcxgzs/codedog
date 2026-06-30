@@ -119,7 +119,7 @@ async function removeFavorite(req, res) {
 
         const removed = await DbAdapter.destroy(Favorite, { where: { id: DbAdapter.getId(favorite) } });
 
-        if (removed && work) {
+        if (removed && work && (work.collection_times || 0) > 0) {
             await DbAdapter.decrement(work, 'collection_times');
             await work.reload();
         }

@@ -317,6 +317,9 @@ async function startServer() {
         app.listen(PORT, () => {
             console.log(`Server started on port ${PORT}`);
             console.log(`API: http://localhost:${PORT}/api`);
+            if (isProduction) {
+                console.warn('[WARNING] 生产环境：限流、hCaptcha缓存、角色权限缓存均为进程内状态。多实例部署时请使用Redis等共享存储，否则限流可被绕过、权限不同步。');
+            }
         });
     } catch (error) {
         console.error('Failed to start server:', error);
