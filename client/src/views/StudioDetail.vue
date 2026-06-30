@@ -24,7 +24,7 @@
                     <el-dropdown-menu>
                       <el-dropdown-item command="manage" v-if="userRole === 'owner' || userRole === 'admin'">管理工作室</el-dropdown-item>
                       <el-dropdown-item command="edit" v-if="userRole === 'owner'">编辑信息</el-dropdown-item>
-                      <el-dropdown-item command="viceOwner" v-if="userRole === 'owner'">设置副市长</el-dropdown-item>
+                      <el-dropdown-item command="viceOwner" v-if="userRole === 'owner'">设置副室长</el-dropdown-item>
                       <el-dropdown-item command="submit">投稿作品</el-dropdown-item>
                       <el-dropdown-item command="leave" divided v-if="userRole !== 'owner'">退出工作室</el-dropdown-item>
                       <el-dropdown-item command="dissolve" divided v-if="userRole === 'owner'">解散工作室</el-dropdown-item>
@@ -98,7 +98,7 @@
                 <img :src="member.avatar || defaultAvatar" class="r-studio-detail--member_avatar" />
                 <div class="r-studio-detail--member_info">
                   <span class="r-studio-detail--member_name">{{ member.nickname || member.username }}</span>
-                  <el-tag size="small" :type="member.memberRole === 'owner' ? 'danger' : member.memberRole === 'admin' ? 'warning' : 'info'">
+                  <el-tag size="small" :type="member.memberRole === 'owner' ? 'danger' : member.memberRole === 'vice_owner' ? 'success' : member.memberRole === 'admin' ? 'warning' : 'info'">
                     {{ roleText(member.memberRole) }}
                   </el-tag>
                 </div>
@@ -122,7 +122,7 @@
         </el-form-item>
         <el-form-item label="加入方式">
           <el-radio-group v-model="editForm.join_type">
-            <el-radio label="free">自由加入</el-radio>
+            <el-radio label="public">自由加入</el-radio>
             <el-radio label="apply">申请加入</el-radio>
             <el-radio label="invite">仅限邀请</el-radio>
           </el-radio-group>
@@ -134,10 +134,10 @@
       </template>
     </el-dialog>
     
-    <el-dialog v-model="viceOwnerDialogVisible" title="设置副市长" width="400px">
+    <el-dialog v-model="viceOwnerDialogVisible" title="设置副室长" width="400px">
       <el-form :model="viceOwnerForm" label-width="80px">
-        <el-form-item label="副市长">
-          <el-select v-model="viceOwnerForm.user_id" clearable placeholder="选择副市长（可清空）" filterable style="width: 100%;">
+        <el-form-item label="副室长">
+          <el-select v-model="viceOwnerForm.user_id" clearable placeholder="选择副室长（可清空）" filterable style="width: 100%;">
             <el-option v-for="m in members.filter(m => m.memberRole !== 'owner')" :key="m.id" :label="m.nickname || m.username" :value="m.id" />
           </el-select>
         </el-form-item>
@@ -211,7 +211,7 @@
             </el-table-column>
             <el-table-column prop="memberRole" label="角色" width="100">
               <template #default="{ row }">
-                <el-tag size="small" :type="row.memberRole === 'owner' ? 'danger' : row.memberRole === 'admin' ? 'warning' : 'info'">
+                <el-tag size="small" :type="row.memberRole === 'owner' ? 'danger' : row.memberRole === 'vice_owner' ? 'success' : row.memberRole === 'admin' ? 'warning' : 'info'">
                   {{ roleText(row.memberRole) }}
                 </el-tag>
               </template>
@@ -219,7 +219,7 @@
             <el-table-column label="操作" width="200">
               <template #default="{ row }">
                 <template v-if="row.memberRole !== 'owner'">
-                  <el-button size="small" v-if="userRole === 'owner'" @click="handleSetRole(row.id, row.memberRole === 'admin' ? 'member' : 'admin')">
+                  <el-button size="small" v-if="userRole === 'owner' && row.memberRole !== 'vice_owner'" @click="handleSetRole(row.id, row.memberRole === 'admin' ? 'member' : 'admin')">
                     {{ row.memberRole === 'admin' ? '设为成员' : '设为管理员' }}
                   </el-button>
                   <el-button size="small" type="danger" @click="handleKickMember(row.id)">移除</el-button>
@@ -234,7 +234,7 @@
     <el-dialog v-model="submitWorkDialogVisible" title="投稿作品" width="600px">
       <div class="r-studio-detail--my_works" v-loading="myWorksLoading">
         <template v-if="myWorks.length > 0">
-          <div v-for="work in myWorks" :key="work.id" class="r-studio-detail--my_work_item" @click="handleSubmitWork(work.id)">
+          <div v-for="work in myWorks" :key="work.id" class="r-studio-detail--my_work_item" @click="handleSubmitWork(work.codemao_work_id)">
             <img :src="work.preview || defaultWorkCover" />
             <div class="r-studio-detail--my_work_name">{{ work.name }}</div>
           </div>
@@ -299,14 +299,14 @@ const defaultWorkCover = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3
 
 const joinText = computed(() => {
   if (!studio.value) return '加入'
-  const map = { free: '加入工作室', apply: '申请加入', invite: '仅限邀请' }
+  const map = { public: '加入工作室', apply: '申请加入', invite: '仅限邀请' }
   return map[studio.value.join_type] || '加入'
 })
 
-const activeMembers = computed(() => members.value.filter(m => m.memberRole !== 'owner'))
+const activeMembers = computed(() => members.value)
 
 const roleText = (role) => {
-  const map = { owner: '创建者', admin: '管理员', member: '成员' }
+  const map = { owner: '创建者', vice_owner: '副室长', admin: '管理员', member: '成员' }
   return map[role] || ''
 }
 
@@ -497,7 +497,7 @@ const handleSetViceOwner = async () => {
   try {
     const res = await studioApi.setViceOwner(route.params.id, viceOwnerForm.user_id)
     if (res.code === 200) {
-      ElMessage.success('副市长已设置')
+      ElMessage.success('副室长已设置')
       viceOwnerDialogVisible.value = false
       fetchStudio()
     } else {

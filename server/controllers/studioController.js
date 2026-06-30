@@ -818,7 +818,7 @@ async function setMemberRole(req, res) {
             return errorResponse(res, '只有创建者可以设置成员角色', 403);
         }
         
-        if (!['admin', 'member'].includes(role)) {
+        if (!['admin', 'member', 'vice_owner'].includes(role)) {
             return errorResponse(res, '无效的角色', 400);
         }
         
@@ -835,13 +835,28 @@ async function setMemberRole(req, res) {
         }
         
         // 如果被修改的成员是副室长且角色降级，清除副室长引用
+        const studio = await DbAdapter.findByPk(Studio, id);
         if (member.role === 'vice_owner' && role !== 'vice_owner') {
-            const studio = await DbAdapter.findByPk(Studio, id);
             if (studio && sameId(studio.vice_owner_id, member.user_id)) {
                 await DbAdapter.update(Studio, { vice_owner_id: null }, { where: { id: DbAdapter.getId(studio) } });
             }
         }
-        
+        // 如果提升为副室长，同步 studio.vice_owner_id（清除旧副室长）
+        if (role === 'vice_owner') {
+            await sequelize.transaction(async (t) => {
+                if (studio && studio.vice_owner_id) {
+                    await DbAdapter.update(StudioMember,
+                        { role: 'member' },
+                        { where: { studio_id: id, user_id: studio.vice_owner_id }, transaction: t }
+                    );
+                }
+                await DbAdapter.update(Studio,
+                    { vice_owner_id: member.user_id },
+                    { where: { id: DbAdapter.getId(studio) }, transaction: t }
+                );
+            });
+        }
+
         await DbAdapter.update(StudioMember, { role }, { where: { id: DbAdapter.getId(member) } });
         return successResponse(res, null, '角色已更新');
     } catch (error) {

@@ -82,21 +82,21 @@
           <el-tab-pane label="收藏" name="favorites" v-if="isCurrentUser">
             <div class="r-user--works" v-loading="loadingFavorites">
               <div class="r-user--works_grid" v-if="favorites.length > 0">
-                <div 
-                  v-for="work in favorites" 
-                  :key="work.id" 
+                <div
+                  v-for="item in favorites"
+                  :key="item.id"
                   class="r-user--work_card"
-                  @click="$router.push(`/work/${work.codemao_work_id}`)"
+                  @click="goFavorite(item)"
                 >
-                  <div class="r-user--work_cover" :style="{ backgroundImage: `url(${work.preview})` }">
-                    <div class="r-user--work_overlay">
-                      <span><span class="r-user--stat_icon r-user--stat_icon_view"></span>{{ work.view_times || 0 }}</span>
-                      <span><span class="r-user--stat_icon r-user--stat_icon_like"></span>{{ work.praise_times || 0 }}</span>
+                  <div class="r-user--work_cover" :style="{ backgroundImage: `url(${item.preview || item.cover || ''})` }">
+                    <div class="r-user--work_overlay" v-if="item._type === 'work'">
+                      <span><span class="r-user--stat_icon r-user--stat_icon_view"></span>{{ item.view_times || 0 }}</span>
+                      <span><span class="r-user--stat_icon r-user--stat_icon_like"></span>{{ item.praise_times || 0 }}</span>
                     </div>
                   </div>
                   <div class="r-user--work_body">
-                    <h4 class="r-user--work_title">{{ work.name }}</h4>
-                    <p class="r-user--work_author">{{ work.author?.nickname }}</p>
+                    <h4 class="r-user--work_title">{{ item._type === 'post' ? item.title : item.name }}</h4>
+                    <p class="r-user--work_author">{{ item.author?.nickname }}</p>
                   </div>
                 </div>
               </div>
@@ -147,7 +147,7 @@
 
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/user'
 import { userApi } from '@/api/user'
 import { workApi } from '@/api/work'
@@ -156,6 +156,7 @@ import { followApi } from '@/api/follow'
 import { ElMessage } from 'element-plus'
 
 const route = useRoute()
+const router = useRouter()
 const userStore = useUserStore()
 const loading = ref(true)
 const loadingWorks = ref(false)
@@ -179,6 +180,14 @@ const formatTime = (time) => {
   if (!time) return '未知'
   const d = new Date(time)
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+const goFavorite = (item) => {
+  if (item._type === 'post') {
+    router.push(`/post/${item.id}`)
+  } else {
+    router.push(`/work/${item.codemao_work_id}`)
+  }
 }
 
 const fetchUser = async () => {
@@ -283,7 +292,7 @@ const showFollowing = () => {
 }
 
 const fetchFollowers = async () => {
-  if (!user.value?.codemao_user_id || followers.value.length > 0) return
+  if (!user.value?.codemao_user_id) return
   loadingFollowers.value = true
   try {
     const res = await followApi.getFollowers(user.value.codemao_user_id, { page: 1, pageSize: 50 })
@@ -298,7 +307,7 @@ const fetchFollowers = async () => {
 }
 
 const fetchFollowing = async () => {
-  if (!user.value?.codemao_user_id || following.value.length > 0) return
+  if (!user.value?.codemao_user_id) return
   loadingFollowing.value = true
   try {
     const res = await followApi.getFollowing(user.value.codemao_user_id, { page: 1, pageSize: 50 })
@@ -312,7 +321,31 @@ const fetchFollowing = async () => {
   }
 }
 
-watch(() => route.params.codemaoId, fetchUser)
+// 切换 Tab 时自动加载对应数据
+watch(activeTab, (tab) => {
+  if (tab === 'favorites' && isCurrentUser.value && favorites.value.length === 0) {
+    fetchFavorites()
+  } else if (tab === 'followers' && followers.value.length === 0) {
+    fetchFollowers()
+  } else if (tab === 'following' && following.value.length === 0) {
+    fetchFollowing()
+  }
+})
+
+// 切换用户页面时清空所有缓存数据
+const clearUserData = () => {
+  works.value = []
+  favorites.value = []
+  followers.value = []
+  following.value = []
+  isFollowing.value = false
+  activeTab.value = 'works'
+}
+
+watch(() => route.params.codemaoId, () => {
+  clearUserData()
+  fetchUser()
+})
 onMounted(fetchUser)
 </script>
 

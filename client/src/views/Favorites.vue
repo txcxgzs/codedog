@@ -76,6 +76,28 @@ const searchKeyword = ref('')
 const batchMode = ref(false)
 const selectedIds = ref([])
 const geetestDialog = ref(null)
+const geetestConfig = ref(null)
+
+const fetchGeetestConfig = async () => {
+  try {
+    const { geetestApi } = await import('@/api/geetest')
+    const res = await geetestApi.getConfig()
+    if (res.code === 200) {
+      geetestConfig.value = res.data
+    }
+  } catch (e) {
+    console.error('获取验证码配置失败:', e)
+  }
+}
+
+const getGeetestForFavorite = async () => {
+  if (geetestConfig.value?.enabled && geetestConfig.value?.scenes?.favorite) {
+    const data = await geetestDialog.value?.show('favorite')
+    if (!data) return null
+    return data
+  }
+  return {}
+}
 
 const getIdeTypeName = (ideType) => {
   if (!ideType) return ''
@@ -182,7 +204,9 @@ const doRemoveFavorite = async (item) => {
   try {
     let res
     if (item._type === 'post') {
-      res = await favoriteApi.unfavoritePost(item.id)
+      const geetestData = await getGeetestForFavorite()
+      if (geetestData === null) return
+      res = await favoriteApi.unfavoritePost(item.id, geetestData)
     } else {
       res = await favoriteApi.remove(item.codemao_work_id)
     }
@@ -210,7 +234,9 @@ const doBatchRemove = async () => {
       if (!item) continue
       let res
       if (item._type === 'post') {
-        res = await favoriteApi.unfavoritePost(item.id)
+        const geetestData = await getGeetestForFavorite()
+        if (geetestData === null) continue
+        res = await favoriteApi.unfavoritePost(item.id, geetestData)
       } else {
         res = await favoriteApi.remove(item.codemao_work_id)
       }
@@ -228,6 +254,7 @@ onMounted(() => {
   fetchGeetestConfig()
   fetchFavorites()
 })
+
 </script>
 
 <style lang="scss" scoped>

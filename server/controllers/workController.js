@@ -66,7 +66,7 @@ function buildWorkCreateParams(workInfo, userId) {
         praise_times: workInfo.praiseTimes,
         collection_times: workInfo.collectionTimes,
         view_times: workInfo.viewTimes,
-        comment_count: 0,
+        comment_count: workInfo.commentTimes || 0,
         status: 'published'
     };
 }
@@ -148,6 +148,11 @@ async function publishWork(req, res) {
         
         if (!workInfo) {
             return errorResponse(res, '获取作品信息失败，请检查作品ID是否正确或作品是否公开', 400);
+        }
+
+        // 校验作品作者归属：只有作品作者本人才能发布
+        if (!workInfo.codemaoAuthorId || String(workInfo.codemaoAuthorId) !== String(req.user.codemao_user_id)) {
+            return errorResponse(res, '只能发布自己的编程猫作品', 403);
         }
         
         const [work, created] = await DbAdapter.findOrCreate(Work, {

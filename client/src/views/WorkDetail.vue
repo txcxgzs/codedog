@@ -570,12 +570,12 @@ const fetchComments = async () => {
 
 const checkFavorite = async () => {
   if (!userStore.isLoggedIn) return
-  if (!work.value?.id) {
+  if (!work.value?.codemao_work_id) {
     isFavorited.value = false
     return
   }
   try {
-    const res = await favoriteApi.check(work.value.id)
+    const res = await favoriteApi.check(work.value.codemao_work_id)
     if (res.code === 200) {
       isFavorited.value = res.data.isFavorited
     }
@@ -644,7 +644,7 @@ const toggleFavorite = async () => {
   favoriteLoading.value = true
   try {
     if (isFavorited.value) {
-      const res = await favoriteApi.remove(work.value.id)
+      const res = await favoriteApi.remove(work.value.codemao_work_id)
       if (res.code === 200) {
         isFavorited.value = false
         work.value.collection_times = res.data.collection_times

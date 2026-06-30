@@ -249,13 +249,14 @@ async function deleteComment(req, res) {
             return successResponse(res, null, '评论已删除');
         }
 
+        const wasActive = comment.status === 'active';
         await DbAdapter.update(Comment, { status: 'deleted' }, { where: { id } });
 
         // 级联软删除子回复，避免孤儿回复
         await DbAdapter.update(Comment, { status: 'deleted' }, { where: { parent_id: id } });
 
-        // 仅顶层评论（无 parent_id）才递减 comment_count，与 createComment 保持一致
-        if (!comment.parent_id) {
+        // 仅在旧状态为 active 且顶层评论时才递减 comment_count，避免 hidden→deleted 重复扣减
+        if (wasActive && !comment.parent_id) {
             if (comment.work_id) {
                 const work = await DbAdapter.findByPk(Work, comment.work_id);
                 if (work && (work.comment_count || 0) > 0) await DbAdapter.decrement(work, 'comment_count');
