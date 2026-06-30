@@ -277,6 +277,7 @@ class DatabaseMigration {
             target_id: DataTypes.INTEGER,
             details: DataTypes.TEXT,
             ip_address: { type: DataTypes.STRING(50) },
+            user_agent: DataTypes.TEXT,
             created_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW }
         }, { tableName: 'operation_logs', timestamps: false });
 

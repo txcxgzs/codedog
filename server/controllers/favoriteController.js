@@ -1,8 +1,8 @@
 const DbAdapter = require('../utils/dbAdapter');
-const { Favorite, Work, User } = require('../models');
+const { Favorite, Work, User, sequelize } = require('../models');
 const { successResponse, errorResponse } = require('../middleware/response');
 const { Op } = require('sequelize');
-const { escapeLike } = require('../utils/security');
+const { likeContains } = require('../utils/security');
 
 function canInteractWithWork(work) {
     return work && work.status === 'published';
@@ -23,11 +23,8 @@ async function favoriteWorksForUser(userId, query) {
 
     const workWhere = { status: 'published' };
     if (keyword) {
-        const safeKeyword = escapeLike(keyword);
-        workWhere[Op.or] = [
-            { name: { [Op.like]: `%${safeKeyword}%` } },
-            { description: { [Op.like]: `%${safeKeyword}%` } }
-        ];
+        const keywordWhere = likeContains(sequelize, ['name', 'description'], keyword);
+        if (keywordWhere) Object.assign(workWhere, keywordWhere);
     }
 
     const { count, rows } = await DbAdapter.findAndCountAll(Favorite, {
