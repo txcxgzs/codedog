@@ -214,6 +214,10 @@ async function deleteComment(req, res) {
             return errorResponse(res, '无权删除此评论', 403);
         }
 
+        if (comment.status === 'deleted') {
+            return successResponse(res, null, '评论已删除');
+        }
+
         await DbAdapter.update(Comment, { status: 'deleted' }, { where: { id } });
 
         // 仅顶层评论（无 parent_id）才递减 comment_count，与 createComment 保持一致
@@ -259,8 +263,9 @@ async function likeComment(req, res) {
         if (existing) {
             // 已点赞 → 取消点赞（toggle）
             await DbAdapter.destroy(Like, { where: { id: DbAdapter.getId(existing) } });
-            const newCount = Math.max(0, (comment.like_count || 0) - 1);
-            await DbAdapter.update(Comment, { like_count: newCount }, { where: { id: DbAdapter.getId(comment) } });
+            await DbAdapter.decrement(comment, 'like_count');
+            await comment.reload();
+            const newCount = Math.max(0, comment.like_count || 0);
             return successResponse(res, { like_count: newCount, liked: false }, '已取消点赞');
         }
 
@@ -276,8 +281,8 @@ async function likeComment(req, res) {
             throw createError;
         }
 
-        const likeCount = (comment.like_count || 0) + 1;
-        await DbAdapter.update(Comment, { like_count: likeCount }, { where: { id: DbAdapter.getId(comment) } });
+        await DbAdapter.increment(comment, 'like_count');
+        await comment.reload();
 
         return successResponse(res, { like_count: likeCount, liked: true }, '点赞成功');
     } catch (error) {

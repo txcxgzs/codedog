@@ -56,8 +56,13 @@ function validateAvatarUpload(req, res, next) {
     }
 }
 
+const uploadDir = path.join(__dirname, '../uploads/avatars');
+if (!fs.existsSync(uploadDir)) {
+    fs.mkdirSync(uploadDir, { recursive: true });
+}
+
 const upload = multer({
-    dest: 'uploads/avatars/',
+    dest: uploadDir,
     limits: {
         fileSize: 2 * 1024 * 1024,
         files: 1,

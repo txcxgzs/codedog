@@ -209,7 +209,15 @@ async function updatePost(req, res) {
         if (post.user_id !== DbAdapter.getId(req.user)) {
             return errorResponse(res, '无权修改此帖子', 403);
         }
-        
+
+        if (title && String(title).length > 200) {
+            return errorResponse(res, '标题不能超过200字', 400);
+        }
+
+        if (content && String(content).length > 50000) {
+            return errorResponse(res, '内容不能超过50000字', 400);
+        }
+
         await DbAdapter.update(Post, {
             title: title || post.title,
             content: content || post.content,

@@ -684,11 +684,19 @@ async function updateWork(req, res) {
         if (!isOwner) {
             return errorResponse(res, '无权修改此作品', 403);
         }
-        
+
+        if (name && String(name).length > 200) {
+            return errorResponse(res, '名称不能超过200字', 400);
+        }
+
+        if (description && String(description).length > 5000) {
+            return errorResponse(res, '描述不能超过5000字', 400);
+        }
+
         const updateData = {};
-        if (name) updateData.name = name;
-        if (description !== undefined) updateData.description = description;
-        if (preview) updateData.preview = preview;
+        if (name) updateData.name = String(name).substring(0, 200);
+        if (description !== undefined) updateData.description = String(description).substring(0, 5000);
+        if (preview) updateData.preview = String(preview).substring(0, 500);
         
         await DbAdapter.update(Work, updateData, { where: { id: DbAdapter.getId(work) } });
         

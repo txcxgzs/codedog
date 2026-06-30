@@ -297,7 +297,7 @@ async function leaveStudio(req, res) {
         await DbAdapter.destroy(StudioMember, { where: { id: DbAdapter.getId(member) } });
 
         const studio = await DbAdapter.findByPk(Studio, id);
-        if (studio) {
+        if (studio && member.status === 'active') {
             // 原子 -1 避免 read-modify-write 竞态
             await DbAdapter.decrement(studio, 'member_count');
         }
@@ -597,10 +597,7 @@ async function reviewWork(req, res) {
             }, { where: { id: workId } });
             const studio = await DbAdapter.findByPk(Studio, id);
             if (studio) {
-                await DbAdapter.update(Studio, 
-                    { work_count: (studio.work_count || 0) + 1 },
-                    { where: { id: DbAdapter.getId(studio) } }
-                );
+                await DbAdapter.increment(studio, 'work_count');
             }
             
             await DbAdapter.create(Notification, {
@@ -651,10 +648,7 @@ async function removeWork(req, res) {
         if (wasApproved) {
             const studio = await DbAdapter.findByPk(Studio, id);
             if (studio) {
-                await DbAdapter.update(Studio, 
-                    { work_count: Math.max(0, (studio.work_count || 0) - 1) },
-                    { where: { id: DbAdapter.getId(studio) } }
-                );
+                await DbAdapter.decrement(studio, 'work_count');
             }
         }
         
@@ -831,10 +825,7 @@ async function kickMember(req, res) {
         await DbAdapter.destroy(StudioMember, { where: { id: DbAdapter.getId(member) } });
         const studio = await DbAdapter.findByPk(Studio, id);
         if (studio) {
-            await DbAdapter.update(Studio, 
-                { member_count: Math.max(0, (studio.member_count || 0) - 1) },
-                { where: { id: DbAdapter.getId(studio) } }
-            );
+            await DbAdapter.decrement(studio, 'member_count');
         }
         
         return successResponse(res, null, '成员已移除');

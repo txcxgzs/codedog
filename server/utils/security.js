@@ -23,23 +23,19 @@ function escapeHtml(text) {
 }
 
 /**
- * 转义 SQL LIKE 通配符，避免用户输入中的 %、_、[ 等改变 LIKE 语义。
- * 默认使用反斜杠作为转义字符；调用方需在 SQL 末尾加 ESCAPE '\'。
+ * 转义 SQL LIKE 通配符，避免用户输入中的 %、_ 等改变 LIKE 语义。
+ * 使用方括号转义语法 [%] [_]，兼容 MySQL 和 SQLite。
  *
  * @param {string} value
- * @param {string} escapeChar - 默认 '\\'
  * @returns {string}
  */
-function escapeLike(value, escapeChar = '\\') {
+function escapeLike(value) {
     if (value == null) return '';
     const str = String(value);
-    // 先转义转义字符本身，再转义通配符
     return str
-        .replace(new RegExp(`[${escapeChar.replace(/\\/g, '\\\\')}\\\\]`, 'g'), `${escapeChar}${escapeChar}`)
-        .replace(/%/g, `${escapeChar}%`)
-        .replace(/_/g, `${escapeChar}_`)
-        .replace(/\[/g, `${escapeChar}[`)
-        .replace(/\]/g, `${escapeChar}]`);
+        .replace(/%/g, '[%]')
+        .replace(/_/g, '[_]')
+        .replace(/\[/g, '[[]');
 }
 
 module.exports = {

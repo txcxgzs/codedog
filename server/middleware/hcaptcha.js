@@ -37,17 +37,13 @@ async function hcaptchaGuard(req, res, next) {
         '/api/users/login',
         '/api/users/register',
         '/api/health',
-        '/api/hcaptcha/',
         '/api/hcaptcha',
-        '/api/geetest/',
         '/api/geetest',
-        '/api/admin/',
         '/api/admin',
-        '/api/public/',
         '/api/public'
     ];
 
-    if (excludePaths.includes(req.path)) {
+    if (excludePaths.some(p => req.path === p || req.path.startsWith(p + '/'))) {
         return next();
     }
 
@@ -78,11 +74,16 @@ async function verifyHcaptcha(token, secret) {
             params: {
                 secret,
                 response: token
-            }
+            },
+            timeout: 10000
         });
         return response.data.success;
     } catch (error) {
-        console.error('hCaptcha验证失败:', error);
+        if (error.response) {
+            console.error('hCaptcha验证失败:', error.response.status, error.response.data);
+        } else {
+            console.error('hCaptcha验证失败:', error.message);
+        }
         return false;
     }
 }

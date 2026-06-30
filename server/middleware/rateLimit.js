@@ -8,7 +8,11 @@ function getClientIp(req) {
 
 function createRateLimiter({ windowMs, max, keyPrefix = 'rate-limit', keyGenerator = null, skip = null }) {
     return (req, res, next) => {
-        if (skip && skip(req)) {
+        try {
+            if (skip && skip(req)) {
+                return next();
+            }
+        } catch (e) {
             return next();
         }
 

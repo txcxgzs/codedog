@@ -69,7 +69,9 @@ async function optionalAuth(req, res, next) {
         try {
             req.user = await resolveUserFromToken(token);
         } catch (error) {
-            // Public endpoints should still work when an optional token is invalid.
+            if (error.name !== 'JsonWebTokenError' && error.name !== 'TokenExpiredError') {
+                console.error('optionalAuth非令牌错误:', error.message);
+            }
         }
     }
 

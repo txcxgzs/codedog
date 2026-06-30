@@ -49,7 +49,7 @@ function getProxyAgent() {
  */
 function getAxiosConfig(customConfig = {}) {
     const proxyAgent = getProxyAgent();
-    
+
     return {
         timeout: 15000,
         headers: DEFAULT_HEADERS,
@@ -58,16 +58,27 @@ function getAxiosConfig(customConfig = {}) {
     };
 }
 
+async function requestWithRetry(requestFn, retries = 2, delay = 1000) {
+    for (let i = 0; i <= retries; i++) {
+        try {
+            return await requestFn();
+        } catch (error) {
+            if (i === retries) throw error;
+            await new Promise(r => setTimeout(r, delay * (i + 1)));
+        }
+    }
+}
+
 const codemaoApi = {
     /**
      * 获取作品详情
      */
     async getWorkDetail(workId) {
         try {
-            const response = await axios.get(
+            const response = await requestWithRetry(() => axios.get(
                 `${CODEMAO_BASE_URL}/creation-tools/v1/works/${workId}`,
                 getAxiosConfig()
-            );
+            ));
             return response.data;
         } catch (error) {
             console.error('[编程猫] 获取作品详情失败:', error.message);
@@ -157,10 +168,10 @@ const codemaoApi = {
             return response.data;
         } catch (error) {
             console.error('[编程猫] 登录失败:', error.message);
-            
+
             if (error.response) {
                 console.error('[编程猫] 响应状态:', error.response.status);
-                console.error('[编程猫] 响应数据:', JSON.stringify(error.response.data));
+            }
                 
                 if (error.response.status === 405 || error.response.status === 403) {
                     return { 

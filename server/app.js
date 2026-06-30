@@ -224,7 +224,9 @@ app.use('/api/works/codemao', codemaoImportRateLimiter);
 app.use('/api', writeRateLimiter);
 
 app.use('/uploads', express.static('uploads', {
-    setHeaders: setSecurityHeaders
+    setHeaders: setSecurityHeaders,
+    dotfiles: 'deny',
+    index: false
 }));
 
 app.use('/api/users', userRoutes);

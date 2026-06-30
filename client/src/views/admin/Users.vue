@@ -234,9 +234,9 @@ const impersonateUser = async (user) => {
     await ElMessageBox.confirm(`确定要以 ${user.nickname || user.username} 的身份登录吗？该操作将生成一个临时登录 Token。`, '一键登录', { type: 'warning' })
     const res = await adminApi.impersonateUser(user.id)
     if (res.code === 200) {
-      // 保存管理员 Token 以便恢复身份（用 localStorage 跨会话持久化）
+      // 保存管理员 Token 以便恢复身份（用 sessionStorage 跨页面刷新持久化，标签页关闭即清除）
       const adminToken = sessionStorage.getItem('token')
-      localStorage.setItem('admin_token', adminToken)
+      sessionStorage.setItem('admin_token', adminToken)
       // 设置被模拟用户的 Token
       sessionStorage.setItem('token', res.data.token)
       ElMessage.success(`正在以 ${user.nickname || user.username} 身份登录...`)

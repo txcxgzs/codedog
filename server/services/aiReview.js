@@ -188,8 +188,8 @@ async function reviewContent(type, content) {
         }
         
         const prompt = config.prompt
-            .replace('{{type}}', type)
-            .replace('{{content}}', content);
+            .replace('{{type}}', () => String(type))
+            .replace('{{content}}', () => String(content));
         
         console.log('发送AI审核请求...', { type, contentLength: content.length });
         

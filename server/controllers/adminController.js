@@ -17,6 +17,7 @@ const { escapeLike } = require('../utils/security');
 // 爬取日志存储
 const crawlLogs = new Map();
 const MAX_LOG_ENTRIES = 500;
+const MAX_CRAWL_TASK_AGE = 60 * 60 * 1000;
 
 // 实时日志存储（不再劫持全局 console，避免污染所有模块的日志）
 const realtimeLogs = [];
@@ -83,6 +84,18 @@ function addCrawlLog(taskId, message, type = 'info') {
         logs.shift();
     }
 }
+
+function cleanupCrawlLogs() {
+    const now = Date.now();
+    for (const [taskId, logs] of crawlLogs.entries()) {
+        const lastEntry = logs[logs.length - 1];
+        if (lastEntry && (now - new Date(lastEntry.time).getTime()) > MAX_CRAWL_TASK_AGE) {
+            crawlLogs.delete(taskId);
+        }
+    }
+}
+
+setInterval(cleanupCrawlLogs, 10 * 60 * 1000).unref();
 
 function getCrawlLogs(taskId) {
     return crawlLogs.get(taskId) || [];
@@ -234,7 +247,7 @@ async function getUserDetail(req, res) {
             DbAdapter.count(Follow, { where: { following_id: userId } })
         ]);
         
-        const likesReceived = await DbAdapter.count(Favorite, {
+        const likesReceived = await DbAdapter.count(Like, {
             include: [{
                 model: Work,
                 as: 'work',
@@ -276,6 +289,10 @@ async function updateUserPassword(req, res) {
         
         if (!newPassword || newPassword.length < 6) {
             return errorResponse(res, '密码长度至少6位', 400);
+        }
+
+        if (newPassword.length > 128) {
+            return errorResponse(res, '密码长度不能超过128位', 400);
         }
         
         const user = await DbAdapter.findByPk(User, userId);
@@ -393,7 +410,6 @@ async function impersonateUser(req, res) {
             user: {
                 id: user.id,
                 username: user.username,
-                email: user.email,
                 nickname: user.nickname,
                 avatar: user.avatar,
                 role: user.role
@@ -514,13 +530,24 @@ async function deleteUser(req, res) {
             return errorResponse(res, 'Cannot manage this user', 403);
         }
 
-        const { Work, Comment, Like, Favorite, Follow, Notification } = require('../models');
+        const { Work, Comment, Like, Favorite, Follow, Notification, Post, Studio, StudioMember, StudioWork, Report, OperationLog } = require('../models');
         const uid = DbAdapter.getId(user);
         await DbAdapter.destroy(Notification, { where: { user_id: uid } });
+        await DbAdapter.destroy(OperationLog, { where: { user_id: uid } });
+        await DbAdapter.destroy(Report, { where: { reporter_id: uid } });
         await DbAdapter.destroy(Follow, { where: { [Op.or]: [{ follower_id: uid }, { following_id: uid }] } });
         await DbAdapter.destroy(Favorite, { where: { user_id: uid } });
         await DbAdapter.destroy(Like, { where: { user_id: uid } });
         await DbAdapter.destroy(Comment, { where: { user_id: uid } });
+        await DbAdapter.destroy(Post, { where: { user_id: uid } });
+        const userStudios = await DbAdapter.findAll(Studio, { where: { owner_id: uid } });
+        for (const s of userStudios) {
+            await DbAdapter.destroy(StudioWork, { where: { studio_id: DbAdapter.getId(s) } });
+            await DbAdapter.destroy(StudioMember, { where: { studio_id: DbAdapter.getId(s) } });
+            await DbAdapter.destroy(Studio, { where: { id: DbAdapter.getId(s) } });
+        }
+        await DbAdapter.destroy(StudioMember, { where: { user_id: uid } });
+        await DbAdapter.destroy(StudioWork, { where: { user_id: uid } });
         await DbAdapter.destroy(Work, { where: { user_id: uid } });
         await DbAdapter.destroy(User, { where: { id: uid } });
         logOperation(req, 'delete_user', 'user', userId, { username: user.username });
@@ -591,13 +618,14 @@ async function updateWork(req, res) {
             return errorResponse(res, '作品不存在', 404);
         }
 
+        const VALID_WORK_STATUSES = ['pending', 'published', 'rejected', 'deleted'];
         const updateData = {};
-        if (name !== undefined) updateData.name = name;
-        if (preview !== undefined && preview !== '') updateData.preview = preview;
-        if (view_times !== undefined) updateData.view_times = view_times;
-        if (praise_times !== undefined) updateData.praise_times = praise_times;
-        if (collection_times !== undefined) updateData.collection_times = collection_times;
-        if (status !== undefined) updateData.status = status;
+        if (name !== undefined) updateData.name = String(name).substring(0, 200);
+        if (preview !== undefined && preview !== '') updateData.preview = String(preview).substring(0, 500);
+        if (view_times !== undefined) updateData.view_times = Math.max(0, parseInt(view_times, 10) || 0);
+        if (praise_times !== undefined) updateData.praise_times = Math.max(0, parseInt(praise_times, 10) || 0);
+        if (collection_times !== undefined) updateData.collection_times = Math.max(0, parseInt(collection_times, 10) || 0);
+        if (status !== undefined && VALID_WORK_STATUSES.includes(status)) updateData.status = status;
         if (is_featured !== undefined) updateData.is_featured = is_featured;
 
         await DbAdapter.update(Work, updateData, { where: { id: workId } });
@@ -676,6 +704,10 @@ async function crawlWork(req, res) {
 
         if (!workId) {
             return errorResponse(res, '请提供作品ID', 400);
+        }
+
+        if (!/^\d{1,20}$/.test(String(workId))) {
+            return errorResponse(res, '作品ID格式无效', 400);
         }
 
         const workDetail = await codemaoApi.getWorkDetail(workId);
@@ -1452,7 +1484,9 @@ async function getReports(req, res) {
                     attributes: ['id', 'name', 'preview']
                 });
             } else if (report.type === 'comment') {
-                report.dataValues.target = await DbAdapter.findByPk(Comment, report.target_id);
+                report.dataValues.target = await DbAdapter.findByPk(Comment, report.target_id, {
+                    attributes: ['id', 'content', 'user_id', 'created_at']
+                });
             } else if (report.type === 'user') {
                 report.dataValues.target = await DbAdapter.findByPk(User, report.target_id, {
                     attributes: ['id', 'username', 'nickname', 'avatar']
@@ -1474,6 +1508,11 @@ async function handleReport(req, res) {
     try {
         const { reportId } = req.params;
         const { status, handleNote, takeAction } = req.body;
+
+        const VALID_REPORT_STATUSES = ['pending', 'processing', 'resolved', 'rejected'];
+        if (!VALID_REPORT_STATUSES.includes(status)) {
+            return errorResponse(res, '无效的状态值', 400);
+        }
 
         const report = await DbAdapter.findByPk(Report, reportId);
         if (!report) {
@@ -1609,6 +1648,12 @@ async function addIpBan(req, res) {
 
         if (!ip_address) {
             return errorResponse(res, '请提供IP地址', 400);
+        }
+
+        const IPV4_REGEX = /^(\d{1,3}\.){3}\d{1,3}$/;
+        const IPV6_REGEX = /^([0-9a-fA-F]{0,4}:){2,7}[0-9a-fA-F]{0,4}$/;
+        if (!IPV4_REGEX.test(ip_address) && !IPV6_REGEX.test(ip_address)) {
+            return errorResponse(res, 'IP地址格式无效', 400);
         }
 
         const existing = await DbAdapter.findOne(IpBan, { where: { ip: ip_address } });
@@ -1760,7 +1805,19 @@ async function getAnnouncements(req, res) {
 async function createAnnouncement(req, res) {
     try {
         const { title, content, type } = req.body;
-        
+
+        if (!title || !content) {
+            return errorResponse(res, '标题和内容不能为空', 400);
+        }
+
+        if (String(title).length > 200) {
+            return errorResponse(res, '标题不能超过200字', 400);
+        }
+
+        if (String(content).length > 10000) {
+            return errorResponse(res, '内容不能超过10000字', 400);
+        }
+
         const announcement = await DbAdapter.create(Announcement, {
             title,
             content,
@@ -1863,9 +1920,10 @@ async function updateSystemConfig(req, res) {
         } else {
             config = await DbAdapter.create(SystemConfig, { config_key: key, config_value: value });
         }
-        
+
+        const updatedConfig = await DbAdapter.findOne(SystemConfig, { where: { config_key: key } });
         logOperation(req, 'update_config', 'system_config', null, redactConfigDetails({ [key]: value }));
-        return successResponse(res, config, '更新成功');
+        return successResponse(res, updatedConfig, '更新成功');
     } catch (error) {
         console.error('更新系统设置错误:', error);
         return errorResponse(res, '更新失败', 500);
@@ -1875,11 +1933,21 @@ async function updateSystemConfig(req, res) {
 async function batchUpdateConfigs(req, res) {
     try {
         const { configs } = req.body;
-        
+
+        const ALLOWED_CONFIG_KEYS = [
+            'ai_enabled', 'ai_api_url', 'ai_api_key', 'ai_model', 'ai_prompt',
+            'hcaptcha_enabled', 'hcaptcha_site_key', 'hcaptcha_secret_key', 'hcaptcha_expire_minutes',
+            'geetest_enabled', 'geetest_id', 'geetest_key',
+            'sensitive_check_mode',
+            'db_type', 'db_path', 'db_host', 'db_port', 'db_name', 'db_user', 'db_password',
+            'mysql_host', 'mysql_port', 'mysql_database', 'mysql_username', 'mysql_password'
+        ];
+
         const maskedValues = ['******', '***'];
-        const sensitiveKeys = ['ai_api_key', 'hcaptcha_secret_key', 'geetest_key', 'mysql_password'];
+        const sensitiveKeys = ['ai_api_key', 'hcaptcha_secret_key', 'geetest_key', 'mysql_password', 'db_password'];
         const filteredConfigs = {};
         for (const [key, value] of Object.entries(configs)) {
+            if (!ALLOWED_CONFIG_KEYS.includes(key)) continue;
             if (sensitiveKeys.includes(key) && maskedValues.includes(String(value))) {
                 continue;
             }
@@ -1936,7 +2004,7 @@ async function batchUpdateConfigs(req, res) {
                 await DbAdapter.create(SystemConfig, { config_key: key, config_value: value });
             }
         }
-        
+
         logOperation(req, 'batch_update_config', 'system_config', null, redactConfigDetails(filteredConfigs));
         
         if (hasDbConfig) {
@@ -2070,9 +2138,10 @@ async function updateSensitiveWord(req, res) {
         }
         
         await DbAdapter.update(SensitiveWord, { word, category, level, replacement, status }, { where: { id: wordId } });
+        const updatedWord = await DbAdapter.findByPk(SensitiveWord, wordId);
         logOperation(req, 'update_sensitive_word', 'sensitive_word', wordId, { word });
         
-        return successResponse(res, sensitiveWord, '更新成功');
+        return successResponse(res, updatedWord, '更新成功');
     } catch (error) {
         console.error('更新敏感词错误:', error);
         return errorResponse(res, '更新失败', 500);
@@ -2102,7 +2171,15 @@ async function batchImportSensitiveWords(req, res) {
     try {
         const { words, category, level } = req.body;
         const results = { success: 0, failed: 0, duplicates: 0 };
-        
+
+        if (!Array.isArray(words) || words.length === 0) {
+            return errorResponse(res, '请提供敏感词列表', 400);
+        }
+
+        if (words.length > 1000) {
+            return errorResponse(res, '单次最多导入1000个敏感词', 400);
+        }
+
         for (const word of words) {
             const existing = await DbAdapter.findOne(SensitiveWord, { where: { word } });
             if (existing) {
@@ -2222,8 +2299,17 @@ async function testSensitiveCheck(req, res) {
 async function aiBatchReviewReports(req, res) {
     try {
         const { reportIds } = req.body;
+
+        if (!Array.isArray(reportIds) || reportIds.length === 0) {
+            return errorResponse(res, '请选择要审核的举报', 400);
+        }
+
+        if (reportIds.length > 20) {
+            return errorResponse(res, '单次最多审核20条举报', 400);
+        }
+
         const results = [];
-        
+
         for (const reportId of reportIds) {
             const report = await DbAdapter.findByPk(Report, reportId, {
                 include: [
@@ -2516,7 +2602,12 @@ async function updateStudioStatus(req, res) {
     try {
         const { id } = req.params;
         const { status } = req.body;
-        
+
+        const VALID_STUDIO_STATUSES = ['active', 'banned', 'pending'];
+        if (!VALID_STUDIO_STATUSES.includes(status)) {
+            return errorResponse(res, '无效的状态值', 400);
+        }
+
         const studio = await DbAdapter.findByPk(Studio, id);
         if (!studio) {
             return errorResponse(res, '工作室不存在', 404);
@@ -2552,7 +2643,7 @@ async function updateStudio(req, res) {
             vice_owner_id: vice_owner_id !== undefined ? vice_owner_id : studio.vice_owner_id
         }, { where: { id } });
         
-        logOperation(req, 'update_studio', 'studio', id, req.body);
+        logOperation(req, 'update_studio', 'studio', id, { name, description, is_public, join_type, status });
         
         const updatedStudio = await DbAdapter.findByPk(Studio, id);
         return successResponse(res, updatedStudio, '工作室已更新');
@@ -2802,7 +2893,11 @@ async function sendBatchNotifications(req, res) {
         if (!userIds || !Array.isArray(userIds) || userIds.length === 0) {
             return errorResponse(res, '请选择接收用户', 400);
         }
-        
+
+        if (userIds.length > 500) {
+            return errorResponse(res, '单次最多发送500条通知', 400);
+        }
+
         if (!title || !content) {
             return errorResponse(res, '标题和内容不能为空', 400);
         }
@@ -2871,8 +2966,8 @@ async function updateStudioPoints(req, res) {
         }
 
         const parsedPoints = parseInt(points, 10);
-        if (!Number.isFinite(parsedPoints)) {
-            return errorResponse(res, '积分必须是有效数字', 400);
+        if (!Number.isFinite(parsedPoints) || parsedPoints < -10000 || parsedPoints > 10000) {
+            return errorResponse(res, '积分必须是 -10000 到 10000 之间的有效数字', 400);
         }
 
         let newPoints;
@@ -3005,7 +3100,7 @@ async function recalibrateAllWorks(req, res) {
                 }
 
                 const updateData = {
-                    type: workDetail.type || 'KITTEN',
+                    ide_type: workDetail.ide_type || work.ide_type || 'KITTEN',
                     work_url: workDetail.player_url || work.work_url
                 };
 
