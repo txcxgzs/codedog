@@ -54,6 +54,10 @@
           <h3 class="r-post--comments_title">评论 ({{ post.comment_count }})</h3>
           
           <div class="r-post--comment_form" v-if="userStore.isLoggedIn">
+            <div v-if="replyToCommentId" class="r-post--reply_hint">
+              回复评论中...
+              <el-button text size="small" @click="replyToCommentId = null; replyToUserId = null; commentContent = ''">取消回复</el-button>
+            </div>
             <el-input v-model="commentContent" type="textarea" :rows="3" placeholder="写下你的评论..." />
             <el-button type="primary" :loading="commentLoading" @click="submitComment">发表评论</el-button>
           </div>

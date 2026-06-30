@@ -619,6 +619,8 @@ const toggleFavorite = async () => {
     return
   }
   
+  if (favoriteLoading.value) return
+
   favoriteLoading.value = true
   try {
     if (isFavorited.value) {

@@ -373,7 +373,7 @@ async function updateStudio(req, res) {
         await DbAdapter.update(Studio, {
             name: name || studio.name,
             description: description !== undefined ? description : studio.description,
-            cover: cover || studio.cover,
+            cover: cover !== undefined ? cover : studio.cover,
             is_public: is_public !== undefined ? is_public : studio.is_public,
             join_type: join_type || studio.join_type
         }, { where: { id: DbAdapter.getId(studio) } });

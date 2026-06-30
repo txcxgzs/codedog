@@ -71,23 +71,6 @@ function requireSuperAdmin(req, res, next) {
     next();
 }
 
-/**
- * 检查是否可以管理目标用户
- */
-function canManageTargetUser(req, res, next) {
-    const targetRole = req.body.targetRole || req.params.role;
-    
-    if (!req.user) {
-        return errorResponse(res, '请先登录', 401);
-    }
-    
-    if (targetRole && !canManageUser(req.user.role, targetRole)) {
-        return errorResponse(res, '您没有权限管理此用户', 403);
-    }
-    
-    next();
-}
-
 module.exports = {
     requirePermission,
     requireRole,
