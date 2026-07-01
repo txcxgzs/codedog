@@ -4,30 +4,30 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
 echo "========================================"
-echo "  CodeDog Deployment Script"
+echo "  CodeDog 一键部署脚本"
 echo "========================================"
 
-# Check Docker
+# 检查 Docker
 if ! command -v docker &> /dev/null; then
-    echo "ERROR: Docker not installed"
+    echo "错误：未安装 Docker，请先安装 Docker"
     exit 1
 fi
 
-# Check Docker Compose - use whichever is available
+# 检查 Docker Compose，自动兼容新版 docker compose 和旧版 docker-compose
 if docker compose version >/dev/null 2>&1; then
     COMPOSE_CMD="docker compose"
 elif command -v docker-compose >/dev/null 2>&1; then
     COMPOSE_CMD="docker-compose"
 else
-    echo "ERROR: Docker Compose not installed"
+    echo "错误：未安装 Docker Compose，请先安装 Docker Compose"
     exit 1
 fi
-echo "Using: $COMPOSE_CMD"
+echo "使用 Compose 命令：$COMPOSE_CMD"
 
-# Pull latest code
+# 拉取最新代码
 echo ""
-echo "Pulling latest code..."
-git pull origin main 2>/dev/null || echo "Warning: Could not pull, using local code"
+echo "正在拉取最新代码..."
+git pull origin main 2>/dev/null || echo "警告：无法拉取最新代码，将继续使用本地代码部署"
 
 append_or_replace_env() {
     local key="$1"
@@ -44,17 +44,17 @@ generate_secret() {
     openssl rand -hex "$bytes" 2>/dev/null || head -c "$bytes" /dev/urandom | od -An -tx1 | tr -d ' \n'
 }
 
-# Create .env if missing
+# 创建 .env 配置文件
 if [ ! -f .env ] || [ ! -s .env ]; then
     echo ""
-    echo "Creating .env configuration..."
+    echo "正在创建 .env 环境配置..."
     
     echo ""
-    echo "Select database type:"
-    echo "  1) SQLite (default, lightweight)"
-    echo "  2) MySQL (requires MySQL server)"
+    echo "请选择数据库类型："
+    echo "  1) SQLite（默认，轻量级）"
+    echo "  2) MySQL（需要已有 MySQL 服务）"
     echo ""
-    read -p "Choice [1-2]: " db_choice
+    read -p "请输入选项 [1-2]: " db_choice
     
     DB_TYPE="sqlite"
     DB_HOST="localhost"
@@ -65,15 +65,15 @@ if [ ! -f .env ] || [ ! -s .env ]; then
     
     if [ "$db_choice" = "2" ]; then
         DB_TYPE="mysql"
-        read -p "MySQL host [localhost]: " input_host
+        read -p "MySQL 主机地址 [localhost]: " input_host
         DB_HOST=${input_host:-localhost}
-        read -p "MySQL port [3306]: " input_port
+        read -p "MySQL 端口 [3306]: " input_port
         DB_PORT=${input_port:-3306}
-        read -p "MySQL database [coding_dog]: " input_name
+        read -p "MySQL 数据库名 [coding_dog]: " input_name
         DB_NAME=${input_name:-coding_dog}
-        read -p "MySQL user [root]: " input_user
+        read -p "MySQL 用户名 [root]: " input_user
         DB_USER=${input_user:-root}
-        read -sp "MySQL password: " input_pass
+        read -sp "MySQL 密码: " input_pass
         DB_PASSWORD=${input_pass}
         echo ""
     fi
@@ -93,12 +93,12 @@ SESSION_SECRET=$(generate_secret 32)
 CORS_ORIGIN=http://localhost:3001
 ENVEOF
     
-    echo ".env created"
+    echo ".env 创建完成"
 else
-    echo "Using existing .env"
+    echo "使用现有 .env 配置"
 fi
 
-# Repair incomplete existing .env files from older installers.
+# 修复旧版本安装器生成的不完整 .env
 if ! grep -q '^DB_PATH=' .env; then
     append_or_replace_env "DB_PATH" "/app/server/data/database.sqlite"
 fi
@@ -115,31 +115,30 @@ if ! grep -q '^SESSION_SECRET=................................' .env; then
     append_or_replace_env "SESSION_SECRET" "$(generate_secret 32)"
 fi
 
-# Create directories and fix permissions. The container runs as a non-root app user,
-# so bind-mounted SQLite/upload directories must be writable from inside the container.
+# 创建持久化目录并修复权限。容器使用非 root 用户运行，挂载目录必须可写。
 echo ""
-echo "Preparing directories..."
+echo "正在准备数据目录和上传目录..."
 mkdir -p data uploads/avatars uploads/works
 chmod -R a+rwX data uploads 2>/dev/null || true
 
-# Build and start
+# 构建并启动
 echo ""
-echo "Building Docker image..."
+echo "正在构建 Docker 镜像..."
 $COMPOSE_CMD build --no-cache
 
 echo ""
-echo "Starting service..."
+echo "正在启动服务..."
 $COMPOSE_CMD down
 $COMPOSE_CMD up -d
 
-# Wait for startup
+# 等待服务启动
 echo ""
-echo "Waiting for service..."
+echo "正在等待服务启动..."
 SERVICE_READY=0
 for i in $(seq 1 60); do
     if curl -fs http://localhost:3001/api/health > /dev/null 2>&1; then
         SERVICE_READY=1
-        echo "Service started successfully!"
+        echo "服务启动成功！"
         break
     fi
     echo -n "."
@@ -149,15 +148,15 @@ echo ""
 
 if [ "$SERVICE_READY" != "1" ]; then
     echo ""
-    echo "ERROR: Service did not become healthy. Recent logs:"
+    echo "错误：服务未能正常启动。最近日志如下："
     $COMPOSE_CMD ps
     $COMPOSE_CMD logs --tail=120 codedog
     exit 1
 fi
 
-# Install CLI
+# 安装管理工具
 echo ""
-echo "Installing management tool..."
+echo "正在安装 codedog 管理工具..."
 if [ -f "$SCRIPT_DIR/install-cli.sh" ]; then
     chmod +x "$SCRIPT_DIR/install-cli.sh"
     bash "$SCRIPT_DIR/install-cli.sh"
@@ -165,10 +164,10 @@ fi
 
 echo ""
 echo "========================================"
-echo "  Deployment Complete!"
+echo "  部署完成！"
 echo "========================================"
 echo ""
-echo "  URL: http://localhost:3001"
-echo "  Admin: http://localhost:3001/admin"
-echo "  Tool: codedog"
+echo "  访问地址：http://localhost:3001"
+echo "  后台地址：http://localhost:3001/admin"
+echo "  管理工具：codedog"
 echo ""
