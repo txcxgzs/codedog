@@ -51,9 +51,35 @@ const ALLOWED_ORIGINS = configuredOrigins.length > 0
     ? configuredOrigins
     : ['http://localhost:8080', 'http://localhost:3000', 'http://127.0.0.1:8080', 'http://127.0.0.1:3000'];
 
-function isAllowedOrigin(origin) {
+function normalizeOrigin(value) {
+    if (!value) return null;
+    try {
+        const url = new URL(value);
+        return `${url.protocol}//${url.host}`;
+    } catch (e) {
+        return null;
+    }
+}
+
+function sameHostOrigins(host) {
+    if (!host) return [];
+    return [`http://${host}`, `https://${host}`];
+}
+
+function isAllowedOrigin(origin, host) {
+    // 非浏览器请求通常没有 Origin，允许通过。
     if (!origin) return true;
-    return ALLOWED_ORIGINS.includes(origin);
+
+    const normalizedOrigin = normalizeOrigin(origin);
+    if (!normalizedOrigin) return false;
+
+    // 显式白名单优先。
+    if (ALLOWED_ORIGINS.includes(normalizedOrigin)) return true;
+
+    // 一键 Docker 部署常见访问方式是 http://服务器IP:3001。
+    // 此时 .env 默认 CORS_ORIGIN=http://localhost:3001，但浏览器 Origin 会是服务器 IP。
+    // 只允许“请求 Origin 与当前 Host 相同”的同站访问，避免误放开第三方来源。
+    return sameHostOrigins(host).includes(normalizedOrigin);
 }
 
 function setSecurityHeaders(res) {
@@ -94,19 +120,20 @@ function resolveSessionSecret() {
     return crypto.randomBytes(32).toString('hex');
 }
 
-app.use(cors({
-    origin(origin, callback) {
-        callback(null, isAllowedOrigin(origin));
-    },
-    credentials: true,
-    optionsSuccessStatus: 204
+app.use(cors((req, callback) => {
+    const origin = req.headers.origin;
+    callback(null, {
+        origin: isAllowedOrigin(origin, req.headers.host),
+        credentials: true,
+        optionsSuccessStatus: 204
+    });
 }));
 
 app.use((req, res, next) => {
     const origin = req.headers.origin;
     const isSafeMethod = ['GET', 'HEAD', 'OPTIONS'].includes(req.method);
 
-    if (!isSafeMethod && origin && !isAllowedOrigin(origin)) {
+    if (!isSafeMethod && origin && !isAllowedOrigin(origin, req.headers.host)) {
         setSecurityHeaders(res);
         return res.status(403).json({
             code: 403,
