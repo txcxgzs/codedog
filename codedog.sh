@@ -476,17 +476,100 @@ config_menu() {
     echo "1) 查看当前配置"
     echo "2) 修改端口"
     echo "3) 重置配置"
+    echo "4) 🛡️ 验证码开关 (hCaptcha / 极验)"
     echo ""
-    read -p "请选择 [1-3]: " cfg_choice
+    read -p "请选择 [1-4]: " cfg_choice
 
     case $cfg_choice in
         1) show_config ;;
         2) change_port ;;
         3) reset_config ;;
+        4) captcha_toggle ;;
     esac
 
     echo ""
     read -p "按回车返回菜单..."
+}
+
+# ==================== 验证码开关 ====================
+# 直接修改数据库 system_configs 表的 hcaptcha_enabled / geetest_enabled 字段，
+# 用于验证码服务异常时紧急关闭，避免登录/发帖/评论被全部拦截把系统搞死。
+# 注意：hCaptcha 中间件有 60 秒缓存，关闭后最多 60 秒生效；重启服务立即生效。
+captcha_toggle() {
+    local DB_PATH="$SCRIPT_DIR/data/database.sqlite"
+    if [ ! -f "$DB_PATH" ]; then
+        print_error "未找到数据库文件: $DB_PATH"
+        print_warning "请确认项目已部署且数据库已初始化"
+        return 1
+    fi
+
+    echo -e "\n${CYAN}═══ 验证码开关 ═══${NC}\n"
+    echo "当前状态:"
+
+    # 读取 hCaptcha 状态
+    local hcap_val
+    hcap_val=$(sqlite3 "$DB_PATH" "SELECT config_value FROM system_configs WHERE config_key='hcaptcha_enabled'" 2>/dev/null)
+    local hcap_state="未配置(默认关闭)"
+    [ "$hcap_val" = "true" ] && hcap_state="已开启"
+    [ "$hcap_val" = "false" ] && hcap_state="已关闭"
+    echo "  hCaptcha: $hcap_state"
+
+    # 读取极验状态
+    local gee_val
+    gee_val=$(sqlite3 "$DB_PATH" "SELECT config_value FROM system_configs WHERE config_key='geetest_enabled'" 2>/dev/null)
+    local gee_state="未配置(默认关闭)"
+    [ "$gee_val" = "true" ] && gee_state="已开启"
+    [ "$gee_val" = "false" ] && gee_state="已关闭"
+    echo "  极验Geetest: $gee_state"
+
+    echo ""
+    echo "1) 关闭 hCaptcha 验证码 (紧急放行)"
+    echo "2) 开启 hCaptcha 验证码"
+    echo "3) 关闭 极验Geetest 验证码"
+    echo "4) 开启 极验Geetest 验证码"
+    echo "5) 全部关闭 (验证码服务故障时使用)"
+    echo "6) 全部开启"
+    echo "0) 返回"
+    echo ""
+    read -p "请选择 [0-6]: " cap_choice
+
+    case $cap_choice in
+        1) set_system_config "hcaptcha_enabled" "false" ;;
+        2) set_system_config "hcaptcha_enabled" "true" ;;
+        3) set_system_config "geetest_enabled" "false" ;;
+        4) set_system_config "geetest_enabled" "true" ;;
+        5) set_system_config "hcaptcha_enabled" "false"; set_system_config "geetest_enabled" "false" ;;
+        6) set_system_config "hcaptcha_enabled" "true";  set_system_config "geetest_enabled" "true" ;;
+        0) return 0 ;;
+        *) print_error "无效选项"; return 1 ;;
+    esac
+
+    echo ""
+    print_warning "hCaptcha 中间件有 60 秒缓存，最多 60 秒后生效；重启服务立即生效。"
+}
+
+# 写入 system_configs 表的辅助函数：存在则更新，不存在则插入
+set_system_config() {
+    local DB_PATH="$SCRIPT_DIR/data/database.sqlite"
+    local CFG_KEY="$1"
+    local CFG_VAL="$2"
+
+    if [ ! -f "$DB_PATH" ]; then
+        print_error "未找到数据库文件: $DB_PATH"
+        return 1
+    fi
+
+    # 查询是否存在
+    local EXISTS
+    EXISTS=$(sqlite3 "$DB_PATH" "SELECT config_key FROM system_configs WHERE config_key='$CFG_KEY'" 2>/dev/null)
+
+    if [ -z "$EXISTS" ]; then
+        sqlite3 "$DB_PATH" "INSERT INTO system_configs (config_key, config_value, created_at, updated_at) VALUES ('$CFG_KEY', '$CFG_VAL', datetime('now'), datetime('now'))" 2>/dev/null
+    else
+        sqlite3 "$DB_PATH" "UPDATE system_configs SET config_value='$CFG_VAL', updated_at=datetime('now') WHERE config_key='$CFG_KEY'" 2>/dev/null
+    fi
+
+    print_success "$CFG_KEY 已设为 $CFG_VAL"
 }
 
 # 显示配置

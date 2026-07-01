@@ -331,8 +331,9 @@ echo.
 echo 1) 查看当前配置
 echo 2) 修改端口
 echo 3) 重置配置
+echo 4) 🛡️ 验证码开关 (hCaptcha / 极验)
 echo.
-set /p cfg_choice="请选择 [1-3]: "
+set /p cfg_choice="请选择 [1-4]: "
 
 if "%cfg_choice%"=="1" (
     echo.
@@ -353,6 +354,90 @@ if "%cfg_choice%"=="2" (
     echo ✓ 端口已修改为: !new_port!
     echo ⚠ 请手动编辑 docker-compose.yml 并重启服务
 )
+if "%cfg_choice%"=="4" goto captcha_toggle
+
+echo.
+pause
+goto main
+
+:: ==================== 验证码开关 ====================
+:: 直接修改数据库 system_configs 表的 hcaptcha_enabled / geetest_enabled 字段，
+:: 用于验证码服务异常时紧急关闭，避免登录/发帖/评论被全部拦截把系统搞死。
+:: 注意：hCaptcha 中间件有 60 秒缓存，关闭后最多 60 秒生效；
+::       也可重启服务立即生效。
+:captcha_toggle
+cls
+echo.
+echo ═══ 验证码开关 ═══
+echo.
+set "DB_PATH=%SCRIPT_DIR%data\database.sqlite"
+if not exist "!DB_PATH!" (
+    echo ✗ 未找到数据库文件: !DB_PATH!
+    echo   请确认项目已部署且数据库已初始化
+    echo.
+    pause
+    goto config
+)
+echo 当前状态:
+:: 读取当前 hCaptcha 状态（config_value 为 'true'/'false'，可能不存在）
+set "hcaptcha_state=未配置"
+for /f "delims=" %%i in ('sqlite3 "!DB_PATH!" "SELECT config_value FROM system_configs WHERE config_key='hcaptcha_enabled'" 2^>nul') do set "hcaptcha_state=%%i"
+if "!hcaptcha_state!"=="" set "hcaptcha_state=未配置(默认关闭)"
+if "!hcaptcha_state!"=="true" set "hcaptcha_state=已开启"
+if "!hcaptcha_state!"=="false" set "hcaptcha_state=已关闭"
+echo   hCaptcha: !hcaptcha_state!
+
+set "geetest_state=未配置"
+for /f "delims=" %%i in ('sqlite3 "!DB_PATH!" "SELECT config_value FROM system_configs WHERE config_key='geetest_enabled'" 2^>nul') do set "geetest_state=%%i"
+if "!geetest_state!"=="" set "geetest_state=未配置(默认关闭)"
+if "!geetest_state!"=="true" set "geetest_state=已开启"
+if "!geetest_state!"=="false" set "geetest_state=已关闭"
+echo   极验Geetest: !geetest_state!
+echo.
+echo 1) 关闭 hCaptcha 验证码 (紧急放行)
+echo 2) 开启 hCaptcha 验证码
+echo 3) 关闭 极验Geetest 验证码
+echo 4) 开启 极验Geetest 验证码
+echo 5) 全部关闭 (验证码服务故障时使用)
+echo 6) 全部开启
+echo 0) 返回
+echo.
+set /p cap_choice="请选择 [0-6]: "
+
+if "!cap_choice!"=="1" call :set_config hcaptcha_enabled false
+if "!cap_choice!"=="2" call :set_config hcaptcha_enabled true
+if "!cap_choice!"=="3" call :set_config geetest_enabled false
+if "!cap_choice!"=="4" call :set_config geetest_enabled true
+if "!cap_choice!"=="5" (
+    call :set_config hcaptcha_enabled false
+    call :set_config geetest_enabled false
+)
+if "!cap_choice!"=="6" (
+    call :set_config hcaptcha_enabled true
+    call :set_config geetest_enabled true
+)
+if "!cap_choice!"=="0" goto config
+
+echo.
+echo 提示: hCaptcha 中间件有 60 秒缓存，最多 60 秒后生效；重启服务立即生效。
+echo.
+pause
+goto config
+
+:: 写入 system_configs 表的辅助函数：存在则更新，不存在则插入
+:set_config
+set "CFG_KEY=%~1"
+set "CFG_VAL=%~2"
+:: 先查是否存在
+set "EXISTS="
+for /f "delims=" %%i in ('sqlite3 "!DB_PATH!" "SELECT config_key FROM system_configs WHERE config_key='!CFG_KEY!'" 2^>nul') do set "EXISTS=%%i"
+if "!EXISTS!"=="" (
+    sqlite3 "!DB_PATH!" "INSERT INTO system_configs (config_key, config_value, created_at, updated_at) VALUES ('!CFG_KEY!', '!CFG_VAL!', datetime('now'), datetime('now'))" 2>nul
+) else (
+    sqlite3 "!DB_PATH!" "UPDATE system_configs SET config_value='!CFG_VAL!', updated_at=datetime('now') WHERE config_key='!CFG_KEY!'" 2>nul
+)
+echo ✓ !CFG_KEY! 已设为 !CFG_VAL!
+goto :eof
 
 echo.
 pause

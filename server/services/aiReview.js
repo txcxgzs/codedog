@@ -130,8 +130,14 @@ function validateAIEndpoint(apiUrl) {
 }
 
 async function getAIConfig() {
+    // 修正：敏感词 API 的 URL/启用状态/密钥统一从数据库 SystemConfig 读取（后台可改），
+    // 不再使用环境变量，方便运维在后台直接调整而无需重启服务
     const configs = await DbAdapter.findAll(SystemConfig, {
-        where: { config_key: { [Op.in]: ['ai_enabled', 'ai_api_url', 'ai_api_key', 'ai_model', 'ai_prompt', 'sensitive_check_mode'] } }
+        where: { config_key: { [Op.in]: [
+            'ai_enabled', 'ai_api_url', 'ai_api_key', 'ai_model', 'ai_prompt',
+            'sensitive_check_mode',
+            'sensitive_api_enabled', 'sensitive_api_url', 'sensitive_api_key'
+        ] } }
     });
 
     const configMap = {};
@@ -143,7 +149,11 @@ async function getAIConfig() {
         apiKey: configMap.ai_api_key || '',
         model: configMap.ai_model || 'gpt-3.5-turbo',
         prompt: configMap.ai_prompt || DEFAULT_PROMPT,
-        sensitiveCheckMode: configMap.sensitive_check_mode || 'builtin' // builtin, api, both
+        sensitiveCheckMode: configMap.sensitive_check_mode || 'builtin', // builtin, api, both
+        // 敏感词外部 API 配置（数据库管理，后台可改）
+        sensitiveApiEnabled: configMap.sensitive_api_enabled !== 'false', // 默认开启，仅在显式设为 'false' 时关闭
+        sensitiveApiUrl: configMap.sensitive_api_url || 'https://wordcheck.txcxgzs.com/api/check',
+        sensitiveApiKey: configMap.sensitive_api_key || ''
     };
 }
 
@@ -273,9 +283,9 @@ async function fallbackReview(content, overrideMode) {
             builtinResult = await builtinSensitiveCheck(content);
         }
 
-        // 外部 API 检测
+        // 外部 API 检测（传入 config，避免 externalSensitiveCheck 重复查库）
         if (checkMode === 'api' || checkMode === 'both') {
-            apiResult = await externalSensitiveCheck(content);
+            apiResult = await externalSensitiveCheck(content, config);
         }
 
         // 合并结果
@@ -343,17 +353,29 @@ async function builtinSensitiveCheck(content) {
     }
 }
 
-// 外部敏感词检测 API 地址，可通过环境变量覆盖（修复硬编码，便于切换/禁用）
-const SENSITIVE_API_URL = process.env.SENSITIVE_API_URL || 'https://wordcheck.txcxgzs.com/api/check';
-// 是否启用外部敏感词 API，默认开启（设为 'false' 关闭）
-const SENSITIVE_API_ENABLED = process.env.SENSITIVE_API_ENABLED !== 'false';
+// 修正：外部敏感词检测 API 的 URL/启用状态/密钥统一从数据库 SystemConfig 读取，
+// 不再使用环境变量。后台「系统设置」可直接修改以下配置项：
+//   - sensitive_api_enabled: 'true'/'false'，默认开启
+//   - sensitive_api_url:    敏感词检测 API 地址
+//   - sensitive_api_key:    敏感词检测 API 密钥（可选）
+// 终端工具箱(codedog.bat / codedog.sh)的「验证码开关」菜单也可直接改数据库切换
 
-async function externalSensitiveCheck(content) {
+async function externalSensitiveCheck(content, config) {
+    // 优先使用传入的 config（来自 getAIConfig），避免重复查询数据库
+    const cfg = config || await getAIConfig();
+
     // 未启用外部敏感词 API 时直接返回 null（表示未检测）
-    if (!SENSITIVE_API_ENABLED) return null;
+    if (!cfg.sensitiveApiEnabled) return null;
+    if (!cfg.sensitiveApiUrl) return null;
+
     try {
-        const response = await axios.post(SENSITIVE_API_URL, { text: content }, {
-            headers: { 'Content-Type': 'application/json' },
+        const headers = { 'Content-Type': 'application/json' };
+        // 若配置了 API 密钥则携带（具体 header 名按接口约定，此处用通用的 Authorization）
+        if (cfg.sensitiveApiKey) {
+            headers['Authorization'] = `Bearer ${cfg.sensitiveApiKey}`;
+        }
+        const response = await axios.post(cfg.sensitiveApiUrl, { text: content }, {
+            headers,
             timeout: 10000
         });
 

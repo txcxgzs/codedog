@@ -2129,11 +2129,31 @@ async function updateSystemConfig(req, res) {
         const { key } = req.params;
         const { value } = req.body;
 
+        // 修复 M11：单项配置更新也使用白名单校验，与 batchUpdateConfigs 一致，
+        // 避免任意 key 写入 system_configs 表污染配置
+        const ALLOWED_CONFIG_KEYS = [
+            'ai_enabled', 'ai_api_url', 'ai_api_key', 'ai_model', 'ai_prompt',
+            'hcaptcha_enabled', 'hcaptcha_site_key', 'hcaptcha_secret_key', 'hcaptcha_expire_minutes',
+            'geetest_enabled', 'geetest_id', 'geetest_key',
+            'sensitive_check_mode',
+            'sensitive_api_enabled', 'sensitive_api_url', 'sensitive_api_key',
+            'db_type', 'db_path', 'db_host', 'db_port', 'db_name', 'db_user', 'db_password',
+            'mysql_host', 'mysql_port', 'mysql_database', 'mysql_username', 'mysql_password'
+        ];
+        if (!ALLOWED_CONFIG_KEYS.includes(key)) {
+            return errorResponse(res, `不支持的配置项: ${key}`, 400);
+        }
+
         let config = await DbAdapter.findOne(SystemConfig, { where: { config_key: key } });
         if (config) {
             await DbAdapter.update(SystemConfig, { config_value: value }, { where: { config_key: key } });
         } else {
             config = await DbAdapter.create(SystemConfig, { config_key: key, config_value: value });
+        }
+
+        // 敏感配置项修改后，同步清理 hCaptcha 中间件缓存，避免 60s 内仍用旧值
+        if (key === 'hcaptcha_enabled') {
+            try { require('../middleware/hcaptcha').invalidateHcaptchaCache(); } catch (e) {}
         }
 
         const updatedConfig = await DbAdapter.findOne(SystemConfig, { where: { config_key: key } });
@@ -2154,12 +2174,13 @@ async function batchUpdateConfigs(req, res) {
             'hcaptcha_enabled', 'hcaptcha_site_key', 'hcaptcha_secret_key', 'hcaptcha_expire_minutes',
             'geetest_enabled', 'geetest_id', 'geetest_key',
             'sensitive_check_mode',
+            'sensitive_api_enabled', 'sensitive_api_url', 'sensitive_api_key',
             'db_type', 'db_path', 'db_host', 'db_port', 'db_name', 'db_user', 'db_password',
             'mysql_host', 'mysql_port', 'mysql_database', 'mysql_username', 'mysql_password'
         ];
 
         const maskedValues = ['******', '***'];
-        const sensitiveKeys = ['ai_api_key', 'hcaptcha_secret_key', 'geetest_key', 'mysql_password', 'db_password'];
+        const sensitiveKeys = ['ai_api_key', 'hcaptcha_secret_key', 'geetest_key', 'sensitive_api_key', 'mysql_password', 'db_password'];
         const filteredConfigs = {};
         for (const [key, value] of Object.entries(configs)) {
             if (!ALLOWED_CONFIG_KEYS.includes(key)) continue;
