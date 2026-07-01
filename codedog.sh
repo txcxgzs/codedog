@@ -64,12 +64,16 @@ show_status() {
 
     echo ""
     echo "容器状态:"
-    docker ps --filter "name=codedog" --format "table .ID\t.Status\t.Ports" 2>/dev/null || true
+    docker ps --filter "name=codedog" 2>/dev/null || true
 
     echo ""
     echo "健康检查:"
-    HEALTH=$(docker inspect --format='if .State.Health.State.Health.Statuselsenoneend' codedog 2>/dev/null)
-    echo "Docker Health: ${HEALTH:-未知}"
+    HEALTH_LINE=$(docker inspect codedog 2>/dev/null | grep -m1 '"Status"' || true)
+    if [ -n "$HEALTH_LINE" ]; then
+        echo "$HEALTH_LINE" | sed 's/^[[:space:]]*//'
+    else
+        echo "Docker Health: 未知"
+    fi
 
     echo ""
     if curl -fs http://localhost:3001/api/health > /dev/null 2>&1; then
