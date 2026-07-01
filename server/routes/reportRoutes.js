@@ -73,11 +73,19 @@ router.post('/', authMiddleware, geetestVerify('report'), async (req, res) => {
                 return errorResponse(res, '举报目标不存在', 404);
             }
         }
-        
+
+        // P0-3: Report.target_id 是 INTEGER，必须存本地主键。
+        // type='user' 时前端传的 target_id 是 codemao_user_id(字符串)，
+        // 不能直接落库，否则 adminController.findByPk(User, report.target_id) 永远查不到。
+        // 统一用 DbAdapter.getId(target) 取本地整型主键：
+        //   - work/comment/post: findByPk 入参即本地主键，getId(target) === target_id
+        //   - user: getId(target) 返回 User.id(本地整型主键)
+        const reportTargetId = DbAdapter.getId(target);
+
         const existing = await DbAdapter.findOne(Report, {
             where: {
                 type,
-                target_id,
+                target_id: reportTargetId,
                 reporter_id: req.user.id,
                 status: 'pending'
             }
@@ -89,7 +97,7 @@ router.post('/', authMiddleware, geetestVerify('report'), async (req, res) => {
         
         const report = await DbAdapter.create(Report, {
             type,
-            target_id,
+            target_id: reportTargetId,
             reporter_id: req.user.id,
             reason,
             description,

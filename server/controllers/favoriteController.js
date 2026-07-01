@@ -21,7 +21,7 @@ async function favoriteWorksForUser(userId, query) {
     const { page, pageSize, offset } = DbAdapter.parsePagination(query);
     const keyword = query.keyword || '';
 
-    // 关键词过滤条件(用于查询 Work/Post 详情时下推到 SQL)
+    // 关键词 + 状态过滤条件(下推到 Work/Post 查询)
     const workWhere = { status: 'published' };
     if (keyword) {
         const keywordWhere = likeContains(sequelize, ['name', 'description'], keyword);
@@ -33,15 +33,43 @@ async function favoriteWorksForUser(userId, query) {
         if (postKeywordWhere) Object.assign(postWhere, postKeywordWhere);
     }
 
-    // 第一步:SQL 分页查询该用户的所有收藏(按收藏时间倒序)
-    // 不在此处关联 Work/Post 详情,避免全量加载后再内存 slice
-    // 排序与分页(limit/offset)均下推到 SQL,内存中不再做 .slice()
-    const { rows: favorites, count: total } = await DbAdapter.findAndCountAll(Favorite, {
+    // 修复: 先过滤再分页,避免"分页后再过滤"导致搜索遗漏、空页、count 不准
+    // 第一步: 获取该用户所有收藏的 work_id / post_id(仅取 ID,轻量)
+    const userFavoriteLinks = await DbAdapter.findAll(Favorite, {
         where: {
             user_id: userId,
             [Op.or]: [
                 { work_id: { [Op.ne]: null } },
                 { post_id: { [Op.ne]: null } }
+            ]
+        },
+        attributes: ['work_id', 'post_id']
+    });
+    const allWorkIds = userFavoriteLinks.filter(f => f.work_id).map(f => f.work_id);
+    const allPostIds = userFavoriteLinks.filter(f => f.post_id).map(f => f.post_id);
+
+    // 第二步: 在这些收藏中,筛选出满足 status+keyword 条件的 Work/Post 的本地 ID
+    // 过滤必须在分页之前完成,否则会出现空页、count 不准、搜索遗漏等问题
+    const [matchingWorks, matchingPosts] = await Promise.all([
+        allWorkIds.length > 0 ? DbAdapter.findAll(Work, {
+            where: { id: { [Op.in]: allWorkIds }, ...workWhere },
+            attributes: ['id']
+        }) : [],
+        allPostIds.length > 0 ? DbAdapter.findAll(Post, {
+            where: { id: { [Op.in]: allPostIds }, ...postWhere },
+            attributes: ['id']
+        }) : []
+    ]);
+    const matchingWorkIds = matchingWorks.map(w => DbAdapter.getId(w));
+    const matchingPostIds = matchingPosts.map(p => DbAdapter.getId(p));
+
+    // 第三步: 在已过滤的收藏集合上分页(count 为过滤后的总数,非原始收藏总数)
+    const { rows: favorites, count: total } = await DbAdapter.findAndCountAll(Favorite, {
+        where: {
+            user_id: userId,
+            [Op.or]: [
+                { work_id: { [Op.in]: matchingWorkIds } },
+                { post_id: { [Op.in]: matchingPostIds } }
             ]
         },
         order: [['created_at', 'DESC']],
@@ -53,23 +81,21 @@ async function favoriteWorksForUser(userId, query) {
         return { works: [], count: total, page, pageSize };
     }
 
-    // 第二步:从当前页的收藏中分离出作品 ID 和帖子 ID
-    const workIds = favorites.filter(f => f.work_id).map(f => f.work_id);
-    const postIds = favorites.filter(f => f.post_id).map(f => f.post_id);
+    // 第四步: 批量加载当前页收藏对应的 Work/Post 详情(含 author)
+    const pageWorkIds = favorites.filter(f => f.work_id).map(f => f.work_id);
+    const pagePostIds = favorites.filter(f => f.post_id).map(f => f.post_id);
 
-    // 第三步:批量查询当前页收藏对应的 Work 和 Post 详情
-    // 仅查询当前页涉及的记录,避免全量加载;keyword 过滤在此处应用
     const [works, posts] = await Promise.all([
-        workIds.length > 0 ? DbAdapter.findAll(Work, {
-            where: { id: { [Op.in]: workIds }, ...workWhere },
+        pageWorkIds.length > 0 ? DbAdapter.findAll(Work, {
+            where: { id: { [Op.in]: pageWorkIds } },
             include: [{
                 model: User,
                 as: 'author',
                 attributes: ['id', 'codemao_user_id', 'username', 'nickname', 'avatar']
             }]
         }) : [],
-        postIds.length > 0 ? DbAdapter.findAll(Post, {
-            where: { id: { [Op.in]: postIds }, ...postWhere },
+        pagePostIds.length > 0 ? DbAdapter.findAll(Post, {
+            where: { id: { [Op.in]: pagePostIds } },
             include: [{
                 model: User,
                 as: 'author',
@@ -78,12 +104,10 @@ async function favoriteWorksForUser(userId, query) {
         }) : []
     ]);
 
-    // 第四步:构建 id->详情 映射,便于按收藏顺序组装结果
+    // 第五步: 构建 id->详情 映射,按收藏顺序组装结果
     const workMap = new Map(works.map(w => [DbAdapter.getId(w), w]));
     const postMap = new Map(posts.map(p => [DbAdapter.getId(p), p]));
 
-    // 第五步:按收藏记录的顺序(已按 created_at DESC 排序)组装结果
-    // 若 Work/Post 不存在或被 keyword 过滤掉,则跳过该条收藏
     const items = [];
     for (const f of favorites) {
         if (f.work_id) {
@@ -136,10 +160,14 @@ async function addFavorite(req, res) {
             return errorResponse(res, 'Already favorited', 400);
         }
 
+        // 修复: create Favorite + increment collection_times 用事务包裹,中途失败回滚避免不一致
         try {
-            await DbAdapter.create(Favorite, {
-                user_id: userId,
-                work_id: localWorkId
+            await sequelize.transaction(async (t) => {
+                await DbAdapter.create(Favorite, {
+                    user_id: userId,
+                    work_id: localWorkId
+                }, { transaction: t });
+                await DbAdapter.increment(work, 'collection_times', { transaction: t });
             });
         } catch (createError) {
             if (createError.name === 'SequelizeUniqueConstraintError') {
@@ -148,7 +176,6 @@ async function addFavorite(req, res) {
             throw createError;
         }
 
-        await DbAdapter.increment(work, 'collection_times');
         await work.reload();
 
         return successResponse(res, { collection_times: work.collection_times || 0, favorited: true }, 'Favorite added');
@@ -161,21 +188,64 @@ async function addFavorite(req, res) {
 async function removeFavorite(req, res) {
     try {
         const { workId } = req.params;
+        const userId = DbAdapter.getId(req.user);
         const work = await resolveWork(workId);
-        const localWorkId = work ? DbAdapter.getId(work) : workId;
+        let localWorkId = work ? DbAdapter.getId(work) : null;
+
+        // P3-11 修复: work 不存在(可能被硬删除)时的回退。
+        // Favorite.work_id 存的是本地整型主键,不是 codemao_work_id。
+        // 若 workId 是 codemao_work_id(字符串),直接用作 work_id 永远匹配不到。
+        // 鲁棒解析(Favorite 模型无 codemao_work_id 列):
+        //  1. workId 为纯数字时,可能就是本地主键,直接用作 work_id 查找。
+        //  2. workId 为 codemao_work_id(字符串)时,扫描用户的作品收藏,通过关联的
+        //     (可能被软删除的)Work 的 codemao_work_id 匹配,取其本地主键。
+        if (!localWorkId) {
+            if (/^\d+$/.test(String(workId))) {
+                localWorkId = Number(workId);
+            } else {
+                const userFav = await DbAdapter.findOne(Favorite, {
+                    where: { user_id: userId, work_id: { [Op.ne]: null } },
+                    include: [{
+                        model: Work,
+                        as: 'work',
+                        where: { codemao_work_id: String(workId) },
+                        required: true
+                    }]
+                });
+                if (userFav) {
+                    localWorkId = userFav.work_id;
+                }
+            }
+        }
+
+        if (!localWorkId) {
+            return errorResponse(res, 'Not favorited', 400);
+        }
 
         const favorite = await DbAdapter.findOne(Favorite, {
-            where: { user_id: DbAdapter.getId(req.user), work_id: localWorkId }
+            where: { user_id: userId, work_id: localWorkId }
         });
 
         if (!favorite) {
             return errorResponse(res, 'Not favorited', 400);
         }
 
-        const removed = await DbAdapter.destroy(Favorite, { where: { id: DbAdapter.getId(favorite) } });
+        // 修复: destroy Favorite + decrement collection_times 用事务包裹,保证一致性;
+        // 原子条件 decrement: 仅当 collection_times > 0 时才减 1,避免并发导致负数(镜像 commentController)
+        await sequelize.transaction(async (t) => {
+            const removed = await DbAdapter.destroy(Favorite, {
+                where: { id: DbAdapter.getId(favorite) },
+                transaction: t
+            });
+            if (removed && work) {
+                await DbAdapter.decrement(work, 'collection_times', {
+                    where: { collection_times: { [Op.gt]: 0 } },
+                    transaction: t
+                });
+            }
+        });
 
-        if (removed && work && (work.collection_times || 0) > 0) {
-            await DbAdapter.decrement(work, 'collection_times');
+        if (work) {
             await work.reload();
         }
 

@@ -934,7 +934,12 @@ async function setViceOwner(req, res) {
     try {
         const { id } = req.params;
         const { user_id } = req.body;
-        
+
+        // 防止室长将自己设为副室长，否则其 role 会被改为 vice_owner 导致永久失去管理权
+        if (String(user_id) === String(req.user.id)) {
+            return errorResponse(res, '不能将自己设为副室长', 400);
+        }
+
         const member = await DbAdapter.findOne(StudioMember, {
             where: { studio_id: id, user_id: req.user.id, status: 'active' }
         });

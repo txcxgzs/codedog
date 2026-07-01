@@ -7,8 +7,9 @@ const axios = require('axios');
 const net = require('net');
 // 引入 dns 模块用于解析域名 IP,防御 SSRF 的 DNS 重绑定绕过
 const dns = require('dns');
-// 引入 https 模块,用于创建自定义 Agent 强制禁止重定向,防止 SSRF 通过 302 跳转绕过 IP 校验
+// 引入 https/http 模块,用于创建自定义 Agent 固定已校验的 IP,防止 SSRF 通过 DNS 重绑定绕过 IP 校验
 const https = require('https');
+const http = require('http');
 const { SystemConfig, SensitiveWord } = require('../models');
 const DbAdapter = require('../utils/dbAdapter');
 const { Op } = require('sequelize');
@@ -177,12 +178,15 @@ function isPrivateHost(hostname) {
     return false;
 }
 
-// 校验 AI API 端点,防止 SSRF 攻击
-// 修复 Bug1:增加 DNS 解析防 DNS 重绑定、可疑 IP 格式拒绝
+// 校验 AI/外部 API 端点,防止 SSRF 攻击,并返回已校验的安全 IP 供「固定 IP」防 DNS 重绑定。
+// 修复 Bug1:增加 DNS 解析防 DNS 重绑定、可疑 IP 格式拒绝,并返回校验时解析到的 IP,
+//           使调用方能把它 pin 到 axios 的 Agent lookup 上,消除第二次 DNS 解析的攻击窗口。
 // 1. 必须使用 HTTPS
 // 2. 同步静态检查:localhost、可疑 IP 格式、直接私网 IP
 // 3. 对域名做 DNS 解析,防止 DNS 重绑定攻击;解析失败/超时按可疑处理拒绝
-// 注意:此处通过校验不代表绝对安全,实际请求时还需 maxRedirects:0 防止 302 绕过
+// 4. 返回已校验的 IP 字符串:调用方需用 buildPinnedIpAgents 固定该 IP,并设置 maxRedirects:0
+//    (此处通过校验不代表绝对安全:axios 内部会发起第二次 DNS 解析,必须 pin IP + 禁止重定向)
+// @returns {Promise<string>} 已校验的 IP 地址(IPv4 或 IPv6)
 async function validateAIEndpoint(apiUrl) {
     let parsed;
     try {
@@ -202,32 +206,58 @@ async function validateAIEndpoint(apiUrl) {
         throw new Error('AI API 地址不能指向本机或内网地址');
     }
 
-    // 2. 对域名做 DNS 解析,防止 DNS 重绑定攻击
-    //    仅对普通域名做解析(已通过 isPrivateHost 排除 localhost/可疑 IP/私网 IP)
-    if (net.isIP(hostname) === 0 && !isSuspiciousIPFormat(hostname)) {
-        let resolvedIps;
-        try {
-            // dns.lookup 返回系统解析结果,{ all: true } 返回所有 A/AAAA 记录
-            // verbatim: true 保持原始顺序,不强制 IPv4 优先
-            resolvedIps = await dns.promises.lookup(hostname, { all: true, verbatim: true });
-        } catch (e) {
-            // DNS 解析失败:可能是无效域名或攻击者故意让解析失败,按可疑处理拒绝
-            throw new Error('AI API 域名解析失败,已拒绝请求');
-        }
+    // 2. 主机名本身就是合法 IP(且已通过 isPrivateHost 非私网校验),直接返回作为固定 IP
+    if (net.isIP(hostname) !== 0) {
+        return hostname;
+    }
 
-        if (!resolvedIps || resolvedIps.length === 0) {
-            throw new Error('AI API 域名未解析到任何 IP,已拒绝请求');
-        }
+    // 非标准 IP 格式(如 127.1、0x7f000001)已在 isPrivateHost 中被拒绝,此处保险起见再拒一次
+    if (isSuspiciousIPFormat(hostname)) {
+        throw new Error('AI API 地址格式可疑,已拒绝请求');
+    }
 
-        // 检查所有解析结果,只要有一个是私网 IP 就拒绝
-        // 风险说明:DNS 重绑定可能在解析后再次变更,
-        //         因此实际请求时还必须用 maxRedirects:0 防止 302 跳转绕过
-        for (const item of resolvedIps) {
-            if (isPrivateIP(item.address)) {
-                throw new Error('AI API 域名解析到内网地址,已拒绝请求');
-            }
+    // 3. 对普通域名做 DNS 解析,防止 DNS 重绑定攻击,并返回校验时解析到的安全 IP
+    let resolvedIps;
+    try {
+        // dns.lookup 返回系统解析结果,{ all: true } 返回所有 A/AAAA 记录
+        // verbatim: true 保持原始顺序,不强制 IPv4 优先
+        resolvedIps = await dns.promises.lookup(hostname, { all: true, verbatim: true });
+    } catch (e) {
+        // DNS 解析失败:可能是无效域名或攻击者故意让解析失败,按可疑处理拒绝
+        throw new Error('AI API 域名解析失败,已拒绝请求');
+    }
+
+    if (!resolvedIps || resolvedIps.length === 0) {
+        throw new Error('AI API 域名未解析到任何 IP,已拒绝请求');
+    }
+
+    // 检查所有解析结果,只要有一个是私网 IP 就拒绝
+    for (const item of resolvedIps) {
+        if (isPrivateIP(item.address)) {
+            throw new Error('AI API 域名解析到内网地址,已拒绝请求');
         }
     }
+
+    // 返回第一个安全 IP 作为「固定 IP」,供调用方在 Agent 的 lookup 中复用,
+    // 避免 axios 实际请求时发起第二次 DNS 解析被 DNS 重绑定攻击返回内网地址。
+    // 风险说明:仅靠此处校验不够,调用方还必须用 buildPinnedIpAgents pin 住该 IP + maxRedirects:0。
+    return resolvedIps[0].address;
+}
+
+// 构建自定义 https/http Agent,强制复用 validateAIEndpoint 已校验的安全 IP,防 DNS 重绑定绕过。
+// 背景:validateAIEndpoint 在校验时做了 dns.lookup,但 axios.post 内部会发起第二次 DNS 解析。
+// 攻击者用 TTL=0 的 DNS 服务器可在第一次返回公网 IP、第二次返回 127.0.0.1,从而绕过校验。
+// 通过覆盖 Agent 的 lookup 函数,强制使用第一次校验得到的 IP,消除第二次解析的攻击窗口。
+// @param {string} validatedIp - validateAIEndpoint 返回的已校验 IP
+// @returns {{httpsAgent: https.Agent, httpAgent: http.Agent}}
+function buildPinnedIpAgents(validatedIp) {
+    const ipFamily = net.isIP(validatedIp); // 4 或 6(已校验,非 0)
+    const lookupFn = (hostname, opts, cb) => cb(null, validatedIp, ipFamily);
+    return {
+        // 强制 TLS 证书校验(rejectUnauthorized: true)+ 固定 IP lookup
+        httpsAgent: new https.Agent({ rejectUnauthorized: true, lookup: lookupFn }),
+        httpAgent: new http.Agent({ lookup: lookupFn })
+    };
 }
 
 // 修复 Bug2:使用平衡括号计数法提取 JSON,替代贪婪正则 /\{[\s\S]*\}/
@@ -351,8 +381,9 @@ async function reviewContent(type, content) {
             };
         }
         
-        // 修复 Bug1:validateAIEndpoint 改为 async,需要 await 等待 DNS 解析完成
-        await validateAIEndpoint(config.apiUrl);
+        // 修复 Bug1:validateAIEndpoint 改为 async,需要 await 等待 DNS 解析完成,
+        // 并返回已校验的安全 IP,用于在下方 axios 请求中「固定 IP」防 DNS 重绑定绕过
+        const validatedAiIp = await validateAIEndpoint(config.apiUrl);
 
         if (!config.apiKey) {
             console.log('AI API密钥未配置');
@@ -383,9 +414,12 @@ async function reviewContent(type, content) {
             max_tokens: 500
         };
 
-        // 修复 Bug1:强制禁止跟随重定向,防止 SSRF 通过 302 跳转到内网地址绕过 IP 校验
-        // 风险说明:validateAIEndpoint 已做 DNS 解析校验,但 DNS 重绑定仍可能在解析后变更,
-        //         因此这里必须 maxRedirects:0 阻止任何重定向
+        // 修复 Bug1:双重防御 SSRF —— 固定已校验 IP + 禁止重定向
+        // - buildPinnedIpAgents:复用 validateAIEndpoint 校验得到的 validatedAiIp,避免 axios
+        //   内部第二次 DNS 解析被 DNS 重绑定攻击返回 127.0.0.1 等内网地址
+        // - maxRedirects:0:阻止 302 跳转到内网地址绕过 IP 校验
+        // - rejectUnauthorized: 强制 TLS 证书校验(在 buildPinnedIpAgents 内设置)
+        const { httpsAgent: aiHttpsAgent, httpAgent: aiHttpAgent } = buildPinnedIpAgents(validatedAiIp);
         const response = await axios.post(config.apiUrl, requestBody, {
             headers: {
                 'Content-Type': 'application/json',
@@ -393,7 +427,8 @@ async function reviewContent(type, content) {
             },
             timeout: 30000,
             maxRedirects: 0, // 禁止跟随重定向,防止 SSRF
-            httpsAgent: new https.Agent({ rejectUnauthorized: true }) // 强制 TLS 证书校验
+            httpsAgent: aiHttpsAgent, // 固定已校验 IP,防御 DNS 重绑定
+            httpAgent: aiHttpAgent
         });
         
         console.log('AI响应状态:', response.status);
@@ -544,6 +579,15 @@ async function externalSensitiveCheck(content, config) {
     if (!cfg.sensitiveApiUrl) return null;
 
     try {
+        // 修复 Bug2:外部敏感词 API 的 URL 同样可配置,需复用 reviewContent 的 SSRF 防护,
+        // 否则攻击者可把 sensitive_api_url 指向内网/元数据服务实施 SSRF:
+        // 1) validateAIEndpoint:校验 HTTPS + 私网/环回/链路本地 IP + DNS 解析,返回已校验 IP
+        // 2) buildPinnedIpAgents:固定已校验 IP,防 DNS 重绑定绕过(同 reviewContent)
+        // 3) maxRedirects:0:防 302 跳转绕过
+        // 校验失败抛错 → 被 catch 捕获返回 null → 由 fallbackReview 兜底转人工复核(安全降级)
+        const validatedSensitiveIp = await validateAIEndpoint(cfg.sensitiveApiUrl);
+        const { httpsAgent: sensitiveHttpsAgent, httpAgent: sensitiveHttpAgent } = buildPinnedIpAgents(validatedSensitiveIp);
+
         const headers = { 'Content-Type': 'application/json' };
         // 若配置了 API 密钥则携带（具体 header 名按接口约定，此处用通用的 Authorization）
         if (cfg.sensitiveApiKey) {
@@ -551,7 +595,10 @@ async function externalSensitiveCheck(content, config) {
         }
         const response = await axios.post(cfg.sensitiveApiUrl, { text: content }, {
             headers,
-            timeout: 10000
+            timeout: 10000,
+            maxRedirects: 0, // 禁止跟随重定向,防止 SSRF(同 reviewContent)
+            httpsAgent: sensitiveHttpsAgent, // 固定已校验 IP,防御 DNS 重绑定
+            httpAgent: sensitiveHttpAgent
         });
 
         const data = response.data;

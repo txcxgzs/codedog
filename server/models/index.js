@@ -453,11 +453,13 @@ StudioWork.belongsTo(Work, { foreignKey: 'work_id', as: 'work' });
 StudioWork.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
 Report.belongsTo(User, { foreignKey: 'reporter_id', as: 'reporter' });
 Report.belongsTo(User, { foreignKey: 'handler_id', as: 'handler' });
-// M9: 以下三条为多态关联，target_id 可指向不同表，故 constraints:false 不建 FK
+// M9: 以下四条为多态关联，target_id 可指向不同表，故 constraints:false 不建 FK
 // 删除目标对象时需 controller 层同步清理 Report
 Report.belongsTo(Work, { foreignKey: 'target_id', as: 'work', constraints: false });
 Report.belongsTo(Comment, { foreignKey: 'target_id', as: 'comment', constraints: false });
 Report.belongsTo(Post, { foreignKey: 'target_id', as: 'post', constraints: false });
+// P3-10: type='user' 举报的目标用户，target_id 指向 User 本地主键；polymorphic 故 constraints:false
+Report.belongsTo(User, { foreignKey: 'target_id', as: 'targetUser', constraints: false });
 User.hasMany(Report, { foreignKey: 'reporter_id', as: 'reports' });
 User.hasMany(Report, { foreignKey: 'handler_id', as: 'handled_reports' });
 Favorite.belongsTo(User, { foreignKey: 'user_id', as: 'user' });

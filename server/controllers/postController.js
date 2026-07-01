@@ -44,7 +44,8 @@ async function createPost(req, res) {
     try {
         const { title, content, category, tags, cover } = req.body;
         
-        if (!title || !content) {
+        // 修复: 仅判 emptiness 会被纯空白字符串绕过,改用 trim 后判空
+        if (!String(title).trim() || !String(content).trim()) {
             return errorResponse(res, '请填写标题和内容', 400);
         }
 
@@ -280,13 +281,14 @@ async function updatePost(req, res) {
 
         // [Bug2 修复] 用 !== undefined 判断字段是否传入,空字符串视为有效输入(允许清空)
         // 但空标题/空正文不允许,需返回 400 提示
-        if (title !== undefined && String(title).length === 0) {
+        // 修复: 仅判 length===0 会被纯空白字符串绕过,改用 trim 后判空
+        if (title !== undefined && String(title).trim().length === 0) {
             return errorResponse(res, '标题不能为空', 400);
         }
         if (title !== undefined && String(title).length > 200) {
             return errorResponse(res, '标题不能超过200字', 400);
         }
-        if (content !== undefined && String(content).length === 0) {
+        if (content !== undefined && String(content).trim().length === 0) {
             return errorResponse(res, '内容不能为空', 400);
         }
         if (content !== undefined && String(content).length > 50000) {
@@ -356,15 +358,17 @@ async function deletePost(req, res) {
         }
 
         const pid = DbAdapter.getId(post);
-        // M10: 统一软删策略——Like/Favorite 无 status 字段保留物理删，Comment 改为软删
+        // L5: 删除帖子涉及多表关联数据，必须用事务包裹；Like/Favorite 无 status 字段保留物理删，Comment/Post 软删保留历史
         const { Like, Favorite, Comment, Notification } = require('../models');
-        await DbAdapter.destroy(Notification, { where: { related_id: pid, related_type: 'post' } });
-        await DbAdapter.destroy(Like, { where: { post_id: pid } });
-        await DbAdapter.destroy(Favorite, { where: { post_id: pid } });
-        // Comment 有 status 字段，改为软删避免数据丢失
-        await DbAdapter.update(Comment, { status: 'deleted' }, { where: { post_id: pid } });
-        // 软删帖子并清零计数字段，保持与关联数据一致
-        await DbAdapter.update(Post, { status: 'deleted', like_count: 0, collection_count: 0, comment_count: 0 }, { where: { id: pid } });
+        await sequelize.transaction(async (t) => {
+            await DbAdapter.destroy(Notification, { where: { related_id: pid, related_type: 'post' }, transaction: t });
+            await DbAdapter.destroy(Like, { where: { post_id: pid }, transaction: t });
+            await DbAdapter.destroy(Favorite, { where: { post_id: pid }, transaction: t });
+            // Comment 有 status 字段，改为软删避免数据丢失
+            await DbAdapter.update(Comment, { status: 'deleted' }, { where: { post_id: pid }, transaction: t });
+            // 软删帖子并清零计数字段，保持与关联数据一致
+            await DbAdapter.update(Post, { status: 'deleted', like_count: 0, collection_count: 0, comment_count: 0 }, { where: { id: pid }, transaction: t });
+        });
         
         return successResponse(res, null, '帖子已删除');
     } catch (error) {
@@ -396,20 +400,34 @@ async function likePost(req, res) {
         });
         
         if (existingLike) {
-            const removed = await DbAdapter.destroy(Like, { where: { id: DbAdapter.getId(existingLike) } });
-            // 原子 -1 避免 read-modify-write 竞态
-            if (removed && (post.like_count || 0) > 0) {
-                await DbAdapter.decrement(post, 'like_count');
-            }
+            // 修复: destroy Like + decrement like_count 用事务包裹,保证一致性
+            // 不再用旧实例 like_count > 0 判断,改用原子 decrement 带 where 条件避免负数
+            await sequelize.transaction(async (t) => {
+                const removed = await DbAdapter.destroy(Like, {
+                    where: { id: DbAdapter.getId(existingLike) },
+                    transaction: t
+                });
+                if (removed) {
+                    // 原子 decrement: 仅当 like_count > 0 时才执行减 1,避免并发导致负数
+                    await DbAdapter.decrement(post, 'like_count', {
+                        where: { like_count: { [Op.gt]: 0 } },
+                        transaction: t
+                    });
+                }
+            });
             await post.reload();
             const newCount = Math.max(0, post.like_count || 0);
             return successResponse(res, { like_count: newCount, liked: false }, '已取消点赞');
         }
 
+        // 修复: create Like + increment like_count 用事务包裹,中途失败回滚避免不一致
         try {
-            await DbAdapter.create(Like, {
-                user_id: userId,
-                post_id: DbAdapter.getId(post)
+            await sequelize.transaction(async (t) => {
+                await DbAdapter.create(Like, {
+                    user_id: userId,
+                    post_id: DbAdapter.getId(post)
+                }, { transaction: t });
+                await DbAdapter.increment(post, 'like_count', { transaction: t });
             });
         } catch (createError) {
             if (createError.name === 'SequelizeUniqueConstraintError') {
@@ -418,8 +436,6 @@ async function likePost(req, res) {
             throw createError;
         }
 
-        // 原子 +1 避免 read-modify-write 竞态
-        await DbAdapter.increment(post, 'like_count');
         await post.reload();
 
         // 通知帖子作者（与 work like 行为保持一致）

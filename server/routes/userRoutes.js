@@ -11,11 +11,11 @@ const { createRateLimiter } = require('../middleware/rateLimit');
 // 头像 MIME 类型到扩展名的映射
 // 修复: 原 multer dest 选项生成无扩展名文件，某些静态服务/浏览器无法正确识别图片类型。
 // 改用 diskStorage 根据 mimetype 添加正确扩展名；不支持的格式在 filename 阶段直接拒绝。
+// (Report 2 #22) 暂不支持 GIF 头像（无动画策略，直接拒绝更安全）
 const avatarExtMap = {
     'image/jpeg': '.jpg',
     'image/png': '.png',
-    'image/webp': '.webp',
-    'image/gif': '.gif'
+    'image/webp': '.webp'
 };
 
 const allowedAvatarTypes = new Set(Object.keys(avatarExtMap));
@@ -65,7 +65,7 @@ function validateAvatarUpload(req, res, next) {
     try {
         if (!allowedAvatarTypes.has(req.file.mimetype) || !hasAllowedImageSignature(req.file.path, req.file.mimetype)) {
             fs.unlink(req.file.path, () => {});
-            return errorResponse(res, 'Only real JPG, PNG, WebP, or GIF images are allowed.', 400);
+            return errorResponse(res, '仅支持 JPG、PNG、WebP 格式头像，暂不支持 GIF 头像', 400);
         }
         next();
     } catch (error) {
@@ -104,7 +104,7 @@ const upload = multer({
         if (allowedAvatarTypes.has(file.mimetype)) {
             cb(null, true);
         } else {
-            cb(new Error('Only JPG, PNG, WebP, or GIF images are allowed.'));
+            cb(new Error('仅支持 JPG、PNG、WebP 格式头像，暂不支持 GIF 头像'));
         }
     }
 });

@@ -11,6 +11,16 @@ const { isRoleAtLeast } = require('../config/permissions');
 const { likeContains } = require('../utils/security');
 // H12: 引入内容审核服务，落库前做敏感词检查
 const aiReview = require('../services/aiReview');
+// P0: 与 adminController 保持一致，爬虫创建虚拟用户时使用合法的占位密码哈希
+// 旧实现使用非法字符串 '$2a$10$placeholder' 会导致 bcrypt 校验异常，这里在模块加载时
+// 运行时生成一次合法哈希并缓存，避免重复计算
+const crypto = require('crypto');
+const bcrypt = require('bcryptjs');
+const PLACEHOLDER_PASSWORD_HASH = bcrypt.hashSync(crypto.randomBytes(32).toString('hex'), 10);
+// 修复: player_url 为空时使用的标准播放器回退 URL
+function buildCodemaoPlayerUrl(codemaoWorkId, playerUrl) {
+    return playerUrl || `https://player.codemao.cn/new/${codemaoWorkId}`;
+}
 
 /**
  * 从编程猫API获取作品信息
@@ -61,7 +71,8 @@ function buildWorkCreateParams(workInfo, userId) {
         preview: workInfo.preview,
         type: workInfo.type || '其他',
         ide_type: workInfo.ideType || 'KITTEN',
-        work_url: workInfo.playerUrl,
+        // 修复: player_url 为空时回退到标准播放器 URL，避免 work_url 落库为空
+        work_url: buildCodemaoPlayerUrl(workInfo.codemaoWorkId, workInfo.playerUrl),
         user_id: userId,
         codemao_author_id: workInfo.codemaoAuthorId != null ? String(workInfo.codemaoAuthorId) : null,
         codemao_author_name: workInfo.codemaoAuthorName,
@@ -119,8 +130,10 @@ async function ensureCodemaoUser(userInfo) {
         user = await DbAdapter.create(User, {
             codemao_user_id: userInfo.id,
             username: `codemao_${userInfo.id}`,
-            email: `codemao_${userInfo.id}@placeholder.com`,
-            password: '$2a$10$placeholder',
+            // 修复: 使用 @example.invalid 占位域名（与 adminController 一致），避免占用真实邮箱域
+            email: `codemao_${userInfo.id}@example.invalid`,
+            // 修复: 使用合法的 bcrypt 占位哈希，避免非法字符串导致校验异常
+            password: PLACEHOLDER_PASSWORD_HASH,
             nickname: userInfo.nickname,
             avatar: userInfo.avatar,
             bio: userInfo.description,
@@ -293,13 +306,14 @@ async function getWorkDetail(req, res) {
 }
 
 /**
- * 通过编程猫ID获取作品
+ * 通过编程猫ID获取作品（纯只读：命中返回，未命中返回 404，不写库）
+ * 原 ?import=1 隐式导入行为已移至 POST /works/import/:codemaoId，避免 GET 产生副作用
  */
 async function getWorkByCodemaoId(req, res) {
     try {
         const { codemaoId } = req.params;
-        
-        let work = await DbAdapter.findOne(Work, {
+
+        const work = await DbAdapter.findOne(Work, {
             where: { codemao_work_id: String(codemaoId) },
             include: [{
                 model: User,
@@ -307,72 +321,106 @@ async function getWorkByCodemaoId(req, res) {
                 attributes: ['id', 'codemao_user_id', 'username', 'nickname', 'avatar', 'bio']
             }]
         });
-        
-        if (work) {
-            if (!canViewWork(req, work)) {
-                return errorResponse(res, '作品不存在', 404);
-            }
-            // [Bug4 修复] 复用 getWorkDetail 的 session 冷却逻辑,统一计数口径
-            // 同一会话 5 分钟内不重复计数,避免刷新/爬虫无限刷浏览量
-            // viewKey 使用 work.id,与 getWorkDetail 共享同一冷却记录,确保计数口径一致
-            const viewKey = `work_view_${work.id}`;
-            const sessionViews = (req.session && req.session.workViews) || {};
-            const now = Date.now();
-            const lastView = sessionViews[viewKey];
-            const VIEW_COOLDOWN = 5 * 60 * 1000; // 5分钟内不重复计数
-            if (!lastView || (now - lastView) > VIEW_COOLDOWN) {
-                await DbAdapter.increment(work, 'view_times');
-                await work.reload();
-                if (req.session) {
-                    if (!req.session.workViews) req.session.workViews = {};
-                    req.session.workViews[viewKey] = now;
-                }
-            }
-            return successResponse(res, await withLikeStatus(req, work));
-        }
 
-        // [Bug3 修复 P0] GET 不再隐式导入作品(避免刷新/爬虫/预加载误导入)
-        // 默认只查不导入,命中不存在时返回 404
-        // 仅当显式带 ?import=1 参数且用户为 admin 及以上时才触发导入
-        const wantImport = req.query.import === '1';
-        if (!wantImport) {
+        if (!work) {
+            // 修复: GET 严格只读，不再隐式导入；导入请用 POST /works/import/:codemaoId
+            return errorResponse(res, '作品不存在', 404);
+        }
+        if (!canViewWork(req, work)) {
             return errorResponse(res, '作品不存在', 404);
         }
 
+        // [Bug4 修复] 复用 getWorkDetail 的 session 冷却逻辑,统一计数口径
+        // 同一会话 5 分钟内不重复计数,避免刷新/爬虫无限刷浏览量
+        // viewKey 使用 work.id,与 getWorkDetail 共享同一冷却记录,确保计数口径一致
+        const viewKey = `work_view_${work.id}`;
+        const sessionViews = (req.session && req.session.workViews) || {};
+        const now = Date.now();
+        const lastView = sessionViews[viewKey];
+        const VIEW_COOLDOWN = 5 * 60 * 1000; // 5分钟内不重复计数
+        if (!lastView || (now - lastView) > VIEW_COOLDOWN) {
+            await DbAdapter.increment(work, 'view_times');
+            await work.reload();
+            if (req.session) {
+                if (!req.session.workViews) req.session.workViews = {};
+                req.session.workViews[viewKey] = now;
+            }
+        }
+        return successResponse(res, await withLikeStatus(req, work));
+    } catch (error) {
+        console.error('获取编程猫作品错误:', error);
+        return errorResponse(res, '获取作品信息失败', 500);
+    }
+}
+
+/**
+ * 导入编程猫作品（POST，需登录）
+ * 语义拆分：
+ *   (a) 普通用户 —— 仅可导入本人名下的编程猫作品（codemao_user_id 匹配），作品归属当前用户
+ *   (b) 管理员   —— 可导入任意作品，按 codemao 作者信息解析/创建归属用户
+ */
+async function importWork(req, res) {
+    try {
+        const { codemaoId } = req.params;
+
         if (!req.user) {
             return errorResponse(res, '请先登录后导入作品', 401);
-        }
-        if (!isRoleAtLeast(req.user.role, 'admin')) {
-            return errorResponse(res, '无权导入作品', 403);
         }
 
         if (!isValidCodemaoWorkId(codemaoId)) {
             return errorResponse(res, '作品ID格式不正确', 400);
         }
 
-        const workInfo = await fetchCodemaoWork(codemaoId);
+        // 已存在则直接返回，避免重复导入
+        const existing = await DbAdapter.findOne(Work, {
+            where: { codemao_work_id: String(codemaoId) },
+            include: [{
+                model: User,
+                as: 'author',
+                attributes: ['id', 'codemao_user_id', 'username', 'nickname', 'avatar', 'bio']
+            }]
+        });
+        if (existing) {
+            if (!canViewWork(req, existing)) {
+                return errorResponse(res, '作品不存在', 404);
+            }
+            return successResponse(res, await withLikeStatus(req, existing), '作品已存在');
+        }
 
+        const workInfo = await fetchCodemaoWork(codemaoId);
         if (!workInfo) {
             return errorResponse(res, '作品不存在或未公开', 404);
         }
 
-        // L8: 校验作者归属 —— 只能导入本人名下的编程猫作品，防止冒名导入
-        if (!workInfo.codemaoAuthorId || String(workInfo.codemaoAuthorId) !== String(req.user.codemao_user_id)) {
-            return errorResponse(res, '只能导入自己的作品', 403);
+        const isAdmin = isRoleAtLeast(req.user.role, 'admin');
+
+        // 确定作品归属用户
+        let author = null;
+        if (isAdmin) {
+            // 管理员可导入任意作品；按 codemao 作者信息解析/创建归属用户
+            if (!workInfo.codemaoAuthorId) {
+                return errorResponse(res, '作品缺少作者信息，无法导入', 400);
+            }
+            author = await ensureCodemaoUser({
+                id: workInfo.codemaoAuthorId,
+                nickname: workInfo.codemaoAuthorName,
+                avatar: null,
+                description: ''
+            });
+        } else {
+            // L8: 普通用户只能导入本人名下的编程猫作品，防止冒名导入
+            if (!workInfo.codemaoAuthorId || String(workInfo.codemaoAuthorId) !== String(req.user.codemao_user_id)) {
+                return errorResponse(res, '只能导入自己的作品', 403);
+            }
+            author = req.user;
         }
 
-        let author = null;
-        if (workInfo.codemaoAuthorId) {
-            author = await DbAdapter.findOne(User, {
-                where: { codemao_user_id: String(workInfo.codemaoAuthorId) }
-            });
-        }
-        
+        let work;
         try {
-            work = await DbAdapter.create(Work, buildWorkCreateParams(workInfo, author ? DbAdapter.getId(author) : null));
+            work = await DbAdapter.create(Work, buildWorkCreateParams(workInfo, DbAdapter.getId(author)));
         } catch (createError) {
             if (createError.name === 'SequelizeUniqueConstraintError') {
-                work = await DbAdapter.findOne(Work, {
+                const found = await DbAdapter.findOne(Work, {
                     where: { codemao_work_id: String(codemaoId) },
                     include: [{
                         model: User,
@@ -380,16 +428,17 @@ async function getWorkByCodemaoId(req, res) {
                         attributes: ['id', 'codemao_user_id', 'username', 'nickname', 'avatar', 'bio']
                     }]
                 });
-                if (work) {
-                    if (!canViewWork(req, work)) {
+                if (found) {
+                    if (!canViewWork(req, found)) {
                         return errorResponse(res, '作品不存在', 404);
                     }
-                    return successResponse(res, await withLikeStatus(req, work));
+                    return successResponse(res, await withLikeStatus(req, found));
                 }
+                return errorResponse(res, '作品不存在', 404);
             }
             throw createError;
         }
-        
+
         const result = await DbAdapter.findByPk(Work, DbAdapter.getId(work), {
             include: [{
                 model: User,
@@ -398,10 +447,10 @@ async function getWorkByCodemaoId(req, res) {
             }]
         });
 
-        return successResponse(res, await withLikeStatus(req, result || work));
+        return successResponse(res, await withLikeStatus(req, result || work), '作品导入成功');
     } catch (error) {
-        console.error('获取编程猫作品错误:', error);
-        return errorResponse(res, '获取作品信息失败', 500);
+        console.error('导入作品错误:', error);
+        return errorResponse(res, '导入作品失败', 500);
     }
 }
 
@@ -410,7 +459,9 @@ async function getWorkByCodemaoId(req, res) {
  */
 async function getFeaturedWorks(req, res) {
     try {
-        let works = await DbAdapter.findAll(Work, {
+        // 修复: GET /works/featured 严格只读，不再回源编程猫并写库（避免绕过登录/审核/权限）
+        // 无推荐作品时直接返回空数组
+        const works = await DbAdapter.findAll(Work, {
             where: {
                 status: 'published',
                 is_featured: true
@@ -423,11 +474,7 @@ async function getFeaturedWorks(req, res) {
             order: [['created_at', 'DESC']],
             limit: 15
         });
-        
-        if (works.length === 0) {
-            works = await getHotWorksFromCodemao();
-        }
-        
+
         return successResponse(res, works);
     } catch (error) {
         console.error('获取推荐作品错误:', error);
@@ -504,8 +551,15 @@ async function fetchOrCreateWork(workId) {
         console.error(`获取作品详情失败或数据无效: workId=${workId}`);
         return null;
     }
-    
-    const user = workDetail.user_info?.id ? await ensureCodemaoUser(workDetail.user_info) : null;
+
+    // 修复 P0: 作品必须有作者归属，缺少 codemao 作者信息时跳过该作品，
+    // 避免 user_id:null 触发 Work.user_id 的 notNull 错误并污染 getHotWorksFromCodemao 回退结果
+    if (!workDetail.user_info?.id) {
+        console.warn(`作品缺少作者信息，跳过: workId=${workId}`);
+        return null;
+    }
+
+    const user = await ensureCodemaoUser(workDetail.user_info);
     
     const type = workDetail.work_label_list && workDetail.work_label_list[0] 
         ? workDetail.work_label_list[0].label_name 
@@ -639,19 +693,34 @@ async function likeWork(req, res) {
         });
         
         if (existingLike) {
-            const removed = await DbAdapter.destroy(Like, { where: { id: DbAdapter.getId(existingLike) } });
-            if (removed && (work.praise_times || 0) > 0) {
-                await DbAdapter.decrement(work, 'praise_times');
-            }
+            // 已点赞 → 取消点赞（toggle）
+            // 修复 bug3/bug4: destroy Like + decrement praise_times 用事务包裹保证一致性；
+            // 原子 decrement 仅当 praise_times > 0 时才执行，避免并发导致负数（参照 commentController.likeComment）
+            await sequelize.transaction(async (t) => {
+                const removed = await DbAdapter.destroy(Like, {
+                    where: { id: DbAdapter.getId(existingLike) },
+                    transaction: t
+                });
+                if (removed) {
+                    await DbAdapter.decrement(work, 'praise_times', {
+                        where: { praise_times: { [Op.gt]: 0 } },
+                        transaction: t
+                    });
+                }
+            });
             await work.reload();
             const praiseTimes = Math.max(0, work.praise_times || 0);
             return successResponse(res, { praise_times: praiseTimes, liked: false }, '已取消点赞');
         }
 
+        // 修复 bug3: create Like + increment praise_times 用事务包裹，中途失败回滚避免不一致
         try {
-            await DbAdapter.create(Like, {
-                user_id: DbAdapter.getId(req.user),
-                work_id: DbAdapter.getId(work)
+            await sequelize.transaction(async (t) => {
+                await DbAdapter.create(Like, {
+                    user_id: DbAdapter.getId(req.user),
+                    work_id: DbAdapter.getId(work)
+                }, { transaction: t });
+                await DbAdapter.increment(work, 'praise_times', { transaction: t });
             });
         } catch (createError) {
             if (createError.name === 'SequelizeUniqueConstraintError') {
@@ -659,7 +728,6 @@ async function likeWork(req, res) {
             }
             throw createError;
         }
-        await DbAdapter.increment(work, 'praise_times');
         await work.reload();
 
         if (work.user_id != null && String(work.user_id) !== String(DbAdapter.getId(req.user))) {
@@ -736,7 +804,9 @@ async function deleteWork(req, res) {
             await DbAdapter.destroy(Favorite, { where: { work_id: wid }, transaction: t });
             // Comment 有 status 字段，关联清理采用软删保持历史可追溯
             await DbAdapter.update(Comment, { status: 'deleted' }, { where: { work_id: wid }, transaction: t });
-            await DbAdapter.destroy(Work, { where: { id: wid }, transaction: t });
+            // 修复: 作品改为软删（status:'deleted'），与 adminController 保持一致。
+            // 此前硬删会让软删评论的 work_id 成为指向不存在作品的死指针；统一软删保留作品行，数据可恢复
+            await DbAdapter.update(Work, { status: 'deleted' }, { where: { id: wid }, transaction: t });
 
             // M9: 重算受影响工作室的 work_count
             for (const sid of affectedStudioIds) {
@@ -796,9 +866,16 @@ async function updateWork(req, res) {
         if (description !== undefined) updateData.description = String(description).substring(0, 5000);
         if (preview !== undefined) updateData.preview = String(preview).substring(0, 500);
 
+        // 修复: 拒绝空/空白作品名（trim 后为空视为无效），避免落库空名
+        if (updateData.name !== undefined && !String(updateData.name).trim()) {
+            return errorResponse(res, '作品名不能为空', 400);
+        }
+
         // H12: 修改描述或名称后重新审核，违规内容拦截，疑似违规回退到 pending 待人工复核
         if (updateData.description !== undefined || updateData.name !== undefined) {
-            const reviewText = `${updateData.name || work.name || ''} ${updateData.description || work.description || ''}`;
+            // 修复: 用 !== undefined 判断字段是否传入，避免空字符串被 || 当作 falsy 而回退到旧值，
+            // 导致审核文本与实际落库内容不一致（保存空名却审核旧名）
+            const reviewText = `${updateData.name !== undefined ? updateData.name : (work.name || '')} ${updateData.description !== undefined ? updateData.description : (work.description || '')}`;
             const reviewResult = await aiReview.fallbackReview(String(reviewText));
             if (reviewResult.recommendation === 'delete') {
                 return errorResponse(res, `内容包含违规信息:${reviewResult.reason}`, 400);
@@ -822,6 +899,7 @@ module.exports = {
     getWorks,
     getWorkDetail,
     getWorkByCodemaoId,
+    importWork,
     getFeaturedWorks,
     getMyWorks,
     getUserWorks,

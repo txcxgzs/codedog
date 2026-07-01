@@ -9,6 +9,7 @@ const { logOperation } = require('../middleware/operationLog');
 const { Op } = require('sequelize');
 const codemaoApi = require('../services/codemaoApi');
 const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const { JWT_SECRET, JWT_EXPIRES_IN } = require('../config/auth');
 const DbAdapter = require('../utils/dbAdapter');
@@ -28,9 +29,9 @@ const VALID_USER_ROLES = ['user', 'reviewer', 'moderator', 'admin', 'superadmin'
 const VALID_USER_STATUSES = ['active', 'disabled'];
 
 // 爬虫创建虚拟用户时使用的占位密码哈希
-// 此前使用非法字符串 '$2a$10$placeholder' 会导致 bcrypt 校验异常，这里在模块加载时
-// 运行时生成一次合法哈希并缓存，避免每个爬取请求都重复计算影响性能
-const PLACEHOLDER_PASSWORD_HASH = bcrypt.hashSync('crawl-placeholder-' + Date.now(), 10);
+// 在模块加载时用强随机数生成一次合法 bcrypt 哈希并缓存，避免每个爬取请求都重复计算影响性能
+// （此前基于 Date.now() 的盐可预测，已改为 crypto.randomBytes 强随机源）
+const PLACEHOLDER_PASSWORD_HASH = bcrypt.hashSync(crypto.randomBytes(32).toString('hex'), 10);
 
 function isSelf(req, user) {
     return String(DbAdapter.getId(req.user)) === String(DbAdapter.getId(user));
@@ -573,6 +574,33 @@ async function deleteUser(req, res) {
             // H4修复: 改为软删评论（status:'deleted'）。此前硬删会破坏评论树——若该用户顶层评论被他人回复，
             // 删除后 parent_id 将悬空。软删保留行，重算 comment_count 时按 status:'active' 过滤不受影响
             await DbAdapter.update(Comment, { status: 'deleted' }, { where: { user_id: uid }, transaction: t });
+            // 级联软删挂在这些被删评论下的子回复（含其他用户的多级回复），
+            // 否则子回复 parent_id 指向已软删评论却仍 status:'active'，成为悬空"幽灵回复"。
+            // 用循环处理多级回复链：先删直接子回复，再把它们的 id 作为下一层 parent_id 继续删，直到无子节点。
+            try {
+                const deletedRootComments = await DbAdapter.findAll(Comment, {
+                    where: { user_id: uid },
+                    attributes: ['id'],
+                    transaction: t
+                });
+                let currentParentIds = deletedRootComments.map(c => DbAdapter.getId(c));
+                while (currentParentIds.length > 0) {
+                    const children = await DbAdapter.findAll(Comment, {
+                        where: { parent_id: { [Op.in]: currentParentIds }, status: 'active' },
+                        attributes: ['id'],
+                        transaction: t
+                    });
+                    if (children.length === 0) break;
+                    const childIds = children.map(c => DbAdapter.getId(c));
+                    await DbAdapter.update(Comment, { status: 'deleted' }, {
+                        where: { id: { [Op.in]: childIds } },
+                        transaction: t
+                    });
+                    currentParentIds = childIds;
+                }
+            } catch (cascadeErr) {
+                console.error('级联软删子回复失败:', cascadeErr);
+            }
             await DbAdapter.destroy(Post, { where: { user_id: uid }, transaction: t });
             const userStudios = await DbAdapter.findAll(Studio, { where: { owner_id: uid }, transaction: t });
             for (const s of userStudios) {
@@ -590,7 +618,7 @@ async function deleteUser(req, res) {
                 const [praiseCount, collectionCount, commentCount] = await Promise.all([
                     DbAdapter.count(Like, { where: { work_id: wid }, transaction: t }),
                     DbAdapter.count(Favorite, { where: { work_id: wid }, transaction: t }),
-                    DbAdapter.count(Comment, { where: { work_id: wid, status: 'active' }, transaction: t })
+                    DbAdapter.count(Comment, { where: { work_id: wid, status: 'active', parent_id: null }, transaction: t })
                 ]);
                 await DbAdapter.update(Work, { praise_times: praiseCount, collection_times: collectionCount, comment_count: commentCount }, { where: { id: wid }, transaction: t });
             }
@@ -599,7 +627,7 @@ async function deleteUser(req, res) {
                 const [likeCount, collectionCount, commentCount] = await Promise.all([
                     DbAdapter.count(Like, { where: { post_id: pid }, transaction: t }),
                     DbAdapter.count(Favorite, { where: { post_id: pid }, transaction: t }),
-                    DbAdapter.count(Comment, { where: { post_id: pid, status: 'active' }, transaction: t })
+                    DbAdapter.count(Comment, { where: { post_id: pid, status: 'active', parent_id: null }, transaction: t })
                 ]);
                 await DbAdapter.update(Post, { like_count: likeCount, collection_count: collectionCount, comment_count: commentCount }, { where: { id: pid }, transaction: t });
             }
@@ -678,7 +706,11 @@ async function updateWork(req, res) {
 
         const VALID_WORK_STATUSES = ['pending', 'published', 'rejected', 'deleted'];
         const updateData = {};
-        if (name !== undefined) updateData.name = String(name).substring(0, 200);
+        if (name !== undefined) {
+            const trimmedName = String(name).trim();
+            if (!trimmedName) return errorResponse(res, '作品名称不能为空', 400);
+            updateData.name = trimmedName.substring(0, 200);
+        }
         if (preview !== undefined && preview !== '') updateData.preview = String(preview).substring(0, 500);
         if (view_times !== undefined) updateData.view_times = Math.max(0, parseInt(view_times, 10) || 0);
         if (praise_times !== undefined) updateData.praise_times = Math.max(0, parseInt(praise_times, 10) || 0);
@@ -1670,6 +1702,10 @@ async function getReports(req, res) {
                 report.dataValues.target = await DbAdapter.findByPk(User, report.target_id, {
                     attributes: ['id', 'username', 'nickname', 'avatar']
                 });
+            } else if (report.type === 'post') {
+                report.dataValues.target = await DbAdapter.findByPk(Post, report.target_id, {
+                    attributes: ['id', 'title', 'content']
+                });
             }
         }
 
@@ -2584,7 +2620,7 @@ async function aiBatchReviewReports(req, res) {
         }
 
         if (reportIds.length > 20) {
-            return errorResponse(res, '单次最多审核10条举报', 400);
+            return errorResponse(res, '单次最多审核20条举报', 400);
         }
 
         const results = [];
@@ -2708,6 +2744,14 @@ async function aiAutoHandleReports(req, res) {
                     await DbAdapter.destroy(Favorite, { where: { post_id: pid } });
                     await DbAdapter.update(Comment, { status: 'deleted' }, { where: { post_id: pid } });
                     await DbAdapter.update(Post, { status: 'deleted' }, { where: { id: pid } });
+                } else if (report.type === 'user') {
+                    // 与 handleReport 高危用户举报分支保持一致：禁用用户
+                    // 批量场景下若当前管理员权限不足以处理该用户（低权限不能禁高权限），则跳过禁用动作，
+                    // 但仍允许报告标记为已处理，避免中断整批流程
+                    const targetUser = await DbAdapter.findByPk(User, report.target_id);
+                    if (targetUser && canManageUser(req.user.role, targetUser.role)) {
+                        await DbAdapter.update(User, { status: 'disabled' }, { where: { id: report.target_id } });
+                    }
                 }
                 await DbAdapter.update(Report, { status: 'resolved', handler_id: DbAdapter.getId(req.user), handle_note: 'AI自动处理-删除' }, { where: { id: DbAdapter.getId(report) } });
                 results.deleted++;
@@ -3068,9 +3112,12 @@ async function deleteStudio(req, res) {
         }
 
         // 先删除关联的成员和作品，再删除工作室本身，避免孤立数据
-        await DbAdapter.destroy(StudioMember, { where: { studio_id: id } });
-        await DbAdapter.destroy(StudioWork, { where: { studio_id: id } });
-        await DbAdapter.destroy(Studio, { where: { id: DbAdapter.getId(studio) } });
+        // 多表关联删除必须用事务包裹，任一步失败整体回滚（与 studioController.deleteStudio 保持一致）
+        await sequelize.transaction(async (t) => {
+            await DbAdapter.destroy(StudioMember, { where: { studio_id: id }, transaction: t });
+            await DbAdapter.destroy(StudioWork, { where: { studio_id: id }, transaction: t });
+            await DbAdapter.destroy(Studio, { where: { id: DbAdapter.getId(studio) }, transaction: t });
+        });
 
         logOperation(req, 'delete_studio', 'studio', id);
         return successResponse(res, null, '工作室已删除');
@@ -3249,7 +3296,7 @@ async function sendBatchNotifications(req, res) {
         }
 
         if (userIds.length > 500) {
-            return errorResponse(res, '单次最多发送100条通知', 400);
+            return errorResponse(res, '单次最多发送500条通知', 400);
         }
 
         if (!title || !content) {
@@ -3560,7 +3607,7 @@ async function updatePost(req, res) {
             return errorResponse(res, '帖子不存在', 404);
         }
 
-        const VALID_POST_STATUSES = ['active', 'published', 'draft', 'hidden', 'deleted'];
+        const VALID_POST_STATUSES = ['published', 'draft', 'hidden', 'deleted'];
         if (status !== undefined && !VALID_POST_STATUSES.includes(status)) {
             return errorResponse(res, '无效的帖子状态', 400);
         }
@@ -3573,7 +3620,8 @@ async function updatePost(req, res) {
             updateData.title = t;
         }
         if (content !== undefined) {
-            const c = String(content);
+            const c = String(content).trim();
+            if (c.length === 0) return errorResponse(res, '内容不能为空', 400);
             if (c.length > 10000) return errorResponse(res, '内容不能超过10000字', 400);
             updateData.content = c;
         }

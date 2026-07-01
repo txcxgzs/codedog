@@ -651,6 +651,21 @@ class DatabaseMigration {
                     const cleanedRows = rows.map(row => {
                         const r = { ...row };
                         delete r.id;
+                        // 中-1: readFromSource 使用 raw:true 读取，permissions/tags 这类带 setter 的
+                        // JSON 字段返回的是原始 JSON 字符串（如 '["a","b"]'），bulkCreate 会再触发
+                        // setter 的 JSON.stringify 一次 → 双重编码，导致权限/标签损坏丢失。
+                        // 写入前把字符串预解析回数组，使 setter 仅编码一次（单层编码）。
+                        // 仅 Post.tags 和 RolePermission.permissions 拥有 setter，其它表无此字段会被跳过。
+                        for (const field of ['permissions', 'tags']) {
+                            if (typeof r[field] === 'string') {
+                                try {
+                                    r[field] = JSON.parse(r[field]);
+                                } catch (e) {
+                                    // 解析失败兜底为空数组，与 getter 回退行为一致，避免 setter 再次 stringify 损坏
+                                    r[field] = [];
+                                }
+                            }
+                        }
                         return r;
                     });
                     await model.bulkCreate(cleanedRows, { ignoreDuplicates: true, transaction: t });

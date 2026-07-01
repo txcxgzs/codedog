@@ -18,6 +18,10 @@ const { escapeHtml } = require('../utils/security');
 // 引入内容审核服务,落库前做敏感词/违规检查(参照 commentController)
 const aiReview = require('../services/aiReview');
 
+// codemao 登录创建本地用户时使用的占位密码哈希（与 adminController 占位密码方案一致）
+// 使用 crypto.randomBytes 生成强随机串再 bcrypt 哈希，避免弱随机或非法哈希字符串
+const PLACEHOLDER_PASSWORD_HASH = bcrypt.hashSync(crypto.randomBytes(32).toString('hex'), 10);
+
 const uploadDir = path.join(__dirname, '../uploads/avatars');
 if (!fs.existsSync(uploadDir)) {
     fs.mkdirSync(uploadDir, { recursive: true });
@@ -131,8 +135,8 @@ async function codemaoLogin(req, res, identity, password) {
                 defaults: {
                     codemao_user_id: codemaoUser.id,
                     username: `codemao_${codemaoUser.id}`,
-                    email: codemaoRes.auth?.email || `codemao_${codemaoUser.id}@placeholder.com`,
-                    password: await bcrypt.hash(Math.random().toString(36), 10),
+                    email: codemaoRes.auth?.email || `codemao_${codemaoUser.id}@example.invalid`,
+                    password: PLACEHOLDER_PASSWORD_HASH,
                     nickname: codemaoUser.nickname,
                     avatar: codemaoUser.avatar_url || codemaoUser.avatar,
                     bio: codemaoUser.description,
@@ -173,12 +177,45 @@ async function codemaoLogin(req, res, identity, password) {
         }
 
         if (!created) {
-            await DbAdapter.update(User, {
-                nickname: codemaoUser.nickname,
-                avatar: codemaoUser.avatar_url || codemaoUser.avatar,
-                bio: codemaoUser.description,
-                codemao_token: codemaoToken
-            }, { where: { id: DbAdapter.getId(user) } });
+            // (Report 2 #18) 不要盲目用编程猫资料覆盖用户已自定义的本地资料：
+            // 仅当本地字段为空时才覆盖，且 nickname/bio 需走与 updateProfile 一致的
+            // 审核（基于原始文本）+ escapeHtml 转义流程，避免绕过本地内容审核
+            const updateFields = { codemao_token: codemaoToken };
+
+            const rawNickname = codemaoUser.nickname != null ? String(codemaoUser.nickname).trim() : '';
+            const rawBio = codemaoUser.description != null ? String(codemaoUser.description).trim() : '';
+            const codemaoAvatar = codemaoUser.avatar_url || codemaoUser.avatar || null;
+
+            // 先对原始（未转义）文本做内容审核，与 updateProfile 顺序保持一致
+            const reviewText = [rawNickname, rawBio].filter(v => v).join('\n');
+            let profileBlocked = false;
+            if (reviewText.trim()) {
+                try {
+                    const reviewResult = await aiReview.fallbackReview(reviewText);
+                    if (reviewResult.recommendation === 'delete' || reviewResult.recommendation === 'review') {
+                        // 登录流程不阻断，仅记录并跳过 nickname/bio 覆盖
+                        profileBlocked = true;
+                        console.warn(`[codemaoLogin] 编程猫资料未通过审核(${reviewResult.recommendation})，跳过覆盖: ${reviewResult.reason}`);
+                    }
+                } catch (e) {
+                    console.error('[codemaoLogin] 编程猫资料审核失败:', e.message);
+                    profileBlocked = true;
+                }
+            }
+
+            // 仅当本地字段为空且审核通过时，才用转义后的编程猫资料覆盖
+            if (!user.nickname && rawNickname && !profileBlocked) {
+                updateFields.nickname = escapeHtml(rawNickname);
+            }
+            if (!user.bio && rawBio && !profileBlocked) {
+                updateFields.bio = escapeHtml(rawBio);
+            }
+            // avatar 是 URL，无需转义；仅在本地为空时覆盖，尊重用户自定义头像
+            if (!user.avatar && codemaoAvatar) {
+                updateFields.avatar = codemaoAvatar;
+            }
+
+            await DbAdapter.update(User, updateFields, { where: { id: DbAdapter.getId(user) } });
         }
         
         syncUserWorks(codemaoUser.id, DbAdapter.getId(user)).catch(err => {
@@ -270,7 +307,7 @@ async function syncUserWorks(codemaoUserId, localUserId) {
                         preview: workDetail.preview,
                         type: type,
                         ide_type: workDetail.ide_type,
-                        work_url: workDetail.player_url,
+                        work_url: workDetail.player_url || `https://player.codemao.cn/new/${workDetail.id}`,
                         user_id: localUserId,
                         codemao_author_id: codemaoUserId,
                         codemao_author_name: workDetail.user_info?.nickname,
@@ -364,11 +401,32 @@ async function updateProfile(req, res) {
         }
 
         let avatar = user.avatar;
+        const oldAvatar = user.avatar; // (Report 1 #7) 记录旧头像，DB 更新后清理磁盘文件
         if (req.file) {
             avatar = `/uploads/avatars/${req.file.filename}`;
         }
 
-        // L6: escapeHtml 会把 <、>、& 等转成多字符实体，转义后需复校长度，
+        // (Report 2 #21) 先对原始（未转义）文本做内容审核，再转义落库。
+        // 原代码先转义后审核，导致审核看到的是已转义文本而非用户真实输入，
+        // review verdicts 可能与用户实际输入不符。
+        const reviewContent = [
+            nickname != null ? String(nickname).trim() : '',
+            bio !== undefined ? String(bio).trim() : '',
+            doing !== undefined ? String(doing).trim() : ''
+        ].filter(v => v !== '').join('\n');
+        if (reviewContent.trim()) {
+            const reviewResult = await aiReview.fallbackReview(reviewContent);
+            if (reviewResult.recommendation === 'delete') {
+                cleanupUploadedFile(req.file);
+                return errorResponse(res, `内容包含违规信息:${reviewResult.reason}`, 400);
+            }
+            if (reviewResult.recommendation === 'review') {
+                cleanupUploadedFile(req.file);
+                return errorResponse(res, `内容需人工审核,请修改后重试:${reviewResult.reason}`, 400);
+            }
+        }
+
+        // 审核通过后再转义；L6: escapeHtml 会把 <、>、& 等转成多字符实体，转义后需复检长度，
         // 否则超长内容会触发 Sequelize/DB 截断或报错
         const escapedNickname = nickname ? escapeHtml(nickname) : user.nickname;
         const escapedBio = bio !== undefined ? escapeHtml(bio) : user.bio;
@@ -387,31 +445,29 @@ async function updateProfile(req, res) {
             return errorResponse(res, '正在做(转义后)不能超过200字', 400);
         }
 
-        // 内容审核:对最终要保存的 nickname + bio + doing 拼接后调 aiReview.fallbackReview
-        // fallbackReview 返回 recommendation: pass / review / delete
-        // delete->严重违规,拒绝 400;review->需人工复核,整次拒绝提示用户修改;pass->正常更新
-        // 参照 commentController 的审核调用方式
-        const reviewContent = [escapedNickname, escapedBio, escapedDoing]
-            .filter(v => v != null && v !== '')
-            .join('\n');
-        if (reviewContent.trim()) {
-            const reviewResult = await aiReview.fallbackReview(reviewContent);
-            if (reviewResult.recommendation === 'delete') {
-                cleanupUploadedFile(req.file);
-                return errorResponse(res, `内容包含违规信息:${reviewResult.reason}`, 400);
-            }
-            if (reviewResult.recommendation === 'review') {
-                cleanupUploadedFile(req.file);
-                return errorResponse(res, `内容需人工审核,请修改后重试:${reviewResult.reason}`, 400);
-            }
-        }
-
         await DbAdapter.update(User, {
             nickname: escapedNickname,
             avatar: avatar,
             bio: escapedBio,
             doing: escapedDoing
         }, { where: { id: DbAdapter.getId(user) } });
+
+        // (Report 1 #7) 头像更新后清理旧头像文件，避免磁盘泄漏。
+        // 仅删除本地上传文件（/uploads/avatars/ 下），外部 URL（codemao/默认）跳过；
+        // 解析后路径必须仍在 uploadDir 之内，防止路径穿越；unlink 失败不影响请求。
+        if (req.file && oldAvatar && oldAvatar !== avatar && oldAvatar.startsWith('/uploads/avatars/')) {
+            try {
+                const oldFileName = path.basename(oldAvatar);
+                const oldFilePath = path.join(uploadDir, oldFileName);
+                if (oldFilePath.startsWith(uploadDir + path.sep) && fs.existsSync(oldFilePath)) {
+                    fs.unlink(oldFilePath, (err) => {
+                        if (err) console.error('清理旧头像文件失败:', err.message);
+                    });
+                }
+            } catch (e) {
+                console.error('清理旧头像文件异常:', e.message);
+            }
+        }
         
         const updatedUser = await DbAdapter.findByPk(User, DbAdapter.getId(user));
         
