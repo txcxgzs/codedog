@@ -32,7 +32,8 @@ const { createSequelizeSessionStore } = require('./services/sessionStore');
 
 const app = express();
 app.disable('x-powered-by');
-const trustProxy = process.env.TRUST_PROXY === 'true' ? 1 : false;
+const trustProxyEnabled = process.env.TRUST_PROXY === 'true';
+const trustProxy = trustProxyEnabled ? 1 : false;
 app.set('trust proxy', trustProxy);
 
 const isProduction = process.env.NODE_ENV === 'production';
@@ -59,7 +60,32 @@ function normalizeOrigin(value) {
     }
 }
 
-function isAllowedOrigin(origin, host) {
+function getForwardedHeader(req, name) {
+    const value = req.headers[name];
+    if (Array.isArray(value)) return value[0];
+    if (typeof value !== 'string') return '';
+    return value.split(',')[0].trim();
+}
+
+function getEffectiveHost(req) {
+    return (trustProxyEnabled && getForwardedHeader(req, 'x-forwarded-host'))
+        || req.headers.host
+        || '';
+}
+
+function getEffectiveProtocol(req) {
+    return (trustProxyEnabled && getForwardedHeader(req, 'x-forwarded-proto'))
+        || req.protocol
+        || 'http';
+}
+
+function getEffectiveOrigin(req) {
+    const host = getEffectiveHost(req);
+    if (!host) return null;
+    return `${getEffectiveProtocol(req)}://${host}`;
+}
+
+function isAllowedOriginForRequest(origin, req) {
     if (!origin) return true;
 
     const normalizedOrigin = normalizeOrigin(origin);
@@ -67,12 +93,11 @@ function isAllowedOrigin(origin, host) {
 
     if (ALLOWED_ORIGINS.includes(normalizedOrigin)) return true;
 
-    try {
-        const originUrl = new URL(normalizedOrigin);
-        return Boolean(host) && originUrl.host === host;
-    } catch (e) {
-        return false;
-    }
+    // 反向代理部署时，浏览器 Origin 通常是 https://域名，
+    // 后端收到的 Host 可能是 127.0.0.1:3001。若 TRUST_PROXY=true，优先使用
+    // X-Forwarded-Host / X-Forwarded-Proto 判断真实外部访问来源。
+    const effectiveOrigin = normalizeOrigin(getEffectiveOrigin(req));
+    return Boolean(effectiveOrigin) && normalizedOrigin === effectiveOrigin;
 }
 
 function setSecurityHeaders(res) {
@@ -114,7 +139,7 @@ function resolveSessionSecret() {
 app.use(cors((req, callback) => {
     const origin = req.headers.origin;
     callback(null, {
-        origin: isAllowedOrigin(origin, req.headers.host),
+        origin: isAllowedOriginForRequest(origin, req),
         credentials: true,
         optionsSuccessStatus: 204
     });
@@ -124,7 +149,7 @@ app.use((req, res, next) => {
     const origin = req.headers.origin;
     const isSafeMethod = ['GET', 'HEAD', 'OPTIONS'].includes(req.method);
 
-    if (!isSafeMethod && origin && !isAllowedOrigin(origin, req.headers.host)) {
+    if (!isSafeMethod && origin && !isAllowedOriginForRequest(origin, req)) {
         setSecurityHeaders(res);
         return res.status(403).json({
             code: 403,
