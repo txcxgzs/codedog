@@ -161,7 +161,7 @@ async function createComment(req, res) {
             include: [{
                 model: User,
                 as: 'user',
-                attributes: ['id', 'username', 'nickname', 'avatar']
+                attributes: ['id', 'codemao_user_id', 'username', 'nickname', 'avatar']
             }, {
                 model: User,
                 as: 'reply_to_user',
@@ -195,7 +195,7 @@ async function getWorkComments(req, res) {
             include: [{
                 model: User,
                 as: 'user',
-                attributes: ['id', 'username', 'nickname', 'avatar']
+                attributes: ['id', 'codemao_user_id', 'username', 'nickname', 'avatar']
             }, {
                 model: User,
                 as: 'reply_to_user',
@@ -209,7 +209,7 @@ async function getWorkComments(req, res) {
                 include: [{
                     model: User,
                     as: 'user',
-                    attributes: ['id', 'username', 'nickname', 'avatar']
+                    attributes: ['id', 'codemao_user_id', 'username', 'nickname', 'avatar']
                 }, {
                     model: User,
                     as: 'reply_to_user',
@@ -296,14 +296,26 @@ async function deleteComment(req, res) {
             await DbAdapter.update(Comment, { like_count: 0 }, { where: { id: { [Op.in]: commentIdsToClean } }, transaction: t });
 
             // 仅在旧状态为 active 且顶层评论时才递减 comment_count，避免 hidden→deleted 重复扣减
+            // 修复(报告1 #9): 移除 in-memory (count > 0) 旧实例判断，改用原子条件 decrement
+            // 仅当 comment_count > 0 时才执行减 1，避免并发导致负数（与 likeComment/unlikeComment 同模式）
             if (wasActive && !comment.parent_id) {
                 if (comment.work_id) {
                     const work = await DbAdapter.findByPk(Work, comment.work_id, { transaction: t });
-                    if (work && (work.comment_count || 0) > 0) await DbAdapter.decrement(work, 'comment_count', { transaction: t });
+                    if (work) {
+                        await DbAdapter.decrement(work, 'comment_count', {
+                            where: { comment_count: { [Op.gt]: 0 } },
+                            transaction: t
+                        });
+                    }
                 }
                 if (comment.post_id) {
                     const post = await DbAdapter.findByPk(Post, comment.post_id, { transaction: t });
-                    if (post && (post.comment_count || 0) > 0) await DbAdapter.decrement(post, 'comment_count', { transaction: t });
+                    if (post) {
+                        await DbAdapter.decrement(post, 'comment_count', {
+                            where: { comment_count: { [Op.gt]: 0 } },
+                            transaction: t
+                        });
+                    }
                 }
             }
         });

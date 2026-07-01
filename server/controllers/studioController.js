@@ -692,15 +692,18 @@ async function removeWork(req, res) {
         }
         
         const wasApproved = studioWork.status === 'approved';
-        await DbAdapter.destroy(StudioWork, { where: { id: DbAdapter.getId(studioWork) } });
-        
-        if (wasApproved) {
-            const studio = await DbAdapter.findByPk(Studio, id);
-            if (studio && (studio.work_count || 0) > 0) {
-                await DbAdapter.decrement(studio, 'work_count');
+        // Bug-12: 删除 StudioWork + 调整 Studio.work_count 必须用事务保证一致性
+        await sequelize.transaction(async (t) => {
+            await DbAdapter.destroy(StudioWork, { where: { id: DbAdapter.getId(studioWork) }, transaction: t });
+
+            if (wasApproved) {
+                const studio = await DbAdapter.findByPk(Studio, id, { transaction: t });
+                if (studio && (studio.work_count || 0) > 0) {
+                    await DbAdapter.decrement(studio, 'work_count', { transaction: t });
+                }
             }
-        }
-        
+        });
+
         return successResponse(res, null, '作品已移除');
     } catch (error) {
         console.error('移除作品错误:', error);
@@ -734,22 +737,28 @@ async function toggleWorkStatus(req, res) {
             if (studioWork.status !== 'approved') {
                 return errorResponse(res, '当前状态不允许下架', 400);
             }
-            await DbAdapter.update(StudioWork, { status: 'down' }, { where: { id: workId } });
-            const studio = await DbAdapter.findByPk(Studio, id);
-            if (studio && (studio.work_count || 0) > 0) {
-                await DbAdapter.decrement(studio, 'work_count');
-            }
+            // Bug-12: 更新 StudioWork 状态 + 调整 Studio.work_count 必须用事务保证一致性
+            await sequelize.transaction(async (t) => {
+                await DbAdapter.update(StudioWork, { status: 'down' }, { where: { id: workId }, transaction: t });
+                const studio = await DbAdapter.findByPk(Studio, id, { transaction: t });
+                if (studio && (studio.work_count || 0) > 0) {
+                    await DbAdapter.decrement(studio, 'work_count', { transaction: t });
+                }
+            });
             return successResponse(res, null, '作品已下架');
         } else if (action === 'up') {
             // 仅允许已下架(down)的作品重新上架，防止 pending/rejected 绕过审核
             if (studioWork.status !== 'down') {
                 return errorResponse(res, '当前状态不允许上架', 400);
             }
-            await DbAdapter.update(StudioWork, { status: 'approved' }, { where: { id: workId } });
-            const studio = await DbAdapter.findByPk(Studio, id);
-            if (studio) {
-                await DbAdapter.increment(studio, 'work_count');
-            }
+            // Bug-12: 更新 StudioWork 状态 + 调整 Studio.work_count 必须用事务保证一致性
+            await sequelize.transaction(async (t) => {
+                await DbAdapter.update(StudioWork, { status: 'approved' }, { where: { id: workId }, transaction: t });
+                const studio = await DbAdapter.findByPk(Studio, id, { transaction: t });
+                if (studio) {
+                    await DbAdapter.increment(studio, 'work_count', { transaction: t });
+                }
+            });
             return successResponse(res, null, '作品已上架');
         }
         

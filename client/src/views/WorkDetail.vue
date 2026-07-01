@@ -367,7 +367,8 @@ const allowedPlayerHosts = new Set([
   'python.codemao.cn',
   'coco.codemao.cn',
   'block.codemao.cn',
-  'box.codemao.cn'
+  'box.codemao.cn',
+  'box2.codemao.cn'
 ])
 
 const getSafePlayerUrl = (value) => {
@@ -541,8 +542,8 @@ const goUserById = (userId) => {
       }
     }
   }
-  // 回退：直接用 id 跳转
-  router.push(`/user/${userId}`)
+  // 缺少 codemao_user_id 时不做跳转，避免使用本地 id 触发后端 404
+  ElMessage.warning('无法跳转：缺少用户标识')
 }
 
 const fetchRelatedWorks = async () => {

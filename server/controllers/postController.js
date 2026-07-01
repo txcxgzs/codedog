@@ -210,7 +210,8 @@ async function getPostDetail(req, res) {
             include: [{
                 model: User,
                 as: 'user',
-                attributes: ['id', 'username', 'nickname', 'avatar']
+                // 修复(报告1 #11): 增加 codemao_user_id 供前端跳转作者主页
+                attributes: ['id', 'codemao_user_id', 'username', 'nickname', 'avatar']
             }, {
                 model: Comment,
                 as: 'replies',
@@ -219,7 +220,7 @@ async function getPostDetail(req, res) {
                 include: [{
                     model: User,
                     as: 'user',
-                    attributes: ['id', 'username', 'nickname', 'avatar']
+                    attributes: ['id', 'codemao_user_id', 'username', 'nickname', 'avatar']
                 }]
             }],
             order: [['created_at', 'DESC']]
@@ -501,11 +502,15 @@ async function favoritePost(req, res) {
         if (existing) {
             return errorResponse(res, '已收藏该帖子', 400);
         }
-        
+
+        // 修复(报告1 #4): create Favorite + increment collection_count 用事务包裹,中途失败回滚避免不一致
         try {
-            await DbAdapter.create(Favorite, {
-                user_id: userId,
-                post_id: DbAdapter.getId(post)
+            await sequelize.transaction(async (t) => {
+                await DbAdapter.create(Favorite, {
+                    user_id: userId,
+                    post_id: DbAdapter.getId(post)
+                }, { transaction: t });
+                await DbAdapter.increment(post, 'collection_count', { transaction: t });
             });
         } catch (createError) {
             if (createError.name === 'SequelizeUniqueConstraintError') {
@@ -513,10 +518,9 @@ async function favoritePost(req, res) {
             }
             throw createError;
         }
-        
-        await DbAdapter.increment(post, 'collection_count');
+
         await post.reload();
-        
+
         return successResponse(res, { collection_count: post.collection_count || 0, favorited: true }, '收藏成功');
     } catch (error) {
         console.error('收藏错误:', error);
@@ -549,15 +553,25 @@ async function unfavoritePost(req, res) {
         if (!existing) {
             return errorResponse(res, '未收藏该帖子', 400);
         }
-        
-        const removed = await DbAdapter.destroy(Favorite, { where: { id: DbAdapter.getId(existing) } });
 
-        if (removed && (post.collection_count || 0) > 0) {
-            await DbAdapter.decrement(post, 'collection_count');
-        }
+        // 修复(报告1 #4/#5): destroy Favorite + decrement collection_count 用事务包裹,保证一致性
+        // 不再用旧实例 collection_count > 0 判断,改用原子 decrement 带 where 条件避免负数
+        await sequelize.transaction(async (t) => {
+            const removed = await DbAdapter.destroy(Favorite, {
+                where: { id: DbAdapter.getId(existing) },
+                transaction: t
+            });
+            if (removed) {
+                // 原子 decrement: 仅当 collection_count > 0 时才执行减 1,避免并发导致负数
+                await DbAdapter.decrement(post, 'collection_count', {
+                    where: { collection_count: { [Op.gt]: 0 } },
+                    transaction: t
+                });
+            }
+        });
         await post.reload();
         const newCount = Math.max(0, post.collection_count || 0);
-        
+
         return successResponse(res, { collection_count: newCount, favorited: false }, '已取消收藏');
     } catch (error) {
         console.error('取消收藏错误:', error);

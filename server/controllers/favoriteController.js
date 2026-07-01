@@ -33,103 +33,77 @@ async function favoriteWorksForUser(userId, query) {
         if (postKeywordWhere) Object.assign(postWhere, postKeywordWhere);
     }
 
-    // 修复: 先过滤再分页,避免"分页后再过滤"导致搜索遗漏、空页、count 不准
-    // 第一步: 获取该用户所有收藏的 work_id / post_id(仅取 ID,轻量)
-    const userFavoriteLinks = await DbAdapter.findAll(Favorite, {
-        where: {
-            user_id: userId,
-            [Op.or]: [
-                { work_id: { [Op.ne]: null } },
-                { post_id: { [Op.ne]: null } }
-            ]
-        },
-        attributes: ['work_id', 'post_id']
-    });
-    const allWorkIds = userFavoriteLinks.filter(f => f.work_id).map(f => f.work_id);
-    const allPostIds = userFavoriteLinks.filter(f => f.post_id).map(f => f.post_id);
-
-    // 第二步: 在这些收藏中,筛选出满足 status+keyword 条件的 Work/Post 的本地 ID
-    // 过滤必须在分页之前完成,否则会出现空页、count 不准、搜索遗漏等问题
-    const [matchingWorks, matchingPosts] = await Promise.all([
-        allWorkIds.length > 0 ? DbAdapter.findAll(Work, {
-            where: { id: { [Op.in]: allWorkIds }, ...workWhere },
-            attributes: ['id']
-        }) : [],
-        allPostIds.length > 0 ? DbAdapter.findAll(Post, {
-            where: { id: { [Op.in]: allPostIds }, ...postWhere },
-            attributes: ['id']
-        }) : []
-    ]);
-    const matchingWorkIds = matchingWorks.map(w => DbAdapter.getId(w));
-    const matchingPostIds = matchingPosts.map(p => DbAdapter.getId(p));
-
-    // 第三步: 在已过滤的收藏集合上分页(count 为过滤后的总数,非原始收藏总数)
+    // 修复(报告1 #12): 上一轮虽修正了"先过滤再分页",但仍把该用户全部收藏的
+    // work_id/post_id 拉到内存后再 JS 过滤,对收藏数多的用户有内存/性能风险。
+    // 这里把 过滤 + 分页 + count 全部下推到 SQL,内存只持有当前页数据:
+    //  - Favorite 是多态(work_id / post_id 由 hasTarget 校验恰一非空),通过两次
+    //    LEFT JOIN Work/Post 并在各自 include.where 上施加 status+keyword 过滤。
+    //  - 外层 Op.or($work.id$ / $post.id$ IS NOT NULL) 只保留两侧至少一侧匹配
+    //    的收藏;由于 work_id 与 post_id 互斥,每条收藏至多匹配一行 JOIN 结果,
+    //    不会产生重复行,故 count(*) 准确(直接来自过滤后的查询,非预过滤总数)。
+    //  - subQuery:false 使 limit/offset 与 count 直接作用于 JOIN 后的结果集
+    //    (而非先对 favorites 取子集再 JOIN),保证分页与 count 一致。
+    //  - Work/Post 的 author 通过嵌套 include 一并取出,无需后续二次查询。
     const { rows: favorites, count: total } = await DbAdapter.findAndCountAll(Favorite, {
         where: {
             user_id: userId,
             [Op.or]: [
-                { work_id: { [Op.in]: matchingWorkIds } },
-                { post_id: { [Op.in]: matchingPostIds } }
+                { '$work.id$': { [Op.ne]: null } },
+                { '$post.id$': { [Op.ne]: null } }
             ]
         },
-        order: [['created_at', 'DESC']],
+        include: [
+            {
+                model: Work,
+                as: 'work',
+                required: false,
+                where: workWhere,
+                include: [{
+                    model: User,
+                    as: 'author',
+                    attributes: ['id', 'codemao_user_id', 'username', 'nickname', 'avatar']
+                }]
+            },
+            {
+                model: Post,
+                as: 'post',
+                required: false,
+                where: postWhere,
+                include: [{
+                    model: User,
+                    as: 'author',
+                    attributes: ['id', 'username', 'nickname', 'avatar']
+                }]
+            }
+        ],
+        // subQuery:false 下多表 JOIN 都有 created_at,需用表名限定避免 MySQL 歧义报错
+        order: [sequelize.literal('favorites.created_at DESC')],
         limit: pageSize,
-        offset: offset
+        offset: offset,
+        subQuery: false
     });
 
     if (favorites.length === 0) {
         return { works: [], count: total, page, pageSize };
     }
 
-    // 第四步: 批量加载当前页收藏对应的 Work/Post 详情(含 author)
-    const pageWorkIds = favorites.filter(f => f.work_id).map(f => f.work_id);
-    const pagePostIds = favorites.filter(f => f.post_id).map(f => f.post_id);
-
-    const [works, posts] = await Promise.all([
-        pageWorkIds.length > 0 ? DbAdapter.findAll(Work, {
-            where: { id: { [Op.in]: pageWorkIds } },
-            include: [{
-                model: User,
-                as: 'author',
-                attributes: ['id', 'codemao_user_id', 'username', 'nickname', 'avatar']
-            }]
-        }) : [],
-        pagePostIds.length > 0 ? DbAdapter.findAll(Post, {
-            where: { id: { [Op.in]: pagePostIds } },
-            include: [{
-                model: User,
-                as: 'author',
-                attributes: ['id', 'username', 'nickname', 'avatar']
-            }]
-        }) : []
-    ]);
-
-    // 第五步: 构建 id->详情 映射,按收藏顺序组装结果
-    const workMap = new Map(works.map(w => [DbAdapter.getId(w), w]));
-    const postMap = new Map(posts.map(p => [DbAdapter.getId(p), p]));
-
+    // 按收藏顺序组装结果(Work/Post + author 已通过 include 一并取出)
     const items = [];
     for (const f of favorites) {
-        if (f.work_id) {
-            const work = workMap.get(f.work_id);
-            if (work) {
-                items.push({
-                    ...work.toJSON(),
-                    favoriteId: f.id,
-                    favoritedAt: f.created_at,
-                    _type: 'work'
-                });
-            }
-        } else if (f.post_id) {
-            const post = postMap.get(f.post_id);
-            if (post) {
-                items.push({
-                    ...post.toJSON(),
-                    favoriteId: f.id,
-                    favoritedAt: f.created_at,
-                    _type: 'post'
-                });
-            }
+        if (f.work) {
+            items.push({
+                ...f.work.toJSON(),
+                favoriteId: f.id,
+                favoritedAt: f.created_at,
+                _type: 'work'
+            });
+        } else if (f.post) {
+            items.push({
+                ...f.post.toJSON(),
+                favoriteId: f.id,
+                favoritedAt: f.created_at,
+                _type: 'post'
+            });
         }
     }
 

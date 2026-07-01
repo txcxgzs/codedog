@@ -127,6 +127,30 @@ async function codemaoLogin(req, res, identity, password) {
         const codemaoUser = codemaoRes.user_info;
         const codemaoToken = codemaoRes.auth?.token || codemaoRes.token || null;
         
+        // (报告3 #1) 新用户创建同样需走审核+转义，避免绕过本地内容审核与 XSS
+        // 与 updateProfile / 已存在用户路径保持一致：先对原始文本审核，审核通过才转义落库
+        const newRawNickname = codemaoUser.nickname != null ? String(codemaoUser.nickname).trim() : '';
+        const newRawBio = codemaoUser.description != null ? String(codemaoUser.description).trim() : '';
+
+        const newReviewText = [newRawNickname, newRawBio].filter(v => v).join('\n');
+        let newProfileBlocked = false;
+        if (newReviewText.trim()) {
+            try {
+                const reviewResult = await aiReview.fallbackReview(newReviewText);
+                if (reviewResult.recommendation === 'delete' || reviewResult.recommendation === 'review') {
+                    newProfileBlocked = true;
+                    console.warn(`[codemaoLogin] 新用户资料未通过审核(${reviewResult.recommendation})，跳过 nickname/bio 存储: ${reviewResult.reason}`);
+                }
+            } catch (e) {
+                console.error('[codemaoLogin] 新用户资料审核失败:', e.message);
+                newProfileBlocked = true;
+            }
+        }
+
+        // 审核通过才转义落库；审核未通过则不存 nickname/bio（与已存在用户路径一致），用户可后续经 updateProfile 重新设置
+        const safeNickname = (!newProfileBlocked && newRawNickname) ? escapeHtml(newRawNickname) : null;
+        const safeBio = (!newProfileBlocked && newRawBio) ? escapeHtml(newRawBio) : null;
+
         // 使用 findOrCreate 避免竞态条件
         let user, created;
         try {
@@ -137,9 +161,9 @@ async function codemaoLogin(req, res, identity, password) {
                     username: `codemao_${codemaoUser.id}`,
                     email: codemaoRes.auth?.email || `codemao_${codemaoUser.id}@example.invalid`,
                     password: PLACEHOLDER_PASSWORD_HASH,
-                    nickname: codemaoUser.nickname,
+                    nickname: safeNickname,
                     avatar: codemaoUser.avatar_url || codemaoUser.avatar,
-                    bio: codemaoUser.description,
+                    bio: safeBio,
                     codemao_token: codemaoToken,
                     role: 'user',
                     status: 'active'
@@ -297,6 +321,21 @@ async function syncUserWorks(codemaoUserId, localUserId) {
                     ? workDetail.work_label_list[0].label_name 
                     : '其他';
                 
+                // (报告1 #2, Bug-20) 落库前对作品名称+描述做内容审核，参照 publishWork
+                // 违规/疑似违规内容设为 pending 待人工复核，避免登录同步直接 published 绕过本地审核
+                let workStatus = 'published';
+                try {
+                    const reviewText = String(workDetail.work_name || '') + (workDetail.description || '');
+                    const reviewResult = await aiReview.fallbackReview(reviewText);
+                    if (reviewResult.recommendation === 'delete' || reviewResult.recommendation === 'review') {
+                        workStatus = 'pending';
+                        console.warn(`[syncUserWorks] 作品 ${workDetail.id} 未通过审核(${reviewResult.recommendation})，设为 pending: ${reviewResult.reason}`);
+                    }
+                } catch (e) {
+                    console.error(`[syncUserWorks] 作品 ${workDetail.id} 审核失败:`, e.message);
+                    workStatus = 'pending';
+                }
+
                 // 使用 findOrCreate 避免并发唯一键冲突，单条失败不中断同步
                 const [, created] = await DbAdapter.findOrCreate(Work, {
                     where: { codemao_work_id: workDetail.id },
@@ -316,7 +355,7 @@ async function syncUserWorks(codemaoUserId, localUserId) {
                         collection_times: workDetail.collect_times || 0,
                         // 使用编程猫返回的真实评论数,避免写死为 0
                         comment_count: workDetail.comment_times || 0,
-                        status: 'published'
+                        status: workStatus
                     }
                 });
 
@@ -366,7 +405,7 @@ async function getCurrentUser(req, res) {
  */
 async function updateProfile(req, res) {
     try {
-        const { nickname, bio, doing, geetest_challenge, geetest_validate, geetest_seccode } = req.body;
+        let { nickname, bio, doing, geetest_challenge, geetest_validate, geetest_seccode } = req.body;
         
         const result = await GeetestService.verify(
             'update_profile', 
@@ -385,6 +424,16 @@ async function updateProfile(req, res) {
         if (!user) {
             cleanupUploadedFile(req.file);
             return errorResponse(res, '用户不存在', 404);
+        }
+
+        // (报告1 #13) 昵称先 trim 再校验非空，避免纯空格通过校验
+        // 在长度校验与审核之前执行，落库存的是 trim 后的值
+        if (nickname !== undefined && nickname !== null) {
+            nickname = String(nickname).trim();
+            if (!nickname) {
+                cleanupUploadedFile(req.file);
+                return errorResponse(res, '昵称不能为纯空格', 400);
+            }
         }
 
         if (nickname && String(nickname).length > 50) {

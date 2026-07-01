@@ -170,9 +170,11 @@ async function publishWork(req, res) {
             return errorResponse(res, '只能发布自己的编程猫作品', 403);
         }
 
-        // H12: 落库前审核作品描述（敏感词/违规检查）
+        // H12 / 报告1 #3: 落库前审核作品 name + description（敏感词/违规检查）
+        // 原 fallbackReview 仅审核 description，导致作品名包含违规内容时被放行；
+        // 现将 name 与 description 拼接后一起审核
         // fallbackReview 返回 recommendation: pass / review / delete
-        const reviewResult = await aiReview.fallbackReview(String(workInfo.description || ''));
+        const reviewResult = await aiReview.fallbackReview(String(`${workInfo.name || ''} ${workInfo.description || ''}`));
         if (reviewResult.recommendation === 'delete') {
             return errorResponse(res, `内容包含违规信息:${reviewResult.reason}`, 400);
         }
@@ -396,6 +398,9 @@ async function importWork(req, res) {
 
         // 确定作品归属用户
         let author = null;
+        // 报告1 #1: 非管理员导入需经过与 publishWork 一致的内容审核，违规内容不得直接发布。
+        // 管理员导入沿用 adminController.crawlWork 约定（直接 published），保持角色分支结构不变。
+        let importStatus = 'published';
         if (isAdmin) {
             // 管理员可导入任意作品；按 codemao 作者信息解析/创建归属用户
             if (!workInfo.codemaoAuthorId) {
@@ -413,11 +418,21 @@ async function importWork(req, res) {
                 return errorResponse(res, '只能导入自己的作品', 403);
             }
             author = req.user;
+            // 报告1 #1: 普通用户导入需经 AI 内容审核（与 publishWork 一致），审核 name + description
+            // fallbackReview 返回 recommendation: pass / review / delete
+            const reviewResult = await aiReview.fallbackReview(String(`${workInfo.name || ''} ${workInfo.description || ''}`));
+            if (reviewResult.recommendation === 'delete') {
+                return errorResponse(res, `内容包含违规信息:${reviewResult.reason}`, 400);
+            }
+            // review（疑似违规）/审核失败均转 pending 待人工复核，不直接发布未审核内容
+            importStatus = reviewResult.recommendation === 'pass' ? 'published' : 'pending';
         }
 
         let work;
         try {
-            work = await DbAdapter.create(Work, buildWorkCreateParams(workInfo, DbAdapter.getId(author)));
+            const createParams = buildWorkCreateParams(workInfo, DbAdapter.getId(author));
+            createParams.status = importStatus;
+            work = await DbAdapter.create(Work, createParams);
         } catch (createError) {
             if (createError.name === 'SequelizeUniqueConstraintError') {
                 const found = await DbAdapter.findOne(Work, {
@@ -581,11 +596,25 @@ async function fetchOrCreateWork(workId) {
         commentTimes: workDetail.comment_times || 0
     };
     
+    // Bug-19: 热门作品回退创建也需经过与 publishWork/importWork 一致的内容审核（name + description），
+    // 违规/疑似违规内容不得直接发布。fallbackReview 返回 recommendation: pass / review / delete
+    // 审核失败/异常时 fallbackReview 内部已捕获并返回 recommendation:'review'，故此处无需 try/catch
+    let fetchStatus = 'published';
+    {
+        const reviewResult = await aiReview.fallbackReview(String(`${workInfo.name || ''} ${workInfo.description || ''}`));
+        // review（疑似违规）/ delete（严重违规）均转 pending 待人工复核，爬虫场景不阻断流程
+        if (reviewResult.recommendation !== 'pass') {
+            fetchStatus = 'pending';
+        }
+    }
+
     try {
-        work = await DbAdapter.create(Work, buildWorkCreateParams(workInfo, user ? DbAdapter.getId(user) : null));
+        const createParams = buildWorkCreateParams(workInfo, user ? DbAdapter.getId(user) : null);
+        createParams.status = fetchStatus;
+        work = await DbAdapter.create(Work, createParams);
     } catch (createError) {
         if (createError.name === 'SequelizeUniqueConstraintError') {
-            work = await DbAdapter.findOne(Work, { 
+            work = await DbAdapter.findOne(Work, {
                 where: { codemao_work_id: String(workId) },
                 include: [{
                     model: User,
@@ -806,7 +835,9 @@ async function deleteWork(req, res) {
             await DbAdapter.update(Comment, { status: 'deleted' }, { where: { work_id: wid }, transaction: t });
             // 修复: 作品改为软删（status:'deleted'），与 adminController 保持一致。
             // 此前硬删会让软删评论的 work_id 成为指向不存在作品的死指针；统一软删保留作品行，数据可恢复
-            await DbAdapter.update(Work, { status: 'deleted' }, { where: { id: wid }, transaction: t });
+            // 报告3 #2: 同时清零 praise_times / collection_times，避免恢复后计数与已删除的 Like/Favorite
+            // 记录错位（记录已硬删但计数非零 → 用户重新点赞/收藏导致计数翻倍）
+            await DbAdapter.update(Work, { status: 'deleted', praise_times: 0, collection_times: 0 }, { where: { id: wid }, transaction: t });
 
             // M9: 重算受影响工作室的 work_count
             for (const sid of affectedStudioIds) {
@@ -814,9 +845,11 @@ async function deleteWork(req, res) {
                 await DbAdapter.update(Studio, { work_count: approvedCount }, { where: { id: sid }, transaction: t });
             }
 
-            // M9: 重算作者 work_count，避免计数与实际作品数不一致
+            // M9 / 报告1 #8 / 报告3 #3: 重算作者 work_count，避免计数与实际作品数不一致
+            // 修复: 仅统计 status:'published' 的作品，避免把软删(status:'deleted')/待审(status:'pending')
+            // 等作品计入 work_count 导致计数永远不下降
             if (authorId != null) {
-                const authorWorkCount = await DbAdapter.count(Work, { where: { user_id: authorId }, transaction: t });
+                const authorWorkCount = await DbAdapter.count(Work, { where: { user_id: authorId, status: 'published' }, transaction: t });
                 await DbAdapter.update(User, { work_count: authorWorkCount }, { where: { id: authorId }, transaction: t });
             }
         });

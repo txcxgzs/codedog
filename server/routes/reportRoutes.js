@@ -146,23 +146,29 @@ router.post('/', authMiddleware, geetestVerify('report'), async (req, res) => {
         // 通知审核员/管理员有新的举报待处理
         try {
             const { Op } = require('sequelize');
+            // Bug-18: 移除 limit:50 ——原实现若审核员/管理员超过 50 人，第 51+ 位永远收不到通知。
+            // 改为拉取全部符合条件的审核员/管理员，并分批 bulkCreate（每批 100 条）避免单次
+            // 写入过大导致内存压力，但保证所有合格审核员都被通知。
             const reviewers = await DbAdapter.findAll(User, {
                 where: {
                     role: { [Op.in]: ['reviewer', 'moderator', 'admin', 'superadmin'] },
                     status: 'active'
                 },
-                attributes: ['id'],
-                limit: 50
+                attributes: ['id']
             });
             if (reviewers.length > 0) {
-                await DbAdapter.bulkCreate(Notification, reviewers.map(r => ({
+                const records = reviewers.map(r => ({
                     user_id: r.id,
                     type: 'report',
                     title: '收到新举报',
                     content: `有用户举报了${typeNames[type]}「${safeTargetName}」，原因：${safeReason}`,
                     related_id: linkId,
                     related_type: linkType
-                })));
+                }));
+                const BATCH_SIZE = 100;
+                for (let i = 0; i < records.length; i += BATCH_SIZE) {
+                    await DbAdapter.bulkCreate(Notification, records.slice(i, i + BATCH_SIZE));
+                }
             }
         } catch (notifyErr) {
             // 通知失败不应回滚举报主流程

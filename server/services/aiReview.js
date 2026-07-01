@@ -181,12 +181,20 @@ function isPrivateHost(hostname) {
 // 校验 AI/外部 API 端点,防止 SSRF 攻击,并返回已校验的安全 IP 供「固定 IP」防 DNS 重绑定。
 // 修复 Bug1:增加 DNS 解析防 DNS 重绑定、可疑 IP 格式拒绝,并返回校验时解析到的 IP,
 //           使调用方能把它 pin 到 axios 的 Agent lookup 上,消除第二次 DNS 解析的攻击窗口。
-// 1. 必须使用 HTTPS
+// 1. 默认必须使用 HTTPS;但可信内网部署可通过环境变量显式开启 HTTP（见下 Bug-17）
 // 2. 同步静态检查:localhost、可疑 IP 格式、直接私网 IP
 // 3. 对域名做 DNS 解析,防止 DNS 重绑定攻击;解析失败/超时按可疑处理拒绝
 // 4. 返回已校验的 IP 字符串:调用方需用 buildPinnedIpAgents 固定该 IP,并设置 maxRedirects:0
 //    (此处通过校验不代表绝对安全:axios 内部会发起第二次 DNS 解析,必须 pin IP + 禁止重定向)
 // @returns {Promise<string>} 已校验的 IP 地址(IPv4 或 IPv6)
+//
+// Bug-17: 部分 trusted 内网部署（如敏感词 API 走内网 http://）需允许 HTTP。
+//   开启方式（二选一）:
+//     - 显式设置环境变量 ALLOW_INTERNAL_HTTP_AI=1
+//     - 运行在非 production 环境（NODE_ENV !== 'production'），便于本地/测试调试
+//   开启后仅放宽「协议」一项,SSRF 防护（私网/环回/链路本地 IP 拒绝、DNS 解析校验、
+//   IP pinning、maxRedirects:0）全部仍然生效。
+//   默认（生产且未显式开启）保持严格 HTTPS-only。
 async function validateAIEndpoint(apiUrl) {
     let parsed;
     try {
@@ -195,8 +203,11 @@ async function validateAIEndpoint(apiUrl) {
         throw new Error('AI API 地址格式无效');
     }
 
-    if (parsed.protocol !== 'https:') {
-        throw new Error('AI API 地址必须使用 HTTPS');
+    // Bug-17: opt-in 允许 http://，仅放宽协议校验；其余 SSRF 防护保持不变。
+    const allowInternalHttp = process.env.ALLOW_INTERNAL_HTTP_AI === '1'
+        || process.env.NODE_ENV !== 'production';
+    if (parsed.protocol !== 'https:' && !(allowInternalHttp && parsed.protocol === 'http:')) {
+        throw new Error('AI API 地址必须使用 HTTPS（如需在可信内网使用 HTTP，请设置环境变量 ALLOW_INTERNAL_HTTP_AI=1 或运行在非 production 环境）');
     }
 
     const hostname = parsed.hostname.toLowerCase();
@@ -252,7 +263,18 @@ async function validateAIEndpoint(apiUrl) {
 // @returns {{httpsAgent: https.Agent, httpAgent: http.Agent}}
 function buildPinnedIpAgents(validatedIp) {
     const ipFamily = net.isIP(validatedIp); // 4 或 6(已校验,非 0)
-    const lookupFn = (hostname, opts, cb) => cb(null, validatedIp, ipFamily);
+    // 报告3 #5: lookup 回调需同时兼容 Node dns.lookup 的两种签名:
+    //   - 默认签名: cb(err, address, family) —— address 为字符串
+    //   - opts.all === true 时: cb(err, addresses) —— addresses 为 [{address, family}, ...] 数组
+    // 原实现固定返回 (null, validatedIp, ipFamily),在新版 Node 上若上层以 { all: true }
+    // 调用会触发 "TypeError: addresses.forEach is not a function",直接导致 AI 审核崩溃。
+    const lookupFn = (hostname, opts, cb) => {
+        if (opts && opts.all === true) {
+            cb(null, [{ address: validatedIp, family: ipFamily }]);
+        } else {
+            cb(null, validatedIp, ipFamily);
+        }
+    };
     return {
         // 强制 TLS 证书校验(rejectUnauthorized: true)+ 固定 IP lookup
         httpsAgent: new https.Agent({ rejectUnauthorized: true, lookup: lookupFn }),
@@ -380,11 +402,9 @@ async function reviewContent(type, content) {
                 fallback: await fallbackReview(content)
             };
         }
-        
-        // 修复 Bug1:validateAIEndpoint 改为 async,需要 await 等待 DNS 解析完成,
-        // 并返回已校验的安全 IP,用于在下方 axios 请求中「固定 IP」防 DNS 重绑定绕过
-        const validatedAiIp = await validateAIEndpoint(config.apiUrl);
 
+        // Bug-16: 先检查 apiKey，避免在密钥缺失时仍执行 validateAIEndpoint 的 DNS 解析（耗时且无意义）。
+        // 返回结构与既有「未配置」分支一致，直接走 fallbackReview 降级。
         if (!config.apiKey) {
             console.log('AI API密钥未配置');
             return {
@@ -393,6 +413,10 @@ async function reviewContent(type, content) {
                 fallback: await fallbackReview(content)
             };
         }
+
+        // 修复 Bug1:validateAIEndpoint 改为 async,需要 await 等待 DNS 解析完成,
+        // 并返回已校验的安全 IP,用于在下方 axios 请求中「固定 IP」防 DNS 重绑定绕过
+        const validatedAiIp = await validateAIEndpoint(config.apiUrl);
 
         // 修复提示词注入：用 XML 标签 <user_content> 包裹用户内容，
         // 并在 prompt 末尾追加安全说明，明确告知 AI 标签内是数据而非指令，

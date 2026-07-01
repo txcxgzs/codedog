@@ -87,6 +87,12 @@
                     <span class="r-post--reply_name">{{ reply.user?.nickname || reply.user?.username }}</span>
                     <span class="r-post--reply_content">{{ reply.content }}</span>
                     <span class="r-post--reply_time">{{ formatTime(reply.created_at) }}</span>
+                    <div class="r-post--reply_actions">
+                      <span @click="likeComment(reply)" :class="{ 'is-loading': likingComments.has(reply.id) }"><span class="r-post--comment_icon r-post--comment_icon_like"></span>{{ reply.like_count || 0 }}</span>
+                      <span @click="replyTo(reply)"><span class="r-post--comment_icon r-post--comment_icon_reply"></span>回复</span>
+                      <span v-if="reply.user_id === userStore.user?.id" @click="deleteComment(reply)" class="r-post--comment_delete">删除</span>
+                      <span v-else @click="reportComment(reply)" class="r-post--comment_report">举报</span>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1023,6 +1029,48 @@ $border-color: #eee;
     .r-post--reply_time {
       color: $text-muted;
       font-size: 12px;
+    }
+
+    .r-post--reply_actions {
+      display: flex;
+      gap: 12px;
+      margin-top: 6px;
+
+      span {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        font-size: 12px;
+        color: $text-muted;
+        cursor: pointer;
+
+        &:hover {
+          color: $primary-color;
+        }
+
+        &.r-post--comment_delete:hover {
+          color: #f56c6c;
+        }
+
+        &.r-post--comment_report:hover {
+          color: #e6a23c;
+        }
+      }
+
+      .r-post--comment_icon {
+        width: 14px;
+        height: 14px;
+
+        &.r-post--comment_icon_like {
+          background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23999'%3E%3Cpath d='M1 21h4V9H1v12zm22-11c0-1.1-.9-2-2-2h-6.31l.95-4.57.03-.32c0-.41-.17-.79-.44-1.06L14.17 1 7.59 7.59C7.22 7.95 7 8.45 7 9v10c0 1.1.9 2 2 2h9c.83 0 1.54-.5 1.84-1.22l3.02-7.05c.09-.23.14-.47.14-.73v-2z'/%3E%3C/svg%3E") no-repeat center;
+          background-size: contain;
+        }
+
+        &.r-post--comment_icon_reply {
+          background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23999'%3E%3Cpath d='M10 9V5l-7 7 7 7v-4.1c5 0 8.5 1.6 11 5.1-1-5-4-10-11-11z'/%3E%3C/svg%3E") no-repeat center;
+          background-size: contain;
+        }
+      }
     }
   }
 }

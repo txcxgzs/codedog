@@ -601,7 +601,14 @@ async function deleteUser(req, res) {
             } catch (cascadeErr) {
                 console.error('级联软删子回复失败:', cascadeErr);
             }
-            await DbAdapter.destroy(Post, { where: { user_id: uid }, transaction: t });
+            // Bug-14: 软删帖子前先清理挂在其上的 Report/Notification，避免悬空引用
+            const userPostIds = userPosts.map(p => DbAdapter.getId(p)).filter(Boolean);
+            if (userPostIds.length > 0) {
+                await DbAdapter.destroy(Report, { where: { type: 'post', target_id: { [Op.in]: userPostIds } }, transaction: t });
+                await DbAdapter.destroy(Notification, { where: { related_id: { [Op.in]: userPostIds }, related_type: 'post' }, transaction: t });
+            }
+            // Bug-2: 改为软删帖子（status:'deleted'），与 Comment 软删保持一致，避免评论 post_id 成为死指针
+            await DbAdapter.update(Post, { status: 'deleted' }, { where: { user_id: uid }, transaction: t });
             const userStudios = await DbAdapter.findAll(Studio, { where: { owner_id: uid }, transaction: t });
             for (const s of userStudios) {
                 await DbAdapter.destroy(StudioWork, { where: { studio_id: DbAdapter.getId(s) }, transaction: t });
@@ -610,7 +617,25 @@ async function deleteUser(req, res) {
             }
             await DbAdapter.destroy(StudioMember, { where: { user_id: uid }, transaction: t });
             await DbAdapter.destroy(StudioWork, { where: { user_id: uid }, transaction: t });
-            await DbAdapter.destroy(Work, { where: { user_id: uid }, transaction: t });
+            // Bug-13: 软删作品前先清理挂在其上的 Report，避免悬空引用
+            // Bug-12: 软删作品前先清理指向其的 StudioWork 记录，并重算受影响工作室的 work_count
+            const userWorkIds = userWorks.map(w => DbAdapter.getId(w)).filter(Boolean);
+            if (userWorkIds.length > 0) {
+                await DbAdapter.destroy(Report, { where: { type: 'work', target_id: { [Op.in]: userWorkIds } }, transaction: t });
+                const affectedStudioWorksFromUserWorks = await DbAdapter.findAll(StudioWork, {
+                    where: { work_id: { [Op.in]: userWorkIds }, status: 'approved' },
+                    attributes: ['studio_id'],
+                    transaction: t
+                });
+                const affectedStudioIdsFromUserWorks = [...new Set(affectedStudioWorksFromUserWorks.map(sw => sw.studio_id))];
+                await DbAdapter.destroy(StudioWork, { where: { work_id: { [Op.in]: userWorkIds } }, transaction: t });
+                for (const sid of affectedStudioIdsFromUserWorks) {
+                    const approvedCount = await DbAdapter.count(StudioWork, { where: { studio_id: sid, status: 'approved' }, transaction: t });
+                    await DbAdapter.update(Studio, { work_count: approvedCount }, { where: { id: sid }, transaction: t });
+                }
+            }
+            // Bug-3: 改为软删作品（status:'deleted'），与 Comment 软删保持一致，避免评论 work_id 成为死指针
+            await DbAdapter.update(Work, { status: 'deleted' }, { where: { user_id: uid }, transaction: t });
 
             // 重算受影响的计数
             const uniqueWorkIds = [...new Set(affectedWorkIds)].filter(Boolean);
@@ -1559,40 +1584,47 @@ async function updateCommentStatus(req, res) {
         }
 
         const oldStatus = comment.status;
-        await DbAdapter.update(Comment, { status }, { where: { id: commentId } });
-        // H6修复: 父评论（顶层评论）被 hidden/deleted 时，同步级联子回复状态，避免子回复仍对用户可见
-        // 仅在隐藏/删除时级联；恢复为 active 时不自动恢复子回复（子回复可能曾被单独隐藏，避免违规内容复活）
-        if (!comment.parent_id && (status === 'hidden' || status === 'deleted')) {
-            await DbAdapter.update(Comment, { status }, { where: { parent_id: commentId } });
-        }
-
-        // 仅在 active → 非active 时扣减，非active → active 时补回，避免重复扣减
         const wasActive = oldStatus === 'active';
         const isActive = status === 'active';
+        // Bug-5: 评论状态变更 + 子回复级联 + 计数增减涉及多表,必须用事务包裹
+        await sequelize.transaction(async (t) => {
+            await DbAdapter.update(Comment, { status }, { where: { id: commentId }, transaction: t });
+            // H6修复: 父评论（顶层评论）被 hidden/deleted 时，同步级联子回复状态，避免子回复仍对用户可见
+            if (!comment.parent_id && (status === 'hidden' || status === 'deleted')) {
+                await DbAdapter.update(Comment, { status }, { where: { parent_id: commentId }, transaction: t });
+            }
+            // Bug-11: 父评论从 hidden/deleted 恢复为 active 时,同时恢复被级联隐藏(hidden)的子回复,
+            // 避免用户看到 comment_count 但看不到回复。仅恢复 hidden 子回复,不恢复被版主独立删除的 deleted 子回复
+            if (!comment.parent_id && isActive && !wasActive) {
+                await DbAdapter.update(Comment, { status: 'active' }, { where: { parent_id: commentId, status: 'hidden' }, transaction: t });
+            }
 
-        if (!comment.parent_id) {
-            if (wasActive && !isActive) {
-                // active → hidden/deleted: 扣减
-                if (comment.work_id) {
-                    const work = await DbAdapter.findByPk(Work, comment.work_id);
-                    if (work && (work.comment_count || 0) > 0) await DbAdapter.decrement(work, 'comment_count');
-                }
-                if (comment.post_id) {
-                    const post = await DbAdapter.findByPk(Post, comment.post_id);
-                    if (post && (post.comment_count || 0) > 0) await DbAdapter.decrement(post, 'comment_count');
-                }
-            } else if (!wasActive && isActive) {
-                // hidden/deleted → active: 补回
-                if (comment.work_id) {
-                    const work = await DbAdapter.findByPk(Work, comment.work_id);
-                    if (work) await DbAdapter.increment(work, 'comment_count');
-                }
-                if (comment.post_id) {
-                    const post = await DbAdapter.findByPk(Post, comment.post_id);
-                    if (post) await DbAdapter.increment(post, 'comment_count');
+            // 仅在 active → 非active 时扣减，非active → active 时补回，避免重复扣减
+            // （comment_count 仅统计顶层评论，子回复恢复不影响计数）
+            if (!comment.parent_id) {
+                if (wasActive && !isActive) {
+                    // active → hidden/deleted: 扣减
+                    if (comment.work_id) {
+                        const work = await DbAdapter.findByPk(Work, comment.work_id, { transaction: t });
+                        if (work && (work.comment_count || 0) > 0) await DbAdapter.decrement(work, 'comment_count', { transaction: t });
+                    }
+                    if (comment.post_id) {
+                        const post = await DbAdapter.findByPk(Post, comment.post_id, { transaction: t });
+                        if (post && (post.comment_count || 0) > 0) await DbAdapter.decrement(post, 'comment_count', { transaction: t });
+                    }
+                } else if (!wasActive && isActive) {
+                    // hidden/deleted → active: 补回
+                    if (comment.work_id) {
+                        const work = await DbAdapter.findByPk(Work, comment.work_id, { transaction: t });
+                        if (work) await DbAdapter.increment(work, 'comment_count', { transaction: t });
+                    }
+                    if (comment.post_id) {
+                        const post = await DbAdapter.findByPk(Post, comment.post_id, { transaction: t });
+                        if (post) await DbAdapter.increment(post, 'comment_count', { transaction: t });
+                    }
                 }
             }
-        }
+        });
 
         logOperation(req, 'update_comment_status', 'comment', commentId, { status });
 
@@ -1615,38 +1647,46 @@ async function deleteComment(req, res) {
             return errorResponse(res, '评论不存在', 404);
         }
 
-        // 仅在评论当前为active 时才扣减，避免已 hidden/deleted 的评论重复扣减
-        if (comment.status === 'active') {
-            await DbAdapter.update(Comment, { status: 'deleted' }, { where: { id: commentId } });
-            // 级联软删除子回复
-            await DbAdapter.update(Comment, { status: 'deleted' }, { where: { parent_id: commentId } });
+        const wasActive = comment.status === 'active';
+        // Bug-4: 删除评论涉及多表关联数据(评论软删/子回复软删/点赞清理/计数递减),必须用事务包裹
+        // Bug-10: 子回复点赞清理统一用数组形式(Op.in),不使用 Number(commentId)——后者对字符串 ID 返回 NaN
+        const { Like } = require('../models');
+        await sequelize.transaction(async (t) => {
+            await DbAdapter.update(Comment, { status: 'deleted' }, { where: { id: commentId }, transaction: t });
 
-            // H2修复: 清理父评论及所有子回复的点赞记录，避免孤儿点赞。
-            // 此前只清理了父评论 ID（或未清理），子回复被软删后其点赞成为孤儿数据。
-            // 这里先查出所有子回复 id（含父 id），用 Op.in 批量清理 Like 表
-            const childReplies = await DbAdapter.findAll(Comment, { where: { parent_id: commentId }, attributes: ['id'] });
-            const commentIdsForLikeCleanup = [Number(commentId), ...childReplies.map(c => DbAdapter.getId(c))];
-            if (commentIdsForLikeCleanup.length > 0) {
-                await DbAdapter.destroy(Like, { where: { comment_id: { [Op.in]: commentIdsForLikeCleanup } } });
-            }
+            // 级联软删除子回复，避免孤儿回复
+            await DbAdapter.update(Comment, { status: 'deleted' }, { where: { parent_id: commentId }, transaction: t });
 
-            if (!comment.parent_id) {
+            // M20: 清理该评论及其子回复关联的点赞记录，并清零 like_count
+            // 查询所有 parent_id=commentId 的子回复 id 列表（软删不改变 parent_id，仍可查到）
+            const childReplies = await DbAdapter.findAll(Comment, {
+                where: { parent_id: commentId },
+                attributes: ['id'],
+                transaction: t
+            });
+            // 用数组形式收集 id，避免 Number(commentId) 对字符串 ID 返回 NaN
+            const commentIdsToClean = [commentId, ...childReplies.map(c => DbAdapter.getId(c))];
+            // 批量清理这些评论关联的点赞记录
+            await DbAdapter.destroy(Like, { where: { comment_id: { [Op.in]: commentIdsToClean } }, transaction: t });
+            // 批量清零这些评论的 like_count（此前仅清了父评论，子回复 like_count 未清）
+            await DbAdapter.update(Comment, { like_count: 0 }, { where: { id: { [Op.in]: commentIdsToClean } }, transaction: t });
+
+            // 仅在旧状态为 active 且顶层评论时才递减 comment_count，避免 hidden→deleted 重复扣减
+            if (wasActive && !comment.parent_id) {
                 if (comment.work_id) {
-                    const work = await DbAdapter.findByPk(Work, comment.work_id);
-                    if (work && (work.comment_count || 0) > 0) await DbAdapter.decrement(work, 'comment_count');
+                    const work = await DbAdapter.findByPk(Work, comment.work_id, { transaction: t });
+                    if (work && (work.comment_count || 0) > 0) await DbAdapter.decrement(work, 'comment_count', { transaction: t });
                 }
                 if (comment.post_id) {
-                    const post = await DbAdapter.findByPk(Post, comment.post_id);
-                    if (post && (post.comment_count || 0) > 0) await DbAdapter.decrement(post, 'comment_count');
+                    const post = await DbAdapter.findByPk(Post, comment.post_id, { transaction: t });
+                    if (post && (post.comment_count || 0) > 0) await DbAdapter.decrement(post, 'comment_count', { transaction: t });
                 }
             }
-        } else {
-            await DbAdapter.update(Comment, { status: 'deleted' }, { where: { id: commentId } });
-        }
+        });
 
         logOperation(req, 'delete_comment', 'comment', commentId, {
             content: comment.content.substring(0, 100),
-            user_id: comment.user_id 
+            user_id: comment.user_id
         });
 
         return successResponse(res, null, '删除成功');
@@ -1734,13 +1774,8 @@ async function handleReport(req, res) {
             return errorResponse(res, '举报不存在', 404);
         }
 
-        await DbAdapter.update(Report, {
-            status,
-            handle_note: handleNote,
-            handler_id: DbAdapter.getId(req.user)
-        }, { where: { id: reportId } });
-        logOperation(req, 'handle_report', 'report', reportId, { status, handleNote, takeAction });
-
+        // Bug-7: 先执行 takeAction 逻辑（含权限校验），失败/无权时直接返回，不更新举报状态
+        // 此前 status update 在最前面执行,若 takeAction 失败或权限被拒会导致举报已标记 resolved 但未实际处理
         let targetOwnerId = null;
         const typeNames = { work: '作品', comment: '评论', post: '帖子', user: '用户' };
 
@@ -1778,24 +1813,27 @@ async function handleReport(req, res) {
                 if (comment) {
                     targetOwnerId = comment.user_id;
                     const wasActive = comment.status === 'active';
-                    await DbAdapter.update(Comment, { status: 'deleted' }, { where: { id: report.target_id } });
-                    // 级联软删除子回复
-                    await DbAdapter.update(Comment, { status: 'deleted' }, { where: { parent_id: report.target_id } });
-                    // 仅在旧状态为 active 且顶层评论时才递减，避免hidden→deleted 重复扣减
-                    if (wasActive && !comment.parent_id) {
-                        if (comment.work_id) {
-                            const work = await DbAdapter.findByPk(Work, comment.work_id);
-                            if (work && (work.comment_count || 0) > 0) {
-                                await DbAdapter.decrement(work, 'comment_count');
+                    // Bug-6: 评论删除涉及多表(评论软删/子回复软删/计数递减),用事务包裹,与 work/post 分支保持一致
+                    await sequelize.transaction(async (t) => {
+                        await DbAdapter.update(Comment, { status: 'deleted' }, { where: { id: report.target_id }, transaction: t });
+                        // 级联软删除子回复
+                        await DbAdapter.update(Comment, { status: 'deleted' }, { where: { parent_id: report.target_id }, transaction: t });
+                        // 仅在旧状态为 active 且顶层评论时才递减，避免hidden→deleted 重复扣减
+                        if (wasActive && !comment.parent_id) {
+                            if (comment.work_id) {
+                                const work = await DbAdapter.findByPk(Work, comment.work_id, { transaction: t });
+                                if (work && (work.comment_count || 0) > 0) {
+                                    await DbAdapter.decrement(work, 'comment_count', { transaction: t });
+                                }
+                            }
+                            if (comment.post_id) {
+                                const post = await DbAdapter.findByPk(Post, comment.post_id, { transaction: t });
+                                if (post && (post.comment_count || 0) > 0) {
+                                    await DbAdapter.decrement(post, 'comment_count', { transaction: t });
+                                }
                             }
                         }
-                        if (comment.post_id) {
-                            const post = await DbAdapter.findByPk(Post, comment.post_id);
-                            if (post && (post.comment_count || 0) > 0) {
-                                await DbAdapter.decrement(post, 'comment_count');
-                            }
-                        }
-                    }
+                    });
                 }
             } else if (report.type === 'post') {
                 const post = await DbAdapter.findByPk(Post, report.target_id);
@@ -1824,6 +1862,14 @@ async function handleReport(req, res) {
                 }
             }
         }
+
+        // Bug-7: takeAction 成功后才更新举报状态（移到此处），避免权限被拒或处理失败时举报已标记 resolved
+        await DbAdapter.update(Report, {
+            status,
+            handle_note: handleNote,
+            handler_id: DbAdapter.getId(req.user)
+        }, { where: { id: reportId } });
+        logOperation(req, 'handle_report', 'report', reportId, { status, handleNote, takeAction });
 
         let targetName = '';
         let linkType = report.type;
@@ -2689,7 +2735,37 @@ async function aiAutoHandleReports(req, res) {
 
             // AI审核
             let riskLevel = 'low';
-            let content = report.description || '';
+            const reportDescription = report.description || '';
+            // 中-1: 不能只扫描举报理由(report.description),还需加载被举报对象的实际内容做匹配
+            // 否则被举报内容违规但举报理由很"干净"的报告会被判为 low → 误判为通过
+            let actualContent = '';
+            try {
+                if (report.type === 'work') {
+                    const work = await DbAdapter.findByPk(Work, report.target_id, { attributes: ['name', 'description', 'status'] });
+                    if (work && work.status !== 'deleted') {
+                        actualContent = `${work.name || ''} ${work.description || ''}`;
+                    }
+                } else if (report.type === 'comment') {
+                    const comment = await DbAdapter.findByPk(Comment, report.target_id, { attributes: ['content', 'status'] });
+                    if (comment && comment.status !== 'deleted') {
+                        actualContent = comment.content || '';
+                    }
+                } else if (report.type === 'post') {
+                    const post = await DbAdapter.findByPk(Post, report.target_id, { attributes: ['title', 'content', 'status'] });
+                    if (post && post.status !== 'deleted') {
+                        actualContent = `${post.title || ''} ${post.content || ''}`;
+                    }
+                } else if (report.type === 'user') {
+                    const targetUser = await DbAdapter.findByPk(User, report.target_id, { attributes: ['nickname', 'bio', 'status'] });
+                    if (targetUser && targetUser.status !== 'disabled') {
+                        actualContent = `${targetUser.nickname || ''} ${targetUser.bio || ''}`;
+                    }
+                }
+            } catch (loadErr) {
+                console.error('加载被举报内容失败:', loadErr.message);
+            }
+            // 目标已删除/不可访问时退化为仅扫描举报理由
+            const content = `${reportDescription} ${actualContent}`.trim();
 
             for (const sw of sensitiveWords) {
                 if (content.includes(sw.word)) {
@@ -2700,60 +2776,64 @@ async function aiAutoHandleReports(req, res) {
 
             if (riskLevel === 'high') {
                 // H15: 自动删除时需级联清理关联数据，与 handleReport 行为保持一致
-                if (report.type === 'work') {
-                    const { Like, Favorite, Comment, StudioWork, Notification } = require('../models');
-                    const wid = report.target_id;
-                    const affectedStudioWorks = await DbAdapter.findAll(StudioWork, {
-                        where: { work_id: wid, status: 'approved' },
-                        attributes: ['studio_id']
-                    });
-                    const affectedStudioIds = [...new Set(affectedStudioWorks.map(sw => sw.studio_id))];
-                    await DbAdapter.destroy(Notification, { where: { related_id: wid, related_type: 'work' } });
-                    await DbAdapter.destroy(StudioWork, { where: { work_id: wid } });
-                    await DbAdapter.destroy(Like, { where: { work_id: wid } });
-                    await DbAdapter.destroy(Favorite, { where: { work_id: wid } });
-                    await DbAdapter.update(Comment, { status: 'deleted' }, { where: { work_id: wid } });
-                    await DbAdapter.update(Work, { status: 'deleted' }, { where: { id: wid } });
-                    for (const sid of affectedStudioIds) {
-                        const approvedCount = await DbAdapter.count(StudioWork, { where: { studio_id: sid, status: 'approved' } });
-                        await DbAdapter.update(Studio, { work_count: approvedCount }, { where: { id: sid } });
-                    }
-                } else if (report.type === 'comment') {
-                    const comment = await DbAdapter.findByPk(Comment, report.target_id);
-                    if (comment) {
-                        const wasActive = comment.status === 'active';
-                        await DbAdapter.update(Comment, { status: 'deleted' }, { where: { id: report.target_id } });
-                        // 级联软删子回复
-                        await DbAdapter.update(Comment, { status: 'deleted' }, { where: { parent_id: report.target_id } });
-                        if (wasActive && !comment.parent_id) {
-                            if (comment.work_id) {
-                                const work = await DbAdapter.findByPk(Work, comment.work_id);
-                                if (work && (work.comment_count || 0) > 0) await DbAdapter.decrement(work, 'comment_count');
-                            }
-                            if (comment.post_id) {
-                                const post = await DbAdapter.findByPk(Post, comment.post_id);
-                                if (post && (post.comment_count || 0) > 0) await DbAdapter.decrement(post, 'comment_count');
+                // 中-2: 多表级联清理必须用事务包裹，与 handleReport 行为一致，任一步失败整体回滚
+                await sequelize.transaction(async (t) => {
+                    if (report.type === 'work') {
+                        const { Like, Favorite, Comment, StudioWork, Notification } = require('../models');
+                        const wid = report.target_id;
+                        const affectedStudioWorks = await DbAdapter.findAll(StudioWork, {
+                            where: { work_id: wid, status: 'approved' },
+                            attributes: ['studio_id'],
+                            transaction: t
+                        });
+                        const affectedStudioIds = [...new Set(affectedStudioWorks.map(sw => sw.studio_id))];
+                        await DbAdapter.destroy(Notification, { where: { related_id: wid, related_type: 'work' }, transaction: t });
+                        await DbAdapter.destroy(StudioWork, { where: { work_id: wid }, transaction: t });
+                        await DbAdapter.destroy(Like, { where: { work_id: wid }, transaction: t });
+                        await DbAdapter.destroy(Favorite, { where: { work_id: wid }, transaction: t });
+                        await DbAdapter.update(Comment, { status: 'deleted' }, { where: { work_id: wid }, transaction: t });
+                        await DbAdapter.update(Work, { status: 'deleted' }, { where: { id: wid }, transaction: t });
+                        for (const sid of affectedStudioIds) {
+                            const approvedCount = await DbAdapter.count(StudioWork, { where: { studio_id: sid, status: 'approved' }, transaction: t });
+                            await DbAdapter.update(Studio, { work_count: approvedCount }, { where: { id: sid }, transaction: t });
+                        }
+                    } else if (report.type === 'comment') {
+                        const comment = await DbAdapter.findByPk(Comment, report.target_id, { transaction: t });
+                        if (comment) {
+                            const wasActive = comment.status === 'active';
+                            await DbAdapter.update(Comment, { status: 'deleted' }, { where: { id: report.target_id }, transaction: t });
+                            // 级联软删子回复
+                            await DbAdapter.update(Comment, { status: 'deleted' }, { where: { parent_id: report.target_id }, transaction: t });
+                            if (wasActive && !comment.parent_id) {
+                                if (comment.work_id) {
+                                    const work = await DbAdapter.findByPk(Work, comment.work_id, { transaction: t });
+                                    if (work && (work.comment_count || 0) > 0) await DbAdapter.decrement(work, 'comment_count', { transaction: t });
+                                }
+                                if (comment.post_id) {
+                                    const post = await DbAdapter.findByPk(Post, comment.post_id, { transaction: t });
+                                    if (post && (post.comment_count || 0) > 0) await DbAdapter.decrement(post, 'comment_count', { transaction: t });
+                                }
                             }
                         }
+                    } else if (report.type === 'post') {
+                        const { Like, Favorite, Comment, Notification } = require('../models');
+                        const pid = report.target_id;
+                        await DbAdapter.destroy(Notification, { where: { related_id: pid, related_type: 'post' }, transaction: t });
+                        await DbAdapter.destroy(Like, { where: { post_id: pid }, transaction: t });
+                        await DbAdapter.destroy(Favorite, { where: { post_id: pid }, transaction: t });
+                        await DbAdapter.update(Comment, { status: 'deleted' }, { where: { post_id: pid }, transaction: t });
+                        await DbAdapter.update(Post, { status: 'deleted' }, { where: { id: pid }, transaction: t });
+                    } else if (report.type === 'user') {
+                        // 与 handleReport 高危用户举报分支保持一致：禁用用户
+                        // 批量场景下若当前管理员权限不足以处理该用户（低权限不能禁高权限），则跳过禁用动作，
+                        // 但仍允许报告标记为已处理，避免中断整批流程
+                        const targetUser = await DbAdapter.findByPk(User, report.target_id, { transaction: t });
+                        if (targetUser && canManageUser(req.user.role, targetUser.role)) {
+                            await DbAdapter.update(User, { status: 'disabled' }, { where: { id: report.target_id }, transaction: t });
+                        }
                     }
-                } else if (report.type === 'post') {
-                    const { Like, Favorite, Comment, Notification } = require('../models');
-                    const pid = report.target_id;
-                    await DbAdapter.destroy(Notification, { where: { related_id: pid, related_type: 'post' } });
-                    await DbAdapter.destroy(Like, { where: { post_id: pid } });
-                    await DbAdapter.destroy(Favorite, { where: { post_id: pid } });
-                    await DbAdapter.update(Comment, { status: 'deleted' }, { where: { post_id: pid } });
-                    await DbAdapter.update(Post, { status: 'deleted' }, { where: { id: pid } });
-                } else if (report.type === 'user') {
-                    // 与 handleReport 高危用户举报分支保持一致：禁用用户
-                    // 批量场景下若当前管理员权限不足以处理该用户（低权限不能禁高权限），则跳过禁用动作，
-                    // 但仍允许报告标记为已处理，避免中断整批流程
-                    const targetUser = await DbAdapter.findByPk(User, report.target_id);
-                    if (targetUser && canManageUser(req.user.role, targetUser.role)) {
-                        await DbAdapter.update(User, { status: 'disabled' }, { where: { id: report.target_id } });
-                    }
-                }
-                await DbAdapter.update(Report, { status: 'resolved', handler_id: DbAdapter.getId(req.user), handle_note: 'AI自动处理-删除' }, { where: { id: DbAdapter.getId(report) } });
+                    await DbAdapter.update(Report, { status: 'resolved', handler_id: DbAdapter.getId(req.user), handle_note: 'AI自动处理-删除' }, { where: { id: DbAdapter.getId(report) }, transaction: t });
+                });
                 results.deleted++;
             } else {
                 // 通过
@@ -2813,19 +2893,22 @@ async function updateRolePermissions(req, res) {
         
         // 更新或创建角色权限
         let rolePerm = await DbAdapter.findOne(RolePermission, { where: { role } });
-        
+
+        // 中-3: 不能手动 JSON.stringify——RolePermission 模型 setter 已会 JSON.stringify 一次。
+        // 此前 create 分支手动 stringify 后再被 setter stringify，导致双重编码：
+        // getter 解析后得到字符串而非数组，最终返回 []（权限丢失）。统一改为传入数组，由 setter 编码一次。
         if (rolePerm) {
             await DbAdapter.update(RolePermission, {
                 name: name || rolePerm.name,
                 level: level !== undefined ? level : rolePerm.level,
-                permissions: JSON.stringify(permissions || [])
+                permissions: permissions || []
             }, { where: { role } });
         } else {
             await DbAdapter.create(RolePermission, {
                 role,
                 name: name || DEFAULT_ROLES[role].name,
                 level: level !== undefined ? level : DEFAULT_ROLES[role].level,
-                permissions: JSON.stringify(permissions || [])
+                permissions: permissions || []
             });
         }
         
@@ -3198,26 +3281,32 @@ async function updateStudioMember(req, res) {
 async function removeStudioMember(req, res) {
     try {
         const { studioId, userId } = req.params;
-        
+
         const member = await DbAdapter.findOne(StudioMember, {
             where: { studio_id: studioId, user_id: userId }
         });
         if (!member) {
             return errorResponse(res, '成员不存在', 404);
         }
-        
+
         if (member.role === 'owner') {
             return errorResponse(res, '不能移除室长', 400);
         }
-        
-        const studio = await DbAdapter.findByPk(Studio, studioId);
+
         const wasActive = member.status === 'active';
-        
-        await DbAdapter.destroy(StudioMember, { where: { id: DbAdapter.getId(member) } });
-        if (studio && wasActive && (studio.member_count || 0) > 0) {
-            await DbAdapter.decrement(studio, 'member_count');
-        }
-        
+        // Bug-8: 移除成员+计数-1+清理副室长引用需事务保证一致性（mirror studioController.kickMember）
+        await sequelize.transaction(async (t) => {
+            await DbAdapter.destroy(StudioMember, { where: { id: DbAdapter.getId(member) }, transaction: t });
+            const studio = await DbAdapter.findByPk(Studio, studioId, { transaction: t });
+            if (studio && wasActive && (studio.member_count || 0) > 0) {
+                await DbAdapter.decrement(studio, 'member_count', { transaction: t });
+            }
+            // 如果被移除者是副室长，清除引用
+            if (studio && String(studio.vice_owner_id) === String(userId)) {
+                await DbAdapter.update(Studio, { vice_owner_id: null }, { where: { id: DbAdapter.getId(studio) }, transaction: t });
+            }
+        });
+
         logOperation(req, 'remove_studio_member', 'studio_member', DbAdapter.getId(member));
         return successResponse(res, null, '成员已移除');
     } catch (error) {
@@ -3229,7 +3318,7 @@ async function removeStudioMember(req, res) {
 async function removeStudioWork(req, res) {
     try {
         const { studioId, workId } = req.params;
-        
+
         const studioWork = await DbAdapter.findOne(StudioWork, {
             where: { studio_id: studioId, work_id: workId }
         });
@@ -3238,16 +3327,19 @@ async function removeStudioWork(req, res) {
         }
 
         const wasApproved = studioWork.status === 'approved';
-        await DbAdapter.destroy(StudioWork, { where: { id: DbAdapter.getId(studioWork) } });
+        // Bug-9: destroy + recompute work_count/total_score 需事务包裹，保证一致性
+        await sequelize.transaction(async (t) => {
+            await DbAdapter.destroy(StudioWork, { where: { id: DbAdapter.getId(studioWork) }, transaction: t });
 
-        if (wasApproved) {
-            const studio = await DbAdapter.findByPk(Studio, studioId);
-            if (studio) {
-                const workCount = await DbAdapter.count(StudioWork, { where: { studio_id: studioId, status: 'approved' } });
-                const totalScore = await DbAdapter.sum(StudioWork, 'score', { where: { studio_id: studioId, status: 'approved' } }) || 0;
-                await DbAdapter.update(Studio, { work_count: workCount, total_score: totalScore }, { where: { id: DbAdapter.getId(studio) } });
+            if (wasApproved) {
+                const studio = await DbAdapter.findByPk(Studio, studioId, { transaction: t });
+                if (studio) {
+                    const workCount = await DbAdapter.count(StudioWork, { where: { studio_id: studioId, status: 'approved' }, transaction: t });
+                    const totalScore = await DbAdapter.sum(StudioWork, 'score', { where: { studio_id: studioId, status: 'approved' }, transaction: t }) || 0;
+                    await DbAdapter.update(Studio, { work_count: workCount, total_score: totalScore }, { where: { id: DbAdapter.getId(studio) }, transaction: t });
+                }
             }
-        }
+        });
 
         logOperation(req, 'remove_studio_work', 'studio_work', DbAdapter.getId(studioWork));
         return successResponse(res, null, '作品已移除');
@@ -3578,13 +3670,14 @@ async function deletePost(req, res) {
         }
         const pid = DbAdapter.getId(post);
         // L5: 删除帖子涉及多表关联数据，必须用事务包裹；Comment 软删保留历史
+        // Bug-1: Post 改为软删（status:'deleted' + 计数清零），避免评论 post_id 成为指向已硬删帖子的死指针
         await sequelize.transaction(async (t) => {
             await DbAdapter.destroy(Notification, { where: { related_id: pid, related_type: 'post' }, transaction: t });
             await DbAdapter.destroy(Report, { where: { target_id: pid, type: 'post' }, transaction: t });
             await DbAdapter.destroy(Like, { where: { post_id: pid }, transaction: t });
             await DbAdapter.destroy(Favorite, { where: { post_id: pid }, transaction: t });
             await DbAdapter.update(Comment, { status: 'deleted' }, { where: { post_id: pid }, transaction: t });
-            await DbAdapter.destroy(Post, { where: { id: pid }, transaction: t });
+            await DbAdapter.update(Post, { status: 'deleted', like_count: 0, collection_count: 0, comment_count: 0 }, { where: { id: pid }, transaction: t });
         });
         logOperation(req, 'delete_post', 'post', postId, { title: post.title });
         return successResponse(res, null, '删除成功');
