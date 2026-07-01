@@ -39,81 +39,13 @@ const trustProxyEnabled = process.env.TRUST_PROXY !== 'false';
 app.set('trust proxy', trustProxyEnabled ? 1 : false);
 
 const isProduction = process.env.NODE_ENV === 'production';
-const configuredOrigins = process.env.CORS_ORIGIN
-    ? process.env.CORS_ORIGIN.split(',').map(origin => origin.trim()).filter(Boolean)
-    : [];
-
-const AUTO_CORS_VALUES = new Set(['', '*', 'auto', 'AUTO']);
-const defaultLocalOrigins = new Set([
-    'http://localhost:3001',
-    'http://127.0.0.1:3001',
-    'http://localhost:8080',
-    'http://127.0.0.1:8080',
-    'http://localhost:3000',
-    'http://127.0.0.1:3000'
-]);
-
-// 兼容旧安装器：旧 .env 默认写 CORS_ORIGIN=http://localhost:3001，
-// 但用户常用服务器 IP 或反向代理域名访问。把“只配置了本地地址”的情况视为自动模式，
-// 避免首次部署就 Forbidden origin。
-const corsAutoMode = configuredOrigins.length === 0
-    || configuredOrigins.some(origin => AUTO_CORS_VALUES.has(origin))
-    || configuredOrigins.every(origin => defaultLocalOrigins.has(origin));
-
-const ALLOWED_ORIGINS = corsAutoMode ? [] : configuredOrigins;
-
-function normalizeOrigin(value) {
-    if (!value) return null;
-    try {
-        const url = new URL(value);
-        return `${url.protocol}//${url.host}`;
-    } catch (e) {
-        return null;
-    }
-}
-
-function getForwardedHeader(req, name) {
-    const value = req.headers[name];
-    if (Array.isArray(value)) return value[0];
-    if (typeof value !== 'string') return '';
-    return value.split(',')[0].trim();
-}
-
-function getEffectiveHost(req) {
-    return getForwardedHeader(req, 'x-forwarded-host')
-        || req.headers.host
-        || '';
-}
-
-function getEffectiveProtocol(req) {
-    return getForwardedHeader(req, 'x-forwarded-proto')
-        || req.protocol
-        || 'http';
-}
-
-function getEffectiveOrigin(req) {
-    const host = getEffectiveHost(req);
-    if (!host) return null;
-    return `${getEffectiveProtocol(req)}://${host}`;
-}
 
 function isAllowedOriginForRequest(origin, req) {
-    // 非浏览器请求通常没有 Origin，允许通过。
-    if (!origin) return true;
-
-    const normalizedOrigin = normalizeOrigin(origin);
-    if (!normalizedOrigin) return false;
-
-    // 默认自动模式：恢复“开箱即用”体验，服务器 IP、域名、反向代理域名都能登录。
-    // 需要严格白名单时，在 .env 中设置 CORS_ORIGIN=https://your.domain.com。
-    if (corsAutoMode) return true;
-
-    if (ALLOWED_ORIGINS.includes(normalizedOrigin)) return true;
-
-    // 即使使用严格白名单，也允许当前请求的真实外部来源。
-    // 这让反向代理场景在正确传递 X-Forwarded-* 头时无需额外配置。
-    const effectiveOrigin = normalizeOrigin(getEffectiveOrigin(req));
-    return Boolean(effectiveOrigin) && normalizedOrigin === effectiveOrigin;
+    // 一键部署优先保证开箱即用：允许浏览器当前来源访问 API。
+    // 站点前后端同服务部署，真正的权限仍由登录态/JWT/后台权限控制。
+    // 之前严格校验 CORS_ORIGIN 在服务器 IP、域名、宝塔/Nginx 反代场景下
+    // 容易误伤，导致登录直接 Forbidden origin。
+    return true;
 }
 
 function setSecurityHeaders(res) {
@@ -153,9 +85,8 @@ function resolveSessionSecret() {
 }
 
 app.use(cors((req, callback) => {
-    const origin = req.headers.origin;
     callback(null, {
-        origin: isAllowedOriginForRequest(origin, req),
+        origin: true,
         credentials: true,
         optionsSuccessStatus: 204
     });
