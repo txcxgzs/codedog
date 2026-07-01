@@ -13,7 +13,9 @@ const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const { JWT_SECRET, JWT_EXPIRES_IN } = require('../config/auth');
 const DbAdapter = require('../utils/dbAdapter');
-const { likeContains } = require('../utils/security');
+const { likeContains, escapeHtml } = require('../utils/security');
+// H12: 引入内容审核服务，爬虫/管理员落库前对 nickname/bio/作品名+描述 做敏感词检查
+const aiReview = require('../services/aiReview');
 
 // 爬取日志存储
 const crawlLogs = new Map();
@@ -39,6 +41,37 @@ function isSelf(req, user) {
 
 function canManageExistingUser(req, user) {
     return !isSelf(req, user) && canManageUser(req.user.role, user.role);
+}
+
+/**
+ * (报告1 #3 / Report4 #3) 爬虫创建占位用户时对编程猫返回的 nickname/bio 做内容审核 + HTML 转义，
+ * 与 userController.codemaoLogin 新用户路径保持一致，避免绕过本地内容审核与 XSS。
+ * 审核未通过或异常时返回 { nickname: null, bio: null }，由调用方决定是否使用占位昵称兜底。
+ * @param {string} rawNickname 编程猫返回的原始 nickname
+ * @param {string} rawBio 编程猫返回的原始 bio/description
+ * @returns {Promise<{nickname: string|null, bio: string|null}>}
+ */
+async function sanitizeCodemaoProfile(rawNickname, rawBio) {
+    const nickname = rawNickname != null ? String(rawNickname).trim() : '';
+    const bio = rawBio != null ? String(rawBio).trim() : '';
+    const reviewText = [nickname, bio].filter(v => v).join('\n');
+    let blocked = false;
+    if (reviewText.trim()) {
+        try {
+            const reviewResult = await aiReview.fallbackReview(reviewText);
+            if (reviewResult.recommendation === 'delete' || reviewResult.recommendation === 'review') {
+                blocked = true;
+                console.warn(`[crawl] 占位用户资料未通过审核(${reviewResult.recommendation})，跳过 nickname/bio 存储: ${reviewResult.reason}`);
+            }
+        } catch (e) {
+            console.error('[crawl] 占位用户资料审核失败:', e.message);
+            blocked = true;
+        }
+    }
+    return {
+        nickname: (!blocked && nickname) ? escapeHtml(nickname) : null,
+        bio: (!blocked && bio) ? escapeHtml(bio) : null
+    };
 }
 
 /**
@@ -300,8 +333,14 @@ async function updateUserPassword(req, res) {
             return errorResponse(res, '用户不存在', 404);
         }
         
-        if (!canManageExistingUser(req, user)) {
+        // (Report4 #20) BOLA 防护：修改他人密码要求操作者角色严格高于目标用户。
+        // canManageExistingUser 已阻断 self + 非严格更高（managerLevel > targetLevel）；
+        // 同级用户（如 moderator↔moderator）一律拒绝，返回明确的 403，禁止同级改密。
+        if (isSelf(req, user)) {
             return errorResponse(res, 'Cannot manage this user', 403);
+        }
+        if (!canManageUser(req.user.role, user.role)) {
+            return errorResponse(res, '无权修改同级用户密码', 403);
         }
 
         const hashedPassword = await bcrypt.hash(newPassword, 10);
@@ -348,7 +387,21 @@ async function updateUser(req, res) {
         }
 
         const updateData = {};
-        if (nickname !== undefined) updateData.nickname = nickname;
+        if (nickname !== undefined) {
+            // (报告1 #9) nickname 需经内容审核 + HTML 转义，与 userController.updateProfile 保持一致，
+            // 避免管理员入口存入违规内容或恶意 HTML。不 touch email/status/role（非用户渲染 HTML）
+            const trimmedNickname = String(nickname).trim();
+            const reviewResult = await aiReview.fallbackReview(String(trimmedNickname));
+            if (reviewResult.recommendation === 'delete') {
+                return errorResponse(res, `内容包含违规信息:${reviewResult.reason}`, 400);
+            }
+            // review（疑似违规）：管理员可覆盖存储，但仍需 escapeHtml 防止 XSS
+            const escapedNickname = escapeHtml(trimmedNickname);
+            if (String(escapedNickname).length > 50) {
+                return errorResponse(res, '昵称(转义后)不能超过50字', 400);
+            }
+            updateData.nickname = escapedNickname;
+        }
         if (email !== undefined) updateData.email = email;
         if (role !== undefined) updateData.role = role;
         if (status !== undefined) updateData.status = status;
@@ -568,6 +621,8 @@ async function deleteUser(req, res) {
             await DbAdapter.destroy(Notification, { where: { user_id: uid }, transaction: t });
             await DbAdapter.destroy(OperationLog, { where: { user_id: uid }, transaction: t });
             await DbAdapter.destroy(Report, { where: { reporter_id: uid }, transaction: t });
+            // (Bug-3) 清理针对该用户的举报（type='user', target_id=uid），避免成为悬空记录
+            await DbAdapter.destroy(Report, { where: { type: 'user', target_id: uid }, transaction: t });
             await DbAdapter.destroy(Follow, { where: { [Op.or]: [{ follower_id: uid }, { following_id: uid }] }, transaction: t });
             await DbAdapter.destroy(Favorite, { where: { user_id: uid }, transaction: t });
             await DbAdapter.destroy(Like, { where: { user_id: uid }, transaction: t });
@@ -599,7 +654,10 @@ async function deleteUser(req, res) {
                     currentParentIds = childIds;
                 }
             } catch (cascadeErr) {
+                // (报告1 #8) 重新抛出以中止整个 deleteUser 事务：
+                // 否则父评论已软删但级联子回复失败时，子回复仍 status:'active' 成为悬空“幽灵回复”
                 console.error('级联软删子回复失败:', cascadeErr);
+                throw cascadeErr;
             }
             // Bug-14: 软删帖子前先清理挂在其上的 Report/Notification，避免悬空引用
             const userPostIds = userPosts.map(p => DbAdapter.getId(p)).filter(Boolean);
@@ -664,7 +722,10 @@ async function deleteUser(req, res) {
                 await DbAdapter.update(User, { following_count: followingCount, follower_count: followerCount }, { where: { id: fid }, transaction: t });
             }
 
-            await DbAdapter.destroy(User, { where: { id: uid }, transaction: t });
+            // (Bug-4) 改为软删用户（status:'disabled'），与 Comment/Post/Work 软删保持一致，
+            // 避免硬删 User 导致 Comment.user_id 等外键成为指向已删用户的死指针。
+            // User.status ENUM 仅有 'active'/'disabled'，故用 'disabled'
+            await DbAdapter.update(User, { status: 'disabled' }, { where: { id: uid }, transaction: t });
         });
         logOperation(req, 'delete_user', 'user', userId, { username: user.username });
 
@@ -802,6 +863,8 @@ async function deleteWork(req, res) {
 
         const { Like, Favorite, Comment, Report, StudioWork, Notification } = require('../models');
         const wid = DbAdapter.getId(work);
+        // (报告1 #5 / Report4 #7) 记录作者，用于事务内重算 work_count（镜像 workController.deleteWork）
+        const authorId = work.user_id;
 
         // L4: 删除作品涉及多表关联数据，必须用事务包裹，任一步失败整体回滚
         await sequelize.transaction(async (t) => {
@@ -822,11 +885,20 @@ async function deleteWork(req, res) {
             await DbAdapter.update(Comment, { status: 'deleted' }, { where: { work_id: wid }, transaction: t });
             // H3修复: 作品改为软删（status:'deleted'）。此前作品 destroy 硬删而评论仅软删，
             // 会导致评论的 work_id 成为指向不存在作品的死指针。统一软删，保留作品行让外键不悬空，且数据可恢复
-            await DbAdapter.update(Work, { status: 'deleted' }, { where: { id: wid }, transaction: t });
+            // (报告1 #5 / Report4 #7) 同时清零 praise_times/collection_times/comment_count，与 workController.deleteWork 保持一致，
+            // 避免恢复后计数与已删除的 Like/Favorite/Comment 记录错位
+            await DbAdapter.update(Work, { status: 'deleted', praise_times: 0, collection_times: 0, comment_count: 0 }, { where: { id: wid }, transaction: t });
 
             for (const sid of affectedStudioIds) {
                 const approvedCount = await DbAdapter.count(StudioWork, { where: { studio_id: sid, status: 'approved' }, transaction: t });
                 await DbAdapter.update(Studio, { work_count: approvedCount }, { where: { id: sid }, transaction: t });
+            }
+
+            // (报告1 #5 / Report4 #7) 重算作者 work_count，仅统计 status:'published'，
+            // 避免软删作品仍计入作者 work_count（镜像 workController.deleteWork）
+            if (authorId != null) {
+                const authorWorkCount = await DbAdapter.count(Work, { where: { user_id: authorId, status: 'published' }, transaction: t });
+                await DbAdapter.update(User, { work_count: authorWorkCount }, { where: { id: authorId }, transaction: t });
             }
         });
         logOperation(req, 'delete_work', 'work', workId, { name: work.name });
@@ -866,30 +938,53 @@ async function crawlWork(req, res) {
         const userInfo = workDetail.user_info || {};
         const codemaoUserId = userInfo.id != null ? String(userInfo.id) : null;
 
-        let user = null;
-        if (codemaoUserId) {
-            user = await DbAdapter.findOne(User, { 
-                where: { codemao_user_id: codemaoUserId } 
-            });
+        // (报告1 #2) Work.user_id allowNull:false，缺少作者信息时直接跳过，
+        // 避免 user_id:null 落库失败/产生脏数据
+        if (!codemaoUserId) {
+            return errorResponse(res, '作品缺少作者信息，无法爬取', 400);
+        }
 
-            if (!user) {
-                user = await DbAdapter.create(User, {
-                    codemao_user_id: codemaoUserId,
-                    username: `codemao_${codemaoUserId}`,
-                    email: `codemao_${codemaoUserId}@example.invalid`,
-                    password: PLACEHOLDER_PASSWORD_HASH,
-                    nickname: userInfo.nickname || `用户${codemaoUserId}`,
-                    avatar: userInfo.avatar || null,
-                    bio: userInfo.description || null,
-                    role: 'user',
-                    status: 'active'
-                });
+        let user = null;
+        user = await DbAdapter.findOne(User, {
+            where: { codemao_user_id: codemaoUserId }
+        });
+
+        if (!user) {
+            // (报告1 #3) 占位用户 nickname/bio 走审核+转义，与 userController.codemaoLogin 一致，
+            // 避免爬虫绕过本地内容审核与 XSS
+            const safeProfile = await sanitizeCodemaoProfile(userInfo.nickname, userInfo.description);
+            user = await DbAdapter.create(User, {
+                codemao_user_id: codemaoUserId,
+                username: `codemao_${codemaoUserId}`,
+                email: `codemao_${codemaoUserId}@example.invalid`,
+                password: PLACEHOLDER_PASSWORD_HASH,
+                nickname: safeProfile.nickname || `用户${codemaoUserId}`,
+                avatar: userInfo.avatar || null,
+                bio: safeProfile.bio,
+                role: 'user',
+                status: 'active'
+            });
+        }
+
+        // (报告1 #1) 爬虫落库前对作品名+描述做内容审核，与 workController.publishWork 一致：
+        // delete→跳过不落库，review→status:'pending'，pass→status:'published'
+        let workStatus = 'published';
+        const workReviewText = String(`${workDetail.work_name || ''} ${workDetail.description || ''}`);
+        try {
+            const workReviewResult = await aiReview.fallbackReview(workReviewText);
+            if (workReviewResult.recommendation === 'delete') {
+                return errorResponse(res, '作品内容未通过审核，已跳过', 400);
+            } else if (workReviewResult.recommendation === 'review') {
+                workStatus = 'pending';
             }
+        } catch (reviewErr) {
+            console.error('[crawlWork] 作品内容审核失败:', reviewErr.message);
+            workStatus = 'pending';
         }
 
         // 识别作品类型 (主类型
         const workType = workDetail.type || 'KITTEN';
-        
+
         const work = await DbAdapter.create(Work, {
             codemao_work_id: workDetail.id,
             name: workDetail.work_name,
@@ -906,7 +1001,7 @@ async function crawlWork(req, res) {
             praise_times: workDetail.praise_times || workDetail.liked_times || 0,
             collection_times: workDetail.collect_times || 0,
             comment_count: workDetail.comment_times || 0,
-            status: 'published'
+            status: workStatus
         });
 
         return successResponse(res, work, '爬取成功');
@@ -985,12 +1080,14 @@ async function crawlHotWorks(req, res) {
 
                     if (!user) {
                         try {
+                            // (报告1 #3) 占位用户 nickname 走审核+转义，与 userController.codemaoLogin 一致
+                            const safeProfile = await sanitizeCodemaoProfile(item.nickname, null);
                             user = await DbAdapter.create(User, {
                                 codemao_user_id: String(item.user_id),
                                 username: `codemao_${item.user_id}`,
                                 email: `codemao_${item.user_id}@example.invalid`,
                                 password: PLACEHOLDER_PASSWORD_HASH,
-                                nickname: item.nickname || `用户${item.user_id}`,
+                                nickname: safeProfile.nickname || `用户${item.user_id}`,
                                 avatar: item.avatar_url,
                                 role: 'user',
                                 status: 'active'
@@ -1013,6 +1110,25 @@ async function crawlHotWorks(req, res) {
                         continue;
                     }
 
+                    // (报告1 #1) 爬虫落库前对作品名+描述做内容审核，与 workController.publishWork 一致：
+                    // delete→跳过，review→status:'pending'，pass→status:'published'
+                    let workStatus = 'published';
+                    const workReviewText = String(`${workDetail.work_name || ''} ${workDetail.description || ''}`);
+                    try {
+                        const workReviewResult = await aiReview.fallbackReview(workReviewText);
+                        if (workReviewResult.recommendation === 'delete') {
+                            pageSkipped++;
+                            skippedCount++;
+                            addCrawlLog(taskId, `作品 ${workId} 内容未通过审核，已跳过`, 'warn');
+                            continue;
+                        } else if (workReviewResult.recommendation === 'review') {
+                            workStatus = 'pending';
+                        }
+                    } catch (reviewErr) {
+                        console.error(`[crawlHotWorks] 作品 ${workId} 内容审核失败:`, reviewErr.message);
+                        workStatus = 'pending';
+                    }
+
                     try {
                         const work = await DbAdapter.create(Work, {
                             codemao_work_id: String(workId),
@@ -1029,7 +1145,7 @@ async function crawlHotWorks(req, res) {
                             praise_times: workDetail.liked_times || workDetail.praise_times || item.likes_count || 0,
                             collection_times: workDetail.collect_times || 0,
                             comment_count: workDetail.comment_times || 0,
-                            status: 'published'
+                            status: workStatus
                         });
 
                         results.push(work);
@@ -1180,14 +1296,19 @@ async function crawlUserWorks(req, res) {
         if (!user) {
             const userInfo = await codemaoApi.getUserInfo(userId);
             try {
+                // (报告1 #3) 占位用户 nickname/bio 走审核+转义，与 userController.codemaoLogin 一致
+                const safeProfile = await sanitizeCodemaoProfile(
+                    userInfo?.nickname || userInfo?.username,
+                    userInfo?.description
+                );
                 user = await DbAdapter.create(User, {
                     codemao_user_id: String(userId),
                     username: `codemao_${userId}`,
                     email: `codemao_${userId}@example.invalid`,
                     password: PLACEHOLDER_PASSWORD_HASH,
-                    nickname: userInfo?.nickname || userInfo?.username || `用户${userId}`,
+                    nickname: safeProfile.nickname || `用户${userId}`,
                     avatar: userInfo?.avatar_url || userInfo?.avatar,
-                    bio: userInfo?.description,
+                    bio: safeProfile.bio,
                     role: 'user',
                     status: 'active'
                 });
@@ -1217,7 +1338,24 @@ async function crawlUserWorks(req, res) {
                 });
                 
                 const workType = workDetail.type || 'KITTEN';
-                
+
+                // (报告1 #1) 爬虫落库前对作品名+描述做内容审核，与 workController.publishWork 一致：
+                // delete→跳过，review→status:'pending'，pass→status:'published'
+                let workStatus = 'published';
+                const workReviewText = String(`${workDetail.work_name || ''} ${workDetail.description || ''}`);
+                try {
+                    const workReviewResult = await aiReview.fallbackReview(workReviewText);
+                    if (workReviewResult.recommendation === 'delete') {
+                        console.warn(`[crawlUserWorks] 作品 ${workDetail.id} 内容未通过审核，已跳过`);
+                        continue;
+                    } else if (workReviewResult.recommendation === 'review') {
+                        workStatus = 'pending';
+                    }
+                } catch (reviewErr) {
+                    console.error(`[crawlUserWorks] 作品 ${workDetail.id} 内容审核失败:`, reviewErr.message);
+                    workStatus = 'pending';
+                }
+
                 const work = await DbAdapter.create(Work, {
                     codemao_work_id: String(workDetail.id),
                     name: workDetail.work_name,
@@ -1235,7 +1373,7 @@ async function crawlUserWorks(req, res) {
                     praise_times: workDetail.praise_times || workDetail.liked_times || 0,
                     collection_times: workDetail.collect_times || 0,
                     comment_count: workDetail.comment_times || 0,
-                    status: 'published'
+                    status: workStatus
                 });
                 
                 console.log('作品创建成功:', work.name, 'preview:', work.preview);
@@ -1307,14 +1445,19 @@ async function crawlPostWorks(req, res) {
                 }
                 if (!user) {
                     try {
+                        // (报告1 #3) 占位用户 nickname/bio 走审核+转义，与 userController.codemaoLogin 一致
+                        const safeProfile = await sanitizeCodemaoProfile(
+                            workDetail.user_info?.nickname,
+                            workDetail.user_info?.description
+                        );
                         user = await DbAdapter.create(User, {
                             codemao_user_id: authorId,
                             username: `codemao_${authorId}`,
                             email: `codemao_${authorId}@example.invalid`,
                             password: PLACEHOLDER_PASSWORD_HASH,
-                            nickname: workDetail.user_info?.nickname || `用户${authorId}`,
+                            nickname: safeProfile.nickname || `用户${authorId}`,
                             avatar: workDetail.user_info?.avatar,
-                            bio: workDetail.user_info?.description,
+                            bio: safeProfile.bio,
                             role: 'user',
                             status: 'active'
                         });
@@ -1325,7 +1468,24 @@ async function crawlPostWorks(req, res) {
                 }
                 
                 const workType = workDetail.type || '其他';
-                
+
+                // (报告1 #1) 爬虫落库前对作品名+描述做内容审核，与 workController.publishWork 一致：
+                // delete→跳过，review→status:'pending'，pass→status:'published'
+                let workStatus = 'published';
+                const workReviewText = String(`${workDetail.work_name || ''} ${workDetail.description || ''}`);
+                try {
+                    const workReviewResult = await aiReview.fallbackReview(workReviewText);
+                    if (workReviewResult.recommendation === 'delete') {
+                        console.warn(`[crawlPostWorks] 作品 ${workDetail.id} 内容未通过审核，已跳过`);
+                        continue;
+                    } else if (workReviewResult.recommendation === 'review') {
+                        workStatus = 'pending';
+                    }
+                } catch (reviewErr) {
+                    console.error(`[crawlPostWorks] 作品 ${workDetail.id} 内容审核失败:`, reviewErr.message);
+                    workStatus = 'pending';
+                }
+
                 const work = await DbAdapter.create(Work, {
                     codemao_work_id: String(workDetail.id),
                     name: workDetail.work_name,
@@ -1343,7 +1503,7 @@ async function crawlPostWorks(req, res) {
                     praise_times: workDetail.praise_times || workDetail.liked_times || 0,
                     collection_times: workDetail.collect_times || 0,
                     comment_count: workDetail.comment_times || 0,
-                    status: 'published'
+                    status: workStatus
                 });
                 
                 results.push(work);
@@ -1606,11 +1766,12 @@ async function updateCommentStatus(req, res) {
                     // active → hidden/deleted: 扣减
                     if (comment.work_id) {
                         const work = await DbAdapter.findByPk(Work, comment.work_id, { transaction: t });
-                        if (work && (work.comment_count || 0) > 0) await DbAdapter.decrement(work, 'comment_count', { transaction: t });
+                        // 原子条件递减：仅当 comment_count > 0 时递减，避免 check-then-decrement 竞态导致负数
+                        if (work) await DbAdapter.decrement(work, 'comment_count', { where: { comment_count: { [Op.gt]: 0 } }, transaction: t });
                     }
                     if (comment.post_id) {
                         const post = await DbAdapter.findByPk(Post, comment.post_id, { transaction: t });
-                        if (post && (post.comment_count || 0) > 0) await DbAdapter.decrement(post, 'comment_count', { transaction: t });
+                        if (post) await DbAdapter.decrement(post, 'comment_count', { where: { comment_count: { [Op.gt]: 0 } }, transaction: t });
                     }
                 } else if (!wasActive && isActive) {
                     // hidden/deleted → active: 补回
@@ -1822,15 +1983,12 @@ async function handleReport(req, res) {
                         if (wasActive && !comment.parent_id) {
                             if (comment.work_id) {
                                 const work = await DbAdapter.findByPk(Work, comment.work_id, { transaction: t });
-                                if (work && (work.comment_count || 0) > 0) {
-                                    await DbAdapter.decrement(work, 'comment_count', { transaction: t });
-                                }
+                                // 原子条件递减：仅当 comment_count > 0 时递减，避免 check-then-decrement 竞态导致负数
+                                if (work) await DbAdapter.decrement(work, 'comment_count', { where: { comment_count: { [Op.gt]: 0 } }, transaction: t });
                             }
                             if (comment.post_id) {
                                 const post = await DbAdapter.findByPk(Post, comment.post_id, { transaction: t });
-                                if (post && (post.comment_count || 0) > 0) {
-                                    await DbAdapter.decrement(post, 'comment_count', { transaction: t });
-                                }
+                                if (post) await DbAdapter.decrement(post, 'comment_count', { where: { comment_count: { [Op.gt]: 0 } }, transaction: t });
                             }
                         }
                     });
@@ -2145,25 +2303,29 @@ async function createAnnouncement(req, res) {
     try {
         const { title, content, type } = req.body;
 
-        if (!title || !content) {
+        // (报告1 #13) 先 trim 再校验非空/长度，避免纯空白标题/内容绕过校验，并落库规范化文本
+        const trimmedTitle = title != null ? String(title).trim() : '';
+        const trimmedContent = content != null ? String(content).trim() : '';
+
+        if (!trimmedTitle || !trimmedContent) {
             return errorResponse(res, '标题和内容不能为空', 400);
         }
 
-        if (String(title).length > 200) {
+        if (trimmedTitle.length > 200) {
             return errorResponse(res, '标题不能超过200字', 400);
         }
 
-        if (String(content).length > 10000) {
+        if (trimmedContent.length > 10000) {
             return errorResponse(res, '内容不能超过10000字', 400);
         }
 
         const announcement = await DbAdapter.create(Announcement, {
-            title,
-            content,
+            title: trimmedTitle,
+            content: trimmedContent,
             type: type || 'notice',
             is_active: true
         });
-        
+
         logOperation(req, 'create_announcement', 'announcement', DbAdapter.getId(announcement), { title });
         return successResponse(res, announcement, '创建成功');
     } catch (error) {
@@ -2569,8 +2731,7 @@ async function batchImportSensitiveWords(req, res) {
 }
 
 // ==================== AI审核功能 ====================
-
-const aiReview = require('../services/aiReview');
+// aiReview 已在模块顶部引入（H12），此处不再重复 require
 
 async function aiReviewReport(req, res) {
     try {
@@ -2775,6 +2936,38 @@ async function aiAutoHandleReports(req, res) {
             }
 
             if (riskLevel === 'high') {
+                // (报告1 #12) BOLA 防御：低权限管理员不能通过 AI 自动处理删除高权限用户的内容。
+                // 与 user 分支（事务内已有 canManageUser 校验）保持一致，对 work/post/comment 目标
+                // 也校验内容所有者角色；无权时仅标记举报已处理、跳过删除动作，避免中断整批流程。
+                let canAutoDelete = true;
+                if (report.type === 'work') {
+                    const targetWork = await DbAdapter.findByPk(Work, report.target_id, { attributes: ['user_id'] });
+                    if (targetWork && targetWork.user_id) {
+                        const owner = await DbAdapter.findByPk(User, targetWork.user_id, { attributes: ['role'] });
+                        if (owner && !canManageUser(req.user.role, owner.role)) canAutoDelete = false;
+                    }
+                } else if (report.type === 'comment') {
+                    const targetComment = await DbAdapter.findByPk(Comment, report.target_id, { attributes: ['user_id'] });
+                    if (targetComment && targetComment.user_id) {
+                        const owner = await DbAdapter.findByPk(User, targetComment.user_id, { attributes: ['role'] });
+                        if (owner && !canManageUser(req.user.role, owner.role)) canAutoDelete = false;
+                    }
+                } else if (report.type === 'post') {
+                    const targetPost = await DbAdapter.findByPk(Post, report.target_id, { attributes: ['user_id'] });
+                    if (targetPost && targetPost.user_id) {
+                        const owner = await DbAdapter.findByPk(User, targetPost.user_id, { attributes: ['role'] });
+                        if (owner && !canManageUser(req.user.role, owner.role)) canAutoDelete = false;
+                    }
+                }
+                // user 分支已在事务内做 canManageUser 校验，这里不再重复
+
+                if (!canAutoDelete) {
+                    // 无权处理该内容所有者，仅标记举报已处理，跳过删除动作
+                    await DbAdapter.update(Report, { status: 'resolved', handler_id: DbAdapter.getId(req.user), handle_note: 'AI自动处理-权限不足跳过删除' }, { where: { id: DbAdapter.getId(report) } });
+                    results.handled++;
+                    continue;
+                }
+
                 // H15: 自动删除时需级联清理关联数据，与 handleReport 行为保持一致
                 // 中-2: 多表级联清理必须用事务包裹，与 handleReport 行为一致，任一步失败整体回滚
                 await sequelize.transaction(async (t) => {
@@ -2807,11 +3000,12 @@ async function aiAutoHandleReports(req, res) {
                             if (wasActive && !comment.parent_id) {
                                 if (comment.work_id) {
                                     const work = await DbAdapter.findByPk(Work, comment.work_id, { transaction: t });
-                                    if (work && (work.comment_count || 0) > 0) await DbAdapter.decrement(work, 'comment_count', { transaction: t });
+                                    // 原子条件递减：仅当 comment_count > 0 时递减，避免 check-then-decrement 竞态导致负数
+                                    if (work) await DbAdapter.decrement(work, 'comment_count', { where: { comment_count: { [Op.gt]: 0 } }, transaction: t });
                                 }
                                 if (comment.post_id) {
                                     const post = await DbAdapter.findByPk(Post, comment.post_id, { transaction: t });
-                                    if (post && (post.comment_count || 0) > 0) await DbAdapter.decrement(post, 'comment_count', { transaction: t });
+                                    if (post) await DbAdapter.decrement(post, 'comment_count', { where: { comment_count: { [Op.gt]: 0 } }, transaction: t });
                                 }
                             }
                         }
@@ -2894,14 +3088,17 @@ async function updateRolePermissions(req, res) {
         // 更新或创建角色权限
         let rolePerm = await DbAdapter.findOne(RolePermission, { where: { role } });
 
-        // 中-3: 不能手动 JSON.stringify——RolePermission 模型 setter 已会 JSON.stringify 一次。
-        // 此前 create 分支手动 stringify 后再被 setter stringify，导致双重编码：
-        // getter 解析后得到字符串而非数组，最终返回 []（权限丢失）。统一改为传入数组，由 setter 编码一次。
+        // (报告1 #14) RolePermission.permissions 以 TEXT 存储，模型 setter 在实例方法
+        // （create/build/save）路径上会 JSON.stringify 一次，getter 再 JSON.parse 还原。
+        // - create 分支走 DbAdapter.create → model.create（实例方法），setter 会触发，故传入数组即可。
+        // - update 分支走 DbAdapter.update → model.update（静态方法），不会触发实例 setter，
+        //   若直接传数组会以非 JSON 字符串写入 TEXT 列，读取时 getter JSON.parse 失败而回退为 []，
+        //   导致权限丢失。因此 update 分支必须手动 JSON.stringify，与 create 分支区别对待。
         if (rolePerm) {
             await DbAdapter.update(RolePermission, {
                 name: name || rolePerm.name,
                 level: level !== undefined ? level : rolePerm.level,
-                permissions: permissions || []
+                permissions: JSON.stringify(permissions || [])
             }, { where: { role } });
         } else {
             await DbAdapter.create(RolePermission, {

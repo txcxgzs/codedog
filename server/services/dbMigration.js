@@ -642,15 +642,24 @@ class DatabaseMigration {
             const t = await connection.transaction();
 
             try {
-                // H6: 辅助函数——批量写入前移除 id 字段，让目标库自增
-                // 配合唯一索引做 ignoreDuplicates，避免按 id 静默丢数据
-                // 注意：移除 id 后依赖自增 id 的外键关联可能错位，建议配合 clearExisting=true 全量重建
+                // 辅助函数——批量写入数据
+                // Report4 #17: 必须「保留原始 id」,不能 delete r.id 后让目标库自增。
+                // 关系型外键(user_id / work_id / parent_id / studio_id / comment_id 等)存的是源库的 id,
+                // 若导入行获得新的自增 id,所有外键引用将全部错位断裂。
+                // 修复:把源行的 id 一并写入 insert payload(bulkCreate 显式指定 id 即使用该值,
+                //   SQLite/MySQL 均允许显式插入主键;SQLite 在显式插入更大 ROWID 后会自动把
+                //   sqlite_sequence 推进到 max(id),后续自增不会回退冲突)。
+                // 去重仍由 ignoreDuplicates 承担(SQLite → INSERT OR IGNORE,MySQL → INSERT IGNORE),
+                //   按「唯一索引/主键」冲突时跳过,不会因显式 id 重复而报错。
                 const bulkInsert = async (model, rows, name) => {
                     if (!rows || rows.length === 0) return;
-                    // H6: 深拷贝并移除 id，避免修改源数据
                     const cleanedRows = rows.map(row => {
                         const r = { ...row };
-                        delete r.id;
+                        // Report4 #17: 显式保留原始 id,保证外键引用可解析(不再 delete r.id)
+                        // row 来自 raw:true 读取,id 字段一定存在;此处显式赋值便于阅读与防御性。
+                        if (row.id !== undefined && row.id !== null) {
+                            r.id = row.id;
+                        }
                         // 中-1: readFromSource 使用 raw:true 读取，permissions/tags 这类带 setter 的
                         // JSON 字段返回的是原始 JSON 字符串（如 '["a","b"]'），bulkCreate 会再触发
                         // setter 的 JSON.stringify 一次 → 双重编码，导致权限/标签损坏丢失。

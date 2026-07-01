@@ -72,12 +72,13 @@ async function favoriteWorksForUser(userId, query) {
                 include: [{
                     model: User,
                     as: 'author',
-                    attributes: ['id', 'username', 'nickname', 'avatar']
+                    attributes: ['id', 'codemao_user_id', 'username', 'nickname', 'avatar']
                 }]
             }
         ],
-        // subQuery:false 下多表 JOIN 都有 created_at,需用表名限定避免 MySQL 歧义报错
-        order: [sequelize.literal('favorites.created_at DESC')],
+        // 修复(报告1 #13): subQuery:false 下多表 JOIN 都有 created_at,用模型引用限定
+        // (避免硬编码表名 'favorites',Sequelize 会用模型名作别名导致 unknown column)
+        order: [[Favorite, 'created_at', 'DESC']],
         limit: pageSize,
         offset: offset,
         subQuery: false

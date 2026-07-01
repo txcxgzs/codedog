@@ -27,9 +27,44 @@ if (!fs.existsSync(uploadDir)) {
     fs.mkdirSync(uploadDir, { recursive: true });
 }
 
+// (Report4 #4, Report4 #15) 安全删除文件：严格限制在 uploads 根目录之内，
+// 防御路径穿越（.. 序列）、null-byte 截断、符号链接逃逸等。
+// 任何校验失败均跳过删除并记录日志，绝不抛出错误影响主流程。
+function safeUnlinkFile(filePath, requiredRoot = uploadDir) {
+    try {
+        if (!filePath || typeof filePath !== 'string') return;
+        // 拒绝包含空字节的路径，防御 null-byte 截断攻击
+        if (filePath.includes('\0')) {
+            console.warn('[safeUnlinkFile] 路径包含空字节，跳过删除:', filePath);
+            return;
+        }
+        const resolvedRoot = path.resolve(requiredRoot);
+        const resolvedPath = path.resolve(filePath);
+        // 解析后路径必须严格位于 uploads 根目录之下（不可等于根目录本身）
+        if (!resolvedPath.startsWith(resolvedRoot + path.sep)) {
+            console.warn('[safeUnlinkFile] 路径越出 uploads 根目录，跳过删除:', filePath);
+            return;
+        }
+        // 仅删除真实存在的普通文件，避免误删目录/符号链接等
+        if (!fs.existsSync(resolvedPath)) return;
+        const stat = fs.statSync(resolvedPath);
+        if (!stat.isFile()) {
+            console.warn('[safeUnlinkFile] 目标非普通文件，跳过删除:', resolvedPath);
+            return;
+        }
+        fs.unlink(resolvedPath, (err) => {
+            if (err) console.error('[safeUnlinkFile] 删除文件失败:', err.message);
+        });
+    } catch (e) {
+        console.error('[safeUnlinkFile] 删除文件异常:', e.message);
+    }
+}
+
 function cleanupUploadedFile(file) {
+    // (Report4 #4, Report4 #15) 镜像同样的路径穿越防御：req.file.path 由 multer 写入
+    // uploadDir，但仍校验其解析后路径严格位于 uploads 根目录之内
     if (file?.path) {
-        fs.unlink(file.path, () => {});
+        safeUnlinkFile(file.path, uploadDir);
     }
 }
 
@@ -369,7 +404,9 @@ async function syncUserWorks(codemaoUserId, localUserId) {
             }
         }
         
-        const totalWorkCount = await DbAdapter.count(Work, { where: { user_id: localUserId } });
+        // (报告1 #4, 中-1) work_count 仅统计已发布作品，与 workController.deleteWork 重算口径一致，
+        // 避免把 pending/deleted 作品计入 work_count 导致虚高
+        const totalWorkCount = await DbAdapter.count(Work, { where: { user_id: localUserId, status: 'published' } });
         await DbAdapter.update(User, { work_count: totalWorkCount }, { where: { id: localUserId } });
         
         console.log(`同步完成，新增 ${syncCount} 个作品，总计 ${totalWorkCount} 个`);
@@ -502,19 +539,24 @@ async function updateProfile(req, res) {
         }, { where: { id: DbAdapter.getId(user) } });
 
         // (Report 1 #7) 头像更新后清理旧头像文件，避免磁盘泄漏。
-        // 仅删除本地上传文件（/uploads/avatars/ 下），外部 URL（codemao/默认）跳过；
-        // 解析后路径必须仍在 uploadDir 之内，防止路径穿越；unlink 失败不影响请求。
+        // (Report4 #4, Report4 #15) 加固路径穿越防御：
+        // - 仅处理 /uploads/avatars/ 前缀的本地 URL，外部 URL（codemao/默认）跳过
+        // - 拒绝含空字节的路径（oldAvatar.includes('\0') 即跳过）
+        // - path.resolve 规范化 uploads 根目录与旧头像路径后，严格校验目标在根目录之下
+        // - 仅删除真实存在的普通文件（fs.statSync().isFile()）
+        // - unlink 失败不影响请求
         if (req.file && oldAvatar && oldAvatar !== avatar && oldAvatar.startsWith('/uploads/avatars/')) {
             try {
-                const oldFileName = path.basename(oldAvatar);
-                const oldFilePath = path.join(uploadDir, oldFileName);
-                if (oldFilePath.startsWith(uploadDir + path.sep) && fs.existsSync(oldFilePath)) {
-                    fs.unlink(oldFilePath, (err) => {
-                        if (err) console.error('清理旧头像文件失败:', err.message);
-                    });
+                if (oldAvatar.includes('\0')) {
+                    // null-byte 截断防御：直接跳过删除
+                    console.warn('[updateProfile] 旧头像路径包含空字节，跳过删除:', oldAvatar);
+                } else {
+                    const oldFileName = path.basename(oldAvatar);
+                    const oldFilePath = path.join(uploadDir, oldFileName);
+                    safeUnlinkFile(oldFilePath, uploadDir);
                 }
             } catch (e) {
-                console.error('清理旧头像文件异常:', e.message);
+                console.error('[updateProfile] 清理旧头像文件异常:', e.message);
             }
         }
         

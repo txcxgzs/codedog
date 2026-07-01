@@ -197,6 +197,14 @@ async function publishWork(req, res) {
         if (!created) {
             return errorResponse(res, '该作品已在平台发布', 400);
         }
+
+        // 中-1: 新作品发布成功后重算作者 work_count（与 deleteWork 口径一致，仅统计 published）
+        // 仅当新作品状态为 published 时才重算（pending 作品不计入 work_count）
+        if (workStatus === 'published') {
+            const authorId = DbAdapter.getId(req.user);
+            const authorWorkCount = await DbAdapter.count(Work, { where: { user_id: authorId, status: 'published' } });
+            await DbAdapter.update(User, { work_count: authorWorkCount }, { where: { id: authorId } });
+        }
         
         const result = await DbAdapter.findByPk(Work, DbAdapter.getId(work), {
             include: [{
@@ -398,8 +406,6 @@ async function importWork(req, res) {
 
         // 确定作品归属用户
         let author = null;
-        // 报告1 #1: 非管理员导入需经过与 publishWork 一致的内容审核，违规内容不得直接发布。
-        // 管理员导入沿用 adminController.crawlWork 约定（直接 published），保持角色分支结构不变。
         let importStatus = 'published';
         if (isAdmin) {
             // 管理员可导入任意作品；按 codemao 作者信息解析/创建归属用户
@@ -418,15 +424,17 @@ async function importWork(req, res) {
                 return errorResponse(res, '只能导入自己的作品', 403);
             }
             author = req.user;
-            // 报告1 #1: 普通用户导入需经 AI 内容审核（与 publishWork 一致），审核 name + description
-            // fallbackReview 返回 recommendation: pass / review / delete
-            const reviewResult = await aiReview.fallbackReview(String(`${workInfo.name || ''} ${workInfo.description || ''}`));
-            if (reviewResult.recommendation === 'delete') {
-                return errorResponse(res, `内容包含违规信息:${reviewResult.reason}`, 400);
-            }
-            // review（疑似违规）/审核失败均转 pending 待人工复核，不直接发布未审核内容
-            importStatus = reviewResult.recommendation === 'pass' ? 'published' : 'pending';
         }
+
+        // 报告1 #18: 管理员与普通用户导入均需经 AI 内容审核（与 publishWork 一致），审核 name + description
+        // 管理员不得通过 import 绕过审核；如需直接发布可走单独的审批接口
+        // fallbackReview 返回 recommendation: pass / review / delete
+        const reviewResult = await aiReview.fallbackReview(String(`${workInfo.name || ''} ${workInfo.description || ''}`));
+        if (reviewResult.recommendation === 'delete') {
+            return errorResponse(res, `内容包含违规信息:${reviewResult.reason}`, 400);
+        }
+        // review（疑似违规）/审核失败均转 pending 待人工复核，不直接发布未审核内容
+        importStatus = reviewResult.recommendation === 'pass' ? 'published' : 'pending';
 
         let work;
         try {
@@ -452,6 +460,14 @@ async function importWork(req, res) {
                 return errorResponse(res, '作品不存在', 404);
             }
             throw createError;
+        }
+
+        // 中-1: 新作品导入成功后重算作者 work_count（与 deleteWork 口径一致，仅统计 published）
+        // 仅当新作品状态为 published 时才重算（pending 作品不计入 work_count）
+        if (importStatus === 'published') {
+            const authorId = DbAdapter.getId(author);
+            const authorWorkCount = await DbAdapter.count(Work, { where: { user_id: authorId, status: 'published' } });
+            await DbAdapter.update(User, { work_count: authorWorkCount }, { where: { id: authorId } });
         }
 
         const result = await DbAdapter.findByPk(Work, DbAdapter.getId(work), {
@@ -516,7 +532,7 @@ async function getHotWorksFromCodemao() {
                 seenIds.add(workId);
                 
                 const work = await fetchOrCreateWork(workId);
-                if (work) works.push(work);
+                if (work && work.status === 'published') works.push(work);
             }
         }
         
@@ -534,12 +550,13 @@ async function getHotWorksFromCodemao() {
                     seenIds.add(workId);
                     
                     const work = await fetchOrCreateWork(workId);
-                    if (work) works.push(work);
+                    if (work && work.status === 'published') works.push(work);
                 }
             }
         }
         
-        return works;
+        // 中-2/报告1 #19: 仅返回 status:'published' 的作品，过滤掉 pending（疑似违规）作品
+        return works.filter(w => w && w.status === 'published');
     } catch (error) {
         console.error('获取编程猫热门作品错误:', error);
         return [];
@@ -548,6 +565,10 @@ async function getHotWorksFromCodemao() {
 
 /**
  * 获取或创建作品
+ *
+ * 注意（报告1 #19）: 本函数会向数据库写入（创建 Work 记录），并已内置 AI 内容审核（round 2 修复）。
+ * 仅可从已审核/受控的路径调用，不可直接接入 GET 只读端点，否则会绕过登录/审核/权限入口控制。
+ * getHotWorksFromCodemao 调用本函数，并对外只返回 status:'published' 的作品（中-2 修复）。
  */
 async function fetchOrCreateWork(workId) {
     let work = await DbAdapter.findOne(Work, { 

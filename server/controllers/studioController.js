@@ -3,7 +3,9 @@ const { Studio, StudioMember, StudioWork, User, Work, Notification, sequelize } 
 const { successResponse, errorResponse, paginateResponse } = require('../middleware/response');
 const { Op } = require('sequelize');
 const { isRoleAtLeast } = require('../config/permissions');
-const { likeContains } = require('../utils/security');
+const { likeContains, escapeHtml } = require('../utils/security');
+// 引入内容审核服务,落库前做敏感词/违规检查(参照 userController/postController)
+const aiReview = require('../services/aiReview');
 
 const VALID_JOIN_TYPES = ['public', 'apply', 'invite'];
 
@@ -51,34 +53,53 @@ async function canViewStudio(req, studio) {
 
 async function createStudio(req, res) {
     try {
-        const { name, description, cover, is_public, join_type } = req.body;
-        
-        if (!name) {
+        let { name, description, cover, is_public, join_type } = req.body;
+
+        // (报告1 #10) name/description 先 trim,拒绝纯空白名称(参照 userController.updateProfile)
+        if (description !== undefined && description !== null) {
+            description = String(description).trim();
+        }
+        if (name !== undefined && name !== null) {
+            name = String(name).trim();
+        }
+        if (!String(name).trim()) {
             return errorResponse(res, '请输入工作室名称', 400);
         }
 
         if (!isValidJoinType(join_type)) {
             return errorResponse(res, '无效的加入方式', 400);
         }
-        
+
+        // (报告1 #10) 落库前对 name+description 做内容审核(参照 userController.updateProfile / postController.createPost)
+        // fallbackReview 返回 recommendation: pass / review / delete
+        const reviewResult = await aiReview.fallbackReview(String(name) + (description ? ' ' + String(description) : ''));
+        if (reviewResult.recommendation === 'delete') {
+            return errorResponse(res, `内容包含违规信息:${reviewResult.reason}`, 400);
+        }
+        // Studio.status 已有 'pending' 枚举,review 时设为 pending 待人工复核
+        // (参照 createPost 的非阻断审核约定:Post 无 pending 故用 hidden)
+        const studioStatus = reviewResult.recommendation === 'review' ? 'pending' : 'active';
+
         const existingOwner = await DbAdapter.findOne(Studio, { where: { owner_id: req.user.id, status: { [Op.ne]: 'banned' } } });
         if (existingOwner) {
             return errorResponse(res, '您已创建过工作室，每人只能创建一个', 400);
         }
-        
+
         const existing = await DbAdapter.findOne(Studio, { where: { name } });
         if (existing) {
             return errorResponse(res, '工作室名称已存在', 400);
         }
-        
+
+        // (报告1 #10) 审核通过后再转义 name/description 落库(参照 userController);cover 是 URL 不转义
         const studio = await sequelize.transaction(async (t) => {
             const newStudio = await DbAdapter.create(Studio, {
-                name,
-                description,
+                name: escapeHtml(name),
+                description: description ? escapeHtml(description) : description,
                 cover,
                 owner_id: req.user.id,
                 is_public: is_public !== false,
-                join_type: join_type || 'apply'
+                join_type: join_type || 'apply',
+                status: studioStatus
             }, { transaction: t });
 
             await DbAdapter.create(StudioMember, {
@@ -152,6 +173,11 @@ async function getStudioDetail(req, res) {
             return errorResponse(res, '工作室不存在', 404);
         }
         
+        // (低) 成员按角色优先级排序:owner → vice_owner → admin → member;
+        // role 为 ENUM,直接按字母序会得到 admin < member < owner < vice_owner(室长不在首位)。
+        // 用 CASE 表达式自定义排序,SQLite 与 MySQL 均支持。
+        // (Report4 #24) 限制单次查询返回成员数,防止大型工作室加载全量成员导致 OOM;
+        //               完整成员列表应由专用接口分页获取
         const members = await DbAdapter.findAll(StudioMember, {
             where: { studio_id: id, status: 'active' },
             include: [{
@@ -159,7 +185,11 @@ async function getStudioDetail(req, res) {
                 as: 'user',
                 attributes: ['id', 'username', 'nickname', 'avatar', 'codemao_user_id']
             }],
-            order: [['role', 'ASC'], ['joined_at', 'ASC']]
+            order: [
+                [sequelize.literal("CASE WHEN role='owner' THEN 0 WHEN role='vice_owner' THEN 1 WHEN role='admin' THEN 2 ELSE 3 END"), 'ASC'],
+                ['joined_at', 'ASC']
+            ],
+            limit: 20
         });
         
         const works = await DbAdapter.findAll(StudioWork, {
@@ -247,21 +277,22 @@ async function joinStudio(req, res) {
         }
         
         const status = studio.join_type === 'apply' ? 'pending' : 'active';
-        
+
         let member;
-        if (existing) {
-            await DbAdapter.update(StudioMember, { status }, { where: { id: DbAdapter.getId(existing) } });
-            member = existing;
-        } else {
-            member = await DbAdapter.create(StudioMember, {
-                studio_id: id,
-                user_id: req.user.id,
-                role: 'member',
-                status
-            });
-        }
-        
         if (status === 'pending') {
+            // 申请加入:不改计数,无需事务,但仍需 reload 保证返回 pending 状态而非旧 rejected(报告1 #11)
+            if (existing) {
+                await DbAdapter.update(StudioMember, { status }, { where: { id: DbAdapter.getId(existing) } });
+                member = await existing.reload();
+            } else {
+                member = await DbAdapter.create(StudioMember, {
+                    studio_id: id,
+                    user_id: req.user.id,
+                    role: 'member',
+                    status
+                });
+            }
+
             try {
                 await DbAdapter.create(Notification, {
                     user_id: studio.owner_id,
@@ -273,10 +304,27 @@ async function joinStudio(req, res) {
             } catch (e) { console.error('创建加入通知失败:', e.message); }
             return successResponse(res, member, '申请已提交，请等待审核');
         } else {
-            // 原子 +1 避免 read-modify-write 竞态
-            await DbAdapter.increment(studio, 'member_count');
+            // 直接加入:事务包裹 create/update 成员 + 自增 member_count,避免并发计数错乱(Report4 #12)
+            // 并在事务外 reload 返回最新 pending/active 状态(报告1 #11)
+            await sequelize.transaction(async (t) => {
+                if (existing) {
+                    await DbAdapter.update(StudioMember, { status }, { where: { id: DbAdapter.getId(existing) }, transaction: t });
+                } else {
+                    await DbAdapter.create(StudioMember, {
+                        studio_id: id,
+                        user_id: req.user.id,
+                        role: 'member',
+                        status
+                    }, { transaction: t });
+                }
+                // 原子 +1 避免 read-modify-write 竞态
+                await DbAdapter.increment(studio, 'member_count', { transaction: t });
+            });
             await studio.reload();
-            return successResponse(res, { ...member.toJSON ? member.toJSON() : member, member_count: studio.member_count || 0 }, '加入成功');
+            member = await DbAdapter.findOne(StudioMember, {
+                where: { studio_id: id, user_id: req.user.id }
+            });
+            return successResponse(res, { ...(member && member.toJSON ? member.toJSON() : member), member_count: studio.member_count || 0 }, '加入成功');
         }
     } catch (error) {
         console.error('加入工作室错误:', error);
@@ -352,17 +400,28 @@ async function getMyStudios(req, res) {
 async function updateStudio(req, res) {
     try {
         const { id } = req.params;
-        const { name, description, cover, is_public, join_type } = req.body;
-        
-        const studio = await DbAdapter.findByPk(Studio, id);
-        if (!studio) {
-            return errorResponse(res, '工作室不存在', 404);
+        let { name, description, cover, is_public, join_type } = req.body;
+
+        // (报告1 #10) name/description 先 trim,拒绝纯空白名称(参照 userController.updateProfile)
+        if (description !== undefined && description !== null) {
+            description = String(description).trim();
+        }
+        if (name !== undefined && name !== null) {
+            name = String(name).trim();
+        }
+        if (name !== undefined && !String(name)) {
+            return errorResponse(res, '工作室名称不能为空', 400);
         }
 
         if (!isValidJoinType(join_type)) {
             return errorResponse(res, '无效的加入方式', 400);
         }
-        
+
+        const studio = await DbAdapter.findByPk(Studio, id);
+        if (!studio) {
+            return errorResponse(res, '工作室不存在', 404);
+        }
+
         const member = await DbAdapter.findOne(StudioMember, {
             where: { studio_id: id, user_id: req.user.id, status: 'active' }
         });
@@ -370,21 +429,45 @@ async function updateStudio(req, res) {
         if (!member || (member.role !== 'owner' && member.role !== 'admin')) {
             return errorResponse(res, '无权修改工作室信息', 403);
         }
-        
-        if (name && name !== studio.name) {
-            const existing = await DbAdapter.findOne(Studio, { where: { name } });
+
+        // (报告1 #10) 计算最终落库的名称/描述(传入用新值,未传入用旧值),用于审核与重名校验
+        const finalName = name !== undefined ? name : studio.name;
+        const finalDescription = description !== undefined ? description : studio.description;
+
+        if (String(finalName) !== String(studio.name)) {
+            const existing = await DbAdapter.findOne(Studio, { where: { name: finalName } });
             if (existing) {
                 return errorResponse(res, '工作室名称已存在', 400);
             }
         }
-        
-        await DbAdapter.update(Studio, {
-            name: name || studio.name,
-            description: description !== undefined ? description : studio.description,
+
+        // (报告1 #10) 当 name/description 发生变更时,对最终内容调用 aiReview.fallbackReview
+        // 参照 postController.updatePost: delete → 400 拒绝;review → status='pending' 待人工复核
+        let studioStatus;
+        if (name !== undefined || description !== undefined) {
+            const reviewResult = await aiReview.fallbackReview(String(finalName) + (finalDescription ? ' ' + String(finalDescription) : ''));
+            if (reviewResult.recommendation === 'delete') {
+                return errorResponse(res, `内容包含违规信息:${reviewResult.reason}`, 400);
+            }
+            if (reviewResult.recommendation === 'review') {
+                studioStatus = 'pending';
+            }
+        }
+
+        // (Bug-1) 统一使用 !== undefined 判断字段,避免 || 把空字符串当作 falsy 覆盖为旧值(参照 adminController.updateStudio)
+        // (报告1 #10) 审核通过后再转义 name/description 落库(参照 userController);cover 是 URL 不转义
+        const updateData = {
+            name: name !== undefined ? escapeHtml(finalName) : studio.name,
+            description: description !== undefined ? (finalDescription ? escapeHtml(finalDescription) : finalDescription) : studio.description,
             cover: cover !== undefined ? cover : studio.cover,
             is_public: is_public !== undefined ? is_public : studio.is_public,
-            join_type: join_type || studio.join_type
-        }, { where: { id: DbAdapter.getId(studio) } });
+            join_type: join_type !== undefined ? join_type : studio.join_type
+        };
+        if (studioStatus) {
+            updateData.status = studioStatus;
+        }
+
+        await DbAdapter.update(Studio, updateData, { where: { id: DbAdapter.getId(studio) } });
 
         // 重新查询更新后的数据，避免返回旧对象
         const updatedStudio = await DbAdapter.findByPk(Studio, DbAdapter.getId(studio));
@@ -507,10 +590,10 @@ async function submitWork(req, res) {
         }
         
         let work = null;
-        if (/^\d+$/.test(String(workId))) {
-            work = await DbAdapter.findOne(Work, { where: { codemao_work_id: String(workId) } });
-        }
-        if (!work) {
+        // (Bug-2) 优先按 codemao_work_id 查询(支持非数字字符串);未命中且 workId 为数字时再回退本地主键查询,
+        // 非数字 workId 未命中 codemao_work_id 直接 404,避免 findByPk 把字符串当 PK 误判
+        work = await DbAdapter.findOne(Work, { where: { codemao_work_id: String(workId) } });
+        if (!work && /^\d+$/.test(String(workId))) {
             work = await DbAdapter.findByPk(Work, workId);
         }
         if (!work) {
@@ -644,14 +727,16 @@ async function reviewWork(req, res) {
             
             try {
                 const studioForNotify = await DbAdapter.findByPk(Studio, id);
-                // M7: 补全 related_id/related_type/sender_id，便于前端跳转与通知聚合
+                // (报告1 #12) 通知 related_type 改为 'work' + related_id 用 Work 的本地主键(studioWork.work_id),
+                // 与 workController/commentController 的 'work' 通知约定一致;
+                // 前端 Notification.vue 按 `/${related_type}/${related_id}` 跳转,原 'studio_work' 无对应路由会误跳
                 await DbAdapter.create(Notification, {
                     user_id: studioWork.user_id,
                     type: 'system',
                     title: '作品审核通过',
                     content: `您投稿到「${studioForNotify?.name || '工作室'}」的作品已通过审核`,
-                    related_id: Number(workId),
-                    related_type: 'studio_work',
+                    related_id: studioWork.work_id,
+                    related_type: 'work',
                     sender_id: req.user.id
                 });
             } catch (e) { console.error('创建审核通知失败:', e.message); }

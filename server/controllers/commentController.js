@@ -202,6 +202,11 @@ async function getWorkComments(req, res) {
                 attributes: ['id', 'codemao_user_id', 'username', 'nickname'],
                 required: false
             }, {
+                // 报告4 #22: 评论回复递归深度限制
+                // 此处 replies include 故意只展开一层,内部仅包含 User(replies 作者/被回复者),
+                // 不再嵌套 Comment.replies,避免自引用关联导致无限递归 → 栈溢出 → 服务崩溃。
+                // 业务规则: 仅允许回复顶层评论(createComment 中 parent.parent_id != null 拦截),
+                // 因此最多两级(顶层评论 + 一层回复),单层 include 即可覆盖。
                 model: Comment,
                 as: 'replies',
                 where: { status: 'active' },

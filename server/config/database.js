@@ -67,8 +67,11 @@ if (dbType === 'mysql') {
             underscored: true
         },
         // 修复 L2: SQLite 也配置 pool 与 retry,提升并发与健壮性
+        // Report4 #25: SQLite 写入本就串行化,大连接池不会提升吞吐,反而因频繁 acquire/release
+        // 触发 afterConnect 的 PRAGMA foreign_keys=ON 造成 SQLITE_BUSY 竞争。
+        // 把 pool.max 降到 2(SQLite 串行写,大池无益且加剧 PRAGMA 争用),保留 min:0。
         pool: {
-            max: 5,
+            max: 2,
             min: 0,
             acquire: 30000,
             idle: 10000
@@ -77,11 +80,13 @@ if (dbType === 'mysql') {
             max: 3
         },
         // 修复 H2(连接级, Report 2 #23): SQLite 的 foreign_keys 是「连接级」设置,
-        // 不是数据库级持久化设置。本配置启用了连接池(pool.max=5),仅在启动主连接执行
+        // 不是数据库级持久化设置。本配置启用了连接池(pool.max=2),仅在启动主连接执行
         // 一次 PRAGMA 不够 —— 池中新创建的连接不会继承 foreign_keys=ON,外键约束会被静默关闭。
         // 通过 afterConnect 钩子在「每个新连接」上执行 PRAGMA foreign_keys=ON。
         // 注意:sqlite3 底层连接对象没有 query 方法(只有 run/exec/all),需用 run 执行 PRAGMA;
         //      sqlite3 会按连接串行化执行,PRAGMA 会在该连接上的后续查询之前执行。
+        //      PRAGMA foreign_keys 本身开销极低(无 I/O),争用主要来自连接频繁创建,
+        //      已通过把 pool.max 降到 2 缓解(Report4 #25)。
         // 仅注册在 sqlite 实例上(mysql 分支不受影响);返回的 Promise 不 reject,
         // 即使 PRAGMA 失败也不阻塞连接获取(降级为外键关闭,与未修复前等价,避免启动卡死)。
         hooks: {
@@ -109,7 +114,7 @@ if (dbType === 'mysql') {
     // 修复 H2: 开启 SQLite WAL 模式提升并发读写性能(WAL 是数据库级持久化设置,执行一次即可)。
     // foreign_keys=ON 已由上方 afterConnect 钩子在「每个连接」上开启;
     // 这里仅在启动主连接上额外执行一次 WAL 切换 + foreign_keys 验证日志,便于运维确认生效。
-    // (旧实现错误声称「连接池默认单连接,启动设置一次足够」—— 实际 pool.max=5,
+    // (旧实现错误声称「连接池默认单连接,启动设置一次足够」—— 实际 pool.max=2,
     //  新连接不继承 foreign_keys,故改为 afterConnect 钩子保证每个连接都开启。)
 }
 

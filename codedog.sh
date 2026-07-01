@@ -4,6 +4,35 @@
 VERSION="1.0.0"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# ============================================================================
+# 数据诊断 & 修复工具箱 (Data Diagnostic & Repair Toolbox)
+# ----------------------------------------------------------------------------
+# 独立于本交互菜单的命令行工具，复用项目 Sequelize 连接，针对数据一致性 / 安全
+# 做扫描与修复（计数漂移、悬空外键、软删孤儿、弱口令哈希、非法 ENUM 等）。
+# 直接调用（无需启动本菜单）：
+#   node "$SCRIPT_DIR/scripts/toolbox.js" <command> [options]
+#
+# 子命令:
+#   help                显示帮助
+#   list-commands       列出可用子命令
+#   consistency-check   扫描计数漂移 / 悬空引用 / 软删孤儿
+#   repair-counts       重算并修复漂移计数 (--dry-run 预览，不写库)
+#   security-audit      扫描弱口令哈希 / nickname|bio 含 <,> / 非法 ENUM 状态
+#   db-health           DB 文件/WAL 大小、连接池、表行数、孤儿外键
+#
+# 选项:
+#   --json              输出机器可读 JSON（人类信息转 stderr）
+#   --dry-run           修复类命令仅预览不写库
+#
+# 示例:
+#   node "$SCRIPT_DIR/scripts/toolbox.js" consistency-check
+#   node "$SCRIPT_DIR/scripts/toolbox.js" repair-counts --dry-run
+#   node "$SCRIPT_DIR/scripts/toolbox.js" db-health --json
+#
+# 注：scripts/check-consistency.js 是「源码级」静态一致性检查（不同关注点），
+#     本 toolbox 关注「数据级」一致性 / 修复，两者互补。
+# ============================================================================
+
 # 颜色定义
 RED='\033[0;31m'
 GREEN='\033[0;32m'

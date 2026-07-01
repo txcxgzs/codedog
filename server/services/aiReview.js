@@ -263,13 +263,14 @@ async function validateAIEndpoint(apiUrl) {
 // @returns {{httpsAgent: https.Agent, httpAgent: http.Agent}}
 function buildPinnedIpAgents(validatedIp) {
     const ipFamily = net.isIP(validatedIp); // 4 或 6(已校验,非 0)
-    // 报告3 #5: lookup 回调需同时兼容 Node dns.lookup 的两种签名:
+    // 报告3 #5 / Report4 #1: lookup 回调需同时兼容 Node dns.lookup 的两种签名:
     //   - 默认签名: cb(err, address, family) —— address 为字符串
     //   - opts.all === true 时: cb(err, addresses) —— addresses 为 [{address, family}, ...] 数组
     // 原实现固定返回 (null, validatedIp, ipFamily),在新版 Node 上若上层以 { all: true }
     // 调用会触发 "TypeError: addresses.forEach is not a function",直接导致 AI 审核崩溃。
+    // 注意:opts.all 文档上是 boolean,但部分调用方可能传数值 1,故同时兼容 true 与 1。
     const lookupFn = (hostname, opts, cb) => {
-        if (opts && opts.all === true) {
+        if (opts && (opts.all === true || opts.all === 1)) {
             cb(null, [{ address: validatedIp, family: ipFamily }]);
         } else {
             cb(null, validatedIp, ipFamily);

@@ -5,6 +5,7 @@ const DbAdapter = require('../utils/dbAdapter');
 
 const { Follow, User, Notification, sequelize } = require('../models');
 const { successResponse, errorResponse, paginateResponse } = require('../middleware/response');
+const { Op } = require('sequelize');
 
 /**
  * 关注用户（使用编程猫用户ID）
@@ -98,17 +99,25 @@ async function unfollowUser(req, res) {
         }
         
         // 取消关注 + 更新计数（事务保证一致性）
+        // 修复(Report4 #11): 原子条件 decrement, 仅当 count > 0 时才减 1,避免并发导致负数
+        // (镜像 commentController/postController 的原子 decrement 模式)
         await sequelize.transaction(async (t) => {
             await DbAdapter.destroy(Follow, { where: { id: DbAdapter.getId(follow) }, transaction: t });
 
             const currentUser = await DbAdapter.findByPk(User, DbAdapter.getId(req.user), { transaction: t });
-            if (currentUser && (currentUser.following_count || 0) > 0) {
-                await DbAdapter.decrement(currentUser, 'following_count', { transaction: t });
+            if (currentUser) {
+                await DbAdapter.decrement(currentUser, 'following_count', {
+                    where: { following_count: { [Op.gt]: 0 } },
+                    transaction: t
+                });
             }
 
             const freshTarget = await DbAdapter.findByPk(User, DbAdapter.getId(targetUser), { transaction: t });
-            if (freshTarget && (freshTarget.follower_count || 0) > 0) {
-                await DbAdapter.decrement(freshTarget, 'follower_count', { transaction: t });
+            if (freshTarget) {
+                await DbAdapter.decrement(freshTarget, 'follower_count', {
+                    where: { follower_count: { [Op.gt]: 0 } },
+                    transaction: t
+                });
             }
         });
         

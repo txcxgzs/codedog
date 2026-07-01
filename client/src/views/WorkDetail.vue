@@ -892,8 +892,8 @@ const handleMoreAction = (command) => {
 }
 
 const submitEditWork = async () => {
-  if (!editWorkForm.value.name) {
-    ElMessage.warning('请输入作品名称')
+  if (!String(editWorkForm.value.name).trim()) {
+    ElMessage.warning('作品名不能为空')
     return
   }
   

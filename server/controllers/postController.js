@@ -80,7 +80,7 @@ async function createPost(req, res) {
             include: [{
                 model: User,
                 as: 'author',
-                attributes: ['id', 'username', 'nickname', 'avatar']
+                attributes: ['id', 'codemao_user_id', 'username', 'nickname', 'avatar']
             }]
         });
         
@@ -135,7 +135,7 @@ async function getPosts(req, res) {
             include: [{
                 model: User,
                 as: 'author',
-                attributes: ['id', 'username', 'nickname', 'avatar']
+                attributes: ['id', 'codemao_user_id', 'username', 'nickname', 'avatar']
             }],
             order,
             limit: pageSize,
@@ -331,7 +331,7 @@ async function updatePost(req, res) {
             include: [{
                 model: User,
                 as: 'author',
-                attributes: ['id', 'username', 'nickname', 'avatar']
+                attributes: ['id', 'codemao_user_id', 'username', 'nickname', 'avatar']
             }]
         });
         

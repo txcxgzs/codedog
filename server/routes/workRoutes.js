@@ -16,6 +16,14 @@ const apiRateLimit = createRateLimiter({
     keyPrefix: 'works-api'
 });
 
+// Report4 #21: 点赞端点专项限流，防止快速 toggle like/unlike 造成行锁竞争与
+// SequelizeUniqueConstraintError 风暴（30 req/min/IP）
+const likeRateLimit = createRateLimiter({
+    windowMs: 60 * 1000,
+    max: 30,
+    keyPrefix: 'works-like'
+});
+
 // 发布作品（需要登录+验证码）
 router.post('/publish', authMiddleware, geetestVerify('publish_work'), workController.publishWork);
 
@@ -38,8 +46,8 @@ router.get('/user/:userId', workController.getUserWorks);
 // 通过编程猫ID获取作品详情（纯只读，命中返回，未命中 404，不再隐式导入）
 router.get('/codemao/:codemaoId', optionalAuth, workController.getWorkByCodemaoId);
 
-// 点赞作品（需要登录+验证码）
-router.post('/:codemaoId/like', authMiddleware, geetestVerify('like'), workController.likeWork);
+// 点赞作品（需要登录+验证码+点赞限流）
+router.post('/:codemaoId/like', authMiddleware, likeRateLimit, geetestVerify('like'), workController.likeWork);
 
 // 更新作品（需要登录）
 router.put('/:codemaoId', authMiddleware, workController.updateWork);

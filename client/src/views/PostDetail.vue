@@ -67,10 +67,10 @@
           
           <div class="r-post--comment_list">
             <div v-for="comment in comments" :key="comment.id" class="r-post--comment_item">
-              <img :src="comment.user?.avatar || defaultAvatar" class="r-post--comment_avatar" />
+              <img :src="comment.user?.avatar || defaultAvatar" class="r-post--comment_avatar" @click="goToUser(comment)" style="cursor: pointer;" />
               <div class="r-post--comment_body">
                 <div class="r-post--comment_header">
-                  <span class="r-post--comment_name">{{ comment.user?.nickname || comment.user?.username }}</span>
+                  <span class="r-post--comment_name" @click="goToUser(comment)" style="cursor: pointer;">{{ comment.user?.nickname || comment.user?.username }}</span>
                   <span class="r-post--comment_time">{{ formatTime(comment.created_at) }}</span>
                 </div>
                 <p class="r-post--comment_content">{{ comment.content }}</p>
@@ -84,7 +84,7 @@
                 <!-- 回复列表 -->
                 <div class="r-post--replies" v-if="comment.replies && comment.replies.length > 0">
                   <div v-for="reply in comment.replies" :key="reply.id" class="r-post--reply_item">
-                    <span class="r-post--reply_name">{{ reply.user?.nickname || reply.user?.username }}</span>
+                    <span class="r-post--reply_name" @click="goToUser(reply)" style="cursor: pointer;">{{ reply.user?.nickname || reply.user?.username }}</span>
                     <span class="r-post--reply_content">{{ reply.content }}</span>
                     <span class="r-post--reply_time">{{ formatTime(reply.created_at) }}</span>
                     <div class="r-post--reply_actions">
@@ -223,6 +223,16 @@ const categoryMap = {
 }
 
 const getCategoryName = (category) => categoryMap[category] || category
+
+// 跳转到评论/回复作者的用户主页（依赖后端返回的 codemao_user_id）
+// 镜像 WorkDetail.vue 的 goUser 行为：缺 codemao_user_id 时不跳转，避免触发 404
+const goToUser = (comment) => {
+  if (!comment?.user?.codemao_user_id) {
+    ElMessage.warning('无法跳转')
+    return
+  }
+  router.push('/user/' + comment.user.codemao_user_id)
+}
 
 const formatTime = (time) => {
   if (!time) return ''
