@@ -225,9 +225,9 @@ EOF
 create_directories() {
     print_step "创建必要目录..."
     
+    mkdir -p server/data
     mkdir -p server/uploads/avatars
     mkdir -p server/uploads/works
-    mkdir -p server/data
     
     # 创建.gitkeep文件保持目录结构
     touch server/uploads/.gitkeep
