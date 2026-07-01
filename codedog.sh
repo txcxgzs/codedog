@@ -19,9 +19,63 @@ else
     COMPOSE_CMD="docker compose"
 fi
 
-DB_PATH="$SCRIPT_DIR/data/database.sqlite"
-UPLOADS_PATH="$SCRIPT_DIR/uploads"
 DATA_PATH="$SCRIPT_DIR/data"
+UPLOADS_PATH="$SCRIPT_DIR/uploads"
+HOST_DB_PATH="$DATA_PATH/database.sqlite"
+LEGACY_DB_PATH="$SCRIPT_DIR/server/data/database.sqlite"
+CONTAINER_DB_PATH="/app/server/data/database.sqlite"
+
+get_env_value() {
+    local key="$1"
+    if [ -f "$SCRIPT_DIR/.env" ]; then
+        grep -E "^${key}=" "$SCRIPT_DIR/.env" | tail -1 | cut -d= -f2-
+    fi
+}
+
+get_db_type() {
+    local value
+    value=$(get_env_value "DB_TYPE")
+    echo "${value:-sqlite}"
+}
+
+show_database_status() {
+    local db_type
+    db_type=$(get_db_type)
+
+    if [ "$db_type" = "mysql" ]; then
+        echo "数据库: MySQL（使用外部数据库，不检查 SQLite 文件）"
+        return
+    fi
+
+    if [ -f "$HOST_DB_PATH" ]; then
+        echo "数据库: 存在 ($HOST_DB_PATH)"
+        ls -lh "$HOST_DB_PATH" 2>/dev/null || true
+        return
+    fi
+
+    if [ -f "$LEGACY_DB_PATH" ]; then
+        echo "数据库: 存在（旧路径：$LEGACY_DB_PATH）"
+        echo "提示：当前 Docker 部署推荐使用 $HOST_DB_PATH"
+        ls -lh "$LEGACY_DB_PATH" 2>/dev/null || true
+        return
+    fi
+
+    if $COMPOSE_CMD exec -T codedog test -f "$CONTAINER_DB_PATH" >/dev/null 2>&1; then
+        echo "数据库: 存在（容器内：$CONTAINER_DB_PATH）"
+        echo "提示：宿主机未在 $HOST_DB_PATH 看到数据库，请检查 docker-compose.yml 的 data 挂载。"
+        $COMPOSE_CMD exec -T codedog ls -lh "$CONTAINER_DB_PATH" 2>/dev/null || true
+        return
+    fi
+
+    echo "数据库: 不存在"
+    echo "已检查："
+    echo "  - 宿主机新路径: $HOST_DB_PATH"
+    echo "  - 宿主机旧路径: $LEGACY_DB_PATH"
+    echo "  - 容器内路径: $CONTAINER_DB_PATH"
+    echo ""
+    echo "容器内数据目录："
+    $COMPOSE_CMD exec -T codedog ls -lah /app/server/data 2>/dev/null || true
+}
 
 show_menu() {
     clear
@@ -86,14 +140,7 @@ show_status() {
     fi
 
     echo ""
-    if [ -f "$DB_PATH" ]; then
-        echo "数据库: 存在 ($DB_PATH)"
-        ls -lh "$DB_PATH" 2>/dev/null || true
-    else
-        echo "数据库: 不存在 ($DB_PATH)"
-        echo "容器内数据目录:"
-        $COMPOSE_CMD exec -T codedog ls -lah /app/server/data 2>/dev/null || true
-    fi
+    show_database_status
 
     echo ""
     read -p "按回车返回菜单..."
@@ -141,10 +188,15 @@ do_update() {
     mkdir -p "$BACKUP"
     cp -r data "$BACKUP/" 2>/dev/null || true
     cp -r uploads "$BACKUP/" 2>/dev/null || true
+    cp .env "$BACKUP/.env" 2>/dev/null || true
     echo "备份已保存到 $BACKUP"
 
     echo "正在拉取更新..."
     git pull origin $(git branch --show-current)
+
+    echo "正在修复持久化目录权限..."
+    mkdir -p "$DATA_PATH" "$UPLOADS_PATH/avatars" "$UPLOADS_PATH/works"
+    chmod -R a+rwX "$DATA_PATH" "$UPLOADS_PATH" 2>/dev/null || true
 
     echo "正在重新构建..."
     $COMPOSE_CMD build --no-cache
@@ -152,8 +204,10 @@ do_update() {
     $COMPOSE_CMD up -d
 
     echo "等待服务启动..."
+    SERVICE_READY=0
     for i in $(seq 1 60); do
         if curl -fs http://localhost:3001/api/health > /dev/null 2>&1; then
+            SERVICE_READY=1
             echo "更新完成，服务已运行!"
             break
         fi
@@ -161,13 +215,17 @@ do_update() {
         sleep 2
     done
     echo ""
+    if [ "$SERVICE_READY" != "1" ]; then
+        echo "服务未正常响应，最近日志："
+        $COMPOSE_CMD logs --tail=120 codedog
+    fi
     read -p "按回车返回菜单..."
     show_menu
 }
 
 do_fix() {
     echo "=== 修复问题 ==="
-    echo "1) 修复数据库表结构"
+    echo "1) 检查数据库状态"
     echo "2) 修复文件权限"
     echo "3) 修复敏感词表"
     echo "4) 全部修复"
@@ -176,12 +234,7 @@ do_fix() {
 
     case $fix_choice in
         1)
-            if [ -f "$DB_PATH" ]; then
-                echo "数据库文件存在"
-                $COMPOSE_CMD exec -T codedog node scripts/toolbox.js db-health 2>/dev/null || true
-            else
-                echo "数据库文件不存在: $DB_PATH"
-            fi
+            show_database_status
             ;;
         2)
             mkdir -p "$DATA_PATH" "$UPLOADS_PATH/avatars" "$UPLOADS_PATH/works"
@@ -189,10 +242,10 @@ do_fix() {
             echo "权限修复完成"
             ;;
         3)
-            if [ -f "$DB_PATH" ]; then
-                sqlite3 "$DB_PATH" "SELECT COUNT(*) FROM sensitive_words" 2>/dev/null && echo "敏感词表正常" || echo "无法读取敏感词表"
+            if [ -f "$HOST_DB_PATH" ]; then
+                sqlite3 "$HOST_DB_PATH" "SELECT COUNT(*) FROM sensitive_words" 2>/dev/null && echo "敏感词表正常" || echo "无法读取敏感词表"
             else
-                echo "数据库文件不存在: $DB_PATH"
+                echo "数据库文件不存在: $HOST_DB_PATH"
             fi
             ;;
         4)
@@ -216,25 +269,28 @@ do_database() {
 
     case $db_choice in
         1)
-            if [ -f "$DB_PATH" ]; then
+            if [ -f "$HOST_DB_PATH" ]; then
                 BACKUP_FILE="$DATA_PATH/backup_$(date +%Y%m%d_%H%M%S).sqlite"
-                cp "$DB_PATH" "$BACKUP_FILE"
+                cp "$HOST_DB_PATH" "$BACKUP_FILE"
                 echo "备份已保存到: $BACKUP_FILE"
+            elif $COMPOSE_CMD exec -T codedog test -f "$CONTAINER_DB_PATH" >/dev/null 2>&1; then
+                BACKUP_FILE="$DATA_PATH/backup_$(date +%Y%m%d_%H%M%S).sqlite"
+                $COMPOSE_CMD cp codedog:"$CONTAINER_DB_PATH" "$BACKUP_FILE" && echo "备份已保存到: $BACKUP_FILE"
             else
-                echo "数据库文件不存在: $DB_PATH"
+                echo "数据库文件不存在"
             fi
             ;;
         2)
-            if [ -f "$DB_PATH" ]; then
+            if [ -f "$HOST_DB_PATH" ]; then
                 if command -v sqlite3 >/dev/null 2>&1; then
                     echo "数据表:"
-                    sqlite3 "$DB_PATH" "SELECT name FROM sqlite_master WHERE type='table'" 2>/dev/null
+                    sqlite3 "$HOST_DB_PATH" "SELECT name FROM sqlite_master WHERE type='table'" 2>/dev/null
                 else
                     echo "sqlite3 未安装，显示文件信息:"
-                    ls -lh "$DB_PATH"
+                    ls -lh "$HOST_DB_PATH"
                 fi
             else
-                echo "数据库文件不存在: $DB_PATH"
+                show_database_status
             fi
             ;;
     esac
@@ -249,15 +305,17 @@ do_sensitive() {
     echo ""
     read -p "请选择 [1]: " sw_choice
 
-    if [ "$sw_choice" = "1" ] && [ -f "$DB_PATH" ]; then
+    if [ "$sw_choice" = "1" ] && [ -f "$HOST_DB_PATH" ]; then
         if command -v sqlite3 >/dev/null 2>&1; then
             echo "活跃敏感词:"
-            sqlite3 "$DB_PATH" "SELECT COUNT(*) FROM sensitive_words WHERE status='active'" 2>/dev/null
+            sqlite3 "$HOST_DB_PATH" "SELECT COUNT(*) FROM sensitive_words WHERE status='active'" 2>/dev/null
             echo "按分类:"
-            sqlite3 "$DB_PATH" "SELECT category, COUNT(*) FROM sensitive_words WHERE status='active' GROUP BY category" 2>/dev/null
+            sqlite3 "$HOST_DB_PATH" "SELECT category, COUNT(*) FROM sensitive_words WHERE status='active' GROUP BY category" 2>/dev/null
         else
             echo "sqlite3 未安装，无法直接查看统计"
         fi
+    else
+        show_database_status
     fi
     echo ""
     read -p "按回车返回菜单..."
