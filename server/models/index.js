@@ -116,6 +116,10 @@ const Post = sequelize.define('Post', {
     is_essence: { type: DataTypes.BOOLEAN, defaultValue: false },
     category: { type: DataTypes.STRING(50), defaultValue: 'discussion' },
     cover: { type: DataTypes.STRING(500) },
+    // 中·绕过隐藏: 区分 AI 隐藏 vs 管理员手动隐藏。
+    // 'ai_review' = AI 审核触发自动隐藏,编辑后审核通过可自动恢复 published;
+    // 'manual' 或 null  = 管理员手动隐藏,用户编辑不能绕过
+    hidden_reason: { type: DataTypes.STRING(50), allowNull: true, defaultValue: null },
     // M6: status ENUM 不含 active（app.js 启动时已迁移 active→published）
     status: { type: DataTypes.ENUM('published', 'draft', 'hidden', 'deleted'), defaultValue: 'published' },
     tags: {

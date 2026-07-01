@@ -386,31 +386,37 @@ async function syncUserWorks(codemaoUserId, localUserId) {
                     workStatus = 'pending';
                 }
 
-                // 使用 findOrCreate 避免并发唯一键冲突，单条失败不中断同步
-                const [, created] = await DbAdapter.findOrCreate(Work, {
+                // 使用 findOrCreate,对已存在作品也重新审核状态(编程猫改违规后本地应同步)
+                const defaults = {
+                    codemao_work_id: workDetail.id,
+                    name: workDetail.work_name,
+                    description: workDetail.description,
+                    preview: workDetail.preview,
+                    type: type,
+                    ide_type: workDetail.ide_type,
+                    work_url: workDetail.player_url || `https://player.codemao.cn/new/${workDetail.id}`,
+                    user_id: localUserId,
+                    codemao_author_id: codemaoUserId,
+                    codemao_author_name: workDetail.user_info?.nickname,
+                    view_times: workDetail.view_times || 0,
+                    // 中·脏数据: praise_times/collection_times/comment_count 始终从 0 开始
+                    praise_times: 0,
+                    collection_times: 0,
+                    comment_count: 0,
+                    status: workStatus
+                };
+                const [record, created] = await DbAdapter.findOrCreate(Work, {
                     where: { codemao_work_id: workDetail.id },
-                    defaults: {
-                        codemao_work_id: workDetail.id,
-                        name: workDetail.work_name,
-                        description: workDetail.description,
-                        preview: workDetail.preview,
-                        type: type,
-                        ide_type: workDetail.ide_type,
-                        work_url: workDetail.player_url || `https://player.codemao.cn/new/${workDetail.id}`,
-                        user_id: localUserId,
-                        codemao_author_id: codemaoUserId,
-                        codemao_author_name: workDetail.user_info?.nickname,
-                        view_times: workDetail.view_times || 0,
-                        praise_times: workDetail.praise_times || workDetail.liked_times || 0,
-                        collection_times: workDetail.collect_times || 0,
-                        // Bug-2(脏数据): comment_count 始终从 0 开始,不使用外部 comment_times,
-                        // 避免本地无评论记录却显示大量评论,重算时闪崩
-                        comment_count: 0,
-                        status: workStatus
-                    }
+                    defaults
                 });
 
-                if (created) syncCount++;
+                if (created) {
+                    syncCount++;
+                } else if (record && record.status === 'published' && workStatus === 'pending') {
+                    // 已存在作品重新审核:编程猫若将作品改为违规内容,本地同步为 pending
+                    await DbAdapter.update(Work, { status: 'pending' }, { where: { id: record.id } });
+                    console.warn(`[syncUserWorks] 作品 ${workDetail.id} 重新审核不通过,更新为 pending`);
+                }
 
                 // 延迟 200ms 避免被编程猫限流
                 await new Promise(resolve => setTimeout(resolve, 200));
@@ -534,9 +540,10 @@ async function updateProfile(req, res) {
 
         // 审核通过后再转义；L6: escapeHtml 会把 <、>、& 等转成多字符实体，转义后需复检长度，
         // 否则超长内容会触发 Sequelize/DB 截断或报错
+        // 修复: bio/doing 也 trim 后再落库,与 nickname 一致;审核已用 trim 值但落库用了原始值
         const escapedNickname = nickname ? escapeHtml(nickname) : user.nickname;
-        const escapedBio = bio !== undefined ? escapeHtml(bio) : user.bio;
-        const escapedDoing = doing !== undefined ? escapeHtml(doing) : user.doing;
+        const escapedBio = bio !== undefined ? escapeHtml(String(bio).trim()) : user.bio;
+        const escapedDoing = doing !== undefined ? escapeHtml(String(doing).trim()) : user.doing;
 
         if (String(escapedNickname).length > 50) {
             cleanupUploadedFile(req.file);

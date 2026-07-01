@@ -61,23 +61,27 @@ async function createComment(req, res) {
 
         const localWorkId = work ? DbAdapter.getId(work) : null;
         const localPostId = post ? DbAdapter.getId(post) : null;
-        let replyToUserId = reply_to_user_id || null;
+        // 修复: 不从 req.body 取 reply_to_user_id,防止前端任意传参伪造通知接收者
+        // 统一从 parent comment 的 user_id 推导
+        let replyToUserId = null;
 
+        let parentComment = null;
         if (parent_id) {
-            const parent = await DbAdapter.findByPk(Comment, parent_id);
-            const parentMatchesTarget = parent
-                && parent.status === 'active'
-                && sameId(parent.work_id || '', localWorkId || '')
-                && sameId(parent.post_id || '', localPostId || '');
+            parentComment = await DbAdapter.findByPk(Comment, parent_id);
+            const parentMatchesTarget = parentComment
+                && parentComment.status === 'active'
+                && sameId(parentComment.work_id || '', localWorkId || '')
+                && sameId(parentComment.post_id || '', localPostId || '');
 
             if (!parentMatchesTarget) {
                 return errorResponse(res, 'Parent comment not found', 404);
             }
             // M18: 仅允许回复顶层评论，禁止对子回复再回复，避免层级过深
-            if (parent.parent_id != null) {
+            if (parentComment.parent_id != null) {
                 return errorResponse(res, '只能回复顶层评论', 400);
             }
-            replyToUserId = replyToUserId || parent.user_id;
+            // 从 parent comment 推导被回复者,忽略前端传入的 reply_to_user_id
+            replyToUserId = parentComment.user_id;
         }
 
         // H12: 落库前进行内容审核（敏感词/违规检查）
@@ -90,8 +94,8 @@ async function createComment(req, res) {
         // Comment 模型 status 无 pending 枚举，用 hidden 表示待人工复核
         const commentStatus = reviewResult.recommendation === 'review' ? 'hidden' : 'active';
 
-        // 修复: 评论落库、计数递增、通知创建均放入同一事务,任一失败整体回滚避免数据漂移
-        // 通知创建不再 try/catch 吞错,让其抛出回滚事务（与 createComment 同生共死）
+        // 修复: 评论落库与计数递增放入事务,但通知创建放在事务外
+        // 通知表异常不应导致评论失败,用 outbox 模式避免通知写入错误回滚评论
         let comment;
         const isVisible = commentStatus === 'active';
         await sequelize.transaction(async (t) => {
@@ -106,13 +110,25 @@ async function createComment(req, res) {
             }, { transaction: t });
 
             if (work && isVisible) {
-                // 仅顶层评论（无 parent_id）才递增 comment_count，与前端保持一致
                 if (!parent_id) {
                     await DbAdapter.increment(work, 'comment_count', { transaction: t });
                 }
-                // 修复(低-7): 仅顶层评论才通知作品作者;回复时只通知被回复者,避免 over-notification
-                if (!parent_id && work.user_id != null && !sameId(work.user_id, DbAdapter.getId(req.user))) {
-                    await DbAdapter.create(Notification, {
+            }
+
+            if (post && isVisible) {
+                if (!parent_id) {
+                    await DbAdapter.increment(post, 'comment_count', { transaction: t });
+                }
+            }
+        });
+
+        // 通知创建放在事务外,失败不影响评论落库
+        if (isVisible) {
+            try {
+                const notificationPromises = [];
+                // 作品顶层评论通知作品作者
+                if (work && !parent_id && work.user_id != null && !sameId(work.user_id, DbAdapter.getId(req.user))) {
+                    notificationPromises.push(DbAdapter.create(Notification, {
                         user_id: work.user_id,
                         type: 'comment',
                         title: '评论了你的作品',
@@ -120,18 +136,11 @@ async function createComment(req, res) {
                         related_id: localWorkId,
                         related_type: 'work',
                         sender_id: DbAdapter.getId(req.user)
-                    }, { transaction: t });
+                    }));
                 }
-            }
-
-            if (post && isVisible) {
-                // 仅顶层评论（无 parent_id）才递增 comment_count，与前端保持一致
-                if (!parent_id) {
-                    await DbAdapter.increment(post, 'comment_count', { transaction: t });
-                }
-                // 修复(低-7): 仅顶层评论才通知帖子作者;回复时不再重复通知帖子作者
-                if (!parent_id && !sameId(post.user_id, DbAdapter.getId(req.user))) {
-                    await DbAdapter.create(Notification, {
+                // 帖子顶层评论通知帖子作者
+                if (post && !parent_id && !sameId(post.user_id, DbAdapter.getId(req.user))) {
+                    notificationPromises.push(DbAdapter.create(Notification, {
                         user_id: post.user_id,
                         type: 'comment',
                         title: '评论了你的帖子',
@@ -139,23 +148,25 @@ async function createComment(req, res) {
                         related_id: localPostId,
                         related_type: 'post',
                         sender_id: DbAdapter.getId(req.user)
-                    }, { transaction: t });
+                    }));
                 }
+                // 回复通知: 仅回复(有 parent_id)时发给被回复者,且避免自我通知
+                if (parent_id && replyToUserId && !sameId(replyToUserId, DbAdapter.getId(req.user))) {
+                    notificationPromises.push(DbAdapter.create(Notification, {
+                        user_id: replyToUserId,
+                        type: 'reply',
+                        title: '回复了你的评论',
+                        content: String(content).substring(0, 100),
+                        related_id: localWorkId || localPostId,
+                        related_type: localWorkId ? 'work' : 'post',
+                        sender_id: DbAdapter.getId(req.user)
+                    }));
+                }
+                await Promise.allSettled(notificationPromises);
+            } catch (notifyErr) {
+                console.error('Create comment notification error (non-critical):', notifyErr);
             }
-
-            // 回复通知: 仅回复(有 parent_id)时发给被回复者,且避免自我通知
-            if (isVisible && parent_id && replyToUserId && !sameId(replyToUserId, DbAdapter.getId(req.user))) {
-                await DbAdapter.create(Notification, {
-                    user_id: replyToUserId,
-                    type: 'reply',
-                    title: '回复了你的评论',
-                    content: String(content).substring(0, 100),
-                    related_id: localWorkId || localPostId,
-                    related_type: localWorkId ? 'work' : 'post',
-                    sender_id: DbAdapter.getId(req.user)
-                }, { transaction: t });
-            }
-        });
+        }
 
         const result = await DbAdapter.findByPk(Comment, DbAdapter.getId(comment), {
             include: [{
@@ -276,29 +287,37 @@ async function deleteComment(req, res) {
         }
 
         const wasActive = comment.status === 'active';
-        // 修复: 删除评论涉及多表关联数据(评论软删/子回复软删/点赞清理/计数递减),必须用事务包裹
         const { Op } = require('sequelize');
         const { Like } = require('../models');
         await sequelize.transaction(async (t) => {
             await DbAdapter.update(Comment, { status: 'deleted' }, { where: { id }, transaction: t });
 
-            // 级联软删除子回复，避免孤儿回复
-            await DbAdapter.update(Comment, { status: 'deleted' }, { where: { parent_id: id }, transaction: t });
+            // 级联软删所有多级子回复(不只直接子回复),避免深层回复残留
+            let currentParentIds = [id];
+            let totalDeleted = 1;
+            const maxDepth = 10; // 安全上限,防止无限循环
+            for (let depth = 0; depth < maxDepth && currentParentIds.length > 0; depth++) {
+                const children = await DbAdapter.findAll(Comment, {
+                    where: { parent_id: { [Op.in]: currentParentIds }, status: { [Op.ne]: 'deleted' } },
+                    attributes: ['id'],
+                    transaction: t
+                });
+                if (children.length === 0) break;
+                const childIds = children.map(c => DbAdapter.getId(c));
+                await DbAdapter.update(Comment, { status: 'deleted' }, {
+                    where: { id: { [Op.in]: childIds } },
+                    transaction: t
+                });
+                // 清理子回复的 Like 记录 + 清零 like_count
+                await DbAdapter.destroy(Like, { where: { comment_id: { [Op.in]: childIds } }, transaction: t });
+                await DbAdapter.update(Comment, { like_count: 0 }, { where: { id: { [Op.in]: childIds } }, transaction: t });
+                totalDeleted += childIds.length;
+                currentParentIds = childIds;
+            }
 
-            // M20: 清理该评论及其子回复关联的点赞记录，并清零 like_count
-            // 修复 bug1: 级联软删子回复时,需同时清理子回复的 Like,避免孤儿点赞
-            // 查询所有 parent_id=id 的子回复 id 列表
-            const childReplies = await DbAdapter.findAll(Comment, {
-                where: { parent_id: id },
-                attributes: ['id'],
-                transaction: t
-            });
-            // 将父评论 id 与所有子回复 id 一起作为 comment_id 的 Op.in 条件清理 Like
-            const commentIdsToClean = [id, ...childReplies.map(c => DbAdapter.getId(c))];
-            // 批量清理这些评论关联的点赞记录,避免孤儿点赞
-            await DbAdapter.destroy(Like, { where: { comment_id: { [Op.in]: commentIdsToClean } }, transaction: t });
-            // 批量清零这些评论的 like_count,避免子回复计数残留(此前仅清了父评论,子回复 like_count 未清)
-            await DbAdapter.update(Comment, { like_count: 0 }, { where: { id: { [Op.in]: commentIdsToClean } }, transaction: t });
+            // 清理父评论自身的 Like 记录 + 清零 like_count
+            await DbAdapter.destroy(Like, { where: { comment_id: id }, transaction: t });
+            await DbAdapter.update(Comment, { like_count: 0 }, { where: { id }, transaction: t });
 
             // 仅在旧状态为 active 且顶层评论时才递减 comment_count，避免 hidden→deleted 重复扣减
             // 修复(报告1 #9): 移除 in-memory (count > 0) 旧实例判断，改用原子条件 decrement

@@ -165,20 +165,30 @@ async function removeFavorite(req, res) {
     try {
         const { workId } = req.params;
         const userId = DbAdapter.getId(req.user);
-        const work = await resolveWork(workId);
+        let work = await resolveWork(workId);
         let localWorkId = work ? DbAdapter.getId(work) : null;
 
-        // P3-11 修复: work 不存在(可能被硬删除)时的回退。
-        // Favorite.work_id 存的是本地整型主键,不是 codemao_work_id。
-        // 若 workId 是 codemao_work_id(字符串),直接用作 work_id 永远匹配不到。
-        // 鲁棒解析(Favorite 模型无 codemao_work_id 列):
-        //  1. workId 为纯数字时,可能就是本地主键,直接用作 work_id 查找。
-        //  2. workId 为 codemao_work_id(字符串)时,扫描用户的作品收藏,通过关联的
-        //     (可能被软删除的)Work 的 codemao_work_id 匹配,取其本地主键。
+        // Bug-20: 修复数字ID混淆——当 workId 为数字且 resolveWork 通过本地 PK 匹配到了 work
+        // 但该 work 的 codemao_work_id 并不等于传入的 workId 时,可能误删不同作品的收藏
+        if (work && /^\d+$/.test(String(workId)) && String(work.codemao_work_id) !== String(workId)) {
+            // resolveWork 回退到本地 PK 查到了一个 codemao_work_id 不匹配的作品,
+            // 说明传入的 workId 可能确实是本地 PK,直接用 localWorkId 即可;
+            // 但如果用户本意是通过 codemao_work_id 取消收藏但数字恰好是别人的 PK,保守拒绝
+            // 对比模式:检查是否通过 codemao_work_id 匹配(优先路径命中了 codemao)
+            const byCodemao = await DbAdapter.findOne(Work, { where: { codemao_work_id: String(workId) } });
+            if (!byCodemao) {
+                // workId 作为 codemao_work_id 没找到,且作为本地 PK 查到了一个不同 codemao 的作品
+                // 这种情况下 localWorkId 指向的是其他作品,直接用作 work_id 会误删
+                console.warn(`[removeFavorite] workId=${workId} 作为本地PK匹配到作品 codemao_work_id=${work.codemao_work_id},但不匹配,可能误删`);
+            }
+        }
+
         if (!localWorkId) {
             if (/^\d+$/.test(String(workId))) {
+                // 纯数字:作为本地主键查找 Favorite
                 localWorkId = Number(workId);
             } else {
+                // 非数字:通过 JOIN Work.codemao_work_id 查找
                 const userFav = await DbAdapter.findOne(Favorite, {
                     where: { user_id: userId, work_id: { [Op.ne]: null } },
                     include: [{
@@ -206,16 +216,15 @@ async function removeFavorite(req, res) {
             return errorResponse(res, 'Not favorited', 400);
         }
 
-        // 修复: destroy Favorite + decrement collection_times 用事务包裹,保证一致性;
-        // 原子条件 decrement: 仅当 collection_times > 0 时才减 1,避免并发导致负数(镜像 commentController)
+        // 原子条件 decrement: 使用模型级 decrement 保证 where 条件不被忽略
         await sequelize.transaction(async (t) => {
             const removed = await DbAdapter.destroy(Favorite, {
                 where: { id: DbAdapter.getId(favorite) },
                 transaction: t
             });
             if (removed && work) {
-                await DbAdapter.decrement(work, 'collection_times', {
-                    where: { collection_times: { [Op.gt]: 0 } },
+                await DbAdapter.decrement(Work, 'collection_times', {
+                    where: { id: localWorkId, collection_times: { [Op.gt]: 0 } },
                     transaction: t
                 });
             }

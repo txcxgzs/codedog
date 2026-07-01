@@ -349,10 +349,15 @@ async function updateUserPassword(req, res) {
         }
 
         const hashedPassword = await bcrypt.hash(newPassword, 10);
-        await DbAdapter.update(User, { password: hashedPassword }, { where: { id: userId } });
+        // 🟠8 修复: 密码重置时同步更新 password_changed_at,配合 JWT 验证中的 iat 比对
+        // 使旧 Token(签发于密码修改之前)立即失效,防止黑客用已截获 Token 继续操作
+        await DbAdapter.update(User, {
+            password: hashedPassword,
+            password_changed_at: new Date()
+        }, { where: { id: userId } });
         
         logOperation(req, 'update_user_password', 'user', userId);
-        return successResponse(res, null, '密码已更改');
+        return successResponse(res, null, '密码已更改,所有设备已强制退出');
     } catch (error) {
         console.error('修改用户密码错误:', error);
         return errorResponse(res, '修改密码失败', 500);
@@ -393,17 +398,15 @@ async function updateUser(req, res) {
 
         const updateData = {};
         if (nickname !== undefined) {
-            // (报告1 #9) nickname 需经内容审核 + HTML 转义，与 userController.updateProfile 保持一致，
-            // 避免管理员入口存入违规内容或恶意 HTML。不 touch email/status/role（非用户渲染 HTML）
             const trimmedNickname = String(nickname).trim();
             const reviewResult = await aiReview.fallbackReview(String(trimmedNickname));
             if (reviewResult.recommendation === 'delete') {
                 return errorResponse(res, `内容包含违规信息:${reviewResult.reason}`, 400);
             }
-            // Bug-19: review（疑似违规）也应进人工审核,不允许直接保存,
-            // 与 userController.updateProfile 的审核策略保持一致
+            // 🟠7 修复: 管理员在后台执行人工干预,AI review 结果仅告警不拦截
+            // review 时可写入但标记审核结果,允许管理员覆盖 AI 误判
             if (reviewResult.recommendation === 'review') {
-                return errorResponse(res, `昵称内容需人工审核,请修改后重试:${reviewResult.reason}`, 400);
+                console.warn(`[admin] 管理员 ${req.user.username} 修改用户 ${user.username} 昵称为疑似违规内容:${reviewResult.reason},已放行(管理特权)`);
             }
             const escapedNickname = escapeHtml(trimmedNickname);
             if (String(escapedNickname).length > 50) {
@@ -542,14 +545,12 @@ async function updateUserRole(req, res) {
             return errorResponse(res, '您没有权限管理此用户', 403);
         }
         
-        // 检查操作者是否有权限分配目标角色
+        // 检查操作者对目标"新角色"的权限,使用与 updateUser 相同的严格 canManageUser
+        // 高·越权修复: 除 superadmin 特例外,操作者必须严格高于目标新角色等级
+        // 防止 admin(3) 将 user(0) 提升为 admin(3) (3>3 不成立,拦截)
         const { getRoleSync } = require('../config/permissions');
-        const targetRoleInfo = getRoleSync(role);
-        const operatorRoleInfo = getRoleSync(operatorRole);
-        // 修复: 改 >= 为 >,允许超级管理员(100)将其他用户提升为超级管理员(100)。
-        // 原用 >= 时 100>=100 成立,superadmin 永远无法提升同级,只能去数据库改表。
-        // 仍拦截下级越权提升同级/更高级别(admin 不能提升 admin/superadmin)。
-        if (targetRoleInfo.level > operatorRoleInfo.level) {
+        const newRoleInfo = getRoleSync(role);
+        if (!canManageUser(operatorRole, role)) {
             return errorResponse(res, '您没有权限分配此角色', 403);
         }
 
@@ -716,42 +717,76 @@ async function deleteUser(req, res) {
                 }
             }
             // Bug-3: 改为软删作品（status:'deleted'），与 Comment 软删保持一致，避免评论 work_id 成为死指针
-            await DbAdapter.update(Work, { status: 'deleted' }, { where: { user_id: uid }, transaction: t });
+            await DbAdapter.update(Work, { status: 'deleted', praise_times: 0, collection_times: 0, comment_count: 0 }, { where: { user_id: uid }, transaction: t });
 
             // Bug-2: 软删"别人评论在该用户作品/帖子下"的评论,
             // 删除用户后这些 active 评论会挂在 deleted work/post 下,应一并软删
             if (userWorkIds.length > 0) {
                 await DbAdapter.update(Comment, { status: 'deleted' }, { where: { work_id: { [Op.in]: userWorkIds } }, transaction: t });
+                // Bug-15: 清理 Notification 中 related_type='work' 指向被删作品的记录,防止死链
+                await DbAdapter.destroy(Notification, { where: { related_id: { [Op.in]: userWorkIds }, related_type: 'work' }, transaction: t });
+                // Bug-14: 清理别人对被删作品的 Like/Favorite,soft delete 作品计数也应归零
+                await DbAdapter.destroy(Like, { where: { work_id: { [Op.in]: userWorkIds } }, transaction: t });
+                await DbAdapter.destroy(Favorite, { where: { work_id: { [Op.in]: userWorkIds } }, transaction: t });
             }
             if (userPostIds.length > 0) {
                 await DbAdapter.update(Comment, { status: 'deleted' }, { where: { post_id: { [Op.in]: userPostIds } }, transaction: t });
             }
 
-            // 重算受影响的计数
+            // 🔴5 修复: 用批量查询替代逐条 for 循环,避免数万条记录产生 DB DoS 锁死
             const uniqueWorkIds = [...new Set(affectedWorkIds)].filter(Boolean);
-            for (const wid of uniqueWorkIds) {
-                const [praiseCount, collectionCount, commentCount] = await Promise.all([
-                    DbAdapter.count(Like, { where: { work_id: wid }, transaction: t }),
-                    DbAdapter.count(Favorite, { where: { work_id: wid }, transaction: t }),
-                    DbAdapter.count(Comment, { where: { work_id: wid, status: 'active', parent_id: null }, transaction: t })
+            if (uniqueWorkIds.length > 0) {
+                // 批量: 一次 count 所有受影响的 works
+                const [workLikeCounts, workFavCounts, workCommentCounts] = await Promise.all([
+                    DbAdapter.findAll(Like, { attributes: ['work_id', [sequelize.fn('COUNT', '*'), 'count']], where: { work_id: { [Op.in]: uniqueWorkIds } }, group: ['work_id'], transaction: t, raw: true }),
+                    DbAdapter.findAll(Favorite, { attributes: ['work_id', [sequelize.fn('COUNT', '*'), 'count']], where: { work_id: { [Op.in]: uniqueWorkIds } }, group: ['work_id'], transaction: t, raw: true }),
+                    DbAdapter.findAll(Comment, { attributes: ['work_id', [sequelize.fn('COUNT', '*'), 'count']], where: { work_id: { [Op.in]: uniqueWorkIds }, status: 'active', parent_id: null }, group: ['work_id'], transaction: t, raw: true })
                 ]);
-                await DbAdapter.update(Work, { praise_times: praiseCount, collection_times: collectionCount, comment_count: commentCount }, { where: { id: wid }, transaction: t });
-            }
-            const uniquePostIds = [...new Set(affectedPostIds)].filter(Boolean);
-            for (const pid of uniquePostIds) {
-                const [likeCount, collectionCount, commentCount] = await Promise.all([
-                    DbAdapter.count(Like, { where: { post_id: pid }, transaction: t }),
-                    DbAdapter.count(Favorite, { where: { post_id: pid }, transaction: t }),
-                    DbAdapter.count(Comment, { where: { post_id: pid, status: 'active', parent_id: null }, transaction: t })
-                ]);
-                await DbAdapter.update(Post, { like_count: likeCount, collection_count: collectionCount, comment_count: commentCount }, { where: { id: pid }, transaction: t });
+                const likeMap = new Map(workLikeCounts.map(r => [String(r.work_id), r.count]));
+                const favMap = new Map(workFavCounts.map(r => [String(r.work_id), r.count]));
+                const commentMap = new Map(workCommentCounts.map(r => [String(r.work_id), r.count]));
+                for (const wid of uniqueWorkIds) {
+                    await DbAdapter.update(Work, {
+                        praise_times: likeMap.get(String(wid)) || 0,
+                        collection_times: favMap.get(String(wid)) || 0,
+                        comment_count: commentMap.get(String(wid)) || 0
+                    }, { where: { id: wid }, transaction: t });
+                }
             }
 
-            // Bug-4(幽灵点赞数): 重算被删用户曾点赞过的 Comment 的 like_count
+            const uniquePostIds = [...new Set(affectedPostIds)].filter(Boolean);
+            if (uniquePostIds.length > 0) {
+                const [postLikeCounts, postFavCounts, postCommentCounts] = await Promise.all([
+                    DbAdapter.findAll(Like, { attributes: ['post_id', [sequelize.fn('COUNT', '*'), 'count']], where: { post_id: { [Op.in]: uniquePostIds } }, group: ['post_id'], transaction: t, raw: true }),
+                    DbAdapter.findAll(Favorite, { attributes: ['post_id', [sequelize.fn('COUNT', '*'), 'count']], where: { post_id: { [Op.in]: uniquePostIds } }, group: ['post_id'], transaction: t, raw: true }),
+                    DbAdapter.findAll(Comment, { attributes: ['post_id', [sequelize.fn('COUNT', '*'), 'count']], where: { post_id: { [Op.in]: uniquePostIds }, status: 'active', parent_id: null }, group: ['post_id'], transaction: t, raw: true })
+                ]);
+                const plikeMap = new Map(postLikeCounts.map(r => [String(r.post_id), r.count]));
+                const pfavMap = new Map(postFavCounts.map(r => [String(r.post_id), r.count]));
+                const pcommentMap = new Map(postCommentCounts.map(r => [String(r.post_id), r.count]));
+                for (const pid of uniquePostIds) {
+                    await DbAdapter.update(Post, {
+                        like_count: plikeMap.get(String(pid)) || 0,
+                        collection_count: pfavMap.get(String(pid)) || 0,
+                        comment_count: pcommentMap.get(String(pid)) || 0
+                    }, { where: { id: pid }, transaction: t });
+                }
+            }
+
+            // Bug-4(幽灵点赞数): 批量重算被删用户曾点赞过的 Comment 的 like_count
             const uniqueCommentIds = [...new Set(affectedCommentIds)].filter(Boolean);
-            for (const cid of uniqueCommentIds) {
-                const likeCount = await DbAdapter.count(Like, { where: { comment_id: cid }, transaction: t });
-                await DbAdapter.update(Comment, { like_count: likeCount }, { where: { id: cid }, transaction: t });
+            if (uniqueCommentIds.length > 0) {
+                const commentLikeCounts = await DbAdapter.findAll(Like, {
+                    attributes: ['comment_id', [sequelize.fn('COUNT', '*'), 'count']],
+                    where: { comment_id: { [Op.in]: uniqueCommentIds } },
+                    group: ['comment_id'],
+                    transaction: t,
+                    raw: true
+                });
+                const clikeMap = new Map(commentLikeCounts.map(r => [String(r.comment_id), r.count]));
+                for (const cid of uniqueCommentIds) {
+                    await DbAdapter.update(Comment, { like_count: clikeMap.get(String(cid)) || 0 }, { where: { id: cid }, transaction: t });
+                }
             }
 
             // H13: 重算被删用户曾关注过的人及关注过被删用户的人的 follower_count/following_count
@@ -768,11 +803,19 @@ async function deleteUser(req, res) {
             // 避免被删用户以后无法用同一编程猫账号重新注册/登录。
             // 用后缀标记已删除,保持唯一性约束不冲突
             const deleteSuffix = `_deleted_${uid}`;
+            // 低·边界: 防止 null 变成 "null_deleted_x" 或字段长度超限
+            const safePrefix = (str, maxLen) => {
+                if (str == null) return `deleted_${uid}`;
+                const s = String(str);
+                // 预留后缀空间,超过列长度时截断(常用列: username 50, email 100, codemao_user_id 50)
+                const maxPrefix = Math.max(2, maxLen - deleteSuffix.length);
+                return s.length > maxPrefix ? s.substring(0, maxPrefix) : s;
+            };
             await DbAdapter.update(User, {
                 status: 'disabled',
-                codemao_user_id: String(user.codemao_user_id) + deleteSuffix,
-                email: (user.email || '') + deleteSuffix,
-                username: (user.username || '') + deleteSuffix,
+                codemao_user_id: (user.codemao_user_id ? safePrefix(user.codemao_user_id, 50) : `${uid}`) + deleteSuffix,
+                email: safePrefix(user.email, 100) + deleteSuffix,
+                username: safePrefix(user.username, 50) + deleteSuffix,
                 codemao_token: null
             }, { where: { id: uid }, transaction: t });
         });
@@ -2101,15 +2144,17 @@ async function handleReport(req, res) {
                 if (comment) {
                     targetOwnerId = comment.user_id;
                     const wasActive = comment.status === 'active';
-                    const { Like } = require('../models');
-                    // Bug-6: 评论删除涉及多表(评论软删/子回复软删/计数递减),用事务包裹,与 work/post 分支保持一致
-                    // Bug-4: 补充清理该评论及子回复的 Like 记录 + 清零 like_count,与 adminController.deleteComment 一致
+                    const isTopLevel = !comment.parent_id;
+                    const { Like, Report: ReportModel } = require('../models');
                     await sequelize.transaction(async (t) => {
                         await DbAdapter.update(Comment, { status: 'deleted' }, { where: { id: report.target_id }, transaction: t });
+                        // Bug-1: 清理该评论相关的 Report 记录(type='comment', target_id=评论ID)
+                        // 与 work 分支清理 work Report 的逻辑对齐
+                        await DbAdapter.destroy(ReportModel, { where: { type: 'comment', target_id: report.target_id }, transaction: t });
+
                         // 级联软删除子回复
                         await DbAdapter.update(Comment, { status: 'deleted' }, { where: { parent_id: report.target_id }, transaction: t });
 
-                        // Bug-4: 收集子回复 id,批量清理 Like 记录 + 清零 like_count
                         const childReplies = await DbAdapter.findAll(Comment, {
                             where: { parent_id: report.target_id },
                             attributes: ['id'],
@@ -2119,15 +2164,20 @@ async function handleReport(req, res) {
                         await DbAdapter.destroy(Like, { where: { comment_id: { [Op.in]: commentIdsToClean } }, transaction: t });
                         await DbAdapter.update(Comment, { like_count: 0 }, { where: { id: { [Op.in]: commentIdsToClean } }, transaction: t });
 
-                        // 仅在旧状态为 active 且顶层评论时才递减，避免hidden→deleted 重复扣减
-                        if (wasActive && !comment.parent_id) {
+                        // Bug-3: 仅在旧状态为 active 且顶层评论时才递减 comment_count
+                        if (wasActive && isTopLevel) {
                             if (comment.work_id) {
                                 const work = await DbAdapter.findByPk(Work, comment.work_id, { transaction: t });
-                                if (work) await DbAdapter.decrement(work, 'comment_count', { where: { comment_count: { [Op.gt]: 0 } }, transaction: t });
+                                if (work) {
+                                    // 原子递减并重算确保一致
+                                    await DbAdapter.decrement(work, 'comment_count', { where: { comment_count: { [Op.gt]: 0 } }, transaction: t });
+                                }
                             }
                             if (comment.post_id) {
                                 const post = await DbAdapter.findByPk(Post, comment.post_id, { transaction: t });
-                                if (post) await DbAdapter.decrement(post, 'comment_count', { where: { comment_count: { [Op.gt]: 0 } }, transaction: t });
+                                if (post) {
+                                    await DbAdapter.decrement(post, 'comment_count', { where: { comment_count: { [Op.gt]: 0 } }, transaction: t });
+                                }
                             }
                         }
                     });
@@ -2138,27 +2188,39 @@ async function handleReport(req, res) {
                     targetOwnerId = post.user_id;
                     const pid = report.target_id;
                     const { Like, Favorite, Comment, Notification } = require('../models');
-                    // L5: 多表关联清理用事务包裹，Comment 软删保留历史可追溯
-                    // Bug-2: 删除帖子时清零 like_count/collection_count/comment_count,与 postController.deletePost 一致
                     await sequelize.transaction(async (t) => {
                         await DbAdapter.destroy(Notification, { where: { related_id: pid, related_type: 'post' }, transaction: t });
+                        // Bug-2: 清理挂在帖子评论上的 Like(comment_id),与 work 分支保持一致
+                        const postComments = await DbAdapter.findAll(Comment, {
+                            where: { post_id: pid },
+                            attributes: ['id'],
+                            transaction: t
+                        });
+                        const commentIds = postComments.map(c => DbAdapter.getId(c));
+                        if (commentIds.length > 0) {
+                            await DbAdapter.destroy(Like, { where: { comment_id: { [Op.in]: commentIds } }, transaction: t });
+                        }
                         await DbAdapter.destroy(Like, { where: { post_id: pid }, transaction: t });
                         await DbAdapter.destroy(Favorite, { where: { post_id: pid }, transaction: t });
                         await DbAdapter.update(Comment, { status: 'deleted' }, { where: { post_id: pid }, transaction: t });
-                        // Bug-2: 清零计数字段,与 postController.deletePost 一致
                         await DbAdapter.update(Post, { status: 'deleted', like_count: 0, collection_count: 0, comment_count: 0 }, { where: { id: pid }, transaction: t });
                     });
                 }
             } else if (report.type === 'user') {
                 // H14: 处理用户举报前必须校验权限，低权限管理员不能通过举报机制禁用高权限用户
                 const targetUser = await DbAdapter.findByPk(User, report.target_id);
-                if (targetUser) {
-                    if (!canManageUser(req.user.role, targetUser.role)) {
-                        return errorResponse(res, '无权处理该用户', 403);
-                    }
-                    targetOwnerId = report.target_id;
-                    await DbAdapter.update(User, { status: 'disabled' }, { where: { id: report.target_id } });
+                if (!targetUser) {
+                    return errorResponse(res, '目标用户不存在(可能已删除)', 404);
                 }
+                // Bug-4: 检查用户状态,已 disabled 的用户无需重复操作
+                if (targetUser.status === 'disabled') {
+                    return errorResponse(res, '该用户已被禁用', 400);
+                }
+                if (!canManageUser(req.user.role, targetUser.role)) {
+                    return errorResponse(res, '无权处理该用户', 403);
+                }
+                targetOwnerId = report.target_id;
+                await DbAdapter.update(User, { status: 'disabled' }, { where: { id: report.target_id } });
             }
         }
 
@@ -3422,7 +3484,7 @@ async function updateStudioStatus(req, res) {
 async function updateStudio(req, res) {
     try {
         const { id } = req.params;
-        const { name, description, cover, is_public, join_type, status, vice_owner_id } = req.body;
+        let { name, description, cover, is_public, join_type, status, vice_owner_id } = req.body;
 
         const VALID_JOIN_TYPES = ['public', 'apply', 'invite'];
         const VALID_STUDIO_STATUSES = ['active', 'banned', 'pending'];
@@ -3438,11 +3500,23 @@ async function updateStudio(req, res) {
         if (!studio) {
             return errorResponse(res, '工作室不存在', 404);
         }
+
+        // Bug-5: 管理员更新工作室 name 时需添加 AI 内容审核,与 studioController.updateStudio 一致
+        const finalName = name !== undefined ? String(name).trim() : studio.name;
+        const finalDesc = description !== undefined ? String(description).trim() : studio.description;
+        if (name !== undefined || description !== undefined) {
+            const reviewResult = await aiReview.fallbackReview(String(finalName + (finalDesc ? ' ' + finalDesc : '')));
+            if (reviewResult.recommendation === 'delete') {
+                return errorResponse(res, `内容包含违规信息:${reviewResult.reason}`, 400);
+            }
+            if (reviewResult.recommendation === 'review') {
+                console.warn(`[admin] 管理员更新工作室名称/描述为疑似违规内容,已放行(管理特权)`);
+            }
+        }
         
         await DbAdapter.update(Studio, {
-            // H14修复: name/join_type/status 改用 !== undefined 判断，此前用 || 会把空字符串当作 falsy 覆盖为旧值，导致无法设空
-            name: name !== undefined ? name : studio.name,
-            description: description !== undefined ? description : studio.description,
+            name: finalName,
+            description: finalDesc || null,
             cover: cover !== undefined ? cover : studio.cover,
             is_public: is_public !== undefined ? is_public : studio.is_public,
             join_type: join_type !== undefined ? join_type : studio.join_type,
@@ -3532,9 +3606,10 @@ async function deleteStudio(req, res) {
             return errorResponse(res, '工作室不存在', 404);
         }
 
-        // 先删除关联的成员和作品，再删除工作室本身，避免孤立数据
         // 多表关联删除必须用事务包裹，任一步失败整体回滚（与 studioController.deleteStudio 保持一致）
+        // Bug-6: 同时清理 Notification 中 related_type='studio' 的记录,避免解散后死链
         await sequelize.transaction(async (t) => {
+            await DbAdapter.destroy(Notification, { where: { related_id: Number(id), related_type: 'studio' }, transaction: t });
             await DbAdapter.destroy(StudioMember, { where: { studio_id: id }, transaction: t });
             await DbAdapter.destroy(StudioWork, { where: { studio_id: id }, transaction: t });
             await DbAdapter.destroy(Studio, { where: { id: DbAdapter.getId(studio) }, transaction: t });
@@ -3606,7 +3681,30 @@ async function updateStudioMember(req, res) {
             return errorResponse(res, '不能修改室长角色', 400);
         }
         
-        await DbAdapter.update(StudioMember, { role }, { where: { id: DbAdapter.getId(member) } });
+        // Bug-7: 修改角色为 vice_owner 时需同步 Studio.vice_owner_id,与 studioController.setMemberRole 一致
+        if (role === 'vice_owner') {
+            const studio = await DbAdapter.findByPk(Studio, studioId);
+            await sequelize.transaction(async (t) => {
+                // 降级旧副室长
+                if (studio && studio.vice_owner_id && String(studio.vice_owner_id) !== String(userId)) {
+                    await DbAdapter.update(StudioMember, { role: 'member' }, {
+                        where: { studio_id: studioId, user_id: studio.vice_owner_id },
+                        transaction: t
+                    });
+                }
+                await DbAdapter.update(StudioMember, { role }, { where: { id: DbAdapter.getId(member) }, transaction: t });
+                await DbAdapter.update(Studio, { vice_owner_id: userId }, { where: { id: studioId }, transaction: t });
+            });
+        } else {
+            // 降级时清除 vice_owner_id
+            if (member.role === 'vice_owner') {
+                const studio = await DbAdapter.findByPk(Studio, studioId);
+                if (studio && String(studio.vice_owner_id) === String(userId)) {
+                    await DbAdapter.update(Studio, { vice_owner_id: null }, { where: { id: studioId } });
+                }
+            }
+            await DbAdapter.update(StudioMember, { role }, { where: { id: DbAdapter.getId(member) } });
+        }
         logOperation(req, 'update_studio_member', 'studio_member', DbAdapter.getId(member), { role });
         
         return successResponse(res, null, '成员角色已更改');
@@ -3632,8 +3730,15 @@ async function removeStudioMember(req, res) {
         }
 
         const wasActive = member.status === 'active';
-        // Bug-8: 移除成员+计数-1+清理副室长引用需事务保证一致性（mirror studioController.kickMember）
         await sequelize.transaction(async (t) => {
+            // Bug-8: 清理该用户在该工作室的 StudioWork 记录,与 studioController.leaveStudio/kickMember 一致
+            const removedStudioWorks = await DbAdapter.findAll(StudioWork, {
+                where: { studio_id: studioId, user_id: userId, status: 'approved' },
+                attributes: ['id'],
+                transaction: t
+            });
+            await DbAdapter.destroy(StudioWork, { where: { studio_id: studioId, user_id: userId }, transaction: t });
+
             await DbAdapter.destroy(StudioMember, { where: { id: DbAdapter.getId(member) }, transaction: t });
             const studio = await DbAdapter.findByPk(Studio, studioId, { transaction: t });
             if (studio && wasActive && (studio.member_count || 0) > 0) {
@@ -3642,6 +3747,11 @@ async function removeStudioMember(req, res) {
             // 如果被移除者是副室长，清除引用
             if (studio && String(studio.vice_owner_id) === String(userId)) {
                 await DbAdapter.update(Studio, { vice_owner_id: null }, { where: { id: DbAdapter.getId(studio) }, transaction: t });
+            }
+            // Bug-8: 如果有已通过审核的作品被移除,重算工作室 work_count
+            if (removedStudioWorks.length > 0 && studio) {
+                const approvedCount = await DbAdapter.count(StudioWork, { where: { studio_id: studioId, status: 'approved' }, transaction: t });
+                await DbAdapter.update(Studio, { work_count: approvedCount }, { where: { id: DbAdapter.getId(studio) }, transaction: t });
             }
         });
 
@@ -4057,7 +4167,20 @@ async function updatePost(req, res) {
             updateData.content = c;
         }
         if (category !== undefined) updateData.category = category;
-        if (status !== undefined) updateData.status = status;
+        // 管理员手动修改 status 时的 hidden_reason 处理：
+        // - 设为 hidden → 清空 hidden_reason,视为管理员隐藏(用户编辑不能恢复)
+        // - 设为 published → 清空 hidden_reason
+        // - 其他(draft/deleted) → 清空 hidden_reason
+        if (status !== undefined) {
+            updateData.status = status;
+            if (status === 'hidden') {
+                updateData.hidden_reason = null; // 管理员手动隐藏,不标记 ai_review
+            } else if (status === 'published') {
+                updateData.hidden_reason = null;
+            } else {
+                updateData.hidden_reason = null;
+            }
+        }
         if (is_top !== undefined) updateData.is_top = is_top;
         if (is_essence !== undefined) updateData.is_essence = is_essence;
 
@@ -4072,10 +4195,14 @@ async function updatePost(req, res) {
             }
             if (reviewResult.recommendation === 'review') {
                 updateData.status = 'hidden';
+                // 与 postController.updatePost 保持一致:标记 ai_review,审核通过后自动恢复
+                updateData.hidden_reason = 'ai_review';
             } else {
-                // 审核通过: 若帖子此前因审核被 hidden,恢复为 published
-                if (post.status === 'hidden') {
+                // 审核通过: 若帖子此前因 AI 审核被 hidden,恢复为 published;
+                // 若为管理员手动隐藏(hidden_reason 非 ai_review)则不恢复
+                if (post.status === 'hidden' && post.hidden_reason === 'ai_review') {
                     updateData.status = 'published';
+                    updateData.hidden_reason = null;
                 }
             }
         }

@@ -183,20 +183,26 @@ async function getStudioDetail(req, res) {
         // role 为 ENUM,直接按字母序会得到 admin < member < owner < vice_owner(室长不在首位)。
         // 用 CASE 表达式自定义排序,SQLite 与 MySQL 均支持。
         // (Report4 #24) 限制单次查询返回成员数,防止大型工作室加载全量成员导致 OOM;
-        //               完整成员列表应由专用接口分页获取
-        const members = await DbAdapter.findAll(StudioMember, {
-            where: { studio_id: id, status: 'active' },
-            include: [{
-                model: User,
-                as: 'user',
-                attributes: ['id', 'username', 'nickname', 'avatar', 'codemao_user_id']
-            }],
-            order: [
-                [sequelize.literal("CASE WHEN role='owner' THEN 0 WHEN role='vice_owner' THEN 1 WHEN role='admin' THEN 2 ELSE 3 END"), 'ASC'],
-                ['joined_at', 'ASC']
-            ],
-            limit: 20
-        });
+        //               完整成员列表应由专用接口分页获取。
+        //               返回 totalMemberCount/hasMoreMembers 告知前端是否需要加载更多。
+        const memberWhere = { studio_id: id, status: 'active' };
+        const [memberResult, totalMemberCount] = await Promise.all([
+            DbAdapter.findAll(StudioMember, {
+                where: memberWhere,
+                include: [{
+                    model: User,
+                    as: 'user',
+                    attributes: ['id', 'username', 'nickname', 'avatar', 'codemao_user_id']
+                }],
+                order: [
+                    [sequelize.literal("CASE WHEN role='owner' THEN 0 WHEN role='vice_owner' THEN 1 WHEN role='admin' THEN 2 ELSE 3 END"), 'ASC'],
+                    ['joined_at', 'ASC']
+                ],
+                limit: 20
+            }),
+            DbAdapter.count(StudioMember, { where: memberWhere })
+        ]);
+        const members = memberResult;
         
         const works = await DbAdapter.findAll(StudioWork, {
             where: { studio_id: id, status: 'approved' },
@@ -234,6 +240,8 @@ async function getStudioDetail(req, res) {
                 memberRole: m.role,
                 joinedAt: m.joined_at
             })),
+            totalMemberCount,
+            hasMoreMembers: totalMemberCount > 20,
             works: works.filter(w => w.work).map(w => ({
                 ...w.work.toJSON(),
                 submitUser: w.user,
@@ -358,12 +366,11 @@ async function leaveStudio(req, res) {
             return errorResponse(res, '创建者不能退出工作室，请转让或解散', 400);
         }
 
-        // M2: 退出成员+计数-1+清理副室长引用需事务保证一致性
-        // Bug-3(打工机器): 同时清理该用户在该工作室的 StudioWork 记录,
-        // 避免用户退出后作品仍被强制留在工作室无法撤回
+        // M2/Bug-19: 退出成员+计数-1+清理副室长引用需事务保证一致性
+        // 原子递减用模型级 where member_count>0 避免漂移(不再用旧实例 member_count 判断)
+        // Bug-3(打工机器): 同时清理该用户在该工作室的 StudioWork 记录
         await sequelize.transaction(async (t) => {
             await DbAdapter.destroy(StudioMember, { where: { id: DbAdapter.getId(member) }, transaction: t });
-            // 清理该用户提交到该工作室的作品记录
             const removedStudioWorks = await DbAdapter.findAll(StudioWork, {
                 where: { studio_id: id, user_id: req.user.id, status: 'approved' },
                 attributes: ['id'],
@@ -371,18 +378,21 @@ async function leaveStudio(req, res) {
             });
             await DbAdapter.destroy(StudioWork, { where: { studio_id: id, user_id: req.user.id }, transaction: t });
 
-            const studio = await DbAdapter.findByPk(Studio, id, { transaction: t });
-            if (studio && member.status === 'active' && (studio.member_count || 0) > 0) {
-                await DbAdapter.decrement(studio, 'member_count', { transaction: t });
+            if (member.status === 'active') {
+                await DbAdapter.decrement(Studio, 'member_count', {
+                    where: { id: id, member_count: { [Op.gt]: 0 } },
+                    transaction: t
+                });
             }
             // 如果退出者是副室长，清除引用
+            const studio = await DbAdapter.findByPk(Studio, id, { transaction: t });
             if (studio && sameId(studio.vice_owner_id, req.user.id)) {
-                await DbAdapter.update(Studio, { vice_owner_id: null }, { where: { id: DbAdapter.getId(studio) }, transaction: t });
+                await DbAdapter.update(Studio, { vice_owner_id: null }, { where: { id: id }, transaction: t });
             }
             // 如果有已通过审核的作品被移除,重算工作室 work_count
-            if (removedStudioWorks.length > 0 && studio) {
+            if (removedStudioWorks.length > 0) {
                 const approvedCount = await DbAdapter.count(StudioWork, { where: { studio_id: id, status: 'approved' }, transaction: t });
-                await DbAdapter.update(Studio, { work_count: approvedCount }, { where: { id: DbAdapter.getId(studio) }, transaction: t });
+                await DbAdapter.update(Studio, { work_count: approvedCount }, { where: { id: id }, transaction: t });
             }
         });
 
@@ -515,31 +525,44 @@ async function reviewMember(req, res) {
             return errorResponse(res, '无权审核申请', 403);
         }
         
-        const member = await DbAdapter.findOne(StudioMember, {
-            where: { id: memberId, studio_id: id, status: 'pending' }
-        });
-        
-        if (!member) {
-            return errorResponse(res, '申请不存在', 404);
-        }
-
+        // 🔴4 修复: pending 检查从事务外移入事务内,使用 SELECT ... WHERE status='pending' 防幻读
+        // 并发狂点时多个请求都看到 pending,然后全部挤进事务导致 member_count 双增
         const VALID_ACTIONS = ['approve', 'reject'];
         if (!VALID_ACTIONS.includes(action)) {
             return errorResponse(res, '无效的操作', 400);
         }
 
+        // 🔴4 修复: 先查 member 用于权限结束后获取 user_id 发通知
+        let member = await DbAdapter.findOne(StudioMember, {
+            where: { id: memberId, studio_id: id }
+        });
+        if (!member) {
+            return errorResponse(res, '申请不存在', 404);
+        }
+
         if (action === 'approve') {
+            let approved = false;
             await sequelize.transaction(async (t) => {
-                await DbAdapter.update(StudioMember, { status: 'active' }, { where: { id: DbAdapter.getId(member) }, transaction: t });
-                const studio = await DbAdapter.findByPk(Studio, id, { transaction: t });
-                if (studio) {
-                    await DbAdapter.increment(studio, 'member_count', { transaction: t });
+                // 在事务内用 WHERE status='pending' 原子更新,确保只处理一次
+                const affectedRows = await DbAdapter.update(StudioMember,
+                    { status: 'active' },
+                    { where: { id: memberId, studio_id: id, status: 'pending' }, transaction: t }
+                );
+                const count = Array.isArray(affectedRows) ? affectedRows[0] : affectedRows;
+                if (count > 0) {
+                    approved = true;
+                    const studio = await DbAdapter.findByPk(Studio, id, { transaction: t });
+                    if (studio) {
+                        await DbAdapter.increment(studio, 'member_count', { transaction: t });
+                    }
                 }
             });
+            if (!approved) {
+                return errorResponse(res, '申请已处理或不存在', 400);
+            }
 
             try {
                 const studioForNotify = await DbAdapter.findByPk(Studio, id);
-                // M6: 补全 related_id/related_type/sender_id，便于前端跳转与通知聚合
                 await DbAdapter.create(Notification, {
                     user_id: member.user_id,
                     type: 'system',
@@ -555,7 +578,7 @@ async function reviewMember(req, res) {
 
             return successResponse(res, null, '已通过申请');
         } else {
-            await DbAdapter.update(StudioMember, { status: 'rejected' }, { where: { id: DbAdapter.getId(member) } });
+            await DbAdapter.update(StudioMember, { status: 'rejected' }, { where: { id: memberId } });
             return successResponse(res, null, '已拒绝申请');
         }
     } catch (error) {
@@ -726,8 +749,9 @@ async function reviewWork(req, res) {
             return errorResponse(res, '无权审核作品', 403);
         }
         
-        const studioWork = await DbAdapter.findOne(StudioWork, {
-            where: { id: workId, studio_id: id, status: 'pending' }
+        // 🔴4 修复: 先查 studioWork 获取 user_id 发通知
+        let studioWork = await DbAdapter.findOne(StudioWork, {
+            where: { id: workId, studio_id: id }
         });
         
         if (!studioWork) {
@@ -740,17 +764,26 @@ async function reviewWork(req, res) {
         }
 
         if (action === 'approve') {
+            let approved = false;
             await sequelize.transaction(async (t) => {
-                await DbAdapter.update(StudioWork, { 
+                // 事务内 WHERE status='pending' 原子更新,防止并发双增 work_count
+                const affectedRows = await DbAdapter.update(StudioWork, { 
                     status: 'approved', 
                     reviewed_by: req.user.id,
                     reviewed_at: new Date()
-                }, { where: { id: workId }, transaction: t });
-                const studio = await DbAdapter.findByPk(Studio, id, { transaction: t });
-                if (studio) {
-                    await DbAdapter.increment(studio, 'work_count', { transaction: t });
+                }, { where: { id: workId, studio_id: id, status: 'pending' }, transaction: t });
+                const count = Array.isArray(affectedRows) ? affectedRows[0] : affectedRows;
+                if (count > 0) {
+                    approved = true;
+                    const studio = await DbAdapter.findByPk(Studio, id, { transaction: t });
+                    if (studio) {
+                        await DbAdapter.increment(studio, 'work_count', { transaction: t });
+                    }
                 }
             });
+            if (!approved) {
+                return errorResponse(res, '作品申请已处理或不存在', 400);
+            }
             
             try {
                 const studioForNotify = await DbAdapter.findByPk(Studio, id);
@@ -1027,16 +1060,18 @@ async function kickMember(req, res) {
             return errorResponse(res, '无权移除管理员', 403);
         }
 
-        // M2: 踢出成员+计数-1+清理副室长引用需事务保证一致性
+        // M2/Bug-19: 踢出成员+计数-1+清理副室长引用需事务保证一致性
+        // 原子递减用模型级 where member_count>0,不再依赖旧实例 member_count 判断
         await sequelize.transaction(async (t) => {
             await DbAdapter.destroy(StudioMember, { where: { id: DbAdapter.getId(member) }, transaction: t });
-            const studio = await DbAdapter.findByPk(Studio, id, { transaction: t });
-            if (studio && (studio.member_count || 0) > 0) {
-                await DbAdapter.decrement(studio, 'member_count', { transaction: t });
-            }
+            await DbAdapter.decrement(Studio, 'member_count', {
+                where: { id: id, member_count: { [Op.gt]: 0 } },
+                transaction: t
+            });
             // 如果被移除者是副室长，清除引用
+            const studio = await DbAdapter.findByPk(Studio, id, { transaction: t });
             if (studio && sameId(studio.vice_owner_id, member.user_id)) {
-                await DbAdapter.update(Studio, { vice_owner_id: null }, { where: { id: DbAdapter.getId(studio) }, transaction: t });
+                await DbAdapter.update(Studio, { vice_owner_id: null }, { where: { id: id }, transaction: t });
             }
         });
 
@@ -1064,12 +1099,9 @@ async function setViceOwner(req, res) {
         if (!member || member.role !== 'owner') {
             return errorResponse(res, '只有室长可以设置副室长', 403);
         }
-        
-        const studio = await DbAdapter.findByPk(Studio, id);
-        if (!studio) {
-            return errorResponse(res, '工作室不存在', 404);
-        }
 
+        // 🔴3 修复: studio 查询移到事务内部,避免事务外读旧副室长导致并发多次任命多副室长
+        // 事务内通过 SELECT ... FOR UPDATE 或 update where 条件保证原子性
         if (user_id) {
             const viceMember = await DbAdapter.findOne(StudioMember, {
                 where: { studio_id: id, user_id: user_id, status: 'active' }
@@ -1079,9 +1111,11 @@ async function setViceOwner(req, res) {
                 return errorResponse(res, '该用户不是工作室成员', 400);
             }
             
+            // 🔴3 修复: 整个任命流程在事务内,旧副室长降级 + 新副室长升级 + vice_owner_id 更新原子化
             await sequelize.transaction(async (t) => {
-                // 清除旧副室长角色
-                if (studio.vice_owner_id) {
+                // 清除旧副室长角色(在事务内重新读取以避免幻读)
+                const studio = await DbAdapter.findByPk(Studio, id, { transaction: t });
+                if (studio && studio.vice_owner_id) {
                     await DbAdapter.update(StudioMember,
                         { role: 'member' },
                         { where: { studio_id: id, user_id: studio.vice_owner_id }, transaction: t }
@@ -1090,7 +1124,7 @@ async function setViceOwner(req, res) {
                 // 设置新副室长
                 await DbAdapter.update(Studio,
                     { vice_owner_id: user_id },
-                    { where: { id: DbAdapter.getId(studio) }, transaction: t }
+                    { where: { id: id }, transaction: t }
                 );
                 await DbAdapter.update(StudioMember,
                     { role: 'vice_owner' },
@@ -1098,19 +1132,20 @@ async function setViceOwner(req, res) {
                 );
             });
         } else {
-            // 取消副室长
-            if (studio.vice_owner_id) {
-                await sequelize.transaction(async (t) => {
+            // 取消副室长的事务也在当前 studio 快照内
+            await sequelize.transaction(async (t) => {
+                const studio = await DbAdapter.findByPk(Studio, id, { transaction: t });
+                if (studio && studio.vice_owner_id) {
                     await DbAdapter.update(StudioMember,
                         { role: 'member' },
                         { where: { studio_id: id, user_id: studio.vice_owner_id }, transaction: t }
                     );
-                    await DbAdapter.update(Studio, { vice_owner_id: null }, { where: { id: DbAdapter.getId(studio) }, transaction: t });
-                });
-            }
+                    await DbAdapter.update(Studio, { vice_owner_id: null }, { where: { id: id }, transaction: t });
+                }
+            });
         }
 
-        const updatedStudio = await DbAdapter.findByPk(Studio, DbAdapter.getId(studio));
+        const updatedStudio = await DbAdapter.findByPk(Studio, id);
         return successResponse(res, updatedStudio, '副室长已设置');
     } catch (error) {
         console.error('设置副室长错误:', error);

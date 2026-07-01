@@ -76,12 +76,13 @@ function buildWorkCreateParams(workInfo, userId) {
         user_id: userId,
         codemao_author_id: workInfo.codemaoAuthorId != null ? String(workInfo.codemaoAuthorId) : null,
         codemao_author_name: workInfo.codemaoAuthorName,
-        praise_times: workInfo.praiseTimes,
-        collection_times: workInfo.collectionTimes,
+        // 中·脏数据: praise_times/collection_times 统一归 0,不与 comment_count 口径不一致。
+        // 外部数据是编程猫总赞/收藏,本地无 Like/Favorite 记录;
+        // 若非 0 入库会导致: consistency-check 判漂移、repair-counts 归零、用户点赞翻倍(+1 叠加在 500 上)。
+        // 如需保留外部快照,应新增独立字段存储,不参与本地重算。
+        praise_times: 0,
+        collection_times: 0,
         view_times: workInfo.viewTimes,
-        // Bug-2(脏数据灾难): comment_count 始终从 0 开始,不使用外部 comment_times。
-        // 外部 comment_times 是编程猫的总评论数(如500),本地没有这些评论记录,
-        // 若塞入 comment_count 会导致页面虚假展示大量评论,且重算时会闪崩为真实0。
         comment_count: 0,
         status: 'published'
     };
@@ -107,6 +108,9 @@ function isValidCodemaoWorkId(codemaoId) {
 }
 
 function canViewWork(req, work) {
+    if (!work || work.status === 'deleted') {
+        return false;
+    }
     if (work.status === 'published') {
         return true;
     }
@@ -666,7 +670,15 @@ async function fetchOrCreateWork(workId) {
     try {
         const createParams = buildWorkCreateParams(workInfo, user ? DbAdapter.getId(user) : null);
         createParams.status = fetchStatus;
-        work = await DbAdapter.create(Work, createParams);
+        // Bug-10: create Work + 重算 author work_count 放入同一事务,避免作品创建后计数未更新
+        await sequelize.transaction(async (t) => {
+            work = await DbAdapter.create(Work, createParams, { transaction: t });
+            if (fetchStatus === 'published' && user) {
+                const authorId = DbAdapter.getId(user);
+                const authorWorkCount = await DbAdapter.count(Work, { where: { user_id: authorId, status: 'published' }, transaction: t });
+                await DbAdapter.update(User, { work_count: authorWorkCount }, { where: { id: authorId }, transaction: t });
+            }
+        });
     } catch (createError) {
         if (createError.name === 'SequelizeUniqueConstraintError') {
             work = await DbAdapter.findOne(Work, {
@@ -964,8 +976,6 @@ async function updateWork(req, res) {
 
         // H12: 修改描述或名称后重新审核，违规内容拦截，疑似违规回退到 pending 待人工复核
         if (updateData.description !== undefined || updateData.name !== undefined) {
-            // 修复: 用 !== undefined 判断字段是否传入，避免空字符串被 || 当作 falsy 而回退到旧值，
-            // 导致审核文本与实际落库内容不一致（保存空名却审核旧名）
             const reviewText = `${updateData.name !== undefined ? updateData.name : (work.name || '')} ${updateData.description !== undefined ? updateData.description : (work.description || '')}`;
             const reviewResult = await aiReview.fallbackReview(String(reviewText));
             if (reviewResult.recommendation === 'delete') {
@@ -973,6 +983,12 @@ async function updateWork(req, res) {
             }
             if (reviewResult.recommendation === 'review') {
                 updateData.status = 'pending';
+            } else {
+                // 🔴2 修复: 审核通过(pass)时,若作品此前因审核被设为 pending,恢复为 published
+                // 与 postController.updatePost 行为一致:用户改正内容后不应永久待审
+                if (work.status === 'pending') {
+                    updateData.status = 'published';
+                }
             }
         }
 

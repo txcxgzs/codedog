@@ -59,8 +59,8 @@ async function createPost(req, res) {
     try {
         const { title, content, category, tags, cover } = req.body;
         
-        // 修复: 仅判 emptiness 会被纯空白字符串绕过,改用 trim 后判空
-        if (!String(title).trim() || !String(content).trim()) {
+        // 修复: null/undefined 先拦截,避免 String(null)=="null" 绕过校验
+        if (title == null || content == null || !String(title).trim() || !String(content).trim()) {
             return errorResponse(res, '请填写标题和内容', 400);
         }
 
@@ -226,37 +226,40 @@ async function getPostDetail(req, res) {
             favorited = !!existingFav;
         }
 
-        const comments = await DbAdapter.findAll(Comment, {
+        // 评论分页：使用 parsePagination 控制评论加载量,避免大帖卡死/超慢
+        const { page: commentPage, pageSize: commentPageSize, offset: commentOffset } = DbAdapter.parsePagination(req.query);
+
+        const comments = await DbAdapter.findAndCountAll(Comment, {
             where: { post_id: id, status: 'active', parent_id: null },
+            distinct: true,
             include: [{
                 model: User,
                 as: 'user',
-                // 修复(报告1 #11): 增加 codemao_user_id 供前端跳转作者主页
                 attributes: ['id', 'codemao_user_id', 'username', 'nickname', 'avatar']
             }, {
                 model: Comment,
                 as: 'replies',
-                where: { status: 'active' },
+                where: { status: { [Op.in]: ['active', 'hidden'] } },
                 required: false,
                 include: [{
                     model: User,
                     as: 'user',
                     attributes: ['id', 'codemao_user_id', 'username', 'nickname', 'avatar']
                 }, {
-                    // Bug-9 修复: 补充 reply_to_user include,与 commentController.getWorkComments 一致,
-                    // 否则回复中被回复者的信息无法展示
                     model: User,
                     as: 'reply_to_user',
                     attributes: ['id', 'codemao_user_id', 'username', 'nickname', 'avatar'],
                     required: false
                 }]
             }],
-            order: [['created_at', 'DESC']]
+            order: [['created_at', 'DESC']],
+            limit: commentPageSize,
+            offset: commentOffset
         });
 
         // 先将评论及回复转换为普通 JSON 对象，否则给 Sequelize 实例挂 liked
         // 不会进入响应（实例的 toJSON 只输出 dataValues）
-        const commentsJson = comments.map(c => {
+        const commentsJson = comments.rows.map(c => {
             const json = c.toJSON ? c.toJSON() : c;
             if (Array.isArray(json.replies)) {
                 json.replies = json.replies.map(r => (r && r.toJSON ? r.toJSON() : r));
@@ -284,6 +287,13 @@ async function getPostDetail(req, res) {
             }
         }
 
+        // 评论分页信息
+        postJson.commentPagination = {
+            page: commentPage,
+            pageSize: commentPageSize,
+            total: comments.count
+        };
+
         return successResponse(res, postJson);
     } catch (error) {
         console.error('获取帖子详情错误:', error);
@@ -308,11 +318,14 @@ async function updatePost(req, res) {
             return errorResponse(res, '无权修改此帖子', 403);
         }
 
-        // [Bug2 修复] 用 !== undefined 判断字段是否传入,空字符串视为有效输入(允许清空)
-        // 但空标题/空正文不允许,需返回 400 提示
-        // 修复: 仅判 length===0 会被纯空白字符串绕过,改用 trim 后判空
-        // 修复: title 为 null 时 String(null).trim() 返回 "null"(长度4) 会绕过校验,
-        // 用 == null 显式拦截 null/undefined
+        // 修复: 明确拒绝 title/content 为 null,避免 String(null) 写入 "null" 脏数据
+        // 空字符串视为有效输入(允许清空),但空标题/空正文 trim 后为空需返回 400
+        if (title === null) {
+            return errorResponse(res, '标题不能为空', 400);
+        }
+        if (content === null) {
+            return errorResponse(res, '内容不能为空', 400);
+        }
         if (title != null) {
             const trimmedTitle = String(title).trim();
             if (trimmedTitle.length === 0) {
@@ -338,9 +351,9 @@ async function updatePost(req, res) {
             return errorResponse(res, tagsError, 400);
         }
 
-        // 计算最终落库的标题和正文(传入用新值,未传入用旧值)
-        const finalTitle = title !== undefined ? title : post.title;
-        const finalContent = content !== undefined ? content : post.content;
+        // 计算最终落库的标题和正文(传入用新值,未传入用旧值),统一 trim 后入库避免纯空格
+        let finalTitle = title !== undefined ? (title === null ? null : String(title).trim()) : post.title;
+        let finalContent = content !== undefined ? (content === null ? null : String(content).trim()) : post.content;
 
         // 统一构建 updateData:全部字段用 !== undefined 判断,避免 falsy 判断忽略空字符串
         const updateData = {
@@ -351,24 +364,20 @@ async function updatePost(req, res) {
             cover: cover !== undefined ? cover : post.cover
         };
 
-        // [Bug1 修复 P0] updatePost 缺少内容审核,用户可先发正常帖子再编辑成违规内容绕过审核
-        // 当 title 或 content 字段发生变更时,对变更后的最终内容调用 aiReview.fallbackReview
-        // 参照 createPost 的审核调用方式:
-        //   delete → 拒绝并返回 400
-        //   review → post.status='hidden'(待人工复核)
-        //   pass   → 若帖子此前因审核被 hidden,恢复为 published;否则保持原 status
         if (title !== undefined || content !== undefined) {
-            const reviewResult = await aiReview.fallbackReview(`${finalTitle}\n${finalContent}`);
+            const reviewResult = await aiReview.fallbackReview(`${(finalTitle || '')}\n${(finalContent || '')}`);
             if (reviewResult.recommendation === 'delete') {
                 return errorResponse(res, `内容包含违规信息:${reviewResult.reason}`, 400);
             }
             if (reviewResult.recommendation === 'review') {
                 updateData.status = 'hidden';
+                // 中·绕过隐藏: 加 hidden_reason='ai_review',审核 pass 时仅恢复 ai 隐藏的帖子
+                updateData.hidden_reason = 'ai_review';
             } else {
-                // 审核通过(pass): 若帖子此前因审核被 hidden,恢复为 published
-                // 避免帖子进过一次小黑屋后即使内容已改正也永远不可见
-                if (post.status === 'hidden') {
+                // 审核通过(pass): 仅恢复因 AI 审核被 hidden 的帖子,不复活管理员手动隐藏的帖子
+                if (post.status === 'hidden' && post.hidden_reason === 'ai_review') {
                     updateData.status = 'published';
+                    updateData.hidden_reason = null;
                 }
             }
         }
@@ -634,8 +643,9 @@ async function getMyPosts(req, res) {
     try {
         const { page, pageSize, offset } = DbAdapter.parsePagination(req.query);
 
+        // 过滤 deleted/hidden,"我的帖子"不显示已删除/审核隐藏的帖子
         const { count, rows } = await DbAdapter.findAndCountAll(Post, {
-            where: { user_id: DbAdapter.getId(req.user) },
+            where: { user_id: DbAdapter.getId(req.user), status: { [Op.ne]: 'deleted' } },
             order: [['created_at', 'DESC']],
             limit: pageSize,
             offset

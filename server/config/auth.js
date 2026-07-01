@@ -70,28 +70,38 @@ function getOrCreatePersistentSecret(filePath, byteLength, envName) {
         // 文件不存在或读取失败:继续走生成逻辑
     }
 
-    // 2. 文件不存在:生成新密钥并写入(仅首个启动的 worker 会真正生成,后续 worker 读到同一文件)
+    // 2. 🟠6 修复: 文件不存在时,多 worker 可能并发首启动 → 各自 generate 不同密钥再互相覆盖
+    // 有几率导致 token 跨进程失效(无限重登录)。用 wx 排他写:只有一个 worker 能成功写入文件;
+    // 写入失败的 worker 重新读取文件获得共享密钥。
     const generated = crypto.randomBytes(byteLength).toString('hex');
-    let persisted = false;
+    let secret = generated;
     try {
         fs.mkdirSync(SECRET_DIR, { recursive: true });
-        // 0600 权限:仅 owner 可读写,防止其他用户读取密钥
-        fs.writeFileSync(filePath, generated, { mode: 0o600 });
-        persisted = true;
-    } catch (writeErr) {
-        // 写入失败(如只读文件系统):退回内存中的 generated,但多进程将不一致
-        console.error(`⚠️ 无法持久化 ${envName} 到 ${filePath}: ${writeErr.message}。多进程/集群部署将出现密钥不一致!`);
-    }
-
-    if (persisted) {
-        // 首次生成时大声告警,提示运维为多实例部署显式设置环境变量
+        // wx = write + exclusive: 文件已存在时 throw EEXIST,避免多 worker 覆盖
+        fs.writeFileSync(filePath, generated, { mode: 0o600, flag: 'wx' });
+        // 当前 worker 是首个写入者,密钥已持久化
         console.warn(
             `⚠️ ${envName} 未通过环境变量提供,已在 ${filePath} 生成新的持久化密钥。\n`
-            + `   多实例部署(如 PM2 cluster 多机器、K8s 多 Pod)请务必通过环境变量 ${envName} 显式设置相同密钥,`
-            + `并确保所有实例能访问同一份密钥文件或共享存储。`
+            + `   多机器/多容器部署(如 K8s 多 Pod)请务必通过环境变量 ${envName} 显式设置相同密钥。`
         );
+    } catch (writeErr) {
+        if (writeErr.code === 'EEXIST') {
+            // 文件已被另一个 worker 写入,重新读取以获取共享密钥
+            try {
+                const shared = fs.readFileSync(filePath, 'utf8').trim();
+                if (shared && shared.length >= 32) {
+                    secret = shared;
+                    console.log(`✓ ${envName} 已有持久化密钥文件,读取成功。`);
+                }
+            } catch (readErr) {
+                console.warn(`⚠️ ${envName} 持久化文件被占用,使用当前生成的密钥(可能与同机其他 worker 不一致)。`);
+            }
+        } else {
+            // 非 EEXIST 错误(如只读文件系统):退回内存中的密钥
+            console.error(`⚠️ 无法持久化 ${envName} 到 ${filePath}: ${writeErr.message}。多进程/集群部署将出现密钥不一致!`);
+        }
     }
-    return generated;
+    return secret;
 }
 
 function resolveJwtSecret() {
