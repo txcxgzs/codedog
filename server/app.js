@@ -84,6 +84,27 @@ function resolveSessionSecret() {
     return crypto.randomBytes(32).toString('hex');
 }
 
+async function ensureInitialSuperadmin() {
+    const autoPromote = process.env.AUTO_FIRST_USER_SUPERADMIN !== 'false';
+    if (!autoPromote) return;
+
+    const userCount = await DbAdapter.count(User, {});
+    if (userCount === 0) {
+        console.log('No users exist. The first logged-in user will become superadmin automatically.');
+        return;
+    }
+
+    if (userCount !== 1) return;
+
+    const firstUser = await User.findOne({ order: [['id', 'ASC']] });
+    if (!firstUser) return;
+
+    if (firstUser.role !== 'superadmin') {
+        await firstUser.update({ role: 'superadmin' });
+        console.log(`Initial administrator auto-promoted: ${firstUser.nickname || firstUser.username || firstUser.id}`);
+    }
+}
+
 app.use(cors((req, callback) => {
     callback(null, {
         origin: true,
@@ -217,7 +238,7 @@ app.use(session(sessionOptions));
 
 app.use('/api', writeRateLimiter);
 app.use('/api/users/login', loginRateLimiter);
-app.use('/api/works/codemao', codemaoImportRateLimiter);
+app.use('/api/works/codemao', codemImportRateLimiter);
 
 app.use(hcaptchaGuard);
 
@@ -321,10 +342,7 @@ async function startServer() {
             console.warn('Refresh role permission cache failed:', e.message);
         }
 
-        const userCount = await DbAdapter.count(User, {});
-        if (userCount === 0) {
-            console.log('No users exist. Configure INITIAL_ADMIN_CODEMAO_ID or INITIAL_ADMIN_BOOTSTRAP_TOKEN to bootstrap a superadmin.');
-        }
+        await ensureInitialSuperadmin();
 
         app.listen(PORT, () => {
             console.log(`Server started on port ${PORT}`);
