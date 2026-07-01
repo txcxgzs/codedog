@@ -2,27 +2,27 @@
 setlocal EnableDelayedExpansion
 chcp 65001 >nul
 
-echo CodeDog Deployment Script
-echo =========================
+echo CodeDog 一键部署脚本
+echo ======================
 
-:: Check Docker
+:: 检查 Docker
 docker --version >nul 2>&1
 if errorlevel 1 (
-    echo ERROR: Docker Desktop not installed
+    echo 错误：未安装 Docker Desktop，请先安装 Docker Desktop
     pause
     exit /b 1
 )
 
 docker compose version >nul 2>&1
 if errorlevel 1 (
-    echo ERROR: Docker Compose not available. Please update Docker Desktop.
+    echo 错误：Docker Compose 不可用，请升级 Docker Desktop
     pause
     exit /b 1
 )
 
-:: Create .env if not exists
+:: 创建 .env 配置文件
 if not exist .env (
-    echo Creating .env configuration...
+    echo 正在创建 .env 环境配置...
     echo SERVER_PORT=3001> .env
     echo DB_TYPE=sqlite>> .env
     echo DB_PATH=/app/server/data/database.sqlite>> .env
@@ -35,36 +35,36 @@ if not exist .env (
     echo CORS_ORIGIN=http://localhost:3001>> .env
     call :append_secret JWT_SECRET 64
     call :append_secret SESSION_SECRET 32
-    echo .env created
+    echo .env 创建完成
 ) else (
-    echo Using existing .env
+    echo 使用现有 .env 配置
 )
 
-:: Repair incomplete .env files from older installers.
+:: 修复旧版本安装器生成的不完整 .env
 findstr /B /C:"DB_PATH=" .env >nul 2>&1 || echo DB_PATH=/app/server/data/database.sqlite>> .env
 findstr /B /C:"JWT_EXPIRES_IN=" .env >nul 2>&1 || echo JWT_EXPIRES_IN=7d>> .env
 findstr /B /C:"CORS_ORIGIN=" .env >nul 2>&1 || echo CORS_ORIGIN=http://localhost:3001>> .env
 findstr /R /B /C:"JWT_SECRET=................................" .env >nul 2>&1 || call :append_secret JWT_SECRET 64
 findstr /R /B /C:"SESSION_SECRET=................................" .env >nul 2>&1 || call :append_secret SESSION_SECRET 32
 
-:: Create directories
+:: 创建数据目录和上传目录
 if not exist data mkdir data
 if not exist uploads mkdir uploads
 if not exist uploads\avatars mkdir uploads\avatars
 if not exist uploads\works mkdir uploads\works
 
-:: Build and start
-echo Building Docker image...
+:: 构建并启动
+echo 正在构建 Docker 镜像...
 docker compose build --no-cache
 if errorlevel 1 goto fail
 
-echo Starting service...
+echo 正在启动服务...
 docker compose down
 docker compose up -d
 if errorlevel 1 goto fail
 
-:: Wait for startup
-echo Waiting for service...
+:: 等待服务启动
+echo 正在等待服务启动...
 set READY=0
 for /L %%i in (1,1,60) do (
     curl -fs http://localhost:3001/api/health >nul 2>&1
@@ -77,24 +77,24 @@ for /L %%i in (1,1,60) do (
 
 :service_ready
 if not "%READY%"=="1" (
-    echo ERROR: Service did not become healthy. Recent logs:
+    echo 错误：服务未能正常启动。最近日志如下：
     docker compose ps
     docker compose logs --tail=120 codedog
     pause
     exit /b 1
 )
 
-:: Install CLI
-echo Installing management tool...
+:: 安装管理工具
+echo 正在安装 codedog 管理工具...
 if exist "%~dp0install-cli.bat" (
     call "%~dp0install-cli.bat"
 )
 
 echo.
-echo Deployment Complete!
-echo URL: http://localhost:3001
-echo Admin: http://localhost:3001/admin
-echo Tool: codedog
+echo 部署完成！
+echo 访问地址：http://localhost:3001
+echo 后台地址：http://localhost:3001/admin
+echo 管理工具：codedog
 echo.
 pause
 exit /b 0
@@ -105,7 +105,7 @@ echo %1=!SECRET_VALUE!>> .env
 exit /b 0
 
 :fail
-echo ERROR: Deployment failed. Recent logs:
+echo 错误：部署失败。最近日志如下：
 docker compose logs --tail=120 codedog
 pause
 exit /b 1
