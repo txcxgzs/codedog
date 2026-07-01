@@ -32,8 +32,6 @@ const { createSequelizeSessionStore } = require('./services/sessionStore');
 
 const app = express();
 app.disable('x-powered-by');
-// 修复 H2: trust proxy 不应硬编码 1,改为根据环境变量动态配置
-// 反向代理(Nginx 等)部署时设 TRUST_PROXY=true 才信任 X-Forwarded-*,否则直连不信任防 IP 伪造
 const trustProxy = process.env.TRUST_PROXY === 'true' ? 1 : false;
 app.set('trust proxy', trustProxy);
 
@@ -61,25 +59,20 @@ function normalizeOrigin(value) {
     }
 }
 
-function sameHostOrigins(host) {
-    if (!host) return [];
-    return [`http://${host}`, `https://${host}`];
-}
-
 function isAllowedOrigin(origin, host) {
-    // 非浏览器请求通常没有 Origin，允许通过。
     if (!origin) return true;
 
     const normalizedOrigin = normalizeOrigin(origin);
     if (!normalizedOrigin) return false;
 
-    // 显式白名单优先。
     if (ALLOWED_ORIGINS.includes(normalizedOrigin)) return true;
 
-    // 一键 Docker 部署常见访问方式是 http://服务器IP:3001。
-    // 此时 .env 默认 CORS_ORIGIN=http://localhost:3001，但浏览器 Origin 会是服务器 IP。
-    // 只允许“请求 Origin 与当前 Host 相同”的同站访问，避免误放开第三方来源。
-    return sameHostOrigins(host).includes(normalizedOrigin);
+    try {
+        const originUrl = new URL(normalizedOrigin);
+        return Boolean(host) && originUrl.host === host;
+    } catch (e) {
+        return false;
+    }
 }
 
 function setSecurityHeaders(res) {
@@ -97,13 +90,11 @@ function setSecurityHeaders(res) {
         "img-src 'self' data: https://*.codemao.cn",
         "font-src 'self' data:",
         "connect-src 'self' https://*.codemao.cn wss://*.codemao.cn https://*.geetest.com https://hcaptcha.com https://*.hcaptcha.com",
-        // 修复 M4: 移除不必要的 https://www.google.com/recaptcha/(项目用的是 hCaptcha,不是 Google reCAPTCHA)
         "frame-src 'self' https://*.codemao.cn https://hcaptcha.com/",
         "form-action 'self'"
     ].join('; '));
 }
 
-// 修复 #21: 使用 config/auth.js 的 isValidSessionSecret 校验 session 密钥(与 JWT 一致,含弱密钥黑名单)
 function resolveSessionSecret() {
     const configuredSecret = process.env.SESSION_SECRET;
     if (isValidSessionSecret(configuredSecret)) {
@@ -235,7 +226,6 @@ const sessionStore = isProduction
 
 const sessionOptions = {
     secret: sessionSecret,
-    // 修复 M2: 自定义 cookie 名,避免默认 connect.sid 暴露技术栈(指纹识别)
     name: 'codedog.sid',
     resave: false,
     saveUninitialized: false,
@@ -253,9 +243,6 @@ if (sessionStore) {
 
 app.use(session(sessionOptions));
 
-// 修复 M3: 调整限流顺序,所有 rateLimiter 必须在 hcaptchaGuard 之前,
-// 否则 hCaptcha 校验阶段(可能查 DB / 访问外部服务)不受限流保护,易被滥用
-// 顺序: writeRateLimiter -> loginRateLimiter -> codemaoImportRateLimiter -> hcaptchaGuard -> 路由
 app.use('/api', writeRateLimiter);
 app.use('/api/users/login', loginRateLimiter);
 app.use('/api/works/codemao', codemaoImportRateLimiter);
@@ -297,7 +284,6 @@ if (fs.existsSync(frontendPath)) {
 
     app.get('*', (req, res, next) => {
         if (req.path.startsWith('/api')) return next();
-        // 修复 L2: /uploads/ 找不到文件时不应返回 index.html,直接 404
         if (req.path.startsWith('/uploads/')) return res.status(404).end();
         res.sendFile(path.join(frontendPath, 'index.html'));
     });
@@ -308,7 +294,6 @@ if (fs.existsSync(frontendPath)) {
 
     app.get('*', (req, res, next) => {
         if (req.path.startsWith('/api')) return next();
-        // 修复 L2: /uploads/ 找不到文件时不应返回 index.html,直接 404
         if (req.path.startsWith('/uploads/')) return res.status(404).end();
         res.sendFile(path.join(alternativePath, 'index.html'));
     });
@@ -323,7 +308,6 @@ app.use((req, res) => {
 });
 
 app.use((err, req, res, next) => {
-    // 修复 M14: 错误日志不再打印整个 err 对象(可能含敏感字段),只打印 message + stack
     console.error('Server error:', err.message, err.stack);
     res.status(500).json({
         code: 500,
@@ -343,7 +327,6 @@ async function startServer() {
         }
         console.log('Database models synchronized.');
 
-        // 迁移旧数据：将 Post.status='active' 统一改为 'published'
         try {
             const { Post } = require('./models');
             const [updated] = await Post.update(
@@ -357,7 +340,6 @@ async function startServer() {
             console.warn('帖子状态迁移跳过:', e.message);
         }
 
-        // 启动时刷新角色权限缓存，避免热更新后 getRoleSync 永远走默认值
         try {
             const { refreshRoleCache } = require('./config/permissions');
             const { RolePermission } = require('./models');
@@ -391,7 +373,6 @@ process.on('unhandledRejection', (reason, promise) => {
     console.error('Unhandled Rejection at:', promise, 'reason:', reason);
 });
 
-// 修复 M7: uncaughtException 是严重错误,进程状态不可预知,应退出由进程管理器(如 PM2)重启
 process.on('uncaughtException', (error) => {
     console.error('Uncaught Exception:', error);
     process.exit(1);
