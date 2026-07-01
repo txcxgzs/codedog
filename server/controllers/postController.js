@@ -85,7 +85,10 @@ async function createPost(req, res) {
             return errorResponse(res, `内容包含违规信息:${reviewResult.reason}`, 400);
         }
         // Post 模型 status 无 pending 枚举，用 hidden 表示待人工复核
+        // 关键: review→hidden 时必须设置 hidden_reason='ai_review',
+        // 否则 updatePost 的恢复条件(status==='hidden' && hidden_reason==='ai_review')永远不满足
         const postStatus = reviewResult.recommendation === 'review' ? 'hidden' : 'published';
+        const postHiddenReason = postStatus === 'hidden' ? 'ai_review' : null;
 
         const post = await DbAdapter.create(Post, {
             title,
@@ -94,7 +97,8 @@ async function createPost(req, res) {
             category: category || 'discussion',
             tags,
             cover,
-            status: postStatus
+            status: postStatus,
+            hidden_reason: postHiddenReason
         });
         
         const result = await DbAdapter.findByPk(Post, post.id, {
@@ -229,37 +233,43 @@ async function getPostDetail(req, res) {
         // 评论分页：使用 parsePagination 控制评论加载量,避免大帖卡死/超慢
         const { page: commentPage, pageSize: commentPageSize, offset: commentOffset } = DbAdapter.parsePagination(req.query);
 
-        const comments = await DbAdapter.findAndCountAll(Comment, {
-            where: { post_id: id, status: 'active', parent_id: null },
-            distinct: true,
-            include: [{
-                model: User,
-                as: 'user',
-                attributes: ['id', 'codemao_user_id', 'username', 'nickname', 'avatar']
-            }, {
-                model: Comment,
-                as: 'replies',
-                where: { status: { [Op.in]: ['active', 'hidden'] } },
-                required: false,
+        // 独立 count 查询避免 include(JOIN) 导致 count 不准;
+        // findAndCountAll + distinct 在 include 带 separate 时可能忽略 distinct 导致计数虚高
+        const [totalComments, comments] = await Promise.all([
+            DbAdapter.count(Comment, { where: { post_id: id, status: 'active', parent_id: null } }),
+            DbAdapter.findAll(Comment, {
+                where: { post_id: id, status: 'active', parent_id: null },
                 include: [{
                     model: User,
                     as: 'user',
                     attributes: ['id', 'codemao_user_id', 'username', 'nickname', 'avatar']
                 }, {
-                    model: User,
-                    as: 'reply_to_user',
-                    attributes: ['id', 'codemao_user_id', 'username', 'nickname', 'avatar'],
-                    required: false
-                }]
-            }],
-            order: [['created_at', 'DESC']],
-            limit: commentPageSize,
-            offset: commentOffset
-        });
+                    model: Comment,
+                    as: 'replies',
+                    where: { status: 'active' },
+                    required: false,
+                    separate: true,
+                    limit: 20,
+                    include: [{
+                        model: User,
+                        as: 'user',
+                        attributes: ['id', 'codemao_user_id', 'username', 'nickname', 'avatar']
+                    }, {
+                        model: User,
+                        as: 'reply_to_user',
+                        attributes: ['id', 'codemao_user_id', 'username', 'nickname', 'avatar'],
+                        required: false
+                    }]
+                }],
+                order: [['created_at', 'DESC']],
+                limit: commentPageSize,
+                offset: commentOffset
+            })
+        ]);
 
         // 先将评论及回复转换为普通 JSON 对象，否则给 Sequelize 实例挂 liked
         // 不会进入响应（实例的 toJSON 只输出 dataValues）
-        const commentsJson = comments.rows.map(c => {
+        const commentsJson = comments.map(c => {
             const json = c.toJSON ? c.toJSON() : c;
             if (Array.isArray(json.replies)) {
                 json.replies = json.replies.map(r => (r && r.toJSON ? r.toJSON() : r));
@@ -291,7 +301,7 @@ async function getPostDetail(req, res) {
         postJson.commentPagination = {
             page: commentPage,
             pageSize: commentPageSize,
-            total: comments.count
+            total: totalComments
         };
 
         return successResponse(res, postJson);

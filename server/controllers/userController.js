@@ -14,7 +14,6 @@ const path = require('path');
 const fs = require('fs');
 const DbAdapter = require('../utils/dbAdapter');
 const GeetestService = require('../services/geetestService');
-const { escapeHtml } = require('../utils/security');
 // 引入内容审核服务,落库前做敏感词/违规检查(参照 commentController)
 const aiReview = require('../services/aiReview');
 
@@ -182,9 +181,9 @@ async function codemaoLogin(req, res, identity, password) {
             }
         }
 
-        // 审核通过才转义落库；审核未通过则不存 nickname/bio（与已存在用户路径一致），用户可后续经 updateProfile 重新设置
-        const safeNickname = (!newProfileBlocked && newRawNickname) ? escapeHtml(newRawNickname) : null;
-        const safeBio = (!newProfileBlocked && newRawBio) ? escapeHtml(newRawBio) : null;
+        // 存原始文本(不转义),渲染时才转义,与全站统一
+        const safeNickname = (!newProfileBlocked && newRawNickname) ? newRawNickname : null;
+        const safeBio = (!newProfileBlocked && newRawBio) ? newRawBio : null;
 
         // 使用 findOrCreate 避免竞态条件
         let user, created;
@@ -262,12 +261,12 @@ async function codemaoLogin(req, res, identity, password) {
                 }
             }
 
-            // 仅当本地字段为空且审核通过时，才用转义后的编程猫资料覆盖
+            // 仅当本地字段为空且审核通过时，才用编程猫资料覆盖(存原始)
             if (!user.nickname && rawNickname && !profileBlocked) {
-                updateFields.nickname = escapeHtml(rawNickname);
+                updateFields.nickname = rawNickname;
             }
             if (!user.bio && rawBio && !profileBlocked) {
-                updateFields.bio = escapeHtml(rawBio);
+                updateFields.bio = rawBio;
             }
             // avatar 是 URL，无需转义；仅在本地为空时覆盖，尊重用户自定义头像
             if (!user.avatar && codemaoAvatar) {
@@ -282,7 +281,7 @@ async function codemaoLogin(req, res, identity, password) {
         });
         
         const token = jwt.sign(
-            { id: DbAdapter.getId(user), username: user.username, role: user.role },
+            { id: DbAdapter.getId(user), username: user.username, role: user.role, token_version: user.token_version || 0 },
             JWT_SECRET,
             { expiresIn: JWT_EXPIRES_IN, issuer: 'codedog-community', audience: 'codedog-frontend' }
         );
@@ -416,7 +415,12 @@ async function syncUserWorks(codemaoUserId, localUserId) {
                     // 已存在作品重新审核:编程猫若将作品改为违规内容,本地同步为 pending
                     await DbAdapter.update(Work, { status: 'pending' }, { where: { id: record.id } });
                     console.warn(`[syncUserWorks] 作品 ${workDetail.id} 重新审核不通过,更新为 pending`);
+                } else if (record && record.status === 'pending' && workStatus === 'published') {
+                    // 已存在 pending 作品后续审核通过,恢复为 published
+                    await DbAdapter.update(Work, { status: 'published' }, { where: { id: record.id } });
+                    console.log(`[syncUserWorks] 作品 ${workDetail.id} 审核通过,恢复为 published`);
                 }
+
 
                 // 延迟 200ms 避免被编程猫限流
                 await new Promise(resolve => setTimeout(resolve, 200));
@@ -538,31 +542,30 @@ async function updateProfile(req, res) {
             }
         }
 
-        // 审核通过后再转义；L6: escapeHtml 会把 <、>、& 等转成多字符实体，转义后需复检长度，
-        // 否则超长内容会触发 Sequelize/DB 截断或报错
-        // 修复: bio/doing 也 trim 后再落库,与 nickname 一致;审核已用 trim 值但落库用了原始值
-        const escapedNickname = nickname ? escapeHtml(nickname) : user.nickname;
-        const escapedBio = bio !== undefined ? escapeHtml(String(bio).trim()) : user.bio;
-        const escapedDoing = doing !== undefined ? escapeHtml(String(doing).trim()) : user.doing;
+        // 审核通过后存原始文本(不转义),渲染时才转义,避免 Vue 模板引擎二次转义(& → &amp;amp;)
+        // 与 studioController 保持统一: 全站存原始,渲染转义
+        const savedNickname = nickname ? nickname : user.nickname;
+        const savedBio = bio !== undefined ? String(bio).trim() : user.bio;
+        const savedDoing = doing !== undefined ? String(doing).trim() : user.doing;
 
-        if (String(escapedNickname).length > 50) {
+        if (String(savedNickname).length > 50) {
             cleanupUploadedFile(req.file);
-            return errorResponse(res, '昵称(转义后)不能超过50字', 400);
+            return errorResponse(res, '昵称不能超过50字', 400);
         }
-        if (String(escapedBio).length > 500) {
+        if (String(savedBio).length > 500) {
             cleanupUploadedFile(req.file);
-            return errorResponse(res, '简介(转义后)不能超过500字', 400);
+            return errorResponse(res, '简介不能超过500字', 400);
         }
-        if (String(escapedDoing).length > 200) {
+        if (String(savedDoing).length > 200) {
             cleanupUploadedFile(req.file);
-            return errorResponse(res, '正在做(转义后)不能超过200字', 400);
+            return errorResponse(res, '正在做不能超过200字', 400);
         }
 
         await DbAdapter.update(User, {
-            nickname: escapedNickname,
+            nickname: savedNickname,
             avatar: avatar,
-            bio: escapedBio,
-            doing: escapedDoing
+            bio: savedBio,
+            doing: savedDoing
         }, { where: { id: DbAdapter.getId(user) } });
 
         // (Report 1 #7) 头像更新后清理旧头像文件，避免磁盘泄漏。

@@ -36,6 +36,12 @@ async function resolveUserFromToken(token) {
         throw error;
     }
 
+    if (decoded.token_version !== undefined && decoded.token_version !== (user.token_version || 0)) {
+        const error = new Error('TOKEN_REVOKED');
+        error.statusCode = 401;
+        throw error;
+    }
+
     return {
         id: DbAdapter.getId(user),
         username: user.username,

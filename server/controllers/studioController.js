@@ -56,14 +56,14 @@ async function createStudio(req, res) {
         let { name, description, cover, is_public, join_type } = req.body;
 
         // (报告1 #10) name/description 先 trim,拒绝纯空白名称(参照 userController.updateProfile)
+        if (!name || !String(name).trim()) {
+            return errorResponse(res, '请输入工作室名称', 400);
+        }
         if (description !== undefined && description !== null) {
             description = String(description).trim();
         }
         if (name !== undefined && name !== null) {
             name = String(name).trim();
-        }
-        if (!String(name).trim()) {
-            return errorResponse(res, '请输入工作室名称', 400);
         }
 
         if (!isValidJoinType(join_type)) {
@@ -406,7 +406,7 @@ async function leaveStudio(req, res) {
 async function getMyStudios(req, res) {
     try {
         const memberships = await DbAdapter.findAll(StudioMember, {
-            where: { user_id: req.user.id, status: 'active' },
+            where: { user_id: req.user.id, status: { [Op.in]: ['active', 'pending'] } },
             include: [{
                 model: Studio,
                 as: 'studio',
@@ -436,15 +436,17 @@ async function updateStudio(req, res) {
         const { id } = req.params;
         let { name, description, cover, is_public, join_type } = req.body;
 
-        // (报告1 #10) name/description 先 trim,拒绝纯空白名称(参照 userController.updateProfile)
-        if (description !== undefined && description !== null) {
-            description = String(description).trim();
+        // name 传入 null 时也应拒绝,防止 String(null)='null' 绕过空校验落脏数据
+        if (name !== undefined && (name === null || String(name).trim() === '')) {
+            return errorResponse(res, '工作室名称不能为空', 400);
         }
+        // name 有值时 trim,未传则保留 undefined
         if (name !== undefined && name !== null) {
             name = String(name).trim();
         }
-        if (name !== undefined && !String(name)) {
-            return errorResponse(res, '工作室名称不能为空', 400);
+
+        if (description !== undefined && description !== null) {
+            description = String(description).trim();
         }
 
         if (!isValidJoinType(join_type)) {
@@ -578,7 +580,15 @@ async function reviewMember(req, res) {
 
             return successResponse(res, null, '已通过申请');
         } else {
-            await DbAdapter.update(StudioMember, { status: 'rejected' }, { where: { id: memberId } });
+            // Reject 必须在 WHERE 带上 status:'pending',防止并发 approve/reject 把已 active 成员改 rejected
+            const rejectAffected = await DbAdapter.update(StudioMember,
+                { status: 'rejected' },
+                { where: { id: memberId, studio_id: id, status: 'pending' } }
+            );
+            const rejectCount = Array.isArray(rejectAffected) ? rejectAffected[0] : rejectAffected;
+            if (rejectCount === 0) {
+                return errorResponse(res, '申请已处理或不存在', 400);
+            }
             return successResponse(res, null, '已拒绝申请');
         }
     } catch (error) {
@@ -803,11 +813,16 @@ async function reviewWork(req, res) {
             
             return successResponse(res, null, '作品已通过');
         } else {
-            await DbAdapter.update(StudioWork, { 
+            // Reject 必须在 WHERE 带上 status:'pending',防止并发 approve/reject 把 approved 作品改 rejected
+            const rejectAffected = await DbAdapter.update(StudioWork, { 
                 status: 'rejected',
                 reviewed_by: req.user.id,
                 reviewed_at: new Date()
-            }, { where: { id: workId } });
+            }, { where: { id: workId, studio_id: id, status: 'pending' } });
+            const rejectCount = Array.isArray(rejectAffected) ? rejectAffected[0] : rejectAffected;
+            if (rejectCount === 0) {
+                return errorResponse(res, '作品申请已处理或不存在', 400);
+            }
             return successResponse(res, null, '作品已拒绝');
         }
     } catch (error) {
@@ -836,14 +851,22 @@ async function removeWork(req, res) {
             return errorResponse(res, '作品不存在', 404);
         }
         
-        const wasApproved = studioWork.status === 'approved';
-        // Bug-12: 删除 StudioWork + 调整 Studio.work_count 必须用事务保证一致性
+        // wasApproved 在事务外读取存在 TOCTOU: destroy 返回 0 也不会回滚递减
+        // 改为事务内用 where status='approved' 条件删除,仅受影响行>0 时才递减
         await sequelize.transaction(async (t) => {
-            await DbAdapter.destroy(StudioWork, { where: { id: DbAdapter.getId(studioWork) }, transaction: t });
-
-            if (wasApproved) {
-                // Bug-16: 原子递减,仅当 work_count > 0 时才减 1,避免并发下计数漂移
+            const destroyed = await DbAdapter.destroy(StudioWork, {
+                where: { id: DbAdapter.getId(studioWork), studio_id: id, status: 'approved' },
+                transaction: t
+            });
+            if (destroyed) {
+                // 原子递减: 仅当 work_count > 0 时才减 1
                 await DbAdapter.decrement(Studio, 'work_count', { where: { id, work_count: { [Op.gt]: 0 } }, transaction: t });
+            } else {
+                // 非 approved(如 pending/rejected): 直接删不递减
+                await DbAdapter.destroy(StudioWork, {
+                    where: { id: DbAdapter.getId(studioWork), studio_id: id },
+                    transaction: t
+                });
             }
         });
 
@@ -876,25 +899,30 @@ async function toggleWorkStatus(req, res) {
         }
         
         if (action === 'down') {
-            // M19: 只允许下架已通过审核的作品，防止 pending/rejected 状态被误改写为 down
-            if (studioWork.status !== 'approved') {
-                return errorResponse(res, '当前状态不允许下架', 400);
-            }
-            // Bug-12: 更新 StudioWork 状态 + 调整 Studio.work_count 必须用事务保证一致性
-            // Bug-16: 原子递减 work_count
             await sequelize.transaction(async (t) => {
-                await DbAdapter.update(StudioWork, { status: 'down' }, { where: { id: workId }, transaction: t });
+                // 在事务内用 WHERE status='approved' 原子更新,防并发竞态
+                const affected = await DbAdapter.update(StudioWork, { status: 'down' }, {
+                    where: { id: workId, studio_id: id, status: 'approved' },
+                    transaction: t
+                });
+                const cnt = Array.isArray(affected) ? affected[0] : affected;
+                if (cnt === 0) {
+                    throw new Error('当前状态不允许下架');
+                }
                 await DbAdapter.decrement(Studio, 'work_count', { where: { id, work_count: { [Op.gt]: 0 } }, transaction: t });
             });
             return successResponse(res, null, '作品已下架');
         } else if (action === 'up') {
-            // 仅允许已下架(down)的作品重新上架，防止 pending/rejected 绕过审核
-            if (studioWork.status !== 'down') {
-                return errorResponse(res, '当前状态不允许上架', 400);
-            }
-            // Bug-12: 更新 StudioWork 状态 + 调整 Studio.work_count 必须用事务保证一致性
             await sequelize.transaction(async (t) => {
-                await DbAdapter.update(StudioWork, { status: 'approved' }, { where: { id: workId }, transaction: t });
+                // 在事务内用 WHERE status='down' 原子更新,防并发竞态
+                const affected = await DbAdapter.update(StudioWork, { status: 'approved' }, {
+                    where: { id: workId, studio_id: id, status: 'down' },
+                    transaction: t
+                });
+                const cnt = Array.isArray(affected) ? affected[0] : affected;
+                if (cnt === 0) {
+                    throw new Error('当前状态不允许上架');
+                }
                 await DbAdapter.increment(Studio, 'work_count', { where: { id }, transaction: t });
             });
             return successResponse(res, null, '作品已上架');
@@ -903,11 +931,16 @@ async function toggleWorkStatus(req, res) {
         return errorResponse(res, '无效操作', 400);
     } catch (error) {
         console.error('切换作品状态错误:', error);
+        // 事务内抛出的业务状态错误应返回 400,避免全部吞成 500
+        if (error.message === '当前状态不允许下架' || error.message === '当前状态不允许上架') {
+            return errorResponse(res, error.message, 400);
+        }
         return errorResponse(res, '操作失败', 500);
     }
 }
 
 async function getPendingMembers(req, res) {
+
     try {
         const { id } = req.params;
         
@@ -1100,35 +1133,34 @@ async function setViceOwner(req, res) {
             return errorResponse(res, '只有室长可以设置副室长', 403);
         }
 
-        // 🔴3 修复: studio 查询移到事务内部,避免事务外读旧副室长导致并发多次任命多副室长
-        // 事务内通过 SELECT ... FOR UPDATE 或 update where 条件保证原子性
+        // 🔴3 修复: 整个任命+降级逻辑全部在事务内,防止并发多副室长
         if (user_id) {
-            const viceMember = await DbAdapter.findOne(StudioMember, {
-                where: { studio_id: id, user_id: user_id, status: 'active' }
-            });
-            
-            if (!viceMember) {
-                return errorResponse(res, '该用户不是工作室成员', 400);
-            }
-            
-            // 🔴3 修复: 整个任命流程在事务内,旧副室长降级 + 新副室长升级 + vice_owner_id 更新原子化
             await sequelize.transaction(async (t) => {
-                // 清除旧副室长角色(在事务内重新读取以避免幻读)
+                // 1) 确认目标成员仍在(事务内查询避免幻读)
+                const viceMember = await DbAdapter.findOne(StudioMember, {
+                    where: { studio_id: id, user_id: user_id, status: 'active' },
+                    transaction: t
+                });
+                if (!viceMember) {
+                    throw new Error('该用户不是工作室成员');
+                }
+
+                // 2) 读当前 studio,降级旧副室长(仅当 role 仍是 vice_owner 时)
                 const studio = await DbAdapter.findByPk(Studio, id, { transaction: t });
                 if (studio && studio.vice_owner_id) {
                     await DbAdapter.update(StudioMember,
                         { role: 'member' },
-                        { where: { studio_id: id, user_id: studio.vice_owner_id }, transaction: t }
+                        { where: { studio_id: id, user_id: studio.vice_owner_id, role: 'vice_owner' }, transaction: t }
                     );
                 }
-                // 设置新副室长
+                // 3) 设置新副室长
                 await DbAdapter.update(Studio,
                     { vice_owner_id: user_id },
                     { where: { id: id }, transaction: t }
                 );
                 await DbAdapter.update(StudioMember,
                     { role: 'vice_owner' },
-                    { where: { id: DbAdapter.getId(viceMember) }, transaction: t }
+                    { where: { id: DbAdapter.getId(viceMember), role: { [Op.ne]: 'owner' } }, transaction: t }
                 );
             });
         } else {
@@ -1149,6 +1181,10 @@ async function setViceOwner(req, res) {
         return successResponse(res, updatedStudio, '副室长已设置');
     } catch (error) {
         console.error('设置副室长错误:', error);
+        // 事务内抛出的业务状态错误应返回 400,避免全部吞成 500
+        if (error.message === '该用户不是工作室成员') {
+            return errorResponse(res, error.message, 400);
+        }
         return errorResponse(res, '设置失败', 500);
     }
 }

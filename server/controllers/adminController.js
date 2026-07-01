@@ -13,7 +13,7 @@ const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const { JWT_SECRET, JWT_EXPIRES_IN } = require('../config/auth');
 const DbAdapter = require('../utils/dbAdapter');
-const { likeContains, escapeHtml } = require('../utils/security');
+const { likeContains } = require('../utils/security');
 // H12: 引入内容审核服务，爬虫/管理员落库前对 nickname/bio/作品名+描述 做敏感词检查
 const aiReview = require('../services/aiReview');
 
@@ -69,8 +69,9 @@ async function sanitizeCodemaoProfile(rawNickname, rawBio) {
         }
     }
     return {
-        nickname: (!blocked && nickname) ? escapeHtml(nickname) : null,
-        bio: (!blocked && bio) ? escapeHtml(bio) : null
+        // 存原始,渲染转义,全站统一
+        nickname: (!blocked && nickname) ? nickname : null,
+        bio: (!blocked && bio) ? bio : null
     };
 }
 
@@ -353,7 +354,8 @@ async function updateUserPassword(req, res) {
         // 使旧 Token(签发于密码修改之前)立即失效,防止黑客用已截获 Token 继续操作
         await DbAdapter.update(User, {
             password: hashedPassword,
-            password_changed_at: new Date()
+            password_changed_at: new Date(),
+            token_version: (user.token_version || 0) + 1
         }, { where: { id: userId } });
         
         logOperation(req, 'update_user_password', 'user', userId);
@@ -408,11 +410,8 @@ async function updateUser(req, res) {
             if (reviewResult.recommendation === 'review') {
                 console.warn(`[admin] 管理员 ${req.user.username} 修改用户 ${user.username} 昵称为疑似违规内容:${reviewResult.reason},已放行(管理特权)`);
             }
-            const escapedNickname = escapeHtml(trimmedNickname);
-            if (String(escapedNickname).length > 50) {
-                return errorResponse(res, '昵称(转义后)不能超过50字', 400);
-            }
-            updateData.nickname = escapedNickname;
+            const storedNickname = String(trimmedNickname).substring(0, 50); // 存原始,渲染转义
+            updateData.nickname = storedNickname;
         }
         if (email !== undefined) updateData.email = email;
         if (role !== undefined) updateData.role = role;
@@ -464,7 +463,7 @@ async function impersonateUser(req, res) {
 
         // 生成 Token
         const token = jwt.sign(
-            { id: DbAdapter.getId(user), username: user.username, role: user.role },
+            { id: DbAdapter.getId(user), username: user.username, role: user.role, token_version: user.token_version || 0 },
             JWT_SECRET,
             { expiresIn: JWT_EXPIRES_IN, issuer: 'codedog-community', audience: 'codedog-frontend' }
         );
@@ -893,7 +892,7 @@ async function updateWork(req, res) {
             if (reviewResult.recommendation === 'delete') {
                 return errorResponse(res, `内容包含违规信息:${reviewResult.reason}`, 400);
             }
-            const escapedName = escapeHtml(trimmedName.substring(0, 200));
+            const escapedName = String(trimmedName).substring(0, 200); // 存原始,渲染转义
             updateData.name = escapedName;
             if (reviewResult.recommendation === 'review') {
                 updateData.status = 'pending';
@@ -1101,8 +1100,10 @@ async function crawlWork(req, res) {
             codemao_author_id: codemaoUserId,
             codemao_author_name: userInfo.nickname || '未知作者',
             view_times: workDetail.view_times || 0,
-            praise_times: workDetail.praise_times || workDetail.liked_times || 0,
-            collection_times: workDetail.collect_times || 0,
+            // 中·脏数据: praise_times/collection_times 归 0,与 workController 保持一致
+            // 外部数据是编程猫总计数,本地无 Like/Favorite 记录→不能直接写入
+            praise_times: 0,
+            collection_times: 0,
             // Bug-2(脏数据): comment_count 始终从 0 开始,不使用外部 comment_times
             comment_count: 0,
             status: workStatus
@@ -1288,8 +1289,9 @@ async function crawlHotWorks(req, res) {
                             codemao_author_id: String(detailAuthorId || item.user_id),
                             codemao_author_name: workDetail.user_info?.nickname || item.nickname || '未知',
                             view_times: workDetail.view_times || item.views_count || 0,
-                            praise_times: workDetail.liked_times || workDetail.praise_times || item.likes_count || 0,
-                            collection_times: workDetail.collect_times || 0,
+                            // 中·脏数据: 归 0,与 workController 一致
+                            praise_times: 0,
+                            collection_times: 0,
                             // Bug-2(脏数据): comment_count 始终从 0 开始
                             comment_count: 0,
                             status: workStatus
@@ -1523,8 +1525,9 @@ async function crawlUserWorks(req, res) {
                     codemao_author_id: String(userId),
                     codemao_author_name: workDetail.user_info?.nickname,
                     view_times: workDetail.view_times || 0,
-                    praise_times: workDetail.praise_times || workDetail.liked_times || 0,
-                    collection_times: workDetail.collect_times || 0,
+                    // 中·脏数据: 归 0,与 workController 一致
+                    praise_times: 0,
+                    collection_times: 0,
                     // Bug-2(脏数据): comment_count 始终从 0 开始
                     comment_count: 0,
                     status: workStatus
@@ -1656,8 +1659,9 @@ async function crawlPostWorks(req, res) {
                     codemao_author_id: String(workDetail.user_info?.id),
                     codemao_author_name: workDetail.user_info?.nickname,
                     view_times: workDetail.view_times || 0,
-                    praise_times: workDetail.praise_times || workDetail.liked_times || 0,
-                    collection_times: workDetail.collect_times || 0,
+                    // 中·脏数据: 归 0,与 workController 一致
+                    praise_times: 0,
+                    collection_times: 0,
                     // Bug-2(脏数据): comment_count 始终从 0 开始
                     comment_count: 0,
                     status: workStatus
@@ -2548,9 +2552,24 @@ async function updateAnnouncement(req, res) {
         }
         
         const updateData = {};
-        if (title !== undefined) updateData.title = title;
-        if (content !== undefined) updateData.content = content;
-        if (type !== undefined) updateData.type = type;
+        if (title !== undefined) {
+            const t = String(title).trim();
+            if (t.length === 0) return errorResponse(res, '标题不能为空', 400);
+            if (t.length > 200) return errorResponse(res, '标题不能超过200字', 400);
+            updateData.title = t;
+        }
+        if (content !== undefined) {
+            const c = String(content).trim();
+            if (c.length === 0) return errorResponse(res, '内容不能为空', 400);
+            if (c.length > 10000) return errorResponse(res, '内容不能超过10000字', 400);
+            updateData.content = c;
+        }
+        if (type !== undefined) {
+            if (!['notice', 'update', 'warning'].includes(type)) {
+                return errorResponse(res, '无效的公告类型', 400);
+            }
+            updateData.type = type;
+        }
         if (is_active !== undefined) updateData.is_active = is_active;
         
         await DbAdapter.update(Announcement, updateData, { where: { id: announcementId } });

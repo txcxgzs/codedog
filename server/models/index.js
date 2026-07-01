@@ -50,6 +50,7 @@ const User = sequelize.define('User', {
     codemao_token: { type: DataTypes.TEXT },
     role: { type: DataTypes.ENUM('user', 'reviewer', 'moderator', 'admin', 'superadmin'), defaultValue: 'user' },
     status: { type: DataTypes.ENUM('active', 'disabled'), defaultValue: 'active' },
+    token_version: { type: DataTypes.INTEGER, defaultValue: 0 },
     is_active_dalao: { type: DataTypes.BOOLEAN, defaultValue: false }
 }, Object.assign({ tableName: 'users' }, TIMESTAMP_OPTS));
 
