@@ -307,7 +307,8 @@ wait_for_service() {
     local attempt=1
     
     while [ $attempt -le $max_attempts ]; do
-        if curl -s http://localhost:3001/api > /dev/null 2>&1; then
+        # 修复：使用 /api/health 端点（已定义于 server/app.js），比 /api 更准确
+        if curl -s http://localhost:3001/api/health > /dev/null 2>&1; then
             print_success "服务启动成功"
             return 0
         fi
@@ -338,7 +339,9 @@ show_result() {
     
     case $deploy_type in
         docker)
-            echo -e "  访问地址: ${YELLOW}http://${SERVER_IP}:${CLIENT_PORT}${NC}"
+            # 修复：docker-compose 仅暴露 3001 端口，前后端同端口 serve（express.static），
+            # 不应显示 CLIENT_PORT（8080 仅用于本地 vite 开发，docker 未暴露）
+            echo -e "  访问地址: ${YELLOW}http://${SERVER_IP}:3001${NC}"
             echo ""
             echo "常用命令:"
             echo "  查看状态: docker-compose ps"
