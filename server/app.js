@@ -24,7 +24,7 @@ const followRoutes = require('./routes/followRoutes');
 const reportRoutes = require('./routes/reportRoutes');
 const notificationRoutes = require('./routes/notificationRoutes');
 const geetestRoutes = require('./routes/geetestRoutes');
-const hcaptchaRoutes = require('./routes/hcaptchaRoutes');
+const hcaptchaRoutes = require('./routes/geetestRoutes');
 const dbMigrationRoutes = require('./routes/dbMigration');
 const { hcaptchaGuard } = require('./middleware/hcaptcha');
 const { createRateLimiter } = require('./middleware/rateLimit');
@@ -33,20 +33,10 @@ const { createSequelizeSessionStore } = require('./services/sessionStore');
 const app = express();
 app.disable('x-powered-by');
 
-// 默认信任一层反向代理，开箱即用支持宝塔/Nginx/Caddy 等域名反代。
-// 如需关闭，可设置 TRUST_PROXY=false。
 const trustProxyEnabled = process.env.TRUST_PROXY !== 'false';
 app.set('trust proxy', trustProxyEnabled ? 1 : false);
 
 const isProduction = process.env.NODE_ENV === 'production';
-
-function isAllowedOriginForRequest(origin, req) {
-    // 一键部署优先保证开箱即用：允许浏览器当前来源访问 API。
-    // 站点前后端同服务部署，真正的权限仍由登录态/JWT/后台权限控制。
-    // 之前严格校验 CORS_ORIGIN 在服务器 IP、域名、宝塔/Nginx 反代场景下
-    // 容易误伤，导致登录直接 Forbidden origin。
-    return true;
-}
 
 function setSecurityHeaders(res) {
     res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -114,22 +104,6 @@ app.use(cors((req, callback) => {
 }));
 
 app.use((req, res, next) => {
-    const origin = req.headers.origin;
-    const isSafeMethod = ['GET', 'HEAD', 'OPTIONS'].includes(req.method);
-
-    if (!isSafeMethod && origin && !isAllowedOriginForRequest(origin, req)) {
-        setSecurityHeaders(res);
-        return res.status(403).json({
-            code: 403,
-            msg: 'Forbidden origin',
-            data: null
-        });
-    }
-
-    next();
-});
-
-app.use((req, res, next) => {
     setSecurityHeaders(res);
     next();
 });
@@ -159,63 +133,35 @@ app.use(express.urlencoded({ extended: true, limit: '256kb' }));
 
 app.use((err, req, res, next) => {
     if (err instanceof SyntaxError && err.status === 400 && 'body' in err) {
-        return res.status(400).json({
-            code: 400,
-            msg: 'Invalid JSON request body',
-            data: null
-        });
+        return res.status(400).json({ code: 400, msg: 'Invalid JSON request body', data: null });
     }
-
     if (err?.type === 'entity.too.large') {
-        return res.status(413).json({
-            code: 413,
-            msg: 'Request body is too large',
-            data: null
-        });
+        return res.status(413).json({ code: 413, msg: 'Request body is too large', data: null });
     }
-
     if (err?.status && err.status >= 400 && err.status < 500) {
-        return res.status(err.status).json({
-            code: err.status,
-            msg: 'Invalid request body',
-            data: null
-        });
+        return res.status(err.status).json({ code: err.status, msg: 'Invalid request body', data: null });
     }
-
     next(err);
 });
 
 app.use((req, res, next) => {
-    if (req.body === undefined) {
-        req.body = {};
-    }
-
+    if (req.body === undefined) req.body = {};
     const normalizedQuery = { ...req.query };
-
     if (normalizedQuery.page !== undefined) {
         const page = parseInt(normalizedQuery.page, 10);
         normalizedQuery.page = String(Number.isFinite(page) && page > 0 ? page : 1);
     }
-
     if (normalizedQuery.pageSize !== undefined) {
         const pageSize = parseInt(normalizedQuery.pageSize, 10);
         const normalizedPageSize = Number.isFinite(pageSize) && pageSize > 0 ? pageSize : 20;
         normalizedQuery.pageSize = String(Math.min(normalizedPageSize, 100));
     }
-
-    Object.defineProperty(req, 'query', {
-        value: normalizedQuery,
-        configurable: true,
-        enumerable: true
-    });
-
+    Object.defineProperty(req, 'query', { value: normalizedQuery, configurable: true, enumerable: true });
     next();
 });
 
 const sessionSecret = resolveSessionSecret();
-const sessionStore = isProduction
-    ? createSequelizeSessionStore(session, sequelize)
-    : null;
+const sessionStore = isProduction ? createSequelizeSessionStore(session, sequelize) : null;
 
 const sessionOptions = {
     secret: sessionSecret,
@@ -230,15 +176,13 @@ const sessionOptions = {
     }
 };
 
-if (sessionStore) {
-    sessionOptions.store = sessionStore;
-}
+if (sessionStore) sessionOptions.store = sessionStore;
 
 app.use(session(sessionOptions));
 
 app.use('/api', writeRateLimiter);
 app.use('/api/users/login', loginRateLimiter);
-app.use('/api/works/codemao', codemImportRateLimiter);
+app.use('/api/works/codemao', codemaoImportRateLimiter);
 
 app.use(hcaptchaGuard);
 
@@ -271,20 +215,14 @@ const frontendPath = path.join(__dirname, '../client/dist');
 const alternativePath = path.join(__dirname, 'public');
 
 if (fs.existsSync(frontendPath)) {
-    app.use(express.static(frontendPath, {
-        setHeaders: setSecurityHeaders
-    }));
-
+    app.use(express.static(frontendPath, { setHeaders: setSecurityHeaders }));
     app.get('*', (req, res, next) => {
         if (req.path.startsWith('/api')) return next();
         if (req.path.startsWith('/uploads/')) return res.status(404).end();
         res.sendFile(path.join(frontendPath, 'index.html'));
     });
 } else if (fs.existsSync(alternativePath)) {
-    app.use(express.static(alternativePath, {
-        setHeaders: setSecurityHeaders
-    }));
-
+    app.use(express.static(alternativePath, { setHeaders: setSecurityHeaders }));
     app.get('*', (req, res, next) => {
         if (req.path.startsWith('/api')) return next();
         if (req.path.startsWith('/uploads/')) return res.status(404).end();
@@ -293,20 +231,12 @@ if (fs.existsSync(frontendPath)) {
 }
 
 app.use((req, res) => {
-    res.status(404).json({
-        code: 404,
-        msg: 'Not found',
-        data: null
-    });
+    res.status(404).json({ code: 404, msg: 'Not found', data: null });
 });
 
 app.use((err, req, res, next) => {
     console.error('Server error:', err.message, err.stack);
-    res.status(500).json({
-        code: 500,
-        msg: 'Internal server error',
-        data: null
-    });
+    res.status(500).json({ code: 500, msg: 'Internal server error', data: null });
 });
 
 const PORT = process.env.PORT || process.env.SERVER_PORT || 3001;
@@ -315,20 +245,13 @@ async function startServer() {
     try {
         await testConnection();
         await sequelize.sync({ alter: true });
-        if (sessionStore) {
-            await sessionStore.sync();
-        }
+        if (sessionStore) await sessionStore.sync();
         console.log('Database models synchronized.');
 
         try {
             const { Post } = require('./models');
-            const [updated] = await Post.update(
-                { status: 'published' },
-                { where: { status: 'active' } }
-            );
-            if (updated > 0) {
-                console.log(`迁移完成：${updated} 条帖子状态从 active 更新为 published`);
-            }
+            const [updated] = await Post.update({ status: 'published' }, { where: { status: 'active' } });
+            if (updated > 0) console.log(`迁移完成：${updated} 条帖子状态从 active 更新为 published`);
         } catch (e) {
             console.warn('帖子状态迁移跳过:', e.message);
         }
