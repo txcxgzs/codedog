@@ -3,7 +3,7 @@ const { Studio, StudioMember, StudioWork, User, Work, Notification, sequelize } 
 const { successResponse, errorResponse, paginateResponse } = require('../middleware/response');
 const { Op } = require('sequelize');
 const { isRoleAtLeast } = require('../config/permissions');
-const { likeContains, escapeHtml } = require('../utils/security');
+const { likeContains } = require('../utils/security');
 // 引入内容审核服务,落库前做敏感词/违规检查(参照 userController/postController)
 const aiReview = require('../services/aiReview');
 
@@ -90,11 +90,13 @@ async function createStudio(req, res) {
             return errorResponse(res, '工作室名称已存在', 400);
         }
 
-        // (报告1 #10) 审核通过后再转义 name/description 落库(参照 userController);cover 是 URL 不转义
+        // (报告1 #10) 审核通过后存原始 name(不转义),渲染时才转义(与前端约定)。
+        // 修复: 查重用原始 name,存储也用原始 name,避免 escapeHtml 后查重失效(含 < > & 时永远查不到重复 → 可建重名)
+        // 修复: 避免反复编辑导致二次转义(& → &amp; → &amp;amp;)
         const studio = await sequelize.transaction(async (t) => {
             const newStudio = await DbAdapter.create(Studio, {
-                name: escapeHtml(name),
-                description: description ? escapeHtml(description) : description,
+                name: name,
+                description: description || null,
                 cover,
                 owner_id: req.user.id,
                 is_public: is_public !== false,
@@ -102,17 +104,21 @@ async function createStudio(req, res) {
                 status: studioStatus
             }, { transaction: t });
 
+            // Bug-17: 审核结果为 review 时创建 pending 工作室,owner 成员也应为 pending,
+            // 避免工作室 pending 但成员 active 的状态语义混乱
             await DbAdapter.create(StudioMember, {
                 studio_id: newStudio.id,
                 user_id: req.user.id,
                 role: 'owner',
-                status: 'active'
+                status: studioStatus === 'pending' ? 'pending' : 'active'
             }, { transaction: t });
 
             return newStudio;
         });
 
-        return successResponse(res, studio, '工作室创建成功');
+        // Bug-17: pending 状态的工作室返回不同提示
+        const msg = studioStatus === 'pending' ? '工作室已创建，正在审核中' : '工作室创建成功';
+        return successResponse(res, studio, msg);
     } catch (error) {
         console.error('创建工作室错误:', error);
         return errorResponse(res, '创建工作室失败', 500);
@@ -280,18 +286,22 @@ async function joinStudio(req, res) {
 
         let member;
         if (status === 'pending') {
-            // 申请加入:不改计数,无需事务,但仍需 reload 保证返回 pending 状态而非旧 rejected(报告1 #11)
-            if (existing) {
-                await DbAdapter.update(StudioMember, { status }, { where: { id: DbAdapter.getId(existing) } });
-                member = await existing.reload();
-            } else {
-                member = await DbAdapter.create(StudioMember, {
-                    studio_id: id,
-                    user_id: req.user.id,
-                    role: 'member',
-                    status
-                });
-            }
+            // Bug-11: 申请加入也用事务包裹 create/update 成员,避免并发退群重申导致状态覆盖错乱
+            await sequelize.transaction(async (t) => {
+                if (existing) {
+                    await DbAdapter.update(StudioMember, { status }, { where: { id: DbAdapter.getId(existing) }, transaction: t });
+                } else {
+                    await DbAdapter.create(StudioMember, {
+                        studio_id: id,
+                        user_id: req.user.id,
+                        role: 'member',
+                        status
+                    }, { transaction: t });
+                }
+            });
+            member = await DbAdapter.findOne(StudioMember, {
+                where: { studio_id: id, user_id: req.user.id }
+            });
 
             try {
                 await DbAdapter.create(Notification, {
@@ -349,8 +359,17 @@ async function leaveStudio(req, res) {
         }
 
         // M2: 退出成员+计数-1+清理副室长引用需事务保证一致性
+        // Bug-3(打工机器): 同时清理该用户在该工作室的 StudioWork 记录,
+        // 避免用户退出后作品仍被强制留在工作室无法撤回
         await sequelize.transaction(async (t) => {
             await DbAdapter.destroy(StudioMember, { where: { id: DbAdapter.getId(member) }, transaction: t });
+            // 清理该用户提交到该工作室的作品记录
+            const removedStudioWorks = await DbAdapter.findAll(StudioWork, {
+                where: { studio_id: id, user_id: req.user.id, status: 'approved' },
+                attributes: ['id'],
+                transaction: t
+            });
+            await DbAdapter.destroy(StudioWork, { where: { studio_id: id, user_id: req.user.id }, transaction: t });
 
             const studio = await DbAdapter.findByPk(Studio, id, { transaction: t });
             if (studio && member.status === 'active' && (studio.member_count || 0) > 0) {
@@ -359,6 +378,11 @@ async function leaveStudio(req, res) {
             // 如果退出者是副室长，清除引用
             if (studio && sameId(studio.vice_owner_id, req.user.id)) {
                 await DbAdapter.update(Studio, { vice_owner_id: null }, { where: { id: DbAdapter.getId(studio) }, transaction: t });
+            }
+            // 如果有已通过审核的作品被移除,重算工作室 work_count
+            if (removedStudioWorks.length > 0 && studio) {
+                const approvedCount = await DbAdapter.count(StudioWork, { where: { studio_id: id, status: 'approved' }, transaction: t });
+                await DbAdapter.update(Studio, { work_count: approvedCount }, { where: { id: DbAdapter.getId(studio) }, transaction: t });
             }
         });
 
@@ -454,11 +478,11 @@ async function updateStudio(req, res) {
             }
         }
 
-        // (Bug-1) 统一使用 !== undefined 判断字段,避免 || 把空字符串当作 falsy 覆盖为旧值(参照 adminController.updateStudio)
-        // (报告1 #10) 审核通过后再转义 name/description 落库(参照 userController);cover 是 URL 不转义
+        // (Bug-1) 统一使用 !== undefined 判断字段,避免 || 把空字符串当作 falsy 覆盖为旧值
+        // 修复: 存原始 name/description(不转义),渲染时才转义,避免查重失效和二次转义
         const updateData = {
-            name: name !== undefined ? escapeHtml(finalName) : studio.name,
-            description: description !== undefined ? (finalDescription ? escapeHtml(finalDescription) : finalDescription) : studio.description,
+            name: name !== undefined ? finalName : studio.name,
+            description: description !== undefined ? (finalDescription || null) : studio.description,
             cover: cover !== undefined ? cover : studio.cover,
             is_public: is_public !== undefined ? is_public : studio.is_public,
             join_type: join_type !== undefined ? join_type : studio.join_type
@@ -554,7 +578,10 @@ async function deleteStudio(req, res) {
         }
 
         // M10: 多表关联删除必须用事务包裹，任一步失败整体回滚
+        // Bug-6(死链): 同时清理 Notification 中 related_type='studio' 且 related_id 指向该工作室的记录,
+        // 避免解散后用户点击消息列表中的工作室消息触发 404 死链
         await sequelize.transaction(async (t) => {
+            await DbAdapter.destroy(Notification, { where: { related_id: Number(id), related_type: 'studio' }, transaction: t });
             await DbAdapter.destroy(StudioMember, { where: { studio_id: id }, transaction: t });
             await DbAdapter.destroy(StudioWork, { where: { studio_id: id }, transaction: t });
             await DbAdapter.destroy(Studio, { where: { id: DbAdapter.getId(studio) }, transaction: t });
@@ -782,10 +809,8 @@ async function removeWork(req, res) {
             await DbAdapter.destroy(StudioWork, { where: { id: DbAdapter.getId(studioWork) }, transaction: t });
 
             if (wasApproved) {
-                const studio = await DbAdapter.findByPk(Studio, id, { transaction: t });
-                if (studio && (studio.work_count || 0) > 0) {
-                    await DbAdapter.decrement(studio, 'work_count', { transaction: t });
-                }
+                // Bug-16: 原子递减,仅当 work_count > 0 时才减 1,避免并发下计数漂移
+                await DbAdapter.decrement(Studio, 'work_count', { where: { id, work_count: { [Op.gt]: 0 } }, transaction: t });
             }
         });
 
@@ -823,12 +848,10 @@ async function toggleWorkStatus(req, res) {
                 return errorResponse(res, '当前状态不允许下架', 400);
             }
             // Bug-12: 更新 StudioWork 状态 + 调整 Studio.work_count 必须用事务保证一致性
+            // Bug-16: 原子递减 work_count
             await sequelize.transaction(async (t) => {
                 await DbAdapter.update(StudioWork, { status: 'down' }, { where: { id: workId }, transaction: t });
-                const studio = await DbAdapter.findByPk(Studio, id, { transaction: t });
-                if (studio && (studio.work_count || 0) > 0) {
-                    await DbAdapter.decrement(studio, 'work_count', { transaction: t });
-                }
+                await DbAdapter.decrement(Studio, 'work_count', { where: { id, work_count: { [Op.gt]: 0 } }, transaction: t });
             });
             return successResponse(res, null, '作品已下架');
         } else if (action === 'up') {
@@ -839,10 +862,7 @@ async function toggleWorkStatus(req, res) {
             // Bug-12: 更新 StudioWork 状态 + 调整 Studio.work_count 必须用事务保证一致性
             await sequelize.transaction(async (t) => {
                 await DbAdapter.update(StudioWork, { status: 'approved' }, { where: { id: workId }, transaction: t });
-                const studio = await DbAdapter.findByPk(Studio, id, { transaction: t });
-                if (studio) {
-                    await DbAdapter.increment(studio, 'work_count', { transaction: t });
-                }
+                await DbAdapter.increment(Studio, 'work_count', { where: { id }, transaction: t });
             });
             return successResponse(res, null, '作品已上架');
         }
@@ -945,16 +965,18 @@ async function setMemberRole(req, res) {
             return errorResponse(res, '不能修改创建者角色', 400);
         }
         
-        // 如果被修改的成员是副室长且角色降级，清除副室长引用
+        // Bug-10/Bug-15: 整个 setMemberRole 操作(降级/提升副室长 + 改成员 role)必须在同一事务内,
+        // 避免降级路径中清除 vice_owner_id 与改 role 不在同一事务导致并发不一致
         const studio = await DbAdapter.findByPk(Studio, id);
-        if (member.role === 'vice_owner' && role !== 'vice_owner') {
-            if (studio && sameId(studio.vice_owner_id, member.user_id)) {
-                await DbAdapter.update(Studio, { vice_owner_id: null }, { where: { id: DbAdapter.getId(studio) } });
+        await sequelize.transaction(async (t) => {
+            // 如果被修改的成员是副室长且角色降级，清除副室长引用
+            if (member.role === 'vice_owner' && role !== 'vice_owner') {
+                if (studio && sameId(studio.vice_owner_id, member.user_id)) {
+                    await DbAdapter.update(Studio, { vice_owner_id: null }, { where: { id: DbAdapter.getId(studio) }, transaction: t });
+                }
             }
-        }
-        // 如果提升为副室长，同步 studio.vice_owner_id（清除旧副室长）
-        if (role === 'vice_owner') {
-            await sequelize.transaction(async (t) => {
+            // 如果提升为副室长，同步 studio.vice_owner_id（清除旧副室长角色）
+            if (role === 'vice_owner') {
                 if (studio && studio.vice_owner_id) {
                     await DbAdapter.update(StudioMember,
                         { role: 'member' },
@@ -965,10 +987,11 @@ async function setMemberRole(req, res) {
                     { vice_owner_id: member.user_id },
                     { where: { id: DbAdapter.getId(studio) }, transaction: t }
                 );
-            });
-        }
+            }
 
-        await DbAdapter.update(StudioMember, { role }, { where: { id: DbAdapter.getId(member) } });
+            // 最后改成员 role,在同一事务内
+            await DbAdapter.update(StudioMember, { role }, { where: { id: DbAdapter.getId(member) }, transaction: t });
+        });
         return successResponse(res, null, '角色已更新');
     } catch (error) {
         console.error('设置成员角色错误:', error);
@@ -1108,7 +1131,9 @@ async function dissolveStudio(req, res) {
         }
 
         // M10: 多表关联删除必须用事务包裹，任一步失败整体回滚
+        // Bug-6(死链): 同时清理 Notification
         await sequelize.transaction(async (t) => {
+            await DbAdapter.destroy(Notification, { where: { related_id: Number(id), related_type: 'studio' }, transaction: t });
             await DbAdapter.destroy(StudioMember, { where: { studio_id: id }, transaction: t });
             await DbAdapter.destroy(StudioWork, { where: { studio_id: id }, transaction: t });
             await DbAdapter.destroy(Studio, { where: { id }, transaction: t });

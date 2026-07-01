@@ -130,13 +130,20 @@ router.post('/', authMiddleware, geetestVerify('report'), async (req, res) => {
         const safeTargetName = escapeHtml(targetName);
         const safeReason = escapeHtml(reason);
 
+        // 修复 Bug-13: Notification.related_id 是 INTEGER 类型,linkId 可能是 codemao_work_id(字符串)。
+        // SQLite 隐式转换但 MySQL strict mode 会报错。统一转为数字,无法转则用 null。
+        const safeLinkId = (() => {
+            const n = Number(linkId);
+            return Number.isFinite(n) ? n : null;
+        })();
+
         try {
             await DbAdapter.create(Notification, {
                 user_id: req.user.id,
                 type: 'system',
                 title: '举报已提交',
                 content: `您举报的${typeNames[type]}「${safeTargetName}」已提交成功，我们会尽快审核处理。举报原因：${safeReason}`,
-                related_id: linkId,
+                related_id: safeLinkId,
                 related_type: linkType
             });
         } catch (notifyErr) {
@@ -162,7 +169,7 @@ router.post('/', authMiddleware, geetestVerify('report'), async (req, res) => {
                     type: 'report',
                     title: '收到新举报',
                     content: `有用户举报了${typeNames[type]}「${safeTargetName}」，原因：${safeReason}`,
-                    related_id: linkId,
+                    related_id: safeLinkId,
                     related_type: linkType
                 }));
                 const BATCH_SIZE = 100;

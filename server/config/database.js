@@ -67,11 +67,12 @@ if (dbType === 'mysql') {
             underscored: true
         },
         // 修复 L2: SQLite 也配置 pool 与 retry,提升并发与健壮性
-        // Report4 #25: SQLite 写入本就串行化,大连接池不会提升吞吐,反而因频繁 acquire/release
-        // 触发 afterConnect 的 PRAGMA foreign_keys=ON 造成 SQLITE_BUSY 竞争。
-        // 把 pool.max 降到 2(SQLite 串行写,大池无益且加剧 PRAGMA 争用),保留 min:0。
+        // Report4 #25 原: SQLite 写入本就串行化,大连接池不会提升吞吐。
+        // 但 pool.max=2 会把并发读也压到最多 2 连接,事务内若有遗漏 transaction: t 的
+        // 查询,小连接池更易触发"事务占着连接又等新连接"的死锁/30s 超时。
+        // 修复: 恢复 pool.max=5,写靠 SQLite 自身串行化即可,读并发不应被过度限制。
         pool: {
-            max: 2,
+            max: 5,
             min: 0,
             acquire: 30000,
             idle: 10000

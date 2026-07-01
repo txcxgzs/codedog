@@ -76,9 +76,10 @@ async function favoriteWorksForUser(userId, query) {
                 }]
             }
         ],
-        // 修复(报告1 #13): subQuery:false 下多表 JOIN 都有 created_at,用模型引用限定
-        // (避免硬编码表名 'favorites',Sequelize 会用模型名作别名导致 unknown column)
-        order: [[Favorite, 'created_at', 'DESC']],
+        // 修复: Favorite 是本次 findAndCountAll 的主模型(根表),不是被 include 的关联模型。
+        // [模型, 列, 方向] 语法只适用于关联模型排序;对根模型会报 "Favorite is not associated to Favorite"。
+        // 改为最简单的 [列, 方向] 形式,Sequelize 会自动用主表别名限定。
+        order: [['created_at', 'DESC']],
         limit: pageSize,
         offset: offset,
         subQuery: false

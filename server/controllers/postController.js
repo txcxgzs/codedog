@@ -16,6 +16,21 @@ function canInteractWithPost(post) {
 }
 
 /**
+ * 校验 tags 参数：必须是数组、元素个数不超过 20、每个元素为长度 <= 30 的字符串。
+ * 防止攻击者发送庞大嵌套数组触发 JSON.stringify OOM 崩溃。
+ */
+function validateTags(tags) {
+    if (tags === undefined || tags === null) return null; // 不传则跳过
+    if (!Array.isArray(tags)) return 'tags 必须为数组';
+    if (tags.length > 20) return '标签数量不能超过 20 个';
+    for (const tag of tags) {
+        if (typeof tag !== 'string') return '每个标签必须是字符串';
+        if (tag.length > 30) return '单个标签不能超过 30 字';
+    }
+    return null;
+}
+
+/**
  * 规范化帖子输出：tags 字段统一转换为数组
  * （Sequelize 自定义 setter 仅在通过实例写时生效；
  *  通过 findAll/raw 拿到的 records 仍可能为字符串）
@@ -55,6 +70,12 @@ async function createPost(req, res) {
 
         if (String(content).length > 50000) {
             return errorResponse(res, '内容不能超过50000字', 400);
+        }
+
+        // OOM 防御: 校验 tags 数组长度/深度,防止恶意嵌套数组打爆 JSON.stringify
+        const tagsError = validateTags(tags);
+        if (tagsError) {
+            return errorResponse(res, tagsError, 400);
         }
 
         // H12: 落库前审核标题+内容（敏感词/违规检查）
@@ -221,6 +242,13 @@ async function getPostDetail(req, res) {
                     model: User,
                     as: 'user',
                     attributes: ['id', 'codemao_user_id', 'username', 'nickname', 'avatar']
+                }, {
+                    // Bug-9 修复: 补充 reply_to_user include,与 commentController.getWorkComments 一致,
+                    // 否则回复中被回复者的信息无法展示
+                    model: User,
+                    as: 'reply_to_user',
+                    attributes: ['id', 'codemao_user_id', 'username', 'nickname', 'avatar'],
+                    required: false
                 }]
             }],
             order: [['created_at', 'DESC']]
@@ -283,17 +311,31 @@ async function updatePost(req, res) {
         // [Bug2 修复] 用 !== undefined 判断字段是否传入,空字符串视为有效输入(允许清空)
         // 但空标题/空正文不允许,需返回 400 提示
         // 修复: 仅判 length===0 会被纯空白字符串绕过,改用 trim 后判空
-        if (title !== undefined && String(title).trim().length === 0) {
-            return errorResponse(res, '标题不能为空', 400);
+        // 修复: title 为 null 时 String(null).trim() 返回 "null"(长度4) 会绕过校验,
+        // 用 == null 显式拦截 null/undefined
+        if (title != null) {
+            const trimmedTitle = String(title).trim();
+            if (trimmedTitle.length === 0) {
+                return errorResponse(res, '标题不能为空', 400);
+            }
+            if (trimmedTitle.length > 200) {
+                return errorResponse(res, '标题不能超过200字', 400);
+            }
         }
-        if (title !== undefined && String(title).length > 200) {
-            return errorResponse(res, '标题不能超过200字', 400);
+        if (content != null) {
+            const trimmedContent = String(content).trim();
+            if (trimmedContent.length === 0) {
+                return errorResponse(res, '内容不能为空', 400);
+            }
+            if (trimmedContent.length > 50000) {
+                return errorResponse(res, '内容不能超过50000字', 400);
+            }
         }
-        if (content !== undefined && String(content).trim().length === 0) {
-            return errorResponse(res, '内容不能为空', 400);
-        }
-        if (content !== undefined && String(content).length > 50000) {
-            return errorResponse(res, '内容不能超过50000字', 400);
+
+        // OOM 防御: 校验 tags 数组长度/深度
+        const tagsError = validateTags(tags);
+        if (tagsError) {
+            return errorResponse(res, tagsError, 400);
         }
 
         // 计算最终落库的标题和正文(传入用新值,未传入用旧值)
@@ -314,7 +356,7 @@ async function updatePost(req, res) {
         // 参照 createPost 的审核调用方式:
         //   delete → 拒绝并返回 400
         //   review → post.status='hidden'(待人工复核)
-        //   pass   → 正常更新(保持原 status)
+        //   pass   → 若帖子此前因审核被 hidden,恢复为 published;否则保持原 status
         if (title !== undefined || content !== undefined) {
             const reviewResult = await aiReview.fallbackReview(`${finalTitle}\n${finalContent}`);
             if (reviewResult.recommendation === 'delete') {
@@ -322,6 +364,12 @@ async function updatePost(req, res) {
             }
             if (reviewResult.recommendation === 'review') {
                 updateData.status = 'hidden';
+            } else {
+                // 审核通过(pass): 若帖子此前因审核被 hidden,恢复为 published
+                // 避免帖子进过一次小黑屋后即使内容已改正也永远不可见
+                if (post.status === 'hidden') {
+                    updateData.status = 'published';
+                }
             }
         }
 

@@ -313,10 +313,25 @@ async function codemaoLogin(req, res, identity, password) {
     }
 }
 
+// Bug-10: 用户级同步锁,防止频繁登录导致并发同步打爆外部 API
+const syncLocks = new Map();
+const SYNC_LOCK_TTL = 10 * 60 * 1000; // 10 分钟超时自动释放
+
 /**
  * 同步用户作品
  */
 async function syncUserWorks(codemaoUserId, localUserId) {
+    // Bug-10: 用户级去重锁,同一用户短时间内不重复同步
+    const lockKey = String(codemaoUserId);
+    if (syncLocks.has(lockKey)) {
+        console.log(`用户 ${codemaoUserId} 的作品正在同步中,跳过本次`);
+        return;
+    }
+    syncLocks.set(lockKey, Date.now());
+    // 超时兜底: 10 分钟后自动清除锁,防止异常导致永久锁死
+    const lockTimer = setTimeout(() => syncLocks.delete(lockKey), SYNC_LOCK_TTL);
+    lockTimer.unref();
+
     try {
         console.log(`开始同步用户 ${codemaoUserId} 的作品...`);
         
@@ -388,8 +403,9 @@ async function syncUserWorks(codemaoUserId, localUserId) {
                         view_times: workDetail.view_times || 0,
                         praise_times: workDetail.praise_times || workDetail.liked_times || 0,
                         collection_times: workDetail.collect_times || 0,
-                        // 使用编程猫返回的真实评论数,避免写死为 0
-                        comment_count: workDetail.comment_times || 0,
+                        // Bug-2(脏数据): comment_count 始终从 0 开始,不使用外部 comment_times,
+                        // 避免本地无评论记录却显示大量评论,重算时闪崩
+                        comment_count: 0,
                         status: workStatus
                     }
                 });
@@ -412,6 +428,10 @@ async function syncUserWorks(codemaoUserId, localUserId) {
         console.log(`同步完成，新增 ${syncCount} 个作品，总计 ${totalWorkCount} 个`);
     } catch (error) {
         console.error('同步用户作品错误:', error);
+    } finally {
+        // Bug-10: 释放同步锁
+        clearTimeout(lockTimer);
+        syncLocks.delete(lockKey);
     }
 }
 
@@ -587,8 +607,9 @@ async function getUserById(req, res) {
 
         // 仅允许通过编程猫用户ID查询；防止外部通过本地主键遍历用户
         // 公开接口不返回本地主键 id，避免用户枚举/关联分析风险
+        // 修复: 加上 status:'active' 过滤,封禁(disabled)用户不对外展示
         const user = await DbAdapter.findOne(User, {
-            where: { codemao_user_id: String(codemaoId) },
+            where: { codemao_user_id: String(codemaoId), status: 'active' },
             attributes: ['codemao_user_id', 'username', 'nickname', 'avatar', 'bio', 'doing', 'level', 'follower_count', 'following_count', 'work_count', 'created_at']
         });
 

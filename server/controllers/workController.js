@@ -8,7 +8,7 @@ const { Op } = require('sequelize');
 const DbAdapter = require('../utils/dbAdapter');
 const codemaoApi = require('../services/codemaoApi');
 const { isRoleAtLeast } = require('../config/permissions');
-const { likeContains } = require('../utils/security');
+const { likeContains, escapeHtml } = require('../utils/security');
 // H12: 引入内容审核服务，落库前做敏感词检查
 const aiReview = require('../services/aiReview');
 // P0: 与 adminController 保持一致，爬虫创建虚拟用户时使用合法的占位密码哈希
@@ -79,7 +79,10 @@ function buildWorkCreateParams(workInfo, userId) {
         praise_times: workInfo.praiseTimes,
         collection_times: workInfo.collectionTimes,
         view_times: workInfo.viewTimes,
-        comment_count: workInfo.commentTimes || 0,
+        // Bug-2(脏数据灾难): comment_count 始终从 0 开始,不使用外部 comment_times。
+        // 外部 comment_times 是编程猫的总评论数(如500),本地没有这些评论记录,
+        // 若塞入 comment_count 会导致页面虚假展示大量评论,且重算时会闪崩为真实0。
+        comment_count: 0,
         status: 'published'
     };
 }
@@ -120,13 +123,32 @@ function canInteractWithWork(work) {
 
 /**
  * 确保编程猫用户存在，不存在则创建
+ * Bug-8 修复: nickname/bio 需经内容审核 + escapeHtml 转义,与 adminController.sanitizeCodemaoProfile 一致
  */
 async function ensureCodemaoUser(userInfo) {
-    let user = await DbAdapter.findOne(User, { 
-        where: { codemao_user_id: userInfo.id } 
+    let user = await DbAdapter.findOne(User, {
+        where: { codemao_user_id: userInfo.id }
     });
 
     if (!user) {
+        // Bug-8: 对 nickname/bio 做内容审核 + HTML 转义,与 adminController.sanitizeCodemaoProfile 一致
+        const rawNickname = userInfo.nickname != null ? String(userInfo.nickname).trim() : '';
+        const rawBio = userInfo.description != null ? String(userInfo.description).trim() : '';
+        const reviewText = [rawNickname, rawBio].filter(v => v).join('\n');
+        let blocked = false;
+        if (reviewText.trim()) {
+            try {
+                const reviewResult = await aiReview.fallbackReview(reviewText);
+                if (reviewResult.recommendation === 'delete' || reviewResult.recommendation === 'review') {
+                    blocked = true;
+                    console.warn(`[ensureCodemaoUser] 用户资料未通过审核(${reviewResult.recommendation})，跳过存储: ${reviewResult.reason}`);
+                }
+            } catch (e) {
+                console.error('[ensureCodemaoUser] 用户资料审核失败:', e.message);
+                blocked = true;
+            }
+        }
+
         user = await DbAdapter.create(User, {
             codemao_user_id: userInfo.id,
             username: `codemao_${userInfo.id}`,
@@ -134,9 +156,9 @@ async function ensureCodemaoUser(userInfo) {
             email: `codemao_${userInfo.id}@example.invalid`,
             // 修复: 使用合法的 bcrypt 占位哈希，避免非法字符串导致校验异常
             password: PLACEHOLDER_PASSWORD_HASH,
-            nickname: userInfo.nickname,
+            nickname: (!blocked && rawNickname) ? escapeHtml(rawNickname) : null,
             avatar: userInfo.avatar,
-            bio: userInfo.description,
+            bio: (!blocked && rawBio) ? escapeHtml(rawBio) : null,
             role: 'user',
             status: 'active'
         });
@@ -184,26 +206,35 @@ async function publishWork(req, res) {
         const createParams = buildWorkCreateParams(workInfo, DbAdapter.getId(req.user));
         createParams.status = workStatus;
 
-        const [work, created] = await DbAdapter.findOrCreate(Work, {
-            where: { codemao_work_id: String(codemaoWorkId) },
-            defaults: createParams,
-            include: [{
-                model: User,
-                as: 'author',
-                attributes: ['id', 'codemao_user_id', 'username', 'nickname', 'avatar']
-            }]
+        // Bug-11: 将 findOrCreate Work + 重算 work_count 放入同一事务,避免中途失败造成作品已创建但计数没更新
+        let work, created;
+        await sequelize.transaction(async (t) => {
+            [work, created] = await DbAdapter.findOrCreate(Work, {
+                where: { codemao_work_id: String(codemaoWorkId) },
+                defaults: createParams,
+                include: [{
+                    model: User,
+                    as: 'author',
+                    attributes: ['id', 'codemao_user_id', 'username', 'nickname', 'avatar']
+                }],
+                transaction: t
+            });
+
+            if (!created) {
+                return;
+            }
+
+            // 中-1: 新作品发布成功后重算作者 work_count（与 deleteWork 口径一致，仅统计 published）
+            // 仅当新作品状态为 published 时才重算（pending 作品不计入 work_count）
+            if (workStatus === 'published') {
+                const authorId = DbAdapter.getId(req.user);
+                const authorWorkCount = await DbAdapter.count(Work, { where: { user_id: authorId, status: 'published' }, transaction: t });
+                await DbAdapter.update(User, { work_count: authorWorkCount }, { where: { id: authorId }, transaction: t });
+            }
         });
-        
+
         if (!created) {
             return errorResponse(res, '该作品已在平台发布', 400);
-        }
-
-        // 中-1: 新作品发布成功后重算作者 work_count（与 deleteWork 口径一致，仅统计 published）
-        // 仅当新作品状态为 published 时才重算（pending 作品不计入 work_count）
-        if (workStatus === 'published') {
-            const authorId = DbAdapter.getId(req.user);
-            const authorWorkCount = await DbAdapter.count(Work, { where: { user_id: authorId, status: 'published' } });
-            await DbAdapter.update(User, { work_count: authorWorkCount }, { where: { id: authorId } });
         }
         
         const result = await DbAdapter.findByPk(Work, DbAdapter.getId(work), {
@@ -436,11 +467,22 @@ async function importWork(req, res) {
         // review（疑似违规）/审核失败均转 pending 待人工复核，不直接发布未审核内容
         importStatus = reviewResult.recommendation === 'pass' ? 'published' : 'pending';
 
+        // Bug-11: 将 create Work + 重算 work_count 放入同一事务,避免中途失败造成作品已创建但计数没更新
         let work;
         try {
             const createParams = buildWorkCreateParams(workInfo, DbAdapter.getId(author));
             createParams.status = importStatus;
-            work = await DbAdapter.create(Work, createParams);
+            await sequelize.transaction(async (t) => {
+                work = await DbAdapter.create(Work, createParams, { transaction: t });
+
+                // 中-1: 新作品导入成功后重算作者 work_count（与 deleteWork 口径一致，仅统计 published）
+                // 仅当新作品状态为 published 时才重算（pending 作品不计入 work_count）
+                if (importStatus === 'published') {
+                    const authorId = DbAdapter.getId(author);
+                    const authorWorkCount = await DbAdapter.count(Work, { where: { user_id: authorId, status: 'published' }, transaction: t });
+                    await DbAdapter.update(User, { work_count: authorWorkCount }, { where: { id: authorId }, transaction: t });
+                }
+            });
         } catch (createError) {
             if (createError.name === 'SequelizeUniqueConstraintError') {
                 const found = await DbAdapter.findOne(Work, {
@@ -460,14 +502,6 @@ async function importWork(req, res) {
                 return errorResponse(res, '作品不存在', 404);
             }
             throw createError;
-        }
-
-        // 中-1: 新作品导入成功后重算作者 work_count（与 deleteWork 口径一致，仅统计 published）
-        // 仅当新作品状态为 published 时才重算（pending 作品不计入 work_count）
-        if (importStatus === 'published') {
-            const authorId = DbAdapter.getId(author);
-            const authorWorkCount = await DbAdapter.count(Work, { where: { user_id: authorId, status: 'published' } });
-            await DbAdapter.update(User, { work_count: authorWorkCount }, { where: { id: authorId } });
         }
 
         const result = await DbAdapter.findByPk(Work, DbAdapter.getId(work), {
@@ -664,8 +698,10 @@ async function getMyWorks(req, res) {
     try {
         const { page, pageSize, offset } = DbAdapter.parsePagination(req.query);
 
+        // Bug-18: 过滤掉 deleted 作品,但保留 pending/published/rejected,
+        // 让用户在"我的作品"看到待审/被拒状态的作品,但不显示已删作品
         const { count, rows } = await DbAdapter.findAndCountAll(Work, {
-            where: { user_id: DbAdapter.getId(req.user) },
+            where: { user_id: DbAdapter.getId(req.user), status: { [Op.ne]: 'deleted' } },
             include: [{
                 model: User,
                 as: 'author',
@@ -858,7 +894,8 @@ async function deleteWork(req, res) {
             // 此前硬删会让软删评论的 work_id 成为指向不存在作品的死指针；统一软删保留作品行，数据可恢复
             // 报告3 #2: 同时清零 praise_times / collection_times，避免恢复后计数与已删除的 Like/Favorite
             // 记录错位（记录已硬删但计数非零 → 用户重新点赞/收藏导致计数翻倍）
-            await DbAdapter.update(Work, { status: 'deleted', praise_times: 0, collection_times: 0 }, { where: { id: wid }, transaction: t });
+            // Bug-7: 同时清零 comment_count,与 adminController.deleteWork 保持一致
+            await DbAdapter.update(Work, { status: 'deleted', praise_times: 0, collection_times: 0, comment_count: 0 }, { where: { id: wid }, transaction: t });
 
             // M9: 重算受影响工作室的 work_count
             for (const sid of affectedStudioIds) {

@@ -11,7 +11,8 @@ const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
 // 当 env 未提供有效密钥时,把生成的密钥写入文件,使 PM2 cluster 下所有 worker 共享同一份密钥,
 // 避免每进程 crypto.randomBytes 生成不同密钥 → token 跨进程失效 → 无限重登录。
 // ⚠️ 多机器/多容器(文件系统不共享)部署仍需通过环境变量显式设置相同密钥,首次生成会输出告警。
-const SECRET_DIR = path.join(process.cwd(), '.data');
+// 修复: 使用 __dirname 基准路径而非 process.cwd(),避免从不同工作目录启动读到不同密钥文件
+const SECRET_DIR = path.join(__dirname, '../../.data');
 const JWT_SECRET_FILE = path.join(SECRET_DIR, '.jwt_secret');
 const SESSION_SECRET_FILE = path.join(SECRET_DIR, '.session_secret');
 

@@ -151,11 +151,13 @@ function clearCrawlLogs(taskId) {
  */
 async function getStats(req, res) {
     try {
-        const userCount = await DbAdapter.count(User, {});
-        const workCount = await DbAdapter.count(Work, {});
-        const commentCount = await DbAdapter.count(Comment, {});
+        // 修复: 统计数据排除 deleted/hidden/pending 等非活跃内容,避免后台统计虚高
+        const userCount = await DbAdapter.count(User, { where: { status: 'active' } });
+        const workCount = await DbAdapter.count(Work, { where: { status: 'published' } });
+        const commentCount = await DbAdapter.count(Comment, { where: { status: 'active' } });
         const todayUsers = await DbAdapter.count(User, {
             where: {
+                status: 'active',
                 created_at: {
                     [Op.gte]: new Date(new Date().setHours(0, 0, 0, 0))
                 }
@@ -163,6 +165,7 @@ async function getStats(req, res) {
         });
         const todayWorks = await DbAdapter.count(Work, {
             where: {
+                status: 'published',
                 created_at: {
                     [Op.gte]: new Date(new Date().setHours(0, 0, 0, 0))
                 }
@@ -170,6 +173,7 @@ async function getStats(req, res) {
         });
         const todayComments = await DbAdapter.count(Comment, {
             where: {
+                status: 'active',
                 created_at: {
                     [Op.gte]: new Date(new Date().setHours(0, 0, 0, 0))
                 }
@@ -177,17 +181,17 @@ async function getStats(req, res) {
         });
         const pendingReports = await DbAdapter.count(Report, { where: { status: 'pending' } });
         const activeIpBans = await DbAdapter.count(IpBan, { where: {} });
-        const featuredWorks = await DbAdapter.count(Work, { where: { is_featured: true } });
+        const featuredWorks = await DbAdapter.count(Work, { where: { is_featured: true, status: 'published' } });
         const disabledUsers = await DbAdapter.count(User, { where: { status: 'disabled' } });
 
         const sevenDaysAgo = new Date();
         sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-        
+
         const newUsersWeek = await DbAdapter.count(User, {
-            where: { created_at: { [Op.gte]: sevenDaysAgo } }
+            where: { status: 'active', created_at: { [Op.gte]: sevenDaysAgo } }
         });
         const newWorksWeek = await DbAdapter.count(Work, {
-            where: { created_at: { [Op.gte]: sevenDaysAgo } }
+            where: { status: 'published', created_at: { [Op.gte]: sevenDaysAgo } }
         });
 
         return successResponse(res, {
@@ -259,14 +263,15 @@ async function getUserDetail(req, res) {
             return errorResponse(res, '用户不存在', 404);
         }
         
+        // 修复: 统计排除 deleted/hidden/pending 等非活跃内容
         const [works, comments, favorites, following, followers] = await Promise.all([
             DbAdapter.findAndCountAll(Work, {
-                where: { user_id: userId },
+                where: { user_id: userId, status: 'published' },
                 order: [['created_at', 'DESC']],
                 limit: 10
             }),
             DbAdapter.findAndCountAll(Comment, {
-                where: { user_id: userId },
+                where: { user_id: userId, status: 'active' },
                 include: [{
                     model: Work,
                     as: 'work',
@@ -279,12 +284,12 @@ async function getUserDetail(req, res) {
             DbAdapter.count(Follow, { where: { follower_id: userId } }),
             DbAdapter.count(Follow, { where: { following_id: userId } })
         ]);
-        
+
         const likesReceived = await DbAdapter.count(Like, {
             include: [{
                 model: Work,
                 as: 'work',
-                where: { user_id: userId },
+                where: { user_id: userId, status: 'published' },
                 attributes: []
             }]
         });
@@ -395,7 +400,11 @@ async function updateUser(req, res) {
             if (reviewResult.recommendation === 'delete') {
                 return errorResponse(res, `内容包含违规信息:${reviewResult.reason}`, 400);
             }
-            // review（疑似违规）：管理员可覆盖存储，但仍需 escapeHtml 防止 XSS
+            // Bug-19: review（疑似违规）也应进人工审核,不允许直接保存,
+            // 与 userController.updateProfile 的审核策略保持一致
+            if (reviewResult.recommendation === 'review') {
+                return errorResponse(res, `昵称内容需人工审核,请修改后重试:${reviewResult.reason}`, 400);
+            }
             const escapedNickname = escapeHtml(trimmedNickname);
             if (String(escapedNickname).length > 50) {
                 return errorResponse(res, '昵称(转义后)不能超过50字', 400);
@@ -405,7 +414,8 @@ async function updateUser(req, res) {
         if (email !== undefined) updateData.email = email;
         if (role !== undefined) updateData.role = role;
         if (status !== undefined) updateData.status = status;
-        if (is_active_dalao !== undefined) updateData.is_active_dalao = is_active_dalao;
+        // 修复: is_active_dalao 强制布尔转换,避免字符串 "false"(Truthy)被当作真值存入
+        if (is_active_dalao !== undefined) updateData.is_active_dalao = is_active_dalao === true || is_active_dalao === 'true';
 
         await DbAdapter.update(User, updateData, { where: { id: userId } });
         logOperation(req, 'update_user', 'user', userId, { 
@@ -536,7 +546,10 @@ async function updateUserRole(req, res) {
         const { getRoleSync } = require('../config/permissions');
         const targetRoleInfo = getRoleSync(role);
         const operatorRoleInfo = getRoleSync(operatorRole);
-        if (targetRoleInfo.level >= operatorRoleInfo.level) {
+        // 修复: 改 >= 为 >,允许超级管理员(100)将其他用户提升为超级管理员(100)。
+        // 原用 >= 时 100>=100 成立,superadmin 永远无法提升同级,只能去数据库改表。
+        // 仍拦截下级越权提升同级/更高级别(admin 不能提升 admin/superadmin)。
+        if (targetRoleInfo.level > operatorRoleInfo.level) {
             return errorResponse(res, '您没有权限分配此角色', 403);
         }
 
@@ -607,6 +620,16 @@ async function deleteUser(req, res) {
         affectedWorkIds.push(...userLikedWorks.map(l => l.work_id).filter(Boolean));
         const userFavoritedWorks = await DbAdapter.findAll(Favorite, { where: { user_id: uid, work_id: { [Op.ne]: null } }, attributes: ['work_id'] });
         affectedWorkIds.push(...userFavoritedWorks.map(f => f.work_id).filter(Boolean));
+
+        // Bug-4(幽灵点赞数): 收集用户点赞过的评论 ID,用于后续重算 Comment.like_count
+        const userLikedComments = await DbAdapter.findAll(Like, { where: { user_id: uid, comment_id: { [Op.ne]: null } }, attributes: ['comment_id'] });
+        const affectedCommentIds = [...new Set(userLikedComments.map(l => l.comment_id).filter(Boolean))];
+
+        // Bug-2: 收集用户点赞/收藏过的帖子 ID,用于后续重算 Post 计数
+        const userLikedPosts = await DbAdapter.findAll(Like, { where: { user_id: uid, post_id: { [Op.ne]: null } }, attributes: ['post_id'] });
+        affectedPostIds.push(...userLikedPosts.map(l => l.post_id).filter(Boolean));
+        const userFavoritedPosts = await DbAdapter.findAll(Favorite, { where: { user_id: uid, post_id: { [Op.ne]: null } }, attributes: ['post_id'] });
+        affectedPostIds.push(...userFavoritedPosts.map(f => f.post_id).filter(Boolean));
 
         // H13: 收集被删用户的关注/粉丝关系，用于后续重算 follower_count/following_count
         const userFollows = await DbAdapter.findAll(Follow, {
@@ -695,6 +718,15 @@ async function deleteUser(req, res) {
             // Bug-3: 改为软删作品（status:'deleted'），与 Comment 软删保持一致，避免评论 work_id 成为死指针
             await DbAdapter.update(Work, { status: 'deleted' }, { where: { user_id: uid }, transaction: t });
 
+            // Bug-2: 软删"别人评论在该用户作品/帖子下"的评论,
+            // 删除用户后这些 active 评论会挂在 deleted work/post 下,应一并软删
+            if (userWorkIds.length > 0) {
+                await DbAdapter.update(Comment, { status: 'deleted' }, { where: { work_id: { [Op.in]: userWorkIds } }, transaction: t });
+            }
+            if (userPostIds.length > 0) {
+                await DbAdapter.update(Comment, { status: 'deleted' }, { where: { post_id: { [Op.in]: userPostIds } }, transaction: t });
+            }
+
             // 重算受影响的计数
             const uniqueWorkIds = [...new Set(affectedWorkIds)].filter(Boolean);
             for (const wid of uniqueWorkIds) {
@@ -715,6 +747,13 @@ async function deleteUser(req, res) {
                 await DbAdapter.update(Post, { like_count: likeCount, collection_count: collectionCount, comment_count: commentCount }, { where: { id: pid }, transaction: t });
             }
 
+            // Bug-4(幽灵点赞数): 重算被删用户曾点赞过的 Comment 的 like_count
+            const uniqueCommentIds = [...new Set(affectedCommentIds)].filter(Boolean);
+            for (const cid of uniqueCommentIds) {
+                const likeCount = await DbAdapter.count(Like, { where: { comment_id: cid }, transaction: t });
+                await DbAdapter.update(Comment, { like_count: likeCount }, { where: { id: cid }, transaction: t });
+            }
+
             // H13: 重算被删用户曾关注过的人及关注过被删用户的人的 follower_count/following_count
             for (const fid of [...new Set([...affectedFollowerIds, ...affectedFollowingIds])]) {
                 const followingCount = await DbAdapter.count(Follow, { where: { follower_id: fid }, transaction: t });
@@ -725,7 +764,17 @@ async function deleteUser(req, res) {
             // (Bug-4) 改为软删用户（status:'disabled'），与 Comment/Post/Work 软删保持一致，
             // 避免硬删 User 导致 Comment.user_id 等外键成为指向已删用户的死指针。
             // User.status ENUM 仅有 'active'/'disabled'，故用 'disabled'
-            await DbAdapter.update(User, { status: 'disabled' }, { where: { id: uid }, transaction: t });
+            // Bug-3: 同时清空 codemao_user_id/email/username,释放占用,
+            // 避免被删用户以后无法用同一编程猫账号重新注册/登录。
+            // 用后缀标记已删除,保持唯一性约束不冲突
+            const deleteSuffix = `_deleted_${uid}`;
+            await DbAdapter.update(User, {
+                status: 'disabled',
+                codemao_user_id: String(user.codemao_user_id) + deleteSuffix,
+                email: (user.email || '') + deleteSuffix,
+                username: (user.username || '') + deleteSuffix,
+                codemao_token: null
+            }, { where: { id: uid }, transaction: t });
         });
         logOperation(req, 'delete_user', 'user', userId, { username: user.username });
 
@@ -795,7 +844,17 @@ async function updateWork(req, res) {
         if (name !== undefined) {
             const trimmedName = String(name).trim();
             if (!trimmedName) return errorResponse(res, '作品名称不能为空', 400);
-            updateData.name = trimmedName.substring(0, 200);
+            // Bug-7 修复: 管理员更新作品 name 时缺少 AI 内容审核 + escapeHtml 转义,
+            // 参照 workController.updateWork 调用 aiReview.fallbackReview
+            const reviewResult = await aiReview.fallbackReview(trimmedName);
+            if (reviewResult.recommendation === 'delete') {
+                return errorResponse(res, `内容包含违规信息:${reviewResult.reason}`, 400);
+            }
+            const escapedName = escapeHtml(trimmedName.substring(0, 200));
+            updateData.name = escapedName;
+            if (reviewResult.recommendation === 'review') {
+                updateData.status = 'pending';
+            }
         }
         if (preview !== undefined && preview !== '') updateData.preview = String(preview).substring(0, 500);
         if (view_times !== undefined) updateData.view_times = Math.max(0, parseInt(view_times, 10) || 0);
@@ -993,16 +1052,25 @@ async function crawlWork(req, res) {
             type: workType,
             // H8修复: 补充 ide_type 字段（与 crawlHotWorks 保持一致）
             ide_type: workDetail.ide_type || 'KITTEN',
-            work_url: workDetail.player_url,
+            // 修复: player_url 为空时回退到标准播放器 URL,避免 work_url 落库为空
+            work_url: workDetail.player_url || `https://player.codemao.cn/new/${workDetail.id}`,
             user_id: user ? DbAdapter.getId(user) : null,
             codemao_author_id: codemaoUserId,
             codemao_author_name: userInfo.nickname || '未知作者',
             view_times: workDetail.view_times || 0,
             praise_times: workDetail.praise_times || workDetail.liked_times || 0,
             collection_times: workDetail.collect_times || 0,
-            comment_count: workDetail.comment_times || 0,
+            // Bug-2(脏数据): comment_count 始终从 0 开始,不使用外部 comment_times
+            comment_count: 0,
             status: workStatus
         });
+
+        // 修复: 新增作品后重算作者 work_count,仅统计 published,避免计数不更新
+        if (user) {
+            const authorId = DbAdapter.getId(user);
+            const authorWorkCount = await DbAdapter.count(Work, { where: { user_id: authorId, status: 'published' } });
+            await DbAdapter.update(User, { work_count: authorWorkCount }, { where: { id: authorId } });
+        }
 
         return successResponse(res, work, '爬取成功');
     } catch (error) {
@@ -1074,8 +1142,8 @@ async function crawlHotWorks(req, res) {
                         continue;
                     }
 
-                    let user = await DbAdapter.findOne(User, { 
-                        where: { codemao_user_id: String(item.user_id) } 
+                    let user = await DbAdapter.findOne(User, {
+                        where: { codemao_user_id: String(item.user_id) }
                     });
 
                     if (!user) {
@@ -1093,8 +1161,8 @@ async function crawlHotWorks(req, res) {
                                 status: 'active'
                             });
                         } catch (userCreateError) {
-                            user = await DbAdapter.findOne(User, { 
-                                where: { codemao_user_id: String(item.user_id) } 
+                            user = await DbAdapter.findOne(User, {
+                                where: { codemao_user_id: String(item.user_id) }
                             });
                             if (!user) {
                                 pageSkipped++;
@@ -1108,6 +1176,40 @@ async function crawlHotWorks(req, res) {
                         pageSkipped++;
                         errorCount++;
                         continue;
+                    }
+
+                    // Bug-12/13 修复: 优先用详情接口的 workDetail.user_info.id 作为作者归属,
+                    // 而非 discover 列表的 item.user_id(两者可能不一致或 item.user_id 为 undefined)。
+                    // 若详情接口有 user_info.id 则以它为准重新解析作者,避免归错作者或生成 codemao_undefined 脏用户
+                    const detailAuthorId = workDetail.user_info?.id;
+                    if (detailAuthorId && String(detailAuthorId) !== String(item.user_id)) {
+                        // 详情接口的作者与列表不一致,以详情为准
+                        user = await DbAdapter.findOne(User, {
+                            where: { codemao_user_id: String(detailAuthorId) }
+                        });
+                        if (!user) {
+                            try {
+                                const safeProfile = await sanitizeCodemaoProfile(workDetail.user_info?.nickname, workDetail.user_info?.description);
+                                user = await DbAdapter.create(User, {
+                                    codemao_user_id: String(detailAuthorId),
+                                    username: `codemao_${detailAuthorId}`,
+                                    email: `codemao_${detailAuthorId}@example.invalid`,
+                                    password: PLACEHOLDER_PASSWORD_HASH,
+                                    nickname: safeProfile.nickname || `用户${detailAuthorId}`,
+                                    avatar: workDetail.user_info?.avatar_url || null,
+                                    role: 'user',
+                                    status: 'active'
+                                });
+                            } catch (userCreateError) {
+                                user = await DbAdapter.findOne(User, {
+                                    where: { codemao_user_id: String(detailAuthorId) }
+                                });
+                                if (!user) {
+                                    pageSkipped++;
+                                    continue;
+                                }
+                            }
+                        }
                     }
 
                     // (报告1 #1) 爬虫落库前对作品名+描述做内容审核，与 workController.publishWork 一致：
@@ -1139,17 +1241,25 @@ async function crawlHotWorks(req, res) {
                             ide_type: workDetail.ide_type || 'KITTEN',
                             work_url: workDetail.player_url || `https://player.codemao.cn/new/${workId}`,
                             user_id: DbAdapter.getId(user),
-                            codemao_author_id: String(item.user_id),
-                            codemao_author_name: item.nickname || workDetail.user_info?.nickname || '未知',
+                            // Bug-13 修复: 作者归属用详情接口的 user_info 而非 item.user_id
+                            codemao_author_id: String(detailAuthorId || item.user_id),
+                            codemao_author_name: workDetail.user_info?.nickname || item.nickname || '未知',
                             view_times: workDetail.view_times || item.views_count || 0,
                             praise_times: workDetail.liked_times || workDetail.praise_times || item.likes_count || 0,
                             collection_times: workDetail.collect_times || 0,
-                            comment_count: workDetail.comment_times || 0,
+                            // Bug-2(脏数据): comment_count 始终从 0 开始
+                            comment_count: 0,
                             status: workStatus
                         });
 
                         results.push(work);
                         pageAdded++;
+
+                        // 修复: 新增作品后重算作者 work_count,仅统计 published
+                        const authorId = DbAdapter.getId(user);
+                        const authorWorkCount = await DbAdapter.count(Work, { where: { user_id: authorId, status: 'published' } });
+                        await DbAdapter.update(User, { work_count: authorWorkCount }, { where: { id: authorId } });
+
                         const successMsg = `✅成功 (${results.length}/${targetCount}): ${work.name}`;
                         addCrawlLog(taskId, successMsg, 'success');
                         adminLog('info', `[爬取 ${taskId}] ${successMsg}`);
@@ -1372,7 +1482,8 @@ async function crawlUserWorks(req, res) {
                     view_times: workDetail.view_times || 0,
                     praise_times: workDetail.praise_times || workDetail.liked_times || 0,
                     collection_times: workDetail.collect_times || 0,
-                    comment_count: workDetail.comment_times || 0,
+                    // Bug-2(脏数据): comment_count 始终从 0 开始
+                    comment_count: 0,
                     status: workStatus
                 });
                 
@@ -1383,7 +1494,9 @@ async function crawlUserWorks(req, res) {
             }
         }
         
-        const totalWorkCount = await DbAdapter.count(Work, { where: { user_id: DbAdapter.getId(user) } });
+        // Bug-5 修复: work_count 仅统计 status:'published',与 syncUserWorks/crawlHotWorks 口径一致,
+        // 避免把 pending/deleted 作品计入 work_count 导致虚高
+        const totalWorkCount = await DbAdapter.count(Work, { where: { user_id: DbAdapter.getId(user), status: 'published' } });
         await DbAdapter.update(User, { work_count: totalWorkCount }, { where: { id: DbAdapter.getId(user) } });
         
         return successResponse(res, { total: results.length }, `成功爬取 ${results.length} 个作品`);
@@ -1502,7 +1615,8 @@ async function crawlPostWorks(req, res) {
                     view_times: workDetail.view_times || 0,
                     praise_times: workDetail.praise_times || workDetail.liked_times || 0,
                     collection_times: workDetail.collect_times || 0,
-                    comment_count: workDetail.comment_times || 0,
+                    // Bug-2(脏数据): comment_count 始终从 0 开始
+                    comment_count: 0,
                     status: workStatus
                 });
                 
@@ -1833,14 +1947,16 @@ async function deleteComment(req, res) {
             await DbAdapter.update(Comment, { like_count: 0 }, { where: { id: { [Op.in]: commentIdsToClean } }, transaction: t });
 
             // 仅在旧状态为 active 且顶层评论时才递减 comment_count，避免 hidden→deleted 重复扣减
+            // Bug-1 修复: 改用原子条件 decrement(where:{comment_count:{[Op.gt]:0}}),与其他 controller 统一,
+            // 避免 check-then-decrement 竞态导致并发删评论时 comment_count 变负数
             if (wasActive && !comment.parent_id) {
                 if (comment.work_id) {
                     const work = await DbAdapter.findByPk(Work, comment.work_id, { transaction: t });
-                    if (work && (work.comment_count || 0) > 0) await DbAdapter.decrement(work, 'comment_count', { transaction: t });
+                    if (work) await DbAdapter.decrement(work, 'comment_count', { where: { comment_count: { [Op.gt]: 0 } }, transaction: t });
                 }
                 if (comment.post_id) {
                     const post = await DbAdapter.findByPk(Post, comment.post_id, { transaction: t });
-                    if (post && (post.comment_count || 0) > 0) await DbAdapter.decrement(post, 'comment_count', { transaction: t });
+                    if (post) await DbAdapter.decrement(post, 'comment_count', { where: { comment_count: { [Op.gt]: 0 } }, transaction: t });
                 }
             }
         });
@@ -1946,8 +2062,10 @@ async function handleReport(req, res) {
                 if (work) {
                     targetOwnerId = work.user_id;
                     const wid = report.target_id;
-                    const { Like, Favorite, Comment, StudioWork, Notification } = require('../models');
+                    const { Like, Favorite, Comment, StudioWork, Notification, Report: ReportModel } = require('../models');
                     // L4: 多表关联清理用事务包裹，Comment 软删保留历史可追溯
+                    // Bug-2: 删除作品时清零 praise_times/collection_times/comment_count,与 adminController.deleteWork 一致
+                    // Bug-3: 清理针对该作品的 Report 记录 + 重算作者 work_count,与 adminController.deleteWork 一致
                     await sequelize.transaction(async (t) => {
                         const affectedStudioWorks = await DbAdapter.findAll(StudioWork, {
                             where: { work_id: wid, status: 'approved' },
@@ -1958,14 +2076,23 @@ async function handleReport(req, res) {
 
                         await DbAdapter.destroy(Notification, { where: { related_id: wid, related_type: 'work' }, transaction: t });
                         await DbAdapter.destroy(StudioWork, { where: { work_id: wid }, transaction: t });
+                        // Bug-3: 清理针对该作品的所有 Report 记录,避免其他 pending report 变悬空
+                        await DbAdapter.destroy(ReportModel, { where: { type: 'work', target_id: wid }, transaction: t });
                         await DbAdapter.destroy(Like, { where: { work_id: wid }, transaction: t });
                         await DbAdapter.destroy(Favorite, { where: { work_id: wid }, transaction: t });
                         await DbAdapter.update(Comment, { status: 'deleted' }, { where: { work_id: wid }, transaction: t });
-                        await DbAdapter.update(Work, { status: 'deleted' }, { where: { id: wid }, transaction: t });
+                        // Bug-2: 清零计数字段,与 adminController.deleteWork 一致
+                        await DbAdapter.update(Work, { status: 'deleted', praise_times: 0, collection_times: 0, comment_count: 0 }, { where: { id: wid }, transaction: t });
 
                         for (const sid of affectedStudioIds) {
                             const approvedCount = await DbAdapter.count(StudioWork, { where: { studio_id: sid, status: 'approved' }, transaction: t });
                             await DbAdapter.update(Studio, { work_count: approvedCount }, { where: { id: sid }, transaction: t });
+                        }
+
+                        // Bug-3: 重算作者 work_count,仅统计 published,与 adminController.deleteWork 一致
+                        if (targetOwnerId != null) {
+                            const authorWorkCount = await DbAdapter.count(Work, { where: { user_id: targetOwnerId, status: 'published' }, transaction: t });
+                            await DbAdapter.update(User, { work_count: authorWorkCount }, { where: { id: targetOwnerId }, transaction: t });
                         }
                     });
                 }
@@ -1974,16 +2101,28 @@ async function handleReport(req, res) {
                 if (comment) {
                     targetOwnerId = comment.user_id;
                     const wasActive = comment.status === 'active';
+                    const { Like } = require('../models');
                     // Bug-6: 评论删除涉及多表(评论软删/子回复软删/计数递减),用事务包裹,与 work/post 分支保持一致
+                    // Bug-4: 补充清理该评论及子回复的 Like 记录 + 清零 like_count,与 adminController.deleteComment 一致
                     await sequelize.transaction(async (t) => {
                         await DbAdapter.update(Comment, { status: 'deleted' }, { where: { id: report.target_id }, transaction: t });
                         // 级联软删除子回复
                         await DbAdapter.update(Comment, { status: 'deleted' }, { where: { parent_id: report.target_id }, transaction: t });
+
+                        // Bug-4: 收集子回复 id,批量清理 Like 记录 + 清零 like_count
+                        const childReplies = await DbAdapter.findAll(Comment, {
+                            where: { parent_id: report.target_id },
+                            attributes: ['id'],
+                            transaction: t
+                        });
+                        const commentIdsToClean = [report.target_id, ...childReplies.map(c => DbAdapter.getId(c))];
+                        await DbAdapter.destroy(Like, { where: { comment_id: { [Op.in]: commentIdsToClean } }, transaction: t });
+                        await DbAdapter.update(Comment, { like_count: 0 }, { where: { id: { [Op.in]: commentIdsToClean } }, transaction: t });
+
                         // 仅在旧状态为 active 且顶层评论时才递减，避免hidden→deleted 重复扣减
                         if (wasActive && !comment.parent_id) {
                             if (comment.work_id) {
                                 const work = await DbAdapter.findByPk(Work, comment.work_id, { transaction: t });
-                                // 原子条件递减：仅当 comment_count > 0 时递减，避免 check-then-decrement 竞态导致负数
                                 if (work) await DbAdapter.decrement(work, 'comment_count', { where: { comment_count: { [Op.gt]: 0 } }, transaction: t });
                             }
                             if (comment.post_id) {
@@ -2000,12 +2139,14 @@ async function handleReport(req, res) {
                     const pid = report.target_id;
                     const { Like, Favorite, Comment, Notification } = require('../models');
                     // L5: 多表关联清理用事务包裹，Comment 软删保留历史可追溯
+                    // Bug-2: 删除帖子时清零 like_count/collection_count/comment_count,与 postController.deletePost 一致
                     await sequelize.transaction(async (t) => {
                         await DbAdapter.destroy(Notification, { where: { related_id: pid, related_type: 'post' }, transaction: t });
                         await DbAdapter.destroy(Like, { where: { post_id: pid }, transaction: t });
                         await DbAdapter.destroy(Favorite, { where: { post_id: pid }, transaction: t });
                         await DbAdapter.update(Comment, { status: 'deleted' }, { where: { post_id: pid }, transaction: t });
-                        await DbAdapter.update(Post, { status: 'deleted' }, { where: { id: pid }, transaction: t });
+                        // Bug-2: 清零计数字段,与 postController.deletePost 一致
+                        await DbAdapter.update(Post, { status: 'deleted', like_count: 0, collection_count: 0, comment_count: 0 }, { where: { id: pid }, transaction: t });
                     });
                 }
             } else if (report.type === 'user') {
@@ -3919,6 +4060,25 @@ async function updatePost(req, res) {
         if (status !== undefined) updateData.status = status;
         if (is_top !== undefined) updateData.is_top = is_top;
         if (is_essence !== undefined) updateData.is_essence = is_essence;
+
+        // Bug-6 修复: 管理员更新帖子 title/content 时缺少 AI 内容审核,
+        // 用户可通过管理员通道编辑帖子绕过审核。参照 postController.updatePost 调用 aiReview.fallbackReview
+        if (title !== undefined || content !== undefined) {
+            const finalTitle = title !== undefined ? updateData.title : post.title;
+            const finalContent = content !== undefined ? updateData.content : post.content;
+            const reviewResult = await aiReview.fallbackReview(`${finalTitle}\n${finalContent}`);
+            if (reviewResult.recommendation === 'delete') {
+                return errorResponse(res, `内容包含违规信息:${reviewResult.reason}`, 400);
+            }
+            if (reviewResult.recommendation === 'review') {
+                updateData.status = 'hidden';
+            } else {
+                // 审核通过: 若帖子此前因审核被 hidden,恢复为 published
+                if (post.status === 'hidden') {
+                    updateData.status = 'published';
+                }
+            }
+        }
 
         await DbAdapter.update(Post, updateData, { where: { id: postId } });
         logOperation(req, 'update_post', 'post', postId, updateData);
