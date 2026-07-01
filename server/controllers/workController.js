@@ -9,6 +9,8 @@ const DbAdapter = require('../utils/dbAdapter');
 const codemaoApi = require('../services/codemaoApi');
 const { isRoleAtLeast } = require('../config/permissions');
 const { likeContains } = require('../utils/security');
+// H12: 引入内容审核服务，落库前做敏感词检查
+const aiReview = require('../services/aiReview');
 
 /**
  * 从编程猫API获取作品信息
@@ -154,10 +156,22 @@ async function publishWork(req, res) {
         if (!workInfo.codemaoAuthorId || String(workInfo.codemaoAuthorId) !== String(req.user.codemao_user_id)) {
             return errorResponse(res, '只能发布自己的编程猫作品', 403);
         }
-        
+
+        // H12: 落库前审核作品描述（敏感词/违规检查）
+        // fallbackReview 返回 recommendation: pass / review / delete
+        const reviewResult = await aiReview.fallbackReview(String(workInfo.description || ''));
+        if (reviewResult.recommendation === 'delete') {
+            return errorResponse(res, `内容包含违规信息:${reviewResult.reason}`, 400);
+        }
+        // Work 模型 status 有 pending 枚举，review 时设为 pending 待人工复核
+        const workStatus = reviewResult.recommendation === 'review' ? 'pending' : 'published';
+
+        const createParams = buildWorkCreateParams(workInfo, DbAdapter.getId(req.user));
+        createParams.status = workStatus;
+
         const [work, created] = await DbAdapter.findOrCreate(Work, {
             where: { codemao_work_id: String(codemaoWorkId) },
-            defaults: buildWorkCreateParams(workInfo, DbAdapter.getId(req.user)),
+            defaults: createParams,
             include: [{
                 model: User,
                 as: 'author',
@@ -256,9 +270,21 @@ async function getWorkDetail(req, res) {
         if (!canViewWork(req, work)) {
             return errorResponse(res, '作品不存在', 404);
         }
-        
-        await DbAdapter.increment(work, 'view_times');
-        await work.reload();
+
+        // M16: 浏览量去重，参照 postController 的 session 冷却方案（5分钟内不重复计数）
+        const viewKey = `work_view_${work.id}`;
+        const sessionViews = (req.session && req.session.workViews) || {};
+        const now = Date.now();
+        const lastView = sessionViews[viewKey];
+        const VIEW_COOLDOWN = 5 * 60 * 1000;
+        if (!lastView || (now - lastView) > VIEW_COOLDOWN) {
+            await DbAdapter.increment(work, 'view_times');
+            await work.reload();
+            if (req.session) {
+                if (!req.session.workViews) req.session.workViews = {};
+                req.session.workViews[viewKey] = now;
+            }
+        }
         return successResponse(res, await withLikeStatus(req, work));
     } catch (error) {
         console.error('获取作品详情错误:', error);
@@ -298,13 +324,18 @@ async function getWorkByCodemaoId(req, res) {
         if (!req.user) {
             return errorResponse(res, '请先登录后导入作品', 401);
         }
-        
+
         const workInfo = await fetchCodemaoWork(codemaoId);
-        
+
         if (!workInfo) {
             return errorResponse(res, '作品不存在或未公开', 404);
         }
-        
+
+        // L8: 校验作者归属 —— 只能导入本人名下的编程猫作品，防止冒名导入
+        if (!workInfo.codemaoAuthorId || String(workInfo.codemaoAuthorId) !== String(req.user.codemao_user_id)) {
+            return errorResponse(res, '只能导入自己的作品', 403);
+        }
+
         let author = null;
         if (workInfo.codemaoAuthorId) {
             author = await DbAdapter.findOne(User, {
@@ -529,8 +560,8 @@ async function getMyWorks(req, res) {
 async function getUserWorks(req, res) {
     try {
         const codemaoUserId = req.params.userId;
-        const page = parseInt(req.query.page) || 1;
-        const pageSize = parseInt(req.query.pageSize) || 10;
+        // M3: 统一使用 DbAdapter.parsePagination 限制 pageSize 上限(<=100)
+        const { page, pageSize, offset } = DbAdapter.parsePagination(req.query);
 
         const user = await DbAdapter.findOne(User, {
             where: { codemao_user_id: String(codemaoUserId) },
@@ -540,7 +571,7 @@ async function getUserWorks(req, res) {
         if (!user) {
             return paginateResponse(res, [], 0, page, pageSize);
         }
-        
+
         const { count, rows } = await DbAdapter.findAndCountAll(Work, {
             where: { user_id: DbAdapter.getId(user), status: 'published' },
             include: [{
@@ -550,9 +581,9 @@ async function getUserWorks(req, res) {
             }],
             order: [['created_at', 'DESC']],
             limit: pageSize,
-            offset: (page - 1) * pageSize
+            offset
         });
-        
+
         return paginateResponse(res, rows, count, page, pageSize);
     } catch (error) {
         console.error('获取用户作品错误:', error);
@@ -608,15 +639,28 @@ async function likeWork(req, res) {
 
         if (work.user_id != null && String(work.user_id) !== String(DbAdapter.getId(req.user))) {
             try {
-                await DbAdapter.create(Notification, {
-                    user_id: work.user_id,
-                    type: 'like',
-                    title: '点赞了你的作品',
-                    content: work.name,
-                    related_id: DbAdapter.getId(work),
-                    related_type: 'work',
-                    sender_id: DbAdapter.getId(req.user)
+                // L2: 通知去重，同一用户对同一作品的点赞通知只发一次，
+                // 避免取消又点赞反复打扰作者(参照 postController.likePost 模式)
+                const existNotify = await DbAdapter.findOne(Notification, {
+                    where: {
+                        user_id: work.user_id,
+                        type: 'like',
+                        related_id: DbAdapter.getId(work),
+                        related_type: 'work',
+                        sender_id: DbAdapter.getId(req.user)
+                    }
                 });
+                if (!existNotify) {
+                    await DbAdapter.create(Notification, {
+                        user_id: work.user_id,
+                        type: 'like',
+                        title: '点赞了你的作品',
+                        content: work.name,
+                        related_id: DbAdapter.getId(work),
+                        related_type: 'work',
+                        sender_id: DbAdapter.getId(req.user)
+                    });
+                }
             } catch (notifyErr) {
                 // 通知失败不应回滚点赞主流程
                 console.error('Create like notification error:', notifyErr);
@@ -637,39 +681,50 @@ async function deleteWork(req, res) {
     try {
         const codemaoId = req.params.codemaoId;
         const work = await DbAdapter.findOne(Work, { where: { codemao_work_id: String(codemaoId) } });
-        
+
         if (!work) {
             return errorResponse(res, '作品不存在', 404);
         }
-        
+
         const isOwner = work.user_id != null && String(work.user_id) === String(DbAdapter.getId(req.user));
         if (!isOwner && !isRoleAtLeast(req.user.role, 'moderator')) {
             return errorResponse(res, '无权删除此作品', 403);
         }
-        
-        const { Like, Favorite, Comment, StudioWork, Notification } = require('../models');
+
+        const { Like, Favorite, Comment, StudioWork, Notification, Studio } = require('../models');
         const wid = DbAdapter.getId(work);
+        const authorId = work.user_id;
 
-        // 收集受影响的工作室，用于后续重算 work_count
-        const affectedStudioWorks = await DbAdapter.findAll(StudioWork, {
-            where: { work_id: wid, status: 'approved' },
-            attributes: ['studio_id']
+        // M8: 删除作品涉及多表关联数据，必须用事务包裹，任一步失败整体回滚
+        await sequelize.transaction(async (t) => {
+            // 收集受影响的工作室，用于后续重算 work_count
+            const affectedStudioWorks = await DbAdapter.findAll(StudioWork, {
+                where: { work_id: wid, status: 'approved' },
+                attributes: ['studio_id'],
+                transaction: t
+            });
+            const affectedStudioIds = [...new Set(affectedStudioWorks.map(sw => sw.studio_id))];
+
+            await DbAdapter.destroy(Notification, { where: { related_id: wid, related_type: 'work' }, transaction: t });
+            await DbAdapter.destroy(StudioWork, { where: { work_id: wid }, transaction: t });
+            await DbAdapter.destroy(Like, { where: { work_id: wid }, transaction: t });
+            await DbAdapter.destroy(Favorite, { where: { work_id: wid }, transaction: t });
+            // Comment 有 status 字段，关联清理采用软删保持历史可追溯
+            await DbAdapter.update(Comment, { status: 'deleted' }, { where: { work_id: wid }, transaction: t });
+            await DbAdapter.destroy(Work, { where: { id: wid }, transaction: t });
+
+            // M9: 重算受影响工作室的 work_count
+            for (const sid of affectedStudioIds) {
+                const approvedCount = await DbAdapter.count(StudioWork, { where: { studio_id: sid, status: 'approved' }, transaction: t });
+                await DbAdapter.update(Studio, { work_count: approvedCount }, { where: { id: sid }, transaction: t });
+            }
+
+            // M9: 重算作者 work_count，避免计数与实际作品数不一致
+            if (authorId != null) {
+                const authorWorkCount = await DbAdapter.count(Work, { where: { user_id: authorId }, transaction: t });
+                await DbAdapter.update(User, { work_count: authorWorkCount }, { where: { id: authorId }, transaction: t });
+            }
         });
-        const affectedStudioIds = [...new Set(affectedStudioWorks.map(sw => sw.studio_id))];
-
-        await DbAdapter.destroy(Notification, { where: { related_id: wid, related_type: 'work' } });
-        await DbAdapter.destroy(StudioWork, { where: { work_id: wid } });
-        await DbAdapter.destroy(Like, { where: { work_id: wid } });
-        await DbAdapter.destroy(Favorite, { where: { work_id: wid } });
-        await DbAdapter.destroy(Comment, { where: { work_id: wid } });
-        await DbAdapter.destroy(Work, { where: { id: wid } });
-
-        // 重算受影响工作室的 work_count
-        const { Studio } = require('../models');
-        for (const sid of affectedStudioIds) {
-            const approvedCount = await DbAdapter.count(StudioWork, { where: { studio_id: sid, status: 'approved' } });
-            await DbAdapter.update(Studio, { work_count: approvedCount }, { where: { id: sid } });
-        }
 
         return successResponse(res, null, '作品已删除');
     } catch (error) {
@@ -709,7 +764,19 @@ async function updateWork(req, res) {
         if (name) updateData.name = String(name).substring(0, 200);
         if (description !== undefined) updateData.description = String(description).substring(0, 5000);
         if (preview) updateData.preview = String(preview).substring(0, 500);
-        
+
+        // H12: 修改描述或名称后重新审核，违规内容拦截，疑似违规回退到 pending 待人工复核
+        if (updateData.description !== undefined || updateData.name !== undefined) {
+            const reviewText = `${updateData.name || work.name || ''} ${updateData.description || work.description || ''}`;
+            const reviewResult = await aiReview.fallbackReview(String(reviewText));
+            if (reviewResult.recommendation === 'delete') {
+                return errorResponse(res, `内容包含违规信息:${reviewResult.reason}`, 400);
+            }
+            if (reviewResult.recommendation === 'review') {
+                updateData.status = 'pending';
+            }
+        }
+
         await DbAdapter.update(Work, updateData, { where: { id: DbAdapter.getId(work) } });
         
         return successResponse(res, null, '作品信息已更新');

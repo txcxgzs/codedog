@@ -11,21 +11,22 @@ let hcaptchaEnabledCache = null;
 let hcaptchaCacheExpiry = 0;
 const HCAPTCHA_CACHE_TTL = 60 * 1000;
 
+/**
+ * 查询 hCaptcha 是否启用
+ * 修复 H1 fail-open: DB 故障时抛出异常(不再吞掉),由 hcaptchaGuard 的 catch 统一返回 503,
+ * 避免首次调用 cache 为 null 时被当作 false 直接放行
+ */
 async function isHcaptchaEnabled() {
     const now = Date.now();
     if (hcaptchaEnabledCache !== null && now < hcaptchaCacheExpiry) {
         return hcaptchaEnabledCache;
     }
 
-    try {
-        const enabledConfig = await DbAdapter.findOne(SystemConfig, { where: { config_key: 'hcaptcha_enabled' } });
-        hcaptchaEnabledCache = enabledConfig && enabledConfig.config_value === 'true';
-        hcaptchaCacheExpiry = now + HCAPTCHA_CACHE_TTL;
-        return hcaptchaEnabledCache;
-    } catch (error) {
-        console.error('获取hCaptcha配置失败:', error);
-        return hcaptchaEnabledCache ?? false;
-    }
+    // 故意不吞异常:DB 故障应让上层 catch 返回 503,而不是降级为 false 放行
+    const enabledConfig = await DbAdapter.findOne(SystemConfig, { where: { config_key: 'hcaptcha_enabled' } });
+    hcaptchaEnabledCache = enabledConfig && enabledConfig.config_value === 'true';
+    hcaptchaCacheExpiry = now + HCAPTCHA_CACHE_TTL;
+    return hcaptchaEnabledCache;
 }
 
 async function hcaptchaGuard(req, res, next) {
@@ -33,13 +34,13 @@ async function hcaptchaGuard(req, res, next) {
         return next();
     }
 
+    // 修复 L8: 移除 /api/admin —— 管理端由 JWT + requireAdmin 保护,无需绕过验证码
     const excludePaths = [
         '/api/users/login',
         '/api/users/register',
         '/api/health',
         '/api/hcaptcha',
         '/api/geetest',
-        '/api/admin',
         '/api/public'
     ];
 
@@ -62,9 +63,9 @@ async function hcaptchaGuard(req, res, next) {
 
         return errorResponse(res, '需要完成hCaptcha验证', 403, 'HCAPTCHA_REQUIRED');
     } catch (error) {
-        // 数据库故障时拒绝请求而非放行，避免 fail-open 安全风险
+        // 修复 H1: DB 故障 fail-closed,返回 503 而非放行
         console.error('hCaptcha中间件错误:', error);
-        return errorResponse(res, '验证服务暂时不可用，请稍后重试', 503);
+        return errorResponse(res, '验证码服务暂不可用,请稍后重试', 503);
     }
 }
 
@@ -77,6 +78,8 @@ async function verifyHcaptcha(token, secret) {
             },
             timeout: 10000
         });
+        // 修复 L9: 日志不再打印整个 response.data,只打印布尔结果,避免泄露
+        console.log('[hCaptcha] 验证结果:', response.data?.success);
         return response.data.success;
     } catch (error) {
         if (error.response) {

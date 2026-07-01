@@ -122,7 +122,7 @@
         </el-form-item>
         <el-form-item label="加入方式">
           <el-radio-group v-model="editForm.join_type">
-            <el-radio label="public">自由加入</el-radio>
+            <el-radio label="free">自由加入</el-radio>
             <el-radio label="apply">申请加入</el-radio>
             <el-radio label="invite">仅限邀请</el-radio>
           </el-radio-group>
@@ -250,7 +250,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/user'
 import { studioApi } from '@/api/studio'
@@ -299,7 +299,8 @@ const defaultWorkCover = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3
 
 const joinText = computed(() => {
   if (!studio.value) return '加入'
-  const map = { public: '加入工作室', apply: '申请加入', invite: '仅限邀请' }
+  // 统一使用 free/apply/invite，兼容历史 public 数据
+  const map = { free: '加入工作室', public: '加入工作室', apply: '申请加入', invite: '仅限邀请' }
   return map[studio.value.join_type] || '加入'
 })
 
@@ -379,6 +380,26 @@ const fetchStudio = async () => {
   }
   loading.value = false
 }
+
+// 切换不同工作室时重置状态，避免上一个工作室的残留数据短暂闪现
+const resetState = () => {
+  studio.value = null
+  members.value = []
+  works.value = []
+  worksTotal.value = 0
+  userRole.value = null
+  userMemberStatus.value = null
+  activeTab.value = 'works'
+  worksPage.value = 1
+}
+
+// 监听路由参数变化（在不同工作室间跳转时重新加载数据）
+watch(() => route.params.id, (newId) => {
+  if (newId) {
+    resetState()
+    fetchStudio()
+  }
+})
 
 const fetchWorks = async () => {
   try {
@@ -516,7 +537,8 @@ const handleDissolve = async () => {
     const res = await studioApi.dissolveStudio(route.params.id)
     if (res.code === 200) {
       ElMessage.success('工作室已解散')
-      router.push('/studios')
+      // 修复：工作室列表路由为 /work_shop，原 /studios 路由不存在会触发 NotFound 重定向
+      router.push('/work_shop')
     } else {
       ElMessage.error(res.msg || '解散失败')
     }

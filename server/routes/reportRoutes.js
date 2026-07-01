@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { Report, User, Work, Comment, Post, Notification } = require('../models');
-const { successResponse, errorResponse } = require('../middleware/response');
+const { successResponse, errorResponse, paginateResponse } = require('../middleware/response');
 const { authMiddleware } = require('../middleware/auth');
 const { geetestVerify } = require('../middleware/geetest');
 const DbAdapter = require('../utils/dbAdapter');
@@ -169,17 +169,18 @@ router.post('/', authMiddleware, geetestVerify('report'), async (req, res) => {
  */
 router.get('/my', authMiddleware, async (req, res) => {
     try {
-        const page = parseInt(req.query.page) || 1;
-        const pageSize = parseInt(req.query.pageSize) || 20;
-        
+        // M3: 统一使用 DbAdapter.parsePagination 限制 pageSize 上限(<=100)
+        const { page, pageSize, offset } = DbAdapter.parsePagination(req.query);
+
         const { count, rows } = await DbAdapter.findAndCountAll(Report, {
             where: { reporter_id: req.user.id },
             order: [['created_at', 'DESC']],
             limit: pageSize,
-            offset: (page - 1) * pageSize
+            offset
         });
-        
-        return successResponse(res, { list: rows, total: count });
+
+        // L1: 统一使用 paginateResponse 返回，包含 pagination 字段
+        return paginateResponse(res, rows, count, page, pageSize);
     } catch (error) {
         console.error('获取举报记录错误:', error);
         return errorResponse(res, '获取失败', 500);

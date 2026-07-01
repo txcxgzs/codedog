@@ -194,7 +194,7 @@ const handleAvatarChange = async (e) => {
   if (geetestConfig.value?.enabled && geetestConfig.value?.scenes?.update_profile) {
     geetestData = await geetestDialogRef.value.show('update_profile')
     if (!geetestData) {
-      avatarInput.value.value = ''
+      avatarInput.value && (avatarInput.value.value = '')
       return
     }
   }

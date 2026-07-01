@@ -8,6 +8,8 @@ const { successResponse, errorResponse, paginateResponse } = require('../middlew
 const { Op } = require('sequelize');
 const { isRoleAtLeast } = require('../config/permissions');
 const { likeContains } = require('../utils/security');
+// H12: 引入内容审核服务，落库前做敏感词检查
+const aiReview = require('../services/aiReview');
 
 function canInteractWithPost(post) {
     return post && post.status === 'published';
@@ -53,14 +55,24 @@ async function createPost(req, res) {
         if (String(content).length > 50000) {
             return errorResponse(res, '内容不能超过50000字', 400);
         }
-        
+
+        // H12: 落库前审核标题+内容（敏感词/违规检查）
+        // fallbackReview 返回 recommendation: pass / review / delete
+        const reviewResult = await aiReview.fallbackReview(`${title}\n${content}`);
+        if (reviewResult.recommendation === 'delete') {
+            return errorResponse(res, `内容包含违规信息:${reviewResult.reason}`, 400);
+        }
+        // Post 模型 status 无 pending 枚举，用 hidden 表示待人工复核
+        const postStatus = reviewResult.recommendation === 'review' ? 'hidden' : 'published';
+
         const post = await DbAdapter.create(Post, {
             title,
             content,
             user_id: DbAdapter.getId(req.user),
             category: category || 'discussion',
             tags,
-            cover
+            cover,
+            status: postStatus
         });
         
         const result = await DbAdapter.findByPk(Post, post.id, {
@@ -166,13 +178,17 @@ async function getPostDetail(req, res) {
         const lastView = sessionViews[viewKey];
         const VIEW_COOLDOWN = 5 * 60 * 1000; // 5分钟内不重复计数
 
+        let viewIncremented = false;
         if (!lastView || (now - lastView) > VIEW_COOLDOWN) {
             // 原子 +1 避免 read-modify-write 竞态
             await DbAdapter.increment(post, 'view_count');
+            // M17: reload 使实例 view_count 与数据库一致，避免下方手动 +1 不准
+            await post.reload();
             if (req.session) {
                 if (!req.session.postViews) req.session.postViews = {};
                 req.session.postViews[viewKey] = now;
             }
+            viewIncremented = true;
         }
 
         const { Like, Favorite } = require('../models');
@@ -218,7 +234,8 @@ async function getPostDetail(req, res) {
             return json;
         });
 
-        const postJson = normalizePostOutput({ ...post.toJSON(), view_count: (post.view_count || 0) + 1, comments: commentsJson, liked, favorited });
+        // M17: 去掉无条件 +1，直接使用 reload 后的实际 view_count（冷却期内不重复计数）
+        const postJson = normalizePostOutput({ ...post.toJSON(), comments: commentsJson, liked, favorited });
 
         const commentIds = commentsJson.flatMap(c => [
             c.id,
@@ -309,13 +326,15 @@ async function deletePost(req, res) {
         }
 
         const pid = DbAdapter.getId(post);
-        // 清理关联数据，与 admin 删除策略一致
+        // M10: 统一软删策略——Like/Favorite 无 status 字段保留物理删，Comment 改为软删
         const { Like, Favorite, Comment, Notification } = require('../models');
         await DbAdapter.destroy(Notification, { where: { related_id: pid, related_type: 'post' } });
         await DbAdapter.destroy(Like, { where: { post_id: pid } });
         await DbAdapter.destroy(Favorite, { where: { post_id: pid } });
-        await DbAdapter.destroy(Comment, { where: { post_id: pid } });
-        await DbAdapter.update(Post, { status: 'deleted' }, { where: { id: pid } });
+        // Comment 有 status 字段，改为软删避免数据丢失
+        await DbAdapter.update(Comment, { status: 'deleted' }, { where: { post_id: pid } });
+        // 软删帖子并清零计数字段，保持与关联数据一致
+        await DbAdapter.update(Post, { status: 'deleted', like_count: 0, collection_count: 0, comment_count: 0 }, { where: { id: pid } });
         
         return successResponse(res, null, '帖子已删除');
     } catch (error) {
@@ -377,15 +396,27 @@ async function likePost(req, res) {
         if (post.user_id != null && String(post.user_id) !== String(userId)) {
             try {
                 const { Notification } = require('../models');
-                await DbAdapter.create(Notification, {
-                    user_id: post.user_id,
-                    type: 'like',
-                    title: '点赞了你的帖子',
-                    content: post.title,
-                    related_id: DbAdapter.getId(post),
-                    related_type: 'post',
-                    sender_id: userId
+                // L2: 避免重复点赞发送多条通知，已有同类通知则跳过
+                const existingNotify = await DbAdapter.findOne(Notification, {
+                    where: {
+                        user_id: post.user_id,
+                        type: 'like',
+                        related_id: DbAdapter.getId(post),
+                        related_type: 'post',
+                        sender_id: userId
+                    }
                 });
+                if (!existingNotify) {
+                    await DbAdapter.create(Notification, {
+                        user_id: post.user_id,
+                        type: 'like',
+                        title: '点赞了你的帖子',
+                        content: post.title,
+                        related_id: DbAdapter.getId(post),
+                        related_type: 'post',
+                        sender_id: userId
+                    });
+                }
             } catch (notifyErr) {
                 // 通知失败不应回滚点赞主流程
                 console.error('Create post like notification error:', notifyErr);

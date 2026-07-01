@@ -27,7 +27,8 @@ class HCaptchaService {
                 timeout: 10000
             });
 
-            console.log('[hCaptcha] 验证响应:', response.data);
+            // 修复：不记录完整响应（可能含敏感信息），只记录关键结果字段
+            console.log('[hCaptcha] 验证结果:', response.data?.success, response.data?.error_codes?.length || 0);
 
             return {
                 success: response.data.success,

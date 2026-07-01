@@ -112,9 +112,9 @@ function createSequelizeSessionStore(session, sequelize, { ttlMs = 30 * 60 * 100
                     where: { sid }
                 });
 
-                if (!updated) {
-                    await this.set(sid, sessionData, callback);
-                    return;
+                // M20: updated=0 表示会话不存在或已过期，不重新 set 避免复活已过期会话
+                if (updated === 0) {
+                    return callback?.(null);
                 }
 
                 return callback?.(null);

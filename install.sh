@@ -156,6 +156,12 @@ DB_PASSWORD=
 # JWT配置
 JWT_SECRET=please-change-this-to-a-random-string-at-least-64-characters
 JWT_EXPIRES_IN=7d
+
+# Session配置（生产环境必填，至少32字符随机字符串）
+SESSION_SECRET=
+
+# CORS配置（生产环境改为实际域名，多个域名用逗号分隔）
+CORS_ORIGIN=
 EOF
     fi
     
@@ -164,6 +170,16 @@ EOF
     if [ -n "$JWT_SECRET" ]; then
         sed -i "s/JWT_SECRET=.*/JWT_SECRET=$JWT_SECRET/" .env
     fi
+
+    # 修复：生成 Session 密钥（生产环境必需，至少32字符随机字符串）
+    SESSION_SECRET=$(openssl rand -hex 32 2>/dev/null || cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 64 | head -n 1)
+    if [ -n "$SESSION_SECRET" ]; then
+        sed -i "s/SESSION_SECRET=.*/SESSION_SECRET=$SESSION_SECRET/" .env
+    fi
+
+    # 修复：设置 CORS 来源（生产环境需改为实际域名，如 https://yourdomain.com）
+    CORS_ORIGIN="http://localhost:8080"
+    sed -i "s|^# *CORS_ORIGIN=.*|CORS_ORIGIN=$CORS_ORIGIN|; s|^CORS_ORIGIN=.*|CORS_ORIGIN=$CORS_ORIGIN|" .env
     
     print_success "环境配置创建完成"
 }

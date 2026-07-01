@@ -111,8 +111,8 @@ const routes = [
   {
     path: '/:pathMatch(.*)*',
     name: 'NotFound',
-    component: () => import('@/views/Home.vue'),
-    meta: { title: '页面不存在' }
+    // 统一重定向到首页，避免复用 Home 组件导致标题/状态错乱
+    redirect: '/'
   }
 ]
 
@@ -123,35 +123,47 @@ const router = createRouter({
 
 router.beforeEach(async (to, from, next) => {
   document.title = to.meta.title ? `${to.meta.title} - 编程狗社区` : '编程狗社区'
-  
+
   const userStore = useUserStore()
-  
+
+  // 已登录用户访问登录页时直接跳转首页，避免重复登录
+  if (to.name === 'Login' && userStore.isLoggedIn) {
+    next('/')
+    return
+  }
+
   // 如果有 token 但没有用户信息，尝试获取用户信息
   if (userStore.token && !userStore.user) {
     try {
-      await userStore.fetchCurrentUser()
+      const user = await userStore.fetchCurrentUser()
+      // fetchCurrentUser 返回 null 表示认证失败（store 已清登录态），需跳登录页
+      if (!user) {
+        next({ name: 'Login', query: { redirect: to.fullPath } })
+        return
+      }
     } catch (error) {
       console.error('Failed to fetch user info:', error)
       // 仅在 401 时跳转登录页，网络错误时留在当前页面
       if (error?.response?.status === 401) {
         next({ name: 'Login', query: { redirect: to.fullPath } })
       } else {
+        // 网络错误：阻止本次导航，保留在原页面，避免用户体验降级
         next(false)
       }
       return
     }
   }
-  
+
   if (to.meta.requiresAuth && !userStore.isLoggedIn) {
     next({ name: 'Login', query: { redirect: to.fullPath } })
     return
   }
-  
+
   if (to.meta.requiresAdmin && !userStore.isAdmin) {
     next({ name: 'Home' })
     return
   }
-  
+
   next()
 })
 

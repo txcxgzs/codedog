@@ -94,8 +94,8 @@
         <el-table-column prop="email" label="邮箱" min-width="200" />
         <el-table-column label="角色" width="100">
           <template #default="{ row }">
-            <el-tag :type="row.role === 'admin' ? 'danger' : 'info'">
-              {{ row.role === 'admin' ? '管理员' : '用户' }}
+            <el-tag :type="roleTagType(row.role)">
+              {{ roleText(row.role) }}
             </el-tag>
           </template>
         </el-table-column>
@@ -121,6 +121,23 @@ const latestWorks = ref([])
 const latestUsers = ref([])
 
 const defaultAvatar = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI0ZFQzQzMyIvPjx0ZXh0IHg9IjUwIiB5PSI2MCIgZm9udC1zaXplPSI0MCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZmlsbD0id2hpdGUiPuahijwvdGV4dD48L3N2Zz4='
+
+// 角色显示映射，覆盖全部角色层级
+const roleText = (role) => ({
+  user: '用户',
+  reviewer: '审核员',
+  moderator: '版主',
+  admin: '管理员',
+  superadmin: '超级管理员'
+}[role] || '用户')
+
+const roleTagType = (role) => ({
+  user: 'info',
+  reviewer: '',
+  moderator: 'warning',
+  admin: 'danger',
+  superadmin: 'danger'
+}[role] || 'info')
 
 const formatTime = (time) => {
   if (!time) return '-'

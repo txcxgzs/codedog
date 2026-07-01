@@ -15,7 +15,7 @@
       </el-table-column>
       <el-table-column label="分类" width="120">
         <template #default="{ row }">
-          <el-select v-model="row.category" size="small" @focus="row._oldCategory = row.category" @change="updateCategory(row)">
+          <el-select v-model="row.category" size="small" @focus="oldCategoryMap.set(row.id, row.category)" @change="updateCategory(row)">
             <el-option label="讨论" value="discussion" />
             <el-option label="问答" value="question" />
             <el-option label="分享" value="share" />
@@ -67,6 +67,8 @@ const currentPage = ref(1)
 const pageSize = ref(10)
 const total = ref(0)
 const searchKeyword = ref('')
+// 用 Map 暂存分类原始值，避免污染响应式行数据（替代 _oldCategory 方案）
+const oldCategoryMap = new Map()
 
 const fetchPosts = async () => {
   loading.value = true
@@ -79,7 +81,8 @@ const fetchPosts = async () => {
 const handleSearch = () => { currentPage.value = 1; fetchPosts() }
 
 const updateCategory = async (post) => {
-  const oldCategory = post._oldCategory
+  // 从 Map 取出 focus 时暂存的原始分类，用于失败回滚
+  const oldCategory = oldCategoryMap.get(post.id)
   try {
     const res = await adminApi.updatePost(post.id, { category: post.category })
     if (res.code === 200) {

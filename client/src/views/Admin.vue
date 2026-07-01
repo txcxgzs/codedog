@@ -2878,6 +2878,8 @@ const realtimeLogsRef = ref(null)
 const loadingRealtimeLogs = ref(false)
 const autoRefreshLogs = ref(false)
 let logRefreshInterval = null
+// 爬取热榜日志轮询定时器提升为组件级 ref，便于 onBeforeUnmount 统一清理
+const crawlLogInterval = ref(null)
 
 const fetchRealtimeLogs = async () => {
   loadingRealtimeLogs.value = true
@@ -3799,7 +3801,11 @@ const handleCrawlHot = async () => {
   crawlingHot.value = true
   crawlResult.value = ''
   crawlLogs.value = []
-  let logInterval = null
+  // 清理上一次未结束的轮询定时器，避免多个 interval 并行
+  if (crawlLogInterval.value) {
+    clearInterval(crawlLogInterval.value)
+    crawlLogInterval.value = null
+  }
   try {
     const res = await adminApi.crawlHotWorks(crawlCount.value)
     if (res.code === 200) {
@@ -3808,7 +3814,7 @@ const handleCrawlHot = async () => {
       ElMessage.success(res.msg)
       if (res.data?.taskId) {
         currentTaskId.value = res.data.taskId
-        logInterval = setInterval(async () => {
+        crawlLogInterval.value = setInterval(async () => {
           try {
             const logRes = await adminApi.getCrawlLogs(res.data.taskId)
             if (logRes.code === 200 && logRes.data?.logs) {
@@ -3820,7 +3826,8 @@ const handleCrawlHot = async () => {
               })
               const lastLog = logRes.data.logs[logRes.data.logs.length - 1]
               if (lastLog?.type === 'complete' || lastLog?.type === 'error') {
-                clearInterval(logInterval)
+                clearInterval(crawlLogInterval.value)
+                crawlLogInterval.value = null
               }
             }
           } catch (e) {}
@@ -4010,6 +4017,11 @@ onBeforeUnmount(() => {
   if (logRefreshInterval) {
     clearInterval(logRefreshInterval)
     logRefreshInterval = null
+  }
+  // 同步清理爬取热榜日志轮询定时器，避免组件卸载后定时器仍在请求导致内存泄漏
+  if (crawlLogInterval.value) {
+    clearInterval(crawlLogInterval.value)
+    crawlLogInterval.value = null
   }
 })
 

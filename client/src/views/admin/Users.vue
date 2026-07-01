@@ -29,8 +29,8 @@
       <el-table-column prop="email" label="邮箱" min-width="200" />
       <el-table-column label="角色" width="100">
         <template #default="{ row }">
-          <el-tag :type="row.role === 'admin' ? 'danger' : 'info'">
-            {{ row.role === 'admin' ? '管理员' : '用户' }}
+          <el-tag :type="roleTagType(row.role)">
+            {{ roleText(row.role) }}
           </el-tag>
         </template>
       </el-table-column>
@@ -99,6 +99,8 @@
         <el-form-item label="角色">
           <el-select v-model="editForm.role">
             <el-option label="普通用户" value="user" />
+            <el-option label="审核员" value="reviewer" />
+            <el-option label="版主" value="moderator" />
             <el-option label="管理员" value="admin" />
             <el-option v-if="userStore.user?.role === 'superadmin'" label="超级管理员" value="superadmin" />
           </el-select>
@@ -133,6 +135,14 @@ const editDialogVisible = ref(false)
 const editForm = ref({})
 
 const defaultAvatar = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI0ZFQzQzMyIvPjx0ZXh0IHg9IjUwIiB5PSI2MCIgZm9udC1zaXplPSI0MCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZmlsbD0id2hpdGUiPuahijwvdGV4dD48L3N2Zz4='
+
+// 角色显示与样式映射（覆盖全部角色层级，避免 reviewer/moderator 显示为"用户"）
+const roleMap = { user: '用户', reviewer: '审核员', moderator: '版主', admin: '管理员', superadmin: '超级管理员' }
+const roleText = (role) => roleMap[role] || '用户'
+const roleTagType = (role) => {
+  const typeMap = { user: 'info', reviewer: 'success', moderator: 'warning', admin: 'danger', superadmin: 'danger' }
+  return typeMap[role] || 'info'
+}
 
 const formatTime = (time) => {
   if (!time) return '-'
@@ -180,7 +190,8 @@ const handleToggleActiveDalao = async (user, val) => {
 }
 
 const editUser = (user) => {
-  editForm.value = { ...user }
+  // 深拷贝避免编辑表单直接修改列表行数据（嵌套对象会被浅拷贝共享引用）
+  editForm.value = JSON.parse(JSON.stringify(user))
   editDialogVisible.value = true
 }
 
@@ -234,9 +245,11 @@ const impersonateUser = async (user) => {
     await ElMessageBox.confirm(`确定要以 ${user.nickname || user.username} 的身份登录吗？该操作将生成一个临时登录 Token。`, '一键登录', { type: 'warning' })
     const res = await adminApi.impersonateUser(user.id)
     if (res.code === 200) {
-      // 保存管理员 Token 以便恢复身份（用 sessionStorage 跨页面刷新持久化，标签页关闭即清除）
-      const adminToken = sessionStorage.getItem('token')
-      sessionStorage.setItem('admin_token', adminToken)
+      // 仅当尚未保存过 admin_token 时才保存当前管理员 Token，避免连续 impersonate 覆盖原始管理员凭证
+      if (!sessionStorage.getItem('admin_token')) {
+        const adminToken = sessionStorage.getItem('token')
+        if (adminToken) sessionStorage.setItem('admin_token', adminToken)
+      }
       // 设置被模拟用户的 Token
       sessionStorage.setItem('token', res.data.token)
       ElMessage.success(`正在以 ${user.nickname || user.username} 身份登录...`)

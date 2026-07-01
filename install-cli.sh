@@ -16,13 +16,18 @@ else
     SUDO="sudo"
 fi
 
+# 修复：使用 mktemp 生成不可预测的临时文件名，配合 umask 077 与 trap 清理，避免 /tmp 固定路径中转的 TOCTOU 竞争
+TMPFILE=$(mktemp)
+trap 'rm -f "$TMPFILE"' EXIT
+umask 077
+
 # 创建执行脚本 - 使用绝对路径
-cat > "/tmp/$CLI_NAME" <<'WRAPPER'
+cat > "$TMPFILE" <<'WRAPPER'
 #!/bin/bash
 WRAPPER
 
 # 写入实际路径
-cat >> "/tmp/$CLI_NAME" <<EOF
+cat >> "$TMPFILE" <<EOF
 # CodeDog CLI 包装脚本
 cd "$SCRIPT_DIR" || {
     echo "❌ 项目目录不存在: $SCRIPT_DIR"
@@ -32,11 +37,10 @@ exec bash "$SCRIPT_DIR/codedog.sh" "\$@"
 EOF
 
 # 安装到系统路径
-$SUDO cp "/tmp/$CLI_NAME" "$INSTALL_DIR/$CLI_NAME"
+$SUDO cp "$TMPFILE" "$INSTALL_DIR/$CLI_NAME"
 $SUDO chmod +x "$INSTALL_DIR/$CLI_NAME"
 
-# 清理临时文件
-rm -f "/tmp/$CLI_NAME"
+# 临时文件清理由上方 trap 兜底，无需手动 rm
 
 # 验证安装
 if command -v $CLI_NAME &> /dev/null; then

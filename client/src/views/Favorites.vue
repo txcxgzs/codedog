@@ -228,20 +228,37 @@ const doRemoveFavorite = async (item) => {
 
 const doBatchRemove = async () => {
   try {
-    let success = 0
+    // 分组：work 类型可直接并发；post 类型涉及验证码对话框（单例），需串行处理
+    const workItems = []
+    const postItems = []
     for (const favId of selectedIds.value) {
       const item = works.value.find(w => w.favoriteId === favId)
       if (!item) continue
-      let res
       if (item._type === 'post') {
-        const geetestData = await getGeetestForFavorite()
-        if (geetestData === null) continue
-        res = await favoriteApi.unfavoritePost(item.id, geetestData)
+        postItems.push(item)
       } else {
-        res = await favoriteApi.remove(item.codemao_work_id)
+        workItems.push(item)
       }
-      if (res.code === 200) success++
     }
+
+    // work 类型并发删除，提高批量操作效率
+    const workResults = await Promise.allSettled(
+      workItems.map(item => favoriteApi.remove(item.codemao_work_id))
+    )
+    let success = workResults.filter(r => r.status === 'fulfilled' && r.value.code === 200).length
+
+    // post 类型串行删除（每次可能弹出验证码对话框，无法并发）
+    for (const item of postItems) {
+      const geetestData = await getGeetestForFavorite()
+      if (geetestData === null) continue
+      try {
+        const res = await favoriteApi.unfavoritePost(item.id, geetestData)
+        if (res.code === 200) success++
+      } catch (e) {
+        // 单条失败继续下一条
+      }
+    }
+
     ElMessage.success(`已取消收藏 ${success} 个内容`)
     cancelBatchMode()
     fetchFavorites()

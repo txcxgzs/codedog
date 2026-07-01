@@ -1,7 +1,9 @@
 const DbAdapter = require('../utils/dbAdapter');
 const { Comment, User, Work, Post, Notification } = require('../models');
-const { successResponse, errorResponse } = require('../middleware/response');
+const { successResponse, errorResponse, paginateResponse } = require('../middleware/response');
 const { isRoleAtLeast } = require('../config/permissions');
+// H12: 引入内容审核服务，落库前做敏感词检查
+const aiReview = require('../services/aiReview');
 
 function sameId(a, b) {
     return String(a) === String(b);
@@ -71,8 +73,22 @@ async function createComment(req, res) {
             if (!parentMatchesTarget) {
                 return errorResponse(res, 'Parent comment not found', 404);
             }
+            // M18: 仅允许回复顶层评论，禁止对子回复再回复，避免层级过深
+            if (parent.parent_id != null) {
+                return errorResponse(res, '只能回复顶层评论', 400);
+            }
             replyToUserId = replyToUserId || parent.user_id;
         }
+
+        // H12: 落库前进行内容审核（敏感词/违规检查）
+        // fallbackReview 返回 recommendation: pass / review / delete
+        // delete 表示严重违规应拒绝，review 表示需人工复核，pass 表示通过
+        const reviewResult = await aiReview.fallbackReview(String(content));
+        if (reviewResult.recommendation === 'delete') {
+            return errorResponse(res, `内容包含违规信息:${reviewResult.reason}`, 400);
+        }
+        // Comment 模型 status 无 pending 枚举，用 hidden 表示待人工复核
+        const commentStatus = reviewResult.recommendation === 'review' ? 'hidden' : 'active';
 
         const comment = await DbAdapter.create(Comment, {
             content: String(content).trim(),
@@ -81,10 +97,12 @@ async function createComment(req, res) {
             post_id: localPostId,
             parent_id: parent_id || null,
             reply_to_user_id: replyToUserId,
-            status: 'active'
+            status: commentStatus
         });
 
-        if (work) {
+        // 仅审核通过(active)的评论才递增计数并发通知，hidden(待复核)不对外可见故不计数
+        const isVisible = commentStatus === 'active';
+        if (work && isVisible) {
             // 仅顶层评论（无 parent_id）才递增 comment_count，与前端保持一致
             if (!parent_id) {
                 await DbAdapter.increment(work, 'comment_count');
@@ -104,7 +122,7 @@ async function createComment(req, res) {
             }
         }
 
-        if (post) {
+        if (post && isVisible) {
             // 仅顶层评论（无 parent_id）才递增 comment_count，与前端保持一致
             if (!parent_id) {
                 await DbAdapter.increment(post, 'comment_count');
@@ -124,7 +142,7 @@ async function createComment(req, res) {
             }
         }
 
-        if (parent_id && replyToUserId && !sameId(replyToUserId, DbAdapter.getId(req.user))) {
+        if (isVisible && parent_id && replyToUserId && !sameId(replyToUserId, DbAdapter.getId(req.user))) {
             try {
                 await DbAdapter.create(Notification, {
                     user_id: replyToUserId,
@@ -161,12 +179,13 @@ async function createComment(req, res) {
 async function getWorkComments(req, res) {
     try {
         const { workId } = req.params;
-        const page = parseInt(req.query.page, 10) || 1;
-        const pageSize = Math.min(100, Math.max(1, parseInt(req.query.pageSize, 10) || 20));
+        // M3: 统一使用 parsePagination 限制 pageSize 上限
+        const { page, pageSize, offset } = DbAdapter.parsePagination(req.query);
         const work = await resolvePublishedWork(workId);
 
+        // L7: 作品不存在应返回 404，而非空列表
         if (!work) {
-            return successResponse(res, { list: [], total: 0 });
+            return errorResponse(res, '作品不存在', 404);
         }
 
         const { count, rows } = await DbAdapter.findAndCountAll(Comment, {
@@ -199,7 +218,7 @@ async function getWorkComments(req, res) {
             }],
             order: [['created_at', 'DESC']],
             limit: pageSize,
-            offset: (page - 1) * pageSize
+            offset: offset
         });
 
         const { Like } = require('../models');
@@ -225,7 +244,8 @@ async function getWorkComments(req, res) {
             return json;
         });
 
-        return successResponse(res, { list, total: count });
+        // L1: 统一使用 paginateResponse 返回分页结构
+        return paginateResponse(res, list, count, page, pageSize);
     } catch (error) {
         console.error('Get comments error:', error);
         return errorResponse(res, 'Failed to get comments', 500);
@@ -254,6 +274,13 @@ async function deleteComment(req, res) {
 
         // 级联软删除子回复，避免孤儿回复
         await DbAdapter.update(Comment, { status: 'deleted' }, { where: { parent_id: id } });
+
+        // M20: 清理该评论关联的点赞记录，并清零 like_count
+        const { Like } = require('../models');
+        await DbAdapter.destroy(Like, { where: { comment_id: id } });
+        if ((comment.like_count || 0) > 0) {
+            await DbAdapter.update(Comment, { like_count: 0 }, { where: { id } });
+        }
 
         // 仅在旧状态为 active 且顶层评论时才递减 comment_count，避免 hidden→deleted 重复扣减
         if (wasActive && !comment.parent_id) {

@@ -73,7 +73,8 @@ const fetchWorks = async () => {
     })
     if (res.code === 200) {
       works.value = res.data.list
-      total.value = res.data.total
+      // 兼容后端两种分页返回格式：data.total 或 data.pagination.total
+      total.value = res.data.total || res.data.pagination?.total || 0
     }
   } catch (error) {
     console.error('获取作品失败:', error)

@@ -35,8 +35,8 @@
       <el-table-column prop="praise_times" label="点赞" width="80" />
       <el-table-column label="状态" width="100">
         <template #default="{ row }">
-          <el-tag :type="row.status === 'published' ? 'success' : 'info'">
-            {{ row.status === 'published' ? '已发布' : '草稿' }}
+          <el-tag :type="workStatusTagType(row.status)">
+            {{ workStatusText(row.status) }}
           </el-tag>
         </template>
       </el-table-column>
@@ -86,6 +86,8 @@
         <el-form-item label="状态">
           <el-select v-model="editForm.status">
             <el-option label="已发布" value="published" />
+            <el-option label="待审核" value="pending" />
+            <el-option label="已拒绝" value="rejected" />
             <el-option label="草稿" value="draft" />
             <el-option label="已删除" value="deleted" />
           </el-select>
@@ -106,6 +108,7 @@
 import { ref, onMounted } from 'vue'
 import { adminApi } from '@/api/admin'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { formatTime as fmtTime } from '@/utils/format'
 
 const loading = ref(false)
 const works = ref([])
@@ -116,11 +119,17 @@ const searchKeyword = ref('')
 const editDialogVisible = ref(false)
 const editForm = ref({})
 
-const formatTime = (time) => {
-  if (!time) return '-'
-  const d = new Date(time)
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+// 作品状态映射：覆盖 published/pending/rejected/deleted/draft 全部状态
+const workStatusText = (status) => {
+  const map = { published: '已发布', pending: '待审核', rejected: '已拒绝', deleted: '已删除', draft: '草稿' }
+  return map[status] || status
 }
+const workStatusTagType = (status) => {
+  const typeMap = { published: 'success', pending: 'warning', rejected: 'danger', deleted: 'info', draft: 'info' }
+  return typeMap[status] || 'info'
+}
+
+const formatTime = (time) => fmtTime(time, 'YYYY-MM-DD')
 
 const fetchWorks = async () => {
   loading.value = true
@@ -147,14 +156,15 @@ const handleSearch = () => {
 }
 
 const editWork = (work) => {
-  editForm.value = { ...work }
+  // 深拷贝避免编辑表单直接修改列表行数据
+  editForm.value = JSON.parse(JSON.stringify(work))
   editDialogVisible.value = true
 }
 
 const saveWork = async () => {
   try {
-    // 假设 adminApi 有 updateWork 方法，如果没有需要添加
-    // 这里暂时使用假设的 API
+    // adminApi.updateWork(id, data) 已存在于 api/admin.js，调用 PUT /admin/works/:id
+    // 使用 work.id 作为主键（后端路由使用 id 而非 codemao_work_id）
     const res = await adminApi.updateWork(editForm.value.id, {
       name: editForm.value.name,
       view_times: editForm.value.view_times,

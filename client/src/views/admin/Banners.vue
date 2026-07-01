@@ -93,7 +93,8 @@ const fetchBanners = async () => {
 
 const openDialog = (banner = null) => {
   if (banner) {
-    editForm.value = { ...banner }
+    // 深拷贝避免编辑表单直接修改列表行数据
+    editForm.value = JSON.parse(JSON.stringify(banner))
   } else {
     editForm.value = {
       title: '',

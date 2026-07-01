@@ -438,7 +438,9 @@ test_sensitive_word() {
     fi
 
     DB_PATH="$SCRIPT_DIR/data/database.sqlite"
-    FOUND=$(sqlite3 "$DB_PATH" "SELECT word FROM sensitive_words WHERE status='active' AND '$test_content' LIKE '%' || word || '%'" 2>/dev/null)
+    # 修复：对用户输入中的单引号进行 SQL 转义（' → ''），避免 SQL 注入
+    escaped_content="${test_content//\'/\'\'}"
+    FOUND=$(sqlite3 "$DB_PATH" "SELECT word FROM sensitive_words WHERE status='active' AND '$escaped_content' LIKE '%' || word || '%'" 2>/dev/null)
 
     if [ -n "$FOUND" ]; then
         print_warning "命中敏感词:"
@@ -509,6 +511,9 @@ change_port() {
     echo -e "\n修改端口"
     read -p "请输入新端口 (默认 3001): " new_port
     new_port=${new_port:-3001}
+
+    # 修复：校验端口号必须为数字，避免非法字符注入配置文件
+    [[ "$new_port" =~ ^[0-9]+$ ]] || { echo "端口号必须为数字"; return 1; }
 
     if [ -f "$SCRIPT_DIR/docker-compose.yml" ]; then
         sed -i "s/\"[0-9]*:3001\"/\"$new_port:3001\"/" "$SCRIPT_DIR/docker-compose.yml"

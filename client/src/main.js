@@ -27,5 +27,15 @@ app.use(createPinia())
 app.use(router)
 app.use(ElementPlus, { locale: zhCn })
 
+// 全局错误处理器：捕获组件渲染/生命周期中的异常，避免白屏无提示
+app.config.errorHandler = (err, instance, info) => {
+  console.error('Vue 错误:', err, info)
+  // 生产环境可在此上报到监控服务（如 Sentry）
+}
+// 捕获未处理的 Promise rejection，避免静默失败
+window.addEventListener('unhandledrejection', (event) => {
+  console.error('未处理的 Promise 错误:', event.reason)
+})
+
 // 挂载应用
 app.mount('#app')

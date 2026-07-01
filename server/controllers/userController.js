@@ -359,17 +359,36 @@ async function updateProfile(req, res) {
             cleanupUploadedFile(req.file);
             return errorResponse(res, '正在做不能超过200字', 400);
         }
-        
+
         let avatar = user.avatar;
         if (req.file) {
             avatar = `/uploads/avatars/${req.file.filename}`;
         }
-        
+
+        // L6: escapeHtml 会把 <、>、& 等转成多字符实体，转义后需复校长度，
+        // 否则超长内容会触发 Sequelize/DB 截断或报错
+        const escapedNickname = nickname ? escapeHtml(nickname) : user.nickname;
+        const escapedBio = bio !== undefined ? escapeHtml(bio) : user.bio;
+        const escapedDoing = doing !== undefined ? escapeHtml(doing) : user.doing;
+
+        if (String(escapedNickname).length > 50) {
+            cleanupUploadedFile(req.file);
+            return errorResponse(res, '昵称(转义后)不能超过50字', 400);
+        }
+        if (String(escapedBio).length > 500) {
+            cleanupUploadedFile(req.file);
+            return errorResponse(res, '简介(转义后)不能超过500字', 400);
+        }
+        if (String(escapedDoing).length > 200) {
+            cleanupUploadedFile(req.file);
+            return errorResponse(res, '正在做(转义后)不能超过200字', 400);
+        }
+
         await DbAdapter.update(User, {
-            nickname: nickname ? escapeHtml(nickname) : user.nickname,
+            nickname: escapedNickname,
             avatar: avatar,
-            bio: bio !== undefined ? escapeHtml(bio) : user.bio,
-            doing: doing !== undefined ? escapeHtml(doing) : user.doing
+            bio: escapedBio,
+            doing: escapedDoing
         }, { where: { id: DbAdapter.getId(user) } });
         
         const updatedUser = await DbAdapter.findByPk(User, DbAdapter.getId(user));

@@ -15,13 +15,13 @@
           <li class="c-navigator--item" :class="{ 'c-navigator--selected': $route.path === '/' }">
             <router-link to="/">首页</router-link>
           </li>
-          <li class="c-navigator--item" :class="{ 'c-navigator--selected': $route.path === '/works' }">
+          <li class="c-navigator--item" :class="{ 'c-navigator--selected': $route.path.startsWith('/works') || $route.path.startsWith('/work/') }">
             <router-link to="/works">发现</router-link>
           </li>
-          <li class="c-navigator--item" :class="{ 'c-navigator--selected': $route.path === '/community' }">
+          <li class="c-navigator--item" :class="{ 'c-navigator--selected': $route.path.startsWith('/community') || $route.path.startsWith('/post/') }">
             <router-link to="/community">社区</router-link>
           </li>
-          <li class="c-navigator--item" :class="{ 'c-navigator--selected': $route.path === '/work_shop' }">
+          <li class="c-navigator--item" :class="{ 'c-navigator--selected': $route.path.startsWith('/work_shop') || $route.path.startsWith('/studio/') }">
             <router-link to="/work_shop">工作室</router-link>
           </li>
         </ul>
@@ -44,6 +44,11 @@
             <el-button type="primary" round class="c-navigator--publish_btn" @click="$router.push('/publish')">
               <el-icon class="el-icon--left"><EditPen /></el-icon>
               发布作品
+            </el-button>
+
+            <!-- 一键登录（impersonate）后展示恢复管理员身份入口 -->
+            <el-button v-if="hasAdminToken" type="warning" plain size="small" @click="restoreAdmin">
+              恢复管理员身份
             </el-button>
             
             <!-- 通知图标 -->
@@ -110,7 +115,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useUserStore } from '@/stores/user'
 import { useNotificationStore } from '@/stores/notification'
 import { useRouter } from 'vue-router'
@@ -133,6 +138,21 @@ const defaultAvatar = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy5
 
 let isCheckingHCaptcha = false
 let hcaptchaCheckInterval = null
+
+// 是否处于 impersonate（一键登录）状态：sessionStorage 中存在 admin_token 即表示当前是临时身份
+const hasAdminToken = computed(() => !!sessionStorage.getItem('admin_token'))
+
+/**
+ * 恢复管理员身份：把保存的 admin_token 写回 token，清除 admin_token 标记后跳转后台
+ */
+const restoreAdmin = () => {
+  const adminToken = sessionStorage.getItem('admin_token')
+  if (!adminToken) return
+  sessionStorage.setItem('token', adminToken)
+  sessionStorage.removeItem('admin_token')
+  // 强制刷新页面，确保所有 store/组件状态重新初始化
+  window.location.href = '/admin'
+}
 
 const checkHCaptcha = async () => {
   if (isCheckingHCaptcha) return
@@ -170,8 +190,20 @@ onMounted(async () => {
     notificationStore.fetchUnreadCount()
   }
   await checkHCaptcha()
-  
+  // 启动定时检查，确保 hCaptcha 验证状态在长期会话中也能及时刷新
+  startHCaptchaCheck()
+
+  // 监听全局 hCaptcha 校验事件（由 request 拦截器在 403/HCAPTCHA_REQUIRED 时派发）
   window.addEventListener('hcaptcha-required', checkHCaptcha)
+})
+
+// 组件卸载时清理事件监听与定时器，避免内存泄漏
+onUnmounted(() => {
+  window.removeEventListener('hcaptcha-required', checkHCaptcha)
+  if (hcaptchaCheckInterval) {
+    clearInterval(hcaptchaCheckInterval)
+    hcaptchaCheckInterval = null
+  }
 })
 
 const handleSearch = () => {

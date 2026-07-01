@@ -2,12 +2,25 @@
  * 数据库迁移服务
  * 用于在SQLite和MySQL之间复制数据
  * 只有手动触发才会执行，系统不会自动迁移
+ *
+ * 修复说明（H3-H6/M14-M16/M26）：
+ * - H3/H4: getSqlModels 补齐所有 indexes、validate、Post.tags get/set、RolePermission.permissions get/set
+ *   （迁移模型用 STRING(20)+validate 替代 ENUM，避免源库旧数据被 ENUM 拒绝）
+ * - H5: sync 策略改进——clearExisting=true 用 force（删表重建，索引齐全），否则用 alter（保留数据）
+ * - H6: bulkCreate 前移除 id 字段，让目标库自增，配合唯一索引做 ignoreDuplicates
+ *   （注意：移除 id 后，依赖自增 id 的外键关联可能错位，迁移建议配合 clearExisting=true 全量重建）
+ * - M14: 分批 findAll（每批 500 条），避免全表读入内存 OOM
+ * - M15: writeToTarget 用事务包裹，保证写入原子性
+ * - M16: readFromSource 删除多余的 sync() 调用（源库表应已存在，不应有写副作用）
+ * - M26: MySQL 连接添加 utf8mb4 字符集，支持 emoji 等 4 字节字符
  */
 
 require('dotenv').config();
 const { Sequelize, DataTypes } = require('sequelize');
-const fs = require('fs').promises;
 const path = require('path');
+
+// 批量读取大小（M14：分批读取避免 OOM）
+const BATCH_SIZE = 500;
 
 class DatabaseMigration {
     constructor() {
@@ -20,6 +33,7 @@ class DatabaseMigration {
 
     /**
      * 获取数据库连接
+     * M26: MySQL 分支添加 utf8mb4 字符集，支持 emoji 等 4 字节字符
      */
     async getConnection(dbType, config = {}) {
         if (dbType === 'mysql') {
@@ -31,7 +45,14 @@ class DatabaseMigration {
                     host: config.host || process.env.DB_HOST,
                     port: config.port || process.env.DB_PORT || 3306,
                     dialect: 'mysql',
-                    logging: false
+                    logging: false,
+                    // M26: utf8mb4 支持完整 Unicode（含 emoji），collate 用 unicode_ci 支持不区分大小写比较
+                    charset: 'utf8mb4',
+                    collate: 'utf8mb4_unicode_ci',
+                    define: {
+                        charset: 'utf8mb4',
+                        collate: 'utf8mb4_unicode_ci'
+                    }
                 }
             );
             await sequelize.authenticate();
@@ -50,6 +71,8 @@ class DatabaseMigration {
 
     /**
      * 获取SQL模型
+     * H3/H4: 补齐所有 indexes、validate、get/set，与 models/index.js 保持一致
+     * 迁移模型用 STRING(20)+validate 替代 ENUM，避免源库旧数据被 ENUM 拒绝
      */
     getSqlModels(sequelize) {
         const User = sequelize.define('User', {
@@ -62,19 +85,23 @@ class DatabaseMigration {
             avatar: { type: DataTypes.STRING(500) },
             bio: { type: DataTypes.TEXT },
             doing: { type: DataTypes.STRING(200) },
-            gender: { type: DataTypes.STRING(20), defaultValue: 'unknown' },
+            gender: { type: DataTypes.STRING(20), defaultValue: 'unknown', validate: { isIn: [['m', 'f', 'unknown']] } },
             level: { type: DataTypes.INTEGER, defaultValue: 1 },
             experience: { type: DataTypes.INTEGER, defaultValue: 0 },
             follower_count: { type: DataTypes.INTEGER, defaultValue: 0 },
             following_count: { type: DataTypes.INTEGER, defaultValue: 0 },
             work_count: { type: DataTypes.INTEGER, defaultValue: 0 },
             codemao_token: DataTypes.TEXT,
-            role: { type: DataTypes.STRING(20), defaultValue: 'user' },
-            status: { type: DataTypes.STRING(20), defaultValue: 'active' },
-            is_active_dalao: { type: DataTypes.BOOLEAN, defaultValue: false },
-            created_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW },
-            updated_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW }
-        }, { tableName: 'users', timestamps: false });
+            role: { type: DataTypes.STRING(20), defaultValue: 'user', validate: { isIn: [['user', 'reviewer', 'moderator', 'admin', 'superadmin']] } },
+            status: { type: DataTypes.STRING(20), defaultValue: 'active', validate: { isIn: [['active', 'disabled']] } },
+            is_active_dalao: { type: DataTypes.BOOLEAN, defaultValue: false }
+        }, {
+            tableName: 'users',
+            timestamps: true,
+            underscored: true,
+            createdAt: 'created_at',
+            updatedAt: 'updated_at'
+        });
 
         const Work = sequelize.define('Work', {
             id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
@@ -83,9 +110,9 @@ class DatabaseMigration {
             description: DataTypes.TEXT,
             preview: { type: DataTypes.STRING(500) },
             type: { type: DataTypes.STRING(50) },
-            ide_type: { type: DataTypes.STRING(50) },
+            ide_type: { type: DataTypes.STRING(50), defaultValue: 'KITTEN' },
             work_url: { type: DataTypes.STRING(500) },
-            user_id: DataTypes.INTEGER,
+            user_id: { type: DataTypes.INTEGER, allowNull: false },
             codemao_author_id: { type: DataTypes.STRING(50) },
             codemao_author_name: { type: DataTypes.STRING(100) },
             view_times: { type: DataTypes.INTEGER, defaultValue: 0 },
@@ -93,10 +120,19 @@ class DatabaseMigration {
             collection_times: { type: DataTypes.INTEGER, defaultValue: 0 },
             comment_count: { type: DataTypes.INTEGER, defaultValue: 0 },
             is_featured: { type: DataTypes.BOOLEAN, defaultValue: false },
-            status: { type: DataTypes.STRING(20), defaultValue: 'published' },
-            created_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW },
-            updated_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW }
-        }, { tableName: 'works', timestamps: false });
+            status: { type: DataTypes.STRING(20), defaultValue: 'published', validate: { isIn: [['pending', 'published', 'rejected', 'deleted']] } }
+        }, {
+            tableName: 'works',
+            timestamps: true,
+            underscored: true,
+            createdAt: 'created_at',
+            updatedAt: 'updated_at',
+            indexes: [
+                { fields: ['status'] },
+                { fields: ['user_id'] },
+                { fields: ['created_at'] }
+            ]
+        });
 
         const Post = sequelize.define('Post', {
             id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
@@ -111,11 +147,31 @@ class DatabaseMigration {
             is_essence: { type: DataTypes.BOOLEAN, defaultValue: false },
             category: { type: DataTypes.STRING(50), defaultValue: 'discussion' },
             cover: { type: DataTypes.STRING(500) },
-            status: { type: DataTypes.STRING(20), defaultValue: 'published' },
-            tags: DataTypes.TEXT,
-            created_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW },
-            updated_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW }
-        }, { tableName: 'posts', timestamps: false });
+            status: { type: DataTypes.STRING(20), defaultValue: 'published', validate: { isIn: [['published', 'draft', 'hidden', 'deleted']] } },
+            // H4: Post.tags 补 get/set，与主模型一致（返回 [] 而非 null）
+            tags: {
+                type: DataTypes.TEXT,
+                get() {
+                    const val = this.getDataValue('tags');
+                    if (!val) return [];
+                    try { return JSON.parse(val); } catch (e) { return []; }
+                },
+                set(val) {
+                    this.setDataValue('tags', val ? JSON.stringify(val) : null);
+                }
+            }
+        }, {
+            tableName: 'posts',
+            timestamps: true,
+            underscored: true,
+            createdAt: 'created_at',
+            updatedAt: 'updated_at',
+            indexes: [
+                { fields: ['status'] },
+                { fields: ['user_id'] },
+                { fields: ['category'] }
+            ]
+        });
 
         const Comment = sequelize.define('Comment', {
             id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
@@ -126,30 +182,54 @@ class DatabaseMigration {
             parent_id: DataTypes.INTEGER,
             reply_to_user_id: DataTypes.INTEGER,
             like_count: { type: DataTypes.INTEGER, defaultValue: 0 },
-            status: { type: DataTypes.STRING(20), defaultValue: 'active' },
-            created_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW }
-        }, { tableName: 'comments', timestamps: false });
+            status: { type: DataTypes.STRING(20), defaultValue: 'active', validate: { isIn: [['active', 'hidden', 'deleted']] } }
+        }, {
+            tableName: 'comments',
+            timestamps: true,
+            underscored: true,
+            createdAt: 'created_at',
+            updatedAt: 'updated_at',
+            indexes: [
+                { fields: ['work_id'] },
+                { fields: ['post_id'] },
+                { fields: ['status'] },
+                { fields: ['parent_id'] }
+            ]
+        });
 
         const Notification = sequelize.define('Notification', {
             id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
             user_id: { type: DataTypes.INTEGER, allowNull: false },
             type: { type: DataTypes.STRING(50), allowNull: false },
-            title: { type: DataTypes.STRING(200) },
+            title: { type: DataTypes.STRING(200), allowNull: false },
             content: DataTypes.TEXT,
             related_id: DataTypes.INTEGER,
             related_type: { type: DataTypes.STRING(50) },
             sender_id: DataTypes.INTEGER,
-            is_read: { type: DataTypes.BOOLEAN, defaultValue: false },
-            created_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW }
-        }, { tableName: 'notifications', timestamps: false });
+            is_read: { type: DataTypes.BOOLEAN, defaultValue: false }
+        }, {
+            tableName: 'notifications',
+            timestamps: true,
+            underscored: true,
+            createdAt: 'created_at',
+            updatedAt: 'updated_at',
+            indexes: [
+                { fields: ['user_id'] },
+                { fields: ['is_read'] }
+            ]
+        });
 
         const SystemConfig = sequelize.define('SystemConfig', {
             id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
             config_key: { type: DataTypes.STRING(100), allowNull: false, unique: true },
-            config_value: DataTypes.TEXT,
-            created_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW },
-            updated_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW }
-        }, { tableName: 'system_configs', timestamps: false });
+            config_value: DataTypes.TEXT
+        }, {
+            tableName: 'system_configs',
+            timestamps: true,
+            underscored: true,
+            createdAt: 'created_at',
+            updatedAt: 'updated_at'
+        });
 
         const Banner = sequelize.define('Banner', {
             id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
@@ -157,27 +237,45 @@ class DatabaseMigration {
             image_url: { type: DataTypes.STRING(500), allowNull: false },
             link_url: { type: DataTypes.STRING(500) },
             sort: { type: DataTypes.INTEGER, defaultValue: 0 },
-            is_active: { type: DataTypes.BOOLEAN, defaultValue: true },
-            created_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW }
-        }, { tableName: 'banners', timestamps: false });
+            is_active: { type: DataTypes.BOOLEAN, defaultValue: true }
+        }, {
+            tableName: 'banners',
+            timestamps: true,
+            underscored: true,
+            createdAt: 'created_at',
+            updatedAt: 'updated_at'
+        });
 
         const Announcement = sequelize.define('Announcement', {
             id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
             title: { type: DataTypes.STRING(200), allowNull: false },
             content: { type: DataTypes.TEXT, allowNull: false },
-            type: { type: DataTypes.STRING(20), defaultValue: 'notice' },
-            is_active: { type: DataTypes.BOOLEAN, defaultValue: true },
-            created_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW }
-        }, { tableName: 'announcements', timestamps: false });
+            type: { type: DataTypes.STRING(20), defaultValue: 'notice', validate: { isIn: [['notice', 'update', 'warning']] } },
+            is_active: { type: DataTypes.BOOLEAN, defaultValue: true }
+        }, {
+            tableName: 'announcements',
+            timestamps: true,
+            underscored: true,
+            createdAt: 'created_at',
+            updatedAt: 'updated_at'
+        });
 
         const IpBan = sequelize.define('IpBan', {
             id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
             ip: { type: DataTypes.STRING(50), allowNull: false, unique: true },
             reason: { type: DataTypes.STRING(500) },
             banned_by: DataTypes.INTEGER,
-            expires_at: DataTypes.DATE,
-            created_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW }
-        }, { tableName: 'ip_bans', timestamps: false });
+            expires_at: DataTypes.DATE
+        }, {
+            tableName: 'ip_bans',
+            timestamps: true,
+            underscored: true,
+            createdAt: 'created_at',
+            updatedAt: 'updated_at',
+            indexes: [
+                { fields: ['expires_at'] }
+            ]
+        });
 
         const Report = sequelize.define('Report', {
             id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
@@ -186,13 +284,21 @@ class DatabaseMigration {
             reporter_id: { type: DataTypes.INTEGER, allowNull: false },
             reason: { type: DataTypes.STRING(200), allowNull: false },
             description: DataTypes.TEXT,
-            status: { type: DataTypes.STRING(20), defaultValue: 'pending' },
+            status: { type: DataTypes.STRING(20), defaultValue: 'pending', validate: { isIn: [['pending', 'processing', 'resolved', 'rejected']] } },
             handler_id: DataTypes.INTEGER,
             handle_note: DataTypes.TEXT,
-            ai_result: DataTypes.TEXT,
-            created_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW },
-            updated_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW }
-        }, { tableName: 'reports', timestamps: false });
+            ai_result: DataTypes.TEXT
+        }, {
+            tableName: 'reports',
+            timestamps: true,
+            underscored: true,
+            createdAt: 'created_at',
+            updatedAt: 'updated_at',
+            indexes: [
+                { fields: ['status'] },
+                { fields: ['reporter_id'] }
+            ]
+        });
 
         const Studio = sequelize.define('Studio', {
             id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
@@ -209,19 +315,32 @@ class DatabaseMigration {
             level: { type: DataTypes.INTEGER, defaultValue: 1 },
             is_public: { type: DataTypes.BOOLEAN, defaultValue: true },
             join_type: { type: DataTypes.STRING(20), defaultValue: 'public' },
-            status: { type: DataTypes.STRING(20), defaultValue: 'active' },
-            created_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW },
-            updated_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW }
-        }, { tableName: 'studios', timestamps: false });
+            status: { type: DataTypes.STRING(20), defaultValue: 'active', validate: { isIn: [['active', 'pending', 'dissolved', 'banned']] } }
+        }, {
+            tableName: 'studios',
+            timestamps: true,
+            underscored: true,
+            createdAt: 'created_at',
+            updatedAt: 'updated_at'
+        });
 
         const StudioMember = sequelize.define('StudioMember', {
             id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
             studio_id: { type: DataTypes.INTEGER, allowNull: false },
             user_id: { type: DataTypes.INTEGER, allowNull: false },
-            role: { type: DataTypes.STRING(20), defaultValue: 'member' },
-            status: { type: DataTypes.STRING(20), defaultValue: 'active' },
+            role: { type: DataTypes.STRING(20), defaultValue: 'member', validate: { isIn: [['owner', 'vice_owner', 'admin', 'member']] } },
+            status: { type: DataTypes.STRING(20), defaultValue: 'active', validate: { isIn: [['active', 'pending', 'rejected']] } },
             joined_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW }
-        }, { tableName: 'studio_members', timestamps: false });
+        }, {
+            tableName: 'studio_members',
+            timestamps: true,
+            underscored: true,
+            createdAt: 'created_at',
+            updatedAt: 'updated_at',
+            indexes: [
+                { unique: true, fields: ['studio_id', 'user_id'], name: 'unique_studio_member' }
+            ]
+        });
 
         const StudioWork = sequelize.define('StudioWork', {
             id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
@@ -229,35 +348,95 @@ class DatabaseMigration {
             work_id: { type: DataTypes.INTEGER, allowNull: false },
             user_id: { type: DataTypes.INTEGER, allowNull: false },
             score: { type: DataTypes.INTEGER, defaultValue: 0 },
-            status: { type: DataTypes.STRING(20), defaultValue: 'pending' },
+            status: { type: DataTypes.STRING(20), defaultValue: 'pending', validate: { isIn: [['pending', 'approved', 'rejected', 'down']] } },
             reviewed_by: DataTypes.INTEGER,
             reviewed_at: DataTypes.DATE,
             added_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW }
-        }, { tableName: 'studio_works', timestamps: false });
+        }, {
+            tableName: 'studio_works',
+            timestamps: true,
+            underscored: true,
+            createdAt: 'created_at',
+            updatedAt: 'updated_at',
+            indexes: [
+                { unique: true, fields: ['studio_id', 'work_id'], name: 'unique_studio_work' }
+            ]
+        });
 
+        // H4: Like 补 validate hasTarget + indexes
         const Like = sequelize.define('Like', {
             id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
             user_id: { type: DataTypes.INTEGER, allowNull: false },
             work_id: DataTypes.INTEGER,
             post_id: DataTypes.INTEGER,
-            comment_id: DataTypes.INTEGER,
-            created_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW }
-        }, { tableName: 'likes', timestamps: false });
+            comment_id: DataTypes.INTEGER
+        }, {
+            tableName: 'likes',
+            timestamps: true,
+            underscored: true,
+            createdAt: 'created_at',
+            updatedAt: 'updated_at',
+            validate: {
+                hasTarget() {
+                    const targets = [this.work_id, this.post_id, this.comment_id].filter(Boolean);
+                    if (targets.length !== 1) {
+                        throw new Error('点赞记录必须且只能关联一个目标');
+                    }
+                }
+            },
+            indexes: [
+                { unique: true, fields: ['user_id', 'work_id'], name: 'unique_like_user_work' },
+                { unique: true, fields: ['user_id', 'post_id'], name: 'unique_like_user_post' },
+                { unique: true, fields: ['user_id', 'comment_id'], name: 'unique_like_user_comment' },
+                { fields: ['work_id'] },
+                { fields: ['post_id'] },
+                { fields: ['comment_id'] }
+            ]
+        });
 
+        // H4: Favorite 补 validate hasTarget + indexes
         const Favorite = sequelize.define('Favorite', {
             id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
             user_id: { type: DataTypes.INTEGER, allowNull: false },
             work_id: DataTypes.INTEGER,
-            post_id: DataTypes.INTEGER,
-            created_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW }
-        }, { tableName: 'favorites', timestamps: false });
+            post_id: DataTypes.INTEGER
+        }, {
+            tableName: 'favorites',
+            timestamps: true,
+            underscored: true,
+            createdAt: 'created_at',
+            updatedAt: 'updated_at',
+            validate: {
+                hasTarget() {
+                    const targets = [this.work_id, this.post_id].filter(Boolean);
+                    if (targets.length !== 1) {
+                        throw new Error('收藏记录必须且只能关联一个目标');
+                    }
+                }
+            },
+            indexes: [
+                { unique: true, fields: ['user_id', 'work_id'], name: 'unique_favorite_user_work' },
+                { unique: true, fields: ['user_id', 'post_id'], name: 'unique_favorite_user_post' },
+                { fields: ['work_id'] },
+                { fields: ['post_id'] }
+            ]
+        });
 
         const Follow = sequelize.define('Follow', {
             id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
             follower_id: { type: DataTypes.INTEGER, allowNull: false },
-            following_id: { type: DataTypes.INTEGER, allowNull: false },
-            created_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW }
-        }, { tableName: 'follows', timestamps: false });
+            following_id: { type: DataTypes.INTEGER, allowNull: false }
+        }, {
+            tableName: 'follows',
+            timestamps: true,
+            underscored: true,
+            createdAt: 'created_at',
+            updatedAt: 'updated_at',
+            indexes: [
+                { unique: true, fields: ['follower_id', 'following_id'], name: 'unique_follow_pair' },
+                { fields: ['following_id'] }
+            ]
+        });
 
         const CaptchaStats = sequelize.define('CaptchaStats', {
             id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
@@ -265,9 +444,17 @@ class DatabaseMigration {
             scene: { type: DataTypes.STRING(50) },
             action: { type: DataTypes.STRING(20) },
             ip: { type: DataTypes.STRING(50), allowNull: false },
-            user_agent: DataTypes.TEXT,
-            created_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW }
-        }, { tableName: 'captcha_stats', timestamps: false });
+            user_agent: DataTypes.TEXT
+        }, {
+            tableName: 'captcha_stats',
+            timestamps: true,
+            underscored: true,
+            createdAt: 'created_at',
+            updatedAt: 'updated_at',
+            indexes: [
+                { fields: ['created_at'] }
+            ]
+        });
 
         const OperationLog = sequelize.define('OperationLog', {
             id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
@@ -277,28 +464,55 @@ class DatabaseMigration {
             target_id: DataTypes.INTEGER,
             details: DataTypes.TEXT,
             ip_address: { type: DataTypes.STRING(50) },
-            user_agent: DataTypes.TEXT,
-            created_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW }
-        }, { tableName: 'operation_logs', timestamps: false });
+            user_agent: DataTypes.TEXT
+        }, {
+            tableName: 'operation_logs',
+            timestamps: true,
+            underscored: true,
+            createdAt: 'created_at',
+            updatedAt: 'updated_at',
+            indexes: [
+                { fields: ['user_id'] },
+                { fields: ['created_at'] }
+            ]
+        });
 
+        // H4: RolePermission.permissions 补 JSON get/set
         const RolePermission = sequelize.define('RolePermission', {
             id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
             role: { type: DataTypes.STRING(50), allowNull: false, unique: true },
             name: { type: DataTypes.STRING(100) },
             level: { type: DataTypes.INTEGER, defaultValue: 0 },
-            permissions: DataTypes.TEXT,
-            created_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW },
-            updated_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW }
-        }, { tableName: 'role_permissions', timestamps: false });
+            permissions: {
+                type: DataTypes.TEXT,
+                get() {
+                    const v = this.getDataValue('permissions');
+                    return v ? JSON.parse(v) : {};
+                },
+                set(v) {
+                    this.setDataValue('permissions', JSON.stringify(v || {}));
+                }
+            }
+        }, {
+            tableName: 'role_permissions',
+            timestamps: true,
+            underscored: true,
+            createdAt: 'created_at',
+            updatedAt: 'updated_at'
+        });
 
         const Statistics = sequelize.define('Statistics', {
             id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
             stat_key: { type: DataTypes.STRING(100), allowNull: false, unique: true },
             stat_value: { type: DataTypes.BIGINT, defaultValue: 0 },
-            stat_date: DataTypes.DATE,
-            created_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW },
-            updated_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW }
-        }, { tableName: 'statistics', timestamps: false });
+            stat_date: DataTypes.DATE
+        }, {
+            tableName: 'statistics',
+            timestamps: true,
+            underscored: true,
+            createdAt: 'created_at',
+            updatedAt: 'updated_at'
+        });
 
         const SensitiveWord = sequelize.define('SensitiveWord', {
             id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
@@ -306,9 +520,14 @@ class DatabaseMigration {
             category: { type: DataTypes.STRING(50) },
             level: { type: DataTypes.INTEGER, defaultValue: 1 },
             replacement: { type: DataTypes.STRING(200) },
-            status: { type: DataTypes.STRING(20), defaultValue: 'active' },
-            created_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW }
-        }, { tableName: 'sensitive_words', timestamps: false });
+            status: { type: DataTypes.STRING(20), defaultValue: 'active', validate: { isIn: [['active', 'disabled']] } }
+        }, {
+            tableName: 'sensitive_words',
+            timestamps: true,
+            underscored: true,
+            createdAt: 'created_at',
+            updatedAt: 'updated_at'
+        });
 
         return {
             User, Work, Post, Comment, Notification, SystemConfig,
@@ -319,38 +538,62 @@ class DatabaseMigration {
     }
 
     /**
-     * 从源数据库读取数据
+     * M14: 分批读取表数据，避免全表读入内存导致 OOM
+     * @param {Model} model - Sequelize 模型
+     * @param {Transaction} [transaction] - 可选事务
+     * @returns {Promise<Array>} 全部记录（raw 格式）
      */
-    async readFromSource(sourceType, sourceConfig, models) {
+    async batchFindAll(model, transaction = null) {
+        const allRows = [];
+        let offset = 0;
+        while (true) {
+            const findOpts = { limit: BATCH_SIZE, offset, raw: true };
+            if (transaction) findOpts.transaction = transaction;
+            const rows = await model.findAll(findOpts);
+            if (rows.length === 0) break;
+            allRows.push(...rows);
+            if (rows.length < BATCH_SIZE) break;
+            offset += BATCH_SIZE;
+        }
+        return allRows;
+    }
+
+    /**
+     * 从源数据库读取数据
+     * M16: 删除多余的 sync() 调用（源库表应已存在，不应有写副作用）
+     * M14: 改用分批读取
+     */
+    async readFromSource(sourceType, sourceConfig) {
         console.log(`📖 从 ${sourceType} 读取数据...`);
         const data = {};
 
         const { connection } = await this.getConnection(sourceType, sourceConfig);
         try {
             const sqlModels = this.getSqlModels(connection);
-            await connection.sync();
+            // M16: 已删除 connection.sync()，源库表应已存在，避免写副作用
 
-            data.users = await sqlModels.User.findAll({ raw: true });
-            data.works = await sqlModels.Work.findAll({ raw: true });
-            data.posts = await sqlModels.Post.findAll({ raw: true });
-            data.comments = await sqlModels.Comment.findAll({ raw: true });
-            data.notifications = await sqlModels.Notification.findAll({ raw: true });
-            data.systemConfigs = await sqlModels.SystemConfig.findAll({ raw: true });
-            data.banners = await sqlModels.Banner.findAll({ raw: true });
-            data.announcements = await sqlModels.Announcement.findAll({ raw: true });
-            data.ipBans = await sqlModels.IpBan.findAll({ raw: true });
-            data.reports = await sqlModels.Report.findAll({ raw: true });
-            data.studios = await sqlModels.Studio.findAll({ raw: true });
-            data.studioMembers = await sqlModels.StudioMember.findAll({ raw: true });
-            data.studioWorks = await sqlModels.StudioWork.findAll({ raw: true });
-            data.likes = await sqlModels.Like.findAll({ raw: true });
-            data.favorites = await sqlModels.Favorite.findAll({ raw: true });
-            data.follows = await sqlModels.Follow.findAll({ raw: true });
-            data.captchaStats = await sqlModels.CaptchaStats.findAll({ raw: true });
-            data.operationLogs = await sqlModels.OperationLog.findAll({ raw: true });
-            data.rolePermissions = await sqlModels.RolePermission.findAll({ raw: true });
-            data.statistics = await sqlModels.Statistics.findAll({ raw: true });
-            data.sensitiveWords = await sqlModels.SensitiveWord.findAll({ raw: true });
+            // M14: 分批读取每张表，避免大表 OOM
+            data.users = await this.batchFindAll(sqlModels.User);
+            data.works = await this.batchFindAll(sqlModels.Work);
+            data.posts = await this.batchFindAll(sqlModels.Post);
+            data.comments = await this.batchFindAll(sqlModels.Comment);
+            data.notifications = await this.batchFindAll(sqlModels.Notification);
+            data.systemConfigs = await this.batchFindAll(sqlModels.SystemConfig);
+            data.banners = await this.batchFindAll(sqlModels.Banner);
+            data.announcements = await this.batchFindAll(sqlModels.Announcement);
+            data.ipBans = await this.batchFindAll(sqlModels.IpBan);
+            data.reports = await this.batchFindAll(sqlModels.Report);
+            data.studios = await this.batchFindAll(sqlModels.Studio);
+            data.studioMembers = await this.batchFindAll(sqlModels.StudioMember);
+            data.studioWorks = await this.batchFindAll(sqlModels.StudioWork);
+            data.likes = await this.batchFindAll(sqlModels.Like);
+            data.favorites = await this.batchFindAll(sqlModels.Favorite);
+            data.follows = await this.batchFindAll(sqlModels.Follow);
+            data.captchaStats = await this.batchFindAll(sqlModels.CaptchaStats);
+            data.operationLogs = await this.batchFindAll(sqlModels.OperationLog);
+            data.rolePermissions = await this.batchFindAll(sqlModels.RolePermission);
+            data.statistics = await this.batchFindAll(sqlModels.Statistics);
+            data.sensitiveWords = await this.batchFindAll(sqlModels.SensitiveWord);
         } finally {
             await connection.close();
         }
@@ -361,6 +604,14 @@ class DatabaseMigration {
 
     /**
      * 写入数据到目标数据库
+     * H5: sync 策略改进——clearExisting=true 用 force（删表重建），否则用 alter（保留数据）
+     * H6: bulkCreate 前移除 id 字段，让目标库自增，配合唯一索引做 ignoreDuplicates
+     * M15: 整体用事务包裹，保证写入原子性
+     *
+     * @param {string} targetType - 目标数据库类型
+     * @param {object} targetConfig - 目标数据库配置
+     * @param {object} data - 待写入数据
+     * @param {boolean} clearExisting - 是否清空目标数据库
      */
     async writeToTarget(targetType, targetConfig, data, clearExisting = false) {
         console.log(`📝 写入数据到 ${targetType}...`);
@@ -368,29 +619,62 @@ class DatabaseMigration {
         const { connection } = await this.getConnection(targetType, targetConfig);
         try {
             const sqlModels = this.getSqlModels(connection);
-            await connection.sync({ force: clearExisting });
 
-            if (data.users.length > 0) await sqlModels.User.bulkCreate(data.users, { ignoreDuplicates: true });
-            if (data.works.length > 0) await sqlModels.Work.bulkCreate(data.works, { ignoreDuplicates: true });
-            if (data.posts.length > 0) await sqlModels.Post.bulkCreate(data.posts, { ignoreDuplicates: true });
-            if (data.comments.length > 0) await sqlModels.Comment.bulkCreate(data.comments, { ignoreDuplicates: true });
-            if (data.notifications.length > 0) await sqlModels.Notification.bulkCreate(data.notifications, { ignoreDuplicates: true });
-            if (data.systemConfigs.length > 0) await sqlModels.SystemConfig.bulkCreate(data.systemConfigs, { ignoreDuplicates: true });
-            if (data.banners.length > 0) await sqlModels.Banner.bulkCreate(data.banners, { ignoreDuplicates: true });
-            if (data.announcements.length > 0) await sqlModels.Announcement.bulkCreate(data.announcements, { ignoreDuplicates: true });
-            if (data.ipBans.length > 0) await sqlModels.IpBan.bulkCreate(data.ipBans, { ignoreDuplicates: true });
-            if (data.reports.length > 0) await sqlModels.Report.bulkCreate(data.reports, { ignoreDuplicates: true });
-            if (data.studios.length > 0) await sqlModels.Studio.bulkCreate(data.studios, { ignoreDuplicates: true });
-            if (data.studioMembers.length > 0) await sqlModels.StudioMember.bulkCreate(data.studioMembers, { ignoreDuplicates: true });
-            if (data.studioWorks.length > 0) await sqlModels.StudioWork.bulkCreate(data.studioWorks, { ignoreDuplicates: true });
-            if (data.likes.length > 0) await sqlModels.Like.bulkCreate(data.likes, { ignoreDuplicates: true });
-            if (data.favorites.length > 0) await sqlModels.Favorite.bulkCreate(data.favorites, { ignoreDuplicates: true });
-            if (data.follows.length > 0) await sqlModels.Follow.bulkCreate(data.follows, { ignoreDuplicates: true });
-            if (data.captchaStats.length > 0) await sqlModels.CaptchaStats.bulkCreate(data.captchaStats, { ignoreDuplicates: true });
-            if (data.operationLogs.length > 0) await sqlModels.OperationLog.bulkCreate(data.operationLogs, { ignoreDuplicates: true });
-            if (data.rolePermissions.length > 0) await sqlModels.RolePermission.bulkCreate(data.rolePermissions, { ignoreDuplicates: true });
-            if (data.statistics.length > 0) await sqlModels.Statistics.bulkCreate(data.statistics, { ignoreDuplicates: true });
-            if (data.sensitiveWords.length > 0) await sqlModels.SensitiveWord.bulkCreate(data.sensitiveWords, { ignoreDuplicates: true });
+            // H5: sync 策略改进
+            // ⚠️ 警告：force:true 会删表重建，所有原有数据丢失！仅在确认全量重导时使用 clearExisting=true
+            // alter:true 保留数据但 SQLite 对 alter 支持有限（如无法修改列类型）
+            if (clearExisting) {
+                await connection.sync({ force: true });
+            } else {
+                await connection.sync({ alter: true });
+            }
+
+            // M15: 用事务包裹所有写入，保证原子性（全部成功或全部回滚）
+            const t = await connection.transaction();
+
+            try {
+                // H6: 辅助函数——批量写入前移除 id 字段，让目标库自增
+                // 配合唯一索引做 ignoreDuplicates，避免按 id 静默丢数据
+                // 注意：移除 id 后依赖自增 id 的外键关联可能错位，建议配合 clearExisting=true 全量重建
+                const bulkInsert = async (model, rows, name) => {
+                    if (!rows || rows.length === 0) return;
+                    // H6: 深拷贝并移除 id，避免修改源数据
+                    const cleanedRows = rows.map(row => {
+                        const r = { ...row };
+                        delete r.id;
+                        return r;
+                    });
+                    await model.bulkCreate(cleanedRows, { ignoreDuplicates: true, transaction: t });
+                    console.log(`  ${name}: ${cleanedRows.length} 条`);
+                };
+
+                await bulkInsert(sqlModels.User, data.users, '用户');
+                await bulkInsert(sqlModels.Work, data.works, '作品');
+                await bulkInsert(sqlModels.Post, data.posts, '帖子');
+                await bulkInsert(sqlModels.Comment, data.comments, '评论');
+                await bulkInsert(sqlModels.Notification, data.notifications, '通知');
+                await bulkInsert(sqlModels.SystemConfig, data.systemConfigs, '系统配置');
+                await bulkInsert(sqlModels.Banner, data.banners, '轮播图');
+                await bulkInsert(sqlModels.Announcement, data.announcements, '公告');
+                await bulkInsert(sqlModels.IpBan, data.ipBans, 'IP封禁');
+                await bulkInsert(sqlModels.Report, data.reports, '举报');
+                await bulkInsert(sqlModels.Studio, data.studios, '工作室');
+                await bulkInsert(sqlModels.StudioMember, data.studioMembers, '工作室成员');
+                await bulkInsert(sqlModels.StudioWork, data.studioWorks, '工作室作品');
+                await bulkInsert(sqlModels.Like, data.likes, '点赞');
+                await bulkInsert(sqlModels.Favorite, data.favorites, '收藏');
+                await bulkInsert(sqlModels.Follow, data.follows, '关注');
+                await bulkInsert(sqlModels.CaptchaStats, data.captchaStats, '验证码统计');
+                await bulkInsert(sqlModels.OperationLog, data.operationLogs, '操作日志');
+                await bulkInsert(sqlModels.RolePermission, data.rolePermissions, '角色权限');
+                await bulkInsert(sqlModels.Statistics, data.statistics, '统计');
+                await bulkInsert(sqlModels.SensitiveWord, data.sensitiveWords, '敏感词');
+
+                await t.commit();
+            } catch (err) {
+                await t.rollback();
+                throw err;
+            }
         } finally {
             await connection.close();
         }

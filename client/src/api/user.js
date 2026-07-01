@@ -29,6 +29,8 @@ export const userApi = {
   
   /**
    * 更新头像
+   * 注意：与 updateProfile 共用 /users/profile 接口
+   * 后端通过 Content-Type（multipart/form-data）自动区分是头像上传还是普通资料更新
    */
   updateAvatar(formData) {
     return request.put('/users/profile', formData)

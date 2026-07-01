@@ -34,8 +34,11 @@ function getProxyAgent() {
     if (!proxyUrl) {
         return undefined;
     }
-    
-    console.log('[代理] 使用代理:', proxyUrl);
+
+    // 修复：脱敏代理 URL 中的凭据（用户名/密码），避免日志泄露敏感信息
+    // 形如 http://user:pass@host:port → http://user:***@host:port
+    const safeProxy = proxyUrl.replace(/\/\/([^:/?#]+):([^@/?#]+)@/, '//$1:***@');
+    console.log('[代理] 使用代理:', safeProxy);
     
     if (proxyUrl.startsWith('socks4://') || proxyUrl.startsWith('socks5://')) {
         return new SocksProxyAgent(proxyUrl);

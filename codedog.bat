@@ -215,8 +215,8 @@ goto :eof
 :fix_perms
 echo.
 echo 正在修复文件权限...
-icacls "%SCRIPT_DIR%data" /grant Everyone:F /T >nul 2>&1
-icacls "%SCRIPT_DIR%uploads" /grant Everyone:F /T >nul 2>&1
+icacls "%SCRIPT_DIR%data" /grant "%USERNAME%:F" /T >nul 2>&1
+icacls "%SCRIPT_DIR%uploads" /grant "%USERNAME%:F" /T >nul 2>&1
 echo ✓ 权限修复完成
 goto :eof
 
@@ -299,6 +299,7 @@ if "%sw_choice%"=="1" (
 if "%sw_choice%"=="2" (
     echo.
     set /p test_content="请输入要测试的内容: "
+    set "test_content=!test_content:'=''!"
     set DB_PATH=%SCRIPT_DIR%data\database.sqlite
     if exist "!DB_PATH!" (
         echo 检测结果:

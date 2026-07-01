@@ -1,6 +1,18 @@
 /**
  * 数据库模型定义
  * 使用Sequelize ORM，支持SQLite和MySQL
+ *
+ * 修复说明（H16/M3-M10/M21-M25/L8）：
+ * - 所有模型改为 timestamps:true + underscored:true，由 Sequelize 自动管理 created_at/updated_at
+ * - Work.user_id 改为 allowNull:false（M3）
+ * - StudioMember/StudioWork 补复合唯一索引（M4/M5）
+ * - Studio/StudioWork/Report/SensitiveWord.status 改为 ENUM（M7）
+ * - Follow 加 beforeCreate hook 防止自关注（M8）
+ * - Comment 自引用加 onDelete:'SET NULL'（M10）
+ * - 高频查询字段补索引（M21/M22）
+ * - Post.tags getter 返回 [] 而非 null（M24）
+ * - RolePermission.permissions 加 JSON get/set（M25）
+ * - User.codemao_token 标注 TODO 待加密（L8）
  */
 
 require('dotenv').config();
@@ -9,6 +21,14 @@ const { sequelize } = require('../config/database');
 const { DataTypes } = require('sequelize');
 
 console.log('📦 加载Sequelize模型');
+
+// H16: 统一 timestamps 选项，供所有模型复用，由 Sequelize 自动维护 created_at/updated_at
+const TIMESTAMP_OPTS = {
+    timestamps: true,
+    underscored: true,
+    createdAt: 'created_at',
+    updatedAt: 'updated_at'
+};
 
 const User = sequelize.define('User', {
     id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
@@ -26,13 +46,12 @@ const User = sequelize.define('User', {
     follower_count: { type: DataTypes.INTEGER, defaultValue: 0 },
     following_count: { type: DataTypes.INTEGER, defaultValue: 0 },
     work_count: { type: DataTypes.INTEGER, defaultValue: 0 },
+    // L8 TODO: codemao_token 当前明文存储，后续需引入密钥管理（如 AES-256-GCM）加密后再落库
     codemao_token: { type: DataTypes.TEXT },
     role: { type: DataTypes.ENUM('user', 'reviewer', 'moderator', 'admin', 'superadmin'), defaultValue: 'user' },
     status: { type: DataTypes.ENUM('active', 'disabled'), defaultValue: 'active' },
-    is_active_dalao: { type: DataTypes.BOOLEAN, defaultValue: false },
-    created_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW },
-    updated_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW }
-}, { tableName: 'users', timestamps: false });
+    is_active_dalao: { type: DataTypes.BOOLEAN, defaultValue: false }
+}, Object.assign({ tableName: 'users' }, TIMESTAMP_OPTS));
 
 const Work = sequelize.define('Work', {
     id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
@@ -43,7 +62,8 @@ const Work = sequelize.define('Work', {
     type: { type: DataTypes.STRING(50) },
     ide_type: { type: DataTypes.STRING(50), defaultValue: 'KITTEN' },
     work_url: { type: DataTypes.STRING(500) },
-    user_id: { type: DataTypes.INTEGER },
+    // M3: user_id 必填，作品必须归属某个用户
+    user_id: { type: DataTypes.INTEGER, allowNull: false },
     codemao_author_id: { type: DataTypes.STRING(50) },
     codemao_author_name: { type: DataTypes.STRING(100) },
     view_times: { type: DataTypes.INTEGER, defaultValue: 0 },
@@ -51,10 +71,16 @@ const Work = sequelize.define('Work', {
     collection_times: { type: DataTypes.INTEGER, defaultValue: 0 },
     comment_count: { type: DataTypes.INTEGER, defaultValue: 0 },
     status: { type: DataTypes.ENUM('pending', 'published', 'rejected', 'deleted'), defaultValue: 'published' },
-    is_featured: { type: DataTypes.BOOLEAN, defaultValue: false },
-    created_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW },
-    updated_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW }
-}, { tableName: 'works', timestamps: false });
+    is_featured: { type: DataTypes.BOOLEAN, defaultValue: false }
+}, Object.assign({
+    tableName: 'works',
+    // M21: 高频查询字段索引（status/user_id/created_at）
+    indexes: [
+        { fields: ['status'] },
+        { fields: ['user_id'] },
+        { fields: ['created_at'] }
+    ]
+}, TIMESTAMP_OPTS));
 
 const Comment = sequelize.define('Comment', {
     id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
@@ -65,9 +91,17 @@ const Comment = sequelize.define('Comment', {
     parent_id: { type: DataTypes.INTEGER },
     reply_to_user_id: { type: DataTypes.INTEGER },
     like_count: { type: DataTypes.INTEGER, defaultValue: 0 },
-    status: { type: DataTypes.ENUM('active', 'hidden', 'deleted'), defaultValue: 'active' },
-    created_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW }
-}, { tableName: 'comments', timestamps: false });
+    status: { type: DataTypes.ENUM('active', 'hidden', 'deleted'), defaultValue: 'active' }
+}, Object.assign({
+    tableName: 'comments',
+    // M21: 评论按 work_id/post_id/status/parent_id 高频查询
+    indexes: [
+        { fields: ['work_id'] },
+        { fields: ['post_id'] },
+        { fields: ['status'] },
+        { fields: ['parent_id'] }
+    ]
+}, TIMESTAMP_OPTS));
 
 const Post = sequelize.define('Post', {
     id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
@@ -82,12 +116,14 @@ const Post = sequelize.define('Post', {
     is_essence: { type: DataTypes.BOOLEAN, defaultValue: false },
     category: { type: DataTypes.STRING(50), defaultValue: 'discussion' },
     cover: { type: DataTypes.STRING(500) },
+    // M6: status ENUM 不含 active（app.js 启动时已迁移 active→published）
     status: { type: DataTypes.ENUM('published', 'draft', 'hidden', 'deleted'), defaultValue: 'published' },
     tags: {
         type: DataTypes.TEXT,
+        // M24: getter 统一返回数组，无值时返回 [] 而非 null
         get() {
             const val = this.getDataValue('tags');
-            if (!val) return null;
+            if (!val) return [];
             try {
                 return JSON.parse(val);
             } catch (e) {
@@ -98,10 +134,16 @@ const Post = sequelize.define('Post', {
         set(val) {
             this.setDataValue('tags', val ? JSON.stringify(val) : null);
         }
-    },
-    created_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW },
-    updated_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW }
-}, { tableName: 'posts', timestamps: false });
+    }
+}, Object.assign({
+    tableName: 'posts',
+    // M21: 帖子按 status/user_id/category 高频查询
+    indexes: [
+        { fields: ['status'] },
+        { fields: ['user_id'] },
+        { fields: ['category'] }
+    ]
+}, TIMESTAMP_OPTS));
 
 const Studio = sequelize.define('Studio', {
     id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
@@ -118,10 +160,9 @@ const Studio = sequelize.define('Studio', {
     level: { type: DataTypes.INTEGER, defaultValue: 1 },
     is_public: { type: DataTypes.BOOLEAN, defaultValue: true },
     join_type: { type: DataTypes.STRING(20), defaultValue: 'public' },
-    status: { type: DataTypes.STRING(20), defaultValue: 'active' },
-    created_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW },
-    updated_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW }
-}, { tableName: 'studios', timestamps: false });
+    // M7: status 改为 ENUM，覆盖 controller 实际使用的 active/pending/banned，预留 dissolved
+    status: { type: DataTypes.ENUM('active', 'pending', 'dissolved', 'banned'), defaultValue: 'active' }
+}, Object.assign({ tableName: 'studios' }, TIMESTAMP_OPTS));
 
 const StudioMember = sequelize.define('StudioMember', {
     id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
@@ -130,7 +171,14 @@ const StudioMember = sequelize.define('StudioMember', {
     role: { type: DataTypes.ENUM('owner', 'vice_owner', 'admin', 'member'), defaultValue: 'member' },
     status: { type: DataTypes.ENUM('active', 'pending', 'rejected'), defaultValue: 'active' },
     joined_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW }
-}, { tableName: 'studio_members', timestamps: false });
+}, Object.assign({
+    tableName: 'studio_members',
+    // M4: (studio_id, user_id) 复合唯一索引，防止同一用户重复加入同一工作室
+    // 注意：旧库若已存在重复数据，SQLite sync 不会强制检查，需另行去重
+    indexes: [
+        { unique: true, fields: ['studio_id', 'user_id'], name: 'unique_studio_member' }
+    ]
+}, TIMESTAMP_OPTS));
 
 const StudioWork = sequelize.define('StudioWork', {
     id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
@@ -138,37 +186,50 @@ const StudioWork = sequelize.define('StudioWork', {
     work_id: { type: DataTypes.INTEGER, allowNull: false },
     user_id: { type: DataTypes.INTEGER, allowNull: false },
     score: { type: DataTypes.INTEGER, defaultValue: 0 },
-    status: { type: DataTypes.STRING(20), defaultValue: 'pending' },
+    // M7: status 改为 ENUM，覆盖 controller 实际使用的 pending/approved/rejected/down
+    status: { type: DataTypes.ENUM('pending', 'approved', 'rejected', 'down'), defaultValue: 'pending' },
     reviewed_by: { type: DataTypes.INTEGER },
     reviewed_at: { type: DataTypes.DATE },
     added_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW }
-}, { tableName: 'studio_works', timestamps: false });
+}, Object.assign({
+    tableName: 'studio_works',
+    // M5: (studio_id, work_id) 复合唯一索引，防止同一作品重复加入同一工作室
+    indexes: [
+        { unique: true, fields: ['studio_id', 'work_id'], name: 'unique_studio_work' }
+    ]
+}, TIMESTAMP_OPTS));
 
 const Report = sequelize.define('Report', {
     id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
     type: { type: DataTypes.STRING(20), allowNull: false },
+    // M9: target_id 为多态外键（可指向 Work/Comment/Post），故不建数据库级 FK 约束
+    // 删除目标对象时需由 controller 层同步清理 Report（已在 controller 修复）
     target_id: { type: DataTypes.INTEGER, allowNull: false },
     reporter_id: { type: DataTypes.INTEGER, allowNull: false },
     reason: { type: DataTypes.STRING(200), allowNull: false },
     description: { type: DataTypes.TEXT },
-    status: { type: DataTypes.STRING(20), defaultValue: 'pending' },
+    // M7: status 改为 ENUM，覆盖 controller 实际使用的 pending/resolved/rejected，预留 processing
+    status: { type: DataTypes.ENUM('pending', 'processing', 'resolved', 'rejected'), defaultValue: 'pending' },
     handler_id: { type: DataTypes.INTEGER },
     handle_note: { type: DataTypes.TEXT },
-    ai_result: { type: DataTypes.TEXT },
-    created_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW },
-    updated_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW }
-}, { tableName: 'reports', timestamps: false });
+    ai_result: { type: DataTypes.TEXT }
+}, Object.assign({
+    tableName: 'reports',
+    // M21: 举报按 status/reporter_id 高频查询
+    indexes: [
+        { fields: ['status'] },
+        { fields: ['reporter_id'] }
+    ]
+}, TIMESTAMP_OPTS));
 
 const Like = sequelize.define('Like', {
     id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
     user_id: { type: DataTypes.INTEGER, allowNull: false },
     work_id: { type: DataTypes.INTEGER },
     post_id: { type: DataTypes.INTEGER },
-    comment_id: { type: DataTypes.INTEGER },
-    created_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW }
-}, { 
-    tableName: 'likes', 
-    timestamps: false,
+    comment_id: { type: DataTypes.INTEGER }
+}, Object.assign({
+    tableName: 'likes',
     validate: {
         hasTarget() {
             const targets = [this.work_id, this.post_id, this.comment_id].filter(Boolean);
@@ -180,19 +241,21 @@ const Like = sequelize.define('Like', {
     indexes: [
         { unique: true, fields: ['user_id', 'work_id'], name: 'unique_like_user_work' },
         { unique: true, fields: ['user_id', 'post_id'], name: 'unique_like_user_post' },
-        { unique: true, fields: ['user_id', 'comment_id'], name: 'unique_like_user_comment' }
+        { unique: true, fields: ['user_id', 'comment_id'], name: 'unique_like_user_comment' },
+        // M22: 反向查询索引（按 work_id/post_id/comment_id 查点赞列表）
+        { fields: ['work_id'] },
+        { fields: ['post_id'] },
+        { fields: ['comment_id'] }
     ]
-});
+}, TIMESTAMP_OPTS));
 
 const Favorite = sequelize.define('Favorite', {
     id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
     user_id: { type: DataTypes.INTEGER, allowNull: false },
     work_id: { type: DataTypes.INTEGER },
-    post_id: { type: DataTypes.INTEGER },
-    created_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW }
-}, { 
-    tableName: 'favorites', 
-    timestamps: false,
+    post_id: { type: DataTypes.INTEGER }
+}, Object.assign({
+    tableName: 'favorites',
     validate: {
         hasTarget() {
             const targets = [this.work_id, this.post_id].filter(Boolean);
@@ -203,21 +266,31 @@ const Favorite = sequelize.define('Favorite', {
     },
     indexes: [
         { unique: true, fields: ['user_id', 'work_id'], name: 'unique_favorite_user_work' },
-        { unique: true, fields: ['user_id', 'post_id'], name: 'unique_favorite_user_post' }
+        { unique: true, fields: ['user_id', 'post_id'], name: 'unique_favorite_user_post' },
+        // M22: 反向查询索引（按 work_id/post_id 查收藏列表）
+        { fields: ['work_id'] },
+        { fields: ['post_id'] }
     ]
-});
+}, TIMESTAMP_OPTS));
 
 const Follow = sequelize.define('Follow', {
     id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
     follower_id: { type: DataTypes.INTEGER, allowNull: false },
-    following_id: { type: DataTypes.INTEGER, allowNull: false },
-    created_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW }
-}, { 
-    tableName: 'follows', 
-    timestamps: false,
+    following_id: { type: DataTypes.INTEGER, allowNull: false }
+}, Object.assign({
+    tableName: 'follows',
     indexes: [
-        { unique: true, fields: ['follower_id', 'following_id'], name: 'unique_follow_pair' }
+        { unique: true, fields: ['follower_id', 'following_id'], name: 'unique_follow_pair' },
+        // M22: 反向查询索引（按 following_id 查"谁关注了我"）
+        { fields: ['following_id'] }
     ]
+}, TIMESTAMP_OPTS));
+
+// M8: Follow 模型级校验，禁止自关注（follower_id === following_id）
+Follow.addHook('beforeCreate', async (follow, options) => {
+    if (follow.follower_id === follow.following_id) {
+        throw new Error('不能关注自己');
+    }
 });
 
 const Notification = sequelize.define('Notification', {
@@ -229,18 +302,23 @@ const Notification = sequelize.define('Notification', {
     related_id: { type: DataTypes.INTEGER },
     related_type: { type: DataTypes.STRING(50) },
     sender_id: { type: DataTypes.INTEGER },
-    is_read: { type: DataTypes.BOOLEAN, defaultValue: false },
-    created_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW }
-}, { tableName: 'notifications', timestamps: false });
+    is_read: { type: DataTypes.BOOLEAN, defaultValue: false }
+}, Object.assign({
+    tableName: 'notifications',
+    // M21: 通知按 user_id/is_read 高频查询
+    indexes: [
+        { fields: ['user_id'] },
+        { fields: ['is_read'] }
+    ]
+}, TIMESTAMP_OPTS));
 
 const Announcement = sequelize.define('Announcement', {
     id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
     title: { type: DataTypes.STRING(200), allowNull: false },
     content: { type: DataTypes.TEXT, allowNull: false },
     type: { type: DataTypes.ENUM('notice', 'update', 'warning'), defaultValue: 'notice' },
-    is_active: { type: DataTypes.BOOLEAN, defaultValue: true },
-    created_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW }
-}, { tableName: 'announcements', timestamps: false });
+    is_active: { type: DataTypes.BOOLEAN, defaultValue: true }
+}, Object.assign({ tableName: 'announcements' }, TIMESTAMP_OPTS));
 
 const Banner = sequelize.define('Banner', {
     id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
@@ -248,18 +326,22 @@ const Banner = sequelize.define('Banner', {
     image_url: { type: DataTypes.STRING(500), allowNull: false },
     link_url: { type: DataTypes.STRING(500) },
     sort: { type: DataTypes.INTEGER, defaultValue: 0 },
-    is_active: { type: DataTypes.BOOLEAN, defaultValue: true },
-    created_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW }
-}, { tableName: 'banners', timestamps: false });
+    is_active: { type: DataTypes.BOOLEAN, defaultValue: true }
+}, Object.assign({ tableName: 'banners' }, TIMESTAMP_OPTS));
 
 const IpBan = sequelize.define('IpBan', {
     id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
     ip: { type: DataTypes.STRING(50), allowNull: false, unique: true },
     reason: { type: DataTypes.STRING(500) },
     banned_by: { type: DataTypes.INTEGER },
-    expires_at: { type: DataTypes.DATE },
-    created_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW }
-}, { tableName: 'ip_bans', timestamps: false });
+    expires_at: { type: DataTypes.DATE }
+}, Object.assign({
+    tableName: 'ip_bans',
+    // M21: IP 封禁按 expires_at 查询过期记录
+    indexes: [
+        { fields: ['expires_at'] }
+    ]
+}, TIMESTAMP_OPTS));
 
 const CaptchaStats = sequelize.define('CaptchaStats', {
     id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
@@ -267,17 +349,20 @@ const CaptchaStats = sequelize.define('CaptchaStats', {
     scene: { type: DataTypes.STRING(50) },
     action: { type: DataTypes.STRING(20) },
     ip: { type: DataTypes.STRING(50), allowNull: false },
-    user_agent: { type: DataTypes.TEXT },
-    created_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW }
-}, { tableName: 'captcha_stats', timestamps: false });
+    user_agent: { type: DataTypes.TEXT }
+}, Object.assign({
+    tableName: 'captcha_stats',
+    // M21: 验证码统计按 created_at 查询（如按天聚合）
+    indexes: [
+        { fields: ['created_at'] }
+    ]
+}, TIMESTAMP_OPTS));
 
 const SystemConfig = sequelize.define('SystemConfig', {
     id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
     config_key: { type: DataTypes.STRING(100), allowNull: false, unique: true },
-    config_value: { type: DataTypes.TEXT },
-    created_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW },
-    updated_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW }
-}, { tableName: 'system_configs', timestamps: false });
+    config_value: { type: DataTypes.TEXT }
+}, Object.assign({ tableName: 'system_configs' }, TIMESTAMP_OPTS));
 
 const OperationLog = sequelize.define('OperationLog', {
     id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
@@ -287,28 +372,40 @@ const OperationLog = sequelize.define('OperationLog', {
     target_id: { type: DataTypes.INTEGER },
     details: { type: DataTypes.TEXT },
     ip_address: { type: DataTypes.STRING(50) },
-    user_agent: { type: DataTypes.TEXT },
-    created_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW }
-}, { tableName: 'operation_logs', timestamps: false });
+    user_agent: { type: DataTypes.TEXT }
+}, Object.assign({
+    tableName: 'operation_logs',
+    // M21: 操作日志按 user_id/created_at 高频查询
+    indexes: [
+        { fields: ['user_id'] },
+        { fields: ['created_at'] }
+    ]
+}, TIMESTAMP_OPTS));
 
 const RolePermission = sequelize.define('RolePermission', {
     id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
     role: { type: DataTypes.STRING(50), allowNull: false, unique: true },
     name: { type: DataTypes.STRING(100) },
     level: { type: DataTypes.INTEGER, defaultValue: 0 },
-    permissions: { type: DataTypes.TEXT },
-    created_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW },
-    updated_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW }
-}, { tableName: 'role_permissions', timestamps: false });
+    // M25: permissions 加 JSON get/set，自动序列化/反序列化
+    permissions: {
+        type: DataTypes.TEXT,
+        get() {
+            const v = this.getDataValue('permissions');
+            return v ? JSON.parse(v) : {};
+        },
+        set(v) {
+            this.setDataValue('permissions', JSON.stringify(v || {}));
+        }
+    }
+}, Object.assign({ tableName: 'role_permissions' }, TIMESTAMP_OPTS));
 
 const Statistics = sequelize.define('Statistics', {
     id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
     stat_key: { type: DataTypes.STRING(100), allowNull: false, unique: true },
     stat_value: { type: DataTypes.BIGINT, defaultValue: 0 },
-    stat_date: { type: DataTypes.DATE },
-    created_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW },
-    updated_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW }
-}, { tableName: 'statistics', timestamps: false });
+    stat_date: { type: DataTypes.DATE }
+}, Object.assign({ tableName: 'statistics' }, TIMESTAMP_OPTS));
 
 const SensitiveWord = sequelize.define('SensitiveWord', {
     id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
@@ -316,9 +413,9 @@ const SensitiveWord = sequelize.define('SensitiveWord', {
     category: { type: DataTypes.STRING(50) },
     level: { type: DataTypes.INTEGER, defaultValue: 1 },
     replacement: { type: DataTypes.STRING(200) },
-    status: { type: DataTypes.STRING(20), defaultValue: 'active' },
-    created_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW }
-}, { tableName: 'sensitive_words', timestamps: false });
+    // M7: status 改为 ENUM，覆盖 controller 实际使用的 active，预留 disabled
+    status: { type: DataTypes.ENUM('active', 'disabled'), defaultValue: 'active' }
+}, Object.assign({ tableName: 'sensitive_words' }, TIMESTAMP_OPTS));
 
 User.hasMany(Work, { foreignKey: 'user_id', as: 'works' });
 Work.belongsTo(User, { foreignKey: 'user_id', as: 'author' });
@@ -341,6 +438,8 @@ StudioWork.belongsTo(Work, { foreignKey: 'work_id', as: 'work' });
 StudioWork.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
 Report.belongsTo(User, { foreignKey: 'reporter_id', as: 'reporter' });
 Report.belongsTo(User, { foreignKey: 'handler_id', as: 'handler' });
+// M9: 以下三条为多态关联，target_id 可指向不同表，故 constraints:false 不建 FK
+// 删除目标对象时需 controller 层同步清理 Report
 Report.belongsTo(Work, { foreignKey: 'target_id', as: 'work', constraints: false });
 Report.belongsTo(Comment, { foreignKey: 'target_id', as: 'comment', constraints: false });
 Report.belongsTo(Post, { foreignKey: 'target_id', as: 'post', constraints: false });
@@ -372,7 +471,9 @@ Follow.belongsTo(User, { foreignKey: 'following_id', as: 'following' });
 User.hasMany(Follow, { foreignKey: 'follower_id', as: 'following_list' });
 User.hasMany(Follow, { foreignKey: 'following_id', as: 'follower_list' });
 
-Comment.hasMany(Comment, { foreignKey: 'parent_id', as: 'replies' });
+// M10: 自引用关联加 onDelete:'SET NULL'，父评论删除时子评论 parent_id 置空（保留子评论）
+// 注意：SQLite 需开启外键支持（PRAGMA foreign_keys=ON），由 database.js 配置
+Comment.hasMany(Comment, { foreignKey: 'parent_id', as: 'replies', onDelete: 'SET NULL' });
 Comment.belongsTo(Comment, { foreignKey: 'parent_id', as: 'parent' });
 
 module.exports = {

@@ -108,7 +108,8 @@ const fetchAnnouncements = async () => {
 
 const openDialog = (announcement = null) => {
   if (announcement) {
-    editForm.value = { ...announcement }
+    // 深拷贝避免编辑表单直接修改列表行数据
+    editForm.value = JSON.parse(JSON.stringify(announcement))
   } else {
     editForm.value = {
       title: '',

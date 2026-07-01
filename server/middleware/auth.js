@@ -1,20 +1,27 @@
 const jwt = require('jsonwebtoken');
 const { isRoleAtLeast } = require('../config/permissions');
 const { JWT_SECRET } = require('../config/auth');
+const { errorResponse } = require('./response');
 const { User } = require('../models');
 const DbAdapter = require('../utils/dbAdapter');
 
+/**
+ * 从 Authorization 头解析 Bearer token
+ * 修复 L10: 用正则替代 split(' '),避免多空格/异常输入导致解析失败
+ */
 function getBearerToken(req) {
     const header = req.headers.authorization || '';
-    const [scheme, token] = header.split(' ');
-    if (!token || scheme.toLowerCase() !== 'bearer') {
-        return null;
-    }
-    return token;
+    const match = header.match(/^bearer\s+(.+)$/i);
+    return match ? match[1] : null;
 }
 
 async function resolveUserFromToken(token) {
-    const decoded = jwt.verify(token, JWT_SECRET, { issuer: 'codedog-community', audience: 'codedog-frontend' });
+    // 修复 H3: 显式指定 algorithms,防止 alg=none 攻击及算法混淆攻击
+    const decoded = jwt.verify(token, JWT_SECRET, {
+        algorithms: ['HS256'],
+        issuer: 'codedog-community',
+        audience: 'codedog-frontend'
+    });
     const user = await DbAdapter.findByPk(User, decoded.id);
 
     if (!user) {
@@ -69,8 +76,14 @@ async function optionalAuth(req, res, next) {
         try {
             req.user = await resolveUserFromToken(token);
         } catch (error) {
-            if (error.name !== 'JsonWebTokenError' && error.name !== 'TokenExpiredError') {
-                console.error('optionalAuth非令牌错误:', error.message);
+            // 修复 M6: 仅 JWT 类错误(签名/过期)静默降级为游客;DB 等其他故障返回 503
+            if (error.name === 'JsonWebTokenError' || error.name === 'TokenExpiredError') {
+                // 令牌无效或过期,按游客处理
+            } else if (error.statusCode === 401 || error.statusCode === 403) {
+                // 用户不存在/被禁用,也按游客处理(保持原有行为)
+            } else {
+                console.error('optionalAuth服务故障:', error.message);
+                return errorResponse(res, '认证服务暂不可用', 503);
             }
         }
     }

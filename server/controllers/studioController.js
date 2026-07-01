@@ -287,29 +287,32 @@ async function joinStudio(req, res) {
 async function leaveStudio(req, res) {
     try {
         const { id } = req.params;
-        
+
         const member = await DbAdapter.findOne(StudioMember, {
             where: { studio_id: id, user_id: req.user.id }
         });
-        
+
         if (!member) {
             return errorResponse(res, '您不是该工作室成员', 400);
         }
-        
+
         if (member.role === 'owner') {
             return errorResponse(res, '创建者不能退出工作室，请转让或解散', 400);
         }
-        
-        await DbAdapter.destroy(StudioMember, { where: { id: DbAdapter.getId(member) } });
 
-        const studio = await DbAdapter.findByPk(Studio, id);
-        if (studio && member.status === 'active' && (studio.member_count || 0) > 0) {
-            await DbAdapter.decrement(studio, 'member_count');
-        }
-        // 如果退出者是副室长，清除引用
-        if (studio && sameId(studio.vice_owner_id, req.user.id)) {
-            await DbAdapter.update(Studio, { vice_owner_id: null }, { where: { id: DbAdapter.getId(studio) } });
-        }
+        // M2: 退出成员+计数-1+清理副室长引用需事务保证一致性
+        await sequelize.transaction(async (t) => {
+            await DbAdapter.destroy(StudioMember, { where: { id: DbAdapter.getId(member) }, transaction: t });
+
+            const studio = await DbAdapter.findByPk(Studio, id, { transaction: t });
+            if (studio && member.status === 'active' && (studio.member_count || 0) > 0) {
+                await DbAdapter.decrement(studio, 'member_count', { transaction: t });
+            }
+            // 如果退出者是副室长，清除引用
+            if (studio && sameId(studio.vice_owner_id, req.user.id)) {
+                await DbAdapter.update(Studio, { vice_owner_id: null }, { where: { id: DbAdapter.getId(studio) }, transaction: t });
+            }
+        });
 
         return successResponse(res, null, '已退出工作室');
     } catch (error) {
@@ -361,9 +364,9 @@ async function updateStudio(req, res) {
         }
         
         const member = await DbAdapter.findOne(StudioMember, {
-            where: { studio_id: id, user_id: req.user.id }
+            where: { studio_id: id, user_id: req.user.id, status: 'active' }
         });
-        
+
         if (!member || (member.role !== 'owner' && member.role !== 'admin')) {
             return errorResponse(res, '无权修改工作室信息', 403);
         }
@@ -398,7 +401,7 @@ async function reviewMember(req, res) {
         const { action } = req.body;
         
         const adminMember = await DbAdapter.findOne(StudioMember, {
-            where: { studio_id: id, user_id: req.user.id }
+            where: { studio_id: id, user_id: req.user.id, status: 'active' }
         });
         
         if (!adminMember || (adminMember.role !== 'owner' && adminMember.role !== 'admin')) {
@@ -429,11 +432,15 @@ async function reviewMember(req, res) {
 
             try {
                 const studioForNotify = await DbAdapter.findByPk(Studio, id);
+                // M6: 补全 related_id/related_type/sender_id，便于前端跳转与通知聚合
                 await DbAdapter.create(Notification, {
                     user_id: member.user_id,
                     type: 'system',
                     title: '工作室申请通过',
-                    content: `您申请加入的工作室「${studioForNotify?.name || '工作室'}」已通过审核`
+                    content: `您申请加入的工作室「${studioForNotify?.name || '工作室'}」已通过审核`,
+                    related_id: Number(id),
+                    related_type: 'studio',
+                    sender_id: req.user.id
                 });
             } catch (notifyErr) {
                 console.error('Create review notification error:', notifyErr);
@@ -453,20 +460,23 @@ async function reviewMember(req, res) {
 async function deleteStudio(req, res) {
     try {
         const { id } = req.params;
-        
+
         const studio = await DbAdapter.findByPk(Studio, id);
         if (!studio) {
             return errorResponse(res, '工作室不存在', 404);
         }
-        
+
         if (!sameId(studio.owner_id, req.user.id)) {
             return errorResponse(res, '只有创建者可以解散工作室', 403);
         }
-        
-        await DbAdapter.destroy(StudioMember, { where: { studio_id: id } });
-        await DbAdapter.destroy(StudioWork, { where: { studio_id: id } });
-        await DbAdapter.destroy(Studio, { where: { id: DbAdapter.getId(studio) } });
-        
+
+        // M10: 多表关联删除必须用事务包裹，任一步失败整体回滚
+        await sequelize.transaction(async (t) => {
+            await DbAdapter.destroy(StudioMember, { where: { studio_id: id }, transaction: t });
+            await DbAdapter.destroy(StudioWork, { where: { studio_id: id }, transaction: t });
+            await DbAdapter.destroy(Studio, { where: { id: DbAdapter.getId(studio) }, transaction: t });
+        });
+
         return successResponse(res, null, '工作室已解散');
     } catch (error) {
         console.error('解散工作室错误:', error);
@@ -528,7 +538,9 @@ async function submitWork(req, res) {
             if (existing.status === 'pending') {
                 return errorResponse(res, '该作品正在审核中', 400);
             }
-            await existing.update({ status: 'pending' });
+            // M5: 统一使用 DbAdapter.update，避免直接调用实例方法破坏适配层一致性
+            await DbAdapter.update(StudioWork, { status: 'pending' }, { where: { id: DbAdapter.getId(existing) } });
+            await existing.reload();
             return successResponse(res, existing, '作品已重新提交');
         }
         
@@ -597,7 +609,7 @@ async function reviewWork(req, res) {
         const { action } = req.body;
         
         const adminMember = await DbAdapter.findOne(StudioMember, {
-            where: { studio_id: id, user_id: req.user.id }
+            where: { studio_id: id, user_id: req.user.id, status: 'active' }
         });
         
         if (!adminMember || (adminMember.role !== 'owner' && adminMember.role !== 'admin')) {
@@ -632,11 +644,15 @@ async function reviewWork(req, res) {
             
             try {
                 const studioForNotify = await DbAdapter.findByPk(Studio, id);
+                // M7: 补全 related_id/related_type/sender_id，便于前端跳转与通知聚合
                 await DbAdapter.create(Notification, {
                     user_id: studioWork.user_id,
                     type: 'system',
                     title: '作品审核通过',
-                    content: `您投稿到「${studioForNotify?.name || '工作室'}」的作品已通过审核`
+                    content: `您投稿到「${studioForNotify?.name || '工作室'}」的作品已通过审核`,
+                    related_id: Number(workId),
+                    related_type: 'studio_work',
+                    sender_id: req.user.id
                 });
             } catch (e) { console.error('创建审核通知失败:', e.message); }
             
@@ -660,7 +676,7 @@ async function removeWork(req, res) {
         const { id, workId } = req.params;
         
         const adminMember = await DbAdapter.findOne(StudioMember, {
-            where: { studio_id: id, user_id: req.user.id }
+            where: { studio_id: id, user_id: req.user.id, status: 'active' }
         });
         
         if (!adminMember || (adminMember.role !== 'owner' && adminMember.role !== 'admin')) {
@@ -698,7 +714,7 @@ async function toggleWorkStatus(req, res) {
         const { action } = req.body;
         
         const adminMember = await DbAdapter.findOne(StudioMember, {
-            where: { studio_id: id, user_id: req.user.id }
+            where: { studio_id: id, user_id: req.user.id, status: 'active' }
         });
         
         if (!adminMember || (adminMember.role !== 'owner' && adminMember.role !== 'admin')) {
@@ -714,13 +730,14 @@ async function toggleWorkStatus(req, res) {
         }
         
         if (action === 'down') {
-            const wasApproved = studioWork.status === 'approved';
+            // M19: 只允许下架已通过审核的作品，防止 pending/rejected 状态被误改写为 down
+            if (studioWork.status !== 'approved') {
+                return errorResponse(res, '当前状态不允许下架', 400);
+            }
             await DbAdapter.update(StudioWork, { status: 'down' }, { where: { id: workId } });
-            if (wasApproved) {
-                const studio = await DbAdapter.findByPk(Studio, id);
-                if (studio && (studio.work_count || 0) > 0) {
-                    await DbAdapter.decrement(studio, 'work_count');
-                }
+            const studio = await DbAdapter.findByPk(Studio, id);
+            if (studio && (studio.work_count || 0) > 0) {
+                await DbAdapter.decrement(studio, 'work_count');
             }
             return successResponse(res, null, '作品已下架');
         } else if (action === 'up') {
@@ -748,7 +765,7 @@ async function getPendingMembers(req, res) {
         const { id } = req.params;
         
         const adminMember = await DbAdapter.findOne(StudioMember, {
-            where: { studio_id: id, user_id: req.user.id }
+            where: { studio_id: id, user_id: req.user.id, status: 'active' }
         });
         
         if (!adminMember || (adminMember.role !== 'owner' && adminMember.role !== 'admin')) {
@@ -777,7 +794,7 @@ async function getPendingWorks(req, res) {
         const { id } = req.params;
         
         const adminMember = await DbAdapter.findOne(StudioMember, {
-            where: { studio_id: id, user_id: req.user.id }
+            where: { studio_id: id, user_id: req.user.id, status: 'active' }
         });
         
         if (!adminMember || (adminMember.role !== 'owner' && adminMember.role !== 'admin')) {
@@ -870,7 +887,7 @@ async function kickMember(req, res) {
         const { id, memberId } = req.params;
         
         const adminMember = await DbAdapter.findOne(StudioMember, {
-            where: { studio_id: id, user_id: req.user.id }
+            where: { studio_id: id, user_id: req.user.id, status: 'active' }
         });
         
         if (!adminMember || (adminMember.role !== 'owner' && adminMember.role !== 'admin')) {
@@ -892,16 +909,19 @@ async function kickMember(req, res) {
         if (member.role === 'admin' && adminMember.role !== 'owner') {
             return errorResponse(res, '无权移除管理员', 403);
         }
-        
-        await DbAdapter.destroy(StudioMember, { where: { id: DbAdapter.getId(member) } });
-        const studio = await DbAdapter.findByPk(Studio, id);
-        if (studio && (studio.member_count || 0) > 0) {
-            await DbAdapter.decrement(studio, 'member_count');
-        }
-        // 如果被移除者是副室长，清除引用
-        if (studio && sameId(studio.vice_owner_id, member.user_id)) {
-            await DbAdapter.update(Studio, { vice_owner_id: null }, { where: { id: DbAdapter.getId(studio) } });
-        }
+
+        // M2: 踢出成员+计数-1+清理副室长引用需事务保证一致性
+        await sequelize.transaction(async (t) => {
+            await DbAdapter.destroy(StudioMember, { where: { id: DbAdapter.getId(member) }, transaction: t });
+            const studio = await DbAdapter.findByPk(Studio, id, { transaction: t });
+            if (studio && (studio.member_count || 0) > 0) {
+                await DbAdapter.decrement(studio, 'member_count', { transaction: t });
+            }
+            // 如果被移除者是副室长，清除引用
+            if (studio && sameId(studio.vice_owner_id, member.user_id)) {
+                await DbAdapter.update(Studio, { vice_owner_id: null }, { where: { id: DbAdapter.getId(studio) }, transaction: t });
+            }
+        });
 
         return successResponse(res, null, '成员已移除');
     } catch (error) {
@@ -979,19 +999,22 @@ async function setViceOwner(req, res) {
 async function dissolveStudio(req, res) {
     try {
         const { id } = req.params;
-        
+
         const member = await DbAdapter.findOne(StudioMember, {
             where: { studio_id: id, user_id: req.user.id, status: 'active' }
         });
-        
+
         if (!member || member.role !== 'owner') {
             return errorResponse(res, '只有室长可以解散工作室', 403);
         }
-        
-        await DbAdapter.destroy(StudioMember, { where: { studio_id: id } });
-        await DbAdapter.destroy(StudioWork, { where: { studio_id: id } });
-        await DbAdapter.destroy(Studio, { where: { id } });
-        
+
+        // M10: 多表关联删除必须用事务包裹，任一步失败整体回滚
+        await sequelize.transaction(async (t) => {
+            await DbAdapter.destroy(StudioMember, { where: { studio_id: id }, transaction: t });
+            await DbAdapter.destroy(StudioWork, { where: { studio_id: id }, transaction: t });
+            await DbAdapter.destroy(Studio, { where: { id }, transaction: t });
+        });
+
         return successResponse(res, null, '工作室已解散');
     } catch (error) {
         console.error('解散工作室错误:', error);

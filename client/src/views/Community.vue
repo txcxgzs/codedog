@@ -290,7 +290,13 @@ const showPostDialog = () => {
 const createPost = async () => {
   const valid = await postFormRef.value.validate().catch(() => false)
   if (!valid) return
-  
+
+  // 封面 URL 校验：如填写则必须以 http:// 或 https:// 开头
+  if (postForm.cover && !/^https?:\/\//i.test(postForm.cover)) {
+    ElMessage.error('封面地址需以 http:// 或 https:// 开头')
+    return
+  }
+
   let geetestData = {}
   
   if (geetestConfig.value?.enabled && geetestConfig.value?.scenes?.publish_post) {

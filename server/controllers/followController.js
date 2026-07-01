@@ -58,10 +58,13 @@ async function followUser(req, res) {
         }
         
         try {
+            // L3: 补全通知的 related_id / related_type，便于前端跳转和后端去重统计
             await DbAdapter.create(Notification, {
                 user_id: targetUser.id,
                 type: 'follow',
                 title: '关注了你',
+                related_id: DbAdapter.getId(req.user),
+                related_type: 'user',
                 sender_id: DbAdapter.getId(req.user)
             });
         } catch (e) { console.error('创建关注通知失败:', e.message); }
@@ -122,15 +125,15 @@ async function unfollowUser(req, res) {
 async function getFollowers(req, res) {
     try {
         const { codemaoUserId } = req.params;
-        const page = parseInt(req.query.page) || 1;
-        const pageSize = parseInt(req.query.pageSize) || 20;
-        
+        // M3: 统一使用 DbAdapter.parsePagination 限制 pageSize 上限(<=100)
+        const { page, pageSize, offset } = DbAdapter.parsePagination(req.query);
+
         // 通过编程猫用户ID找到用户
         const user = await DbAdapter.findOne(User, { where: { codemao_user_id: codemaoUserId } });
         if (!user) {
             return errorResponse(res, '用户不存在', 404);
         }
-        
+
         const { count, rows } = await DbAdapter.findAndCountAll(Follow, {
             where: { following_id: user.id },
             include: [{
@@ -140,12 +143,13 @@ async function getFollowers(req, res) {
             }],
             order: [['created_at', 'DESC']],
             limit: pageSize,
-            offset: (page - 1) * pageSize
+            offset
         });
-        
+
         const list = rows.map(f => f.follower).filter(u => u);
-        
-        return successResponse(res, { list, total: count });
+
+        // L1: 统一使用 paginateResponse 返回，包含 pagination 字段
+        return paginateResponse(res, list, count, page, pageSize);
     } catch (error) {
         console.error('获取粉丝列表错误:', error);
         return errorResponse(res, '获取粉丝列表失败', 500);
@@ -158,15 +162,15 @@ async function getFollowers(req, res) {
 async function getFollowing(req, res) {
     try {
         const { codemaoUserId } = req.params;
-        const page = parseInt(req.query.page) || 1;
-        const pageSize = parseInt(req.query.pageSize) || 20;
-        
+        // M3: 统一使用 DbAdapter.parsePagination 限制 pageSize 上限(<=100)
+        const { page, pageSize, offset } = DbAdapter.parsePagination(req.query);
+
         // 通过编程猫用户ID找到用户
         const user = await DbAdapter.findOne(User, { where: { codemao_user_id: codemaoUserId } });
         if (!user) {
             return errorResponse(res, '用户不存在', 404);
         }
-        
+
         const { count, rows } = await DbAdapter.findAndCountAll(Follow, {
             where: { follower_id: user.id },
             include: [{
@@ -176,12 +180,13 @@ async function getFollowing(req, res) {
             }],
             order: [['created_at', 'DESC']],
             limit: pageSize,
-            offset: (page - 1) * pageSize
+            offset
         });
-        
+
         const list = rows.map(f => f.following).filter(u => u);
-        
-        return successResponse(res, { list, total: count });
+
+        // L1: 统一使用 paginateResponse 返回，包含 pagination 字段
+        return paginateResponse(res, list, count, page, pageSize);
     } catch (error) {
         console.error('获取关注列表错误:', error);
         return errorResponse(res, '获取关注列表失败', 500);

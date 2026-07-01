@@ -36,6 +36,7 @@ const currentScene = ref('')
 
 const loadScript = () => {
   return new Promise((resolve, reject) => {
+    // 已加载完成直接 resolve
     if (window.hcaptcha) {
       resolve()
       return
@@ -43,8 +44,13 @@ const loadScript = () => {
 
     const existing = document.querySelector('script[data-hcaptcha-loader="true"]')
     if (existing) {
-      existing.addEventListener('load', resolve, { once: true })
-      existing.addEventListener('error', () => reject(new Error('hCaptcha 脚本加载失败')), { once: true })
+      // 修复：脚本已加载完成时 readyState 为 loaded/complete，此时不会再触发 load 事件，需直接 resolve
+      if (existing.readyState === 'loaded' || existing.readyState === 'complete') {
+        resolve()
+      } else {
+        existing.addEventListener('load', () => resolve(), { once: true })
+        existing.addEventListener('error', () => reject(new Error('hCaptcha 脚本加载失败')), { once: true })
+      }
       return
     }
 

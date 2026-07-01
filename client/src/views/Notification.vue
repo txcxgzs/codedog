@@ -72,7 +72,8 @@ import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useNotificationStore } from '@/stores/notification'
 import { storeToRefs } from 'pinia'
-import { ElMessageBox } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { relativeTime as relativeTimeFmt } from '@/utils/format'
 
 const router = useRouter()
 const notificationStore = useNotificationStore()
@@ -83,17 +84,8 @@ const pageSize = ref(20)
 const total = ref(0)
 const activeType = ref('')
 
-const formatTime = (time) => {
-  if (!time) return ''
-  const d = new Date(time)
-  const now = new Date()
-  const diff = now - d
-  if (diff < 60000) return '刚刚'
-  if (diff < 3600000) return `${Math.floor(diff / 60000)} 分钟前`
-  if (diff < 86400000) return `${Math.floor(diff / 3600000)} 小时前`
-  if (diff < 604800000) return `${Math.floor(diff / 86400000)} 天前`
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-}
+// 复用统一的时间格式化工具，避免多处重复实现导致时区处理不一致
+const formatTime = (time) => relativeTimeFmt(time)
 
 const fetchNotifications = async () => {
   const res = await notificationStore.fetchNotifications({

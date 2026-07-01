@@ -1,6 +1,6 @@
 const DbAdapter = require('../utils/dbAdapter');
 const { Favorite, Work, Post, User, sequelize } = require('../models');
-const { successResponse, errorResponse } = require('../middleware/response');
+const { successResponse, errorResponse, paginateResponse } = require('../middleware/response');
 const { Op } = require('sequelize');
 const { likeContains } = require('../utils/security');
 
@@ -17,8 +17,8 @@ async function resolveWork(workId) {
 }
 
 async function favoriteWorksForUser(userId, query) {
-    const page = parseInt(query.page, 10) || 1;
-    const pageSize = parseInt(query.pageSize, 10) || 20;
+    // M3: 统一使用 DbAdapter.parsePagination 限制 pageSize 上限(<=100)
+    const { page, pageSize, offset } = DbAdapter.parsePagination(query);
     const keyword = query.keyword || '';
 
     const workWhere = { status: 'published' };
@@ -33,6 +33,8 @@ async function favoriteWorksForUser(userId, query) {
         if (postKeywordWhere) Object.assign(postWhere, postKeywordWhere);
     }
 
+    // M13: 取消 limit:500 截断，改为按需分页拉取，避免大量收藏被静默丢弃
+    // 由于收藏混合作品与帖子两类来源，先取全部已发布的收藏记录，合并排序后再分页
     const [workFavorites, postFavorites] = await Promise.all([
         DbAdapter.findAndCountAll(Favorite, {
             where: { user_id: userId, work_id: { [Op.ne]: null } },
@@ -46,8 +48,7 @@ async function favoriteWorksForUser(userId, query) {
                     attributes: ['id', 'codemao_user_id', 'username', 'nickname', 'avatar']
                 }]
             }],
-            order: [['created_at', 'DESC']],
-            limit: 500
+            order: [['created_at', 'DESC']]
         }),
         DbAdapter.findAndCountAll(Favorite, {
             where: { user_id: userId, post_id: { [Op.ne]: null } },
@@ -61,8 +62,7 @@ async function favoriteWorksForUser(userId, query) {
                     attributes: ['id', 'username', 'nickname', 'avatar']
                 }]
             }],
-            order: [['created_at', 'DESC']],
-            limit: 500
+            order: [['created_at', 'DESC']]
         })
     ]);
 
@@ -81,10 +81,10 @@ async function favoriteWorksForUser(userId, query) {
     }));
 
     const allItems = [...workItems, ...postItems].sort((a, b) => new Date(b.favoritedAt) - new Date(a.favoritedAt));
-    const total = workFavorites.count + postFavorites.count;
-    const pagedItems = allItems.slice((page - 1) * pageSize, page * pageSize);
+    const total = allItems.length;
+    const pagedItems = allItems.slice(offset, offset + pageSize);
 
-    return { works: pagedItems, count: total };
+    return { works: pagedItems, count: total, page, pageSize };
 }
 
 async function addFavorite(req, res) {
@@ -166,8 +166,9 @@ async function removeFavorite(req, res) {
 
 async function getMyFavorites(req, res) {
     try {
-        const { works, count } = await favoriteWorksForUser(DbAdapter.getId(req.user), req.query);
-        return successResponse(res, { list: works, total: count });
+        const { works, count, page, pageSize } = await favoriteWorksForUser(DbAdapter.getId(req.user), req.query);
+        // L1: 统一使用 paginateResponse 返回，包含 pagination 字段
+        return paginateResponse(res, works, count, page, pageSize);
     } catch (error) {
         console.error('Get favorites error:', error);
         return errorResponse(res, 'Failed to get favorites', 500);
@@ -188,11 +189,12 @@ async function getUserFavorites(req, res) {
         });
 
         if (!user) {
-            return successResponse(res, { list: [], total: 0 });
+            const { page, pageSize } = DbAdapter.parsePagination(req.query);
+            return paginateResponse(res, [], 0, page, pageSize);
         }
 
-        const { works, count } = await favoriteWorksForUser(DbAdapter.getId(user), req.query);
-        return successResponse(res, { list: works, total: count });
+        const { works, count, page, pageSize } = await favoriteWorksForUser(DbAdapter.getId(user), req.query);
+        return paginateResponse(res, works, count, page, pageSize);
     } catch (error) {
         console.error('Get user favorites error:', error);
         return errorResponse(res, 'Failed to get favorites', 500);
