@@ -16,6 +16,9 @@ BLUE='\033[0;34m'
 CYAN='\033[0;36m'
 NC='\033[0m'
 
+# 脚本所在目录(用于定位 install-cli.sh)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 # 打印函数
 print_info() { echo -e "${BLUE}[INFO]${NC} $1"; }
 print_success() { echo -e "${GREEN}[SUCCESS]${NC} $1"; }
@@ -372,6 +375,17 @@ show_result() {
     echo ""
     echo -e "  管理员说明: ${YELLOW}第一个使用编程猫登录的用户自动成为管理员${NC}"
     echo ""
+
+    # 安装 codedog CLI 命令到系统 PATH
+    # 修复: 此前 install.sh 完全没有调用 install-cli.sh,导致用户装完后输入 codedog 提示找不到命令
+    local CLI_SCRIPT="$SCRIPT_DIR/install-cli.sh"
+    if [ -f "$CLI_SCRIPT" ]; then
+        echo -e "${CYAN}[INFO]${NC} 正在安装 codedog 管理命令..."
+        bash "$CLI_SCRIPT" >/dev/null 2>&1 && \
+            print_success "codedog 命令已安装，任意终端输入 'codedog' 即可打开管理工具箱" || \
+            print_warning "codedog 命令安装失败，可手动运行: bash install-cli.sh"
+    fi
+
     echo -e "${GREEN}════════════════════════════════════════${NC}"
     echo ""
 }
