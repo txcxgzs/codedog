@@ -7,6 +7,10 @@ cd "$SCRIPT_DIR"
 echo "🚀 CodeDog 部署脚本"
 echo "===================="
 
+# 拉取最新代码
+echo "📥 拉取最新代码..."
+git pull origin main 2>/dev/null || echo "⚠ 无法拉取更新，使用本地代码继续"
+
 # 检查 Docker 是否安装
 if ! command -v docker &> /dev/null; then
     echo "❌ 请先安装 Docker"
