@@ -21,70 +21,95 @@ async function favoriteWorksForUser(userId, query) {
     const { page, pageSize, offset } = DbAdapter.parsePagination(query);
     const keyword = query.keyword || '';
 
+    // 关键词过滤条件(用于查询 Work/Post 详情时下推到 SQL)
     const workWhere = { status: 'published' };
     if (keyword) {
         const keywordWhere = likeContains(sequelize, ['name', 'description'], keyword);
         if (keywordWhere) Object.assign(workWhere, keywordWhere);
     }
-
     const postWhere = { status: 'published' };
     if (keyword) {
         const postKeywordWhere = likeContains(sequelize, ['title', 'content'], keyword);
         if (postKeywordWhere) Object.assign(postWhere, postKeywordWhere);
     }
 
-    // M13: 取消 limit:500 截断，改为按需分页拉取，避免大量收藏被静默丢弃
-    // 由于收藏混合作品与帖子两类来源，先取全部已发布的收藏记录，合并排序后再分页
-    const [workFavorites, postFavorites] = await Promise.all([
-        DbAdapter.findAndCountAll(Favorite, {
-            where: { user_id: userId, work_id: { [Op.ne]: null } },
+    // 第一步:SQL 分页查询该用户的所有收藏(按收藏时间倒序)
+    // 不在此处关联 Work/Post 详情,避免全量加载后再内存 slice
+    // 排序与分页(limit/offset)均下推到 SQL,内存中不再做 .slice()
+    const { rows: favorites, count: total } = await DbAdapter.findAndCountAll(Favorite, {
+        where: {
+            user_id: userId,
+            [Op.or]: [
+                { work_id: { [Op.ne]: null } },
+                { post_id: { [Op.ne]: null } }
+            ]
+        },
+        order: [['created_at', 'DESC']],
+        limit: pageSize,
+        offset: offset
+    });
+
+    if (favorites.length === 0) {
+        return { works: [], count: total, page, pageSize };
+    }
+
+    // 第二步:从当前页的收藏中分离出作品 ID 和帖子 ID
+    const workIds = favorites.filter(f => f.work_id).map(f => f.work_id);
+    const postIds = favorites.filter(f => f.post_id).map(f => f.post_id);
+
+    // 第三步:批量查询当前页收藏对应的 Work 和 Post 详情
+    // 仅查询当前页涉及的记录,避免全量加载;keyword 过滤在此处应用
+    const [works, posts] = await Promise.all([
+        workIds.length > 0 ? DbAdapter.findAll(Work, {
+            where: { id: { [Op.in]: workIds }, ...workWhere },
             include: [{
-                model: Work,
-                as: 'work',
-                where: workWhere,
-                include: [{
-                    model: User,
-                    as: 'author',
-                    attributes: ['id', 'codemao_user_id', 'username', 'nickname', 'avatar']
-                }]
-            }],
-            order: [['created_at', 'DESC']]
-        }),
-        DbAdapter.findAndCountAll(Favorite, {
-            where: { user_id: userId, post_id: { [Op.ne]: null } },
+                model: User,
+                as: 'author',
+                attributes: ['id', 'codemao_user_id', 'username', 'nickname', 'avatar']
+            }]
+        }) : [],
+        postIds.length > 0 ? DbAdapter.findAll(Post, {
+            where: { id: { [Op.in]: postIds }, ...postWhere },
             include: [{
-                model: Post,
-                as: 'post',
-                where: postWhere,
-                include: [{
-                    model: User,
-                    as: 'author',
-                    attributes: ['id', 'username', 'nickname', 'avatar']
-                }]
-            }],
-            order: [['created_at', 'DESC']]
-        })
+                model: User,
+                as: 'author',
+                attributes: ['id', 'username', 'nickname', 'avatar']
+            }]
+        }) : []
     ]);
 
-    const workItems = workFavorites.rows.filter(f => f.work).map(f => ({
-        ...f.work.toJSON(),
-        favoriteId: f.id,
-        favoritedAt: f.created_at,
-        _type: 'work'
-    }));
+    // 第四步:构建 id->详情 映射,便于按收藏顺序组装结果
+    const workMap = new Map(works.map(w => [DbAdapter.getId(w), w]));
+    const postMap = new Map(posts.map(p => [DbAdapter.getId(p), p]));
 
-    const postItems = postFavorites.rows.filter(f => f.post).map(f => ({
-        ...f.post.toJSON(),
-        favoriteId: f.id,
-        favoritedAt: f.created_at,
-        _type: 'post'
-    }));
+    // 第五步:按收藏记录的顺序(已按 created_at DESC 排序)组装结果
+    // 若 Work/Post 不存在或被 keyword 过滤掉,则跳过该条收藏
+    const items = [];
+    for (const f of favorites) {
+        if (f.work_id) {
+            const work = workMap.get(f.work_id);
+            if (work) {
+                items.push({
+                    ...work.toJSON(),
+                    favoriteId: f.id,
+                    favoritedAt: f.created_at,
+                    _type: 'work'
+                });
+            }
+        } else if (f.post_id) {
+            const post = postMap.get(f.post_id);
+            if (post) {
+                items.push({
+                    ...post.toJSON(),
+                    favoriteId: f.id,
+                    favoritedAt: f.created_at,
+                    _type: 'post'
+                });
+            }
+        }
+    }
 
-    const allItems = [...workItems, ...postItems].sort((a, b) => new Date(b.favoritedAt) - new Date(a.favoritedAt));
-    const total = allItems.length;
-    const pagedItems = allItems.slice(offset, offset + pageSize);
-
-    return { works: pagedItems, count: total, page, pageSize };
+    return { works: items, count: total, page, pageSize };
 }
 
 async function addFavorite(req, res) {

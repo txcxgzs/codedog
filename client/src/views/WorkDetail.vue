@@ -388,9 +388,12 @@ const playerUrl = computed(() => {
   const workId = work.value.codemao_work_id
   if (!workId) return null
 
-  const type = (work.value.type || '').toUpperCase()
+  // 播放器类型优先使用 ide_type(作品对应的 IDE 类型),fallback 到 type(作品分类)
+  // 注意:type 是作品分类,并不一定能反映真实播放器类型,ide_type 才是正确的判定字段
+  const rawType = work.value.ide_type || work.value.type || ''
+  const type = rawType.toUpperCase()
 
-  // 核心播放器逻辑映射 (基于 type 字段)
+  // 核心播放器逻辑映射 (基于 ide_type/type 字段)
   const playerMap = {
     'KITTEN': `https://player.codemao.cn/new/${workId}`,
     'NEMO': `https://nemo.codemao.cn/w/${workId}`,
@@ -503,11 +506,17 @@ const fetchWork = async () => {
 }
 
 const goUser = (user) => {
-  if (user?.codemao_user_id) {
-    router.push(`/user/${user.codemao_user_id}`)
-  } else if (user?.id) {
-    router.push(`/user/${user.id}`)
+  // 后端用户页只认 codemao_user_id,缺该字段时不做跳转,避免使用本地 id 触发 404
+  if (!user) {
+    ElMessage.warning('该用户信息缺失,无法跳转')
+    return
   }
+  if (user.codemao_user_id) {
+    router.push(`/user/${user.codemao_user_id}`)
+    return
+  }
+  // 缺少 codemao_user_id,提示并放弃跳转(评论/回复的 user 应由后端 include 携带 codemao_user_id)
+  ElMessage.warning('该用户缺少编程猫用户信息,无法跳转')
 }
 
 const goUserById = (userId) => {

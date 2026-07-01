@@ -312,17 +312,42 @@ async function getWorkByCodemaoId(req, res) {
             if (!canViewWork(req, work)) {
                 return errorResponse(res, '作品不存在', 404);
             }
-            await DbAdapter.increment(work, 'view_times');
-            await work.reload();
+            // [Bug4 修复] 复用 getWorkDetail 的 session 冷却逻辑,统一计数口径
+            // 同一会话 5 分钟内不重复计数,避免刷新/爬虫无限刷浏览量
+            // viewKey 使用 work.id,与 getWorkDetail 共享同一冷却记录,确保计数口径一致
+            const viewKey = `work_view_${work.id}`;
+            const sessionViews = (req.session && req.session.workViews) || {};
+            const now = Date.now();
+            const lastView = sessionViews[viewKey];
+            const VIEW_COOLDOWN = 5 * 60 * 1000; // 5分钟内不重复计数
+            if (!lastView || (now - lastView) > VIEW_COOLDOWN) {
+                await DbAdapter.increment(work, 'view_times');
+                await work.reload();
+                if (req.session) {
+                    if (!req.session.workViews) req.session.workViews = {};
+                    req.session.workViews[viewKey] = now;
+                }
+            }
             return successResponse(res, await withLikeStatus(req, work));
         }
 
-        if (!isValidCodemaoWorkId(codemaoId)) {
-            return errorResponse(res, '作品ID格式不正确', 400);
+        // [Bug3 修复 P0] GET 不再隐式导入作品(避免刷新/爬虫/预加载误导入)
+        // 默认只查不导入,命中不存在时返回 404
+        // 仅当显式带 ?import=1 参数且用户为 admin 及以上时才触发导入
+        const wantImport = req.query.import === '1';
+        if (!wantImport) {
+            return errorResponse(res, '作品不存在', 404);
         }
 
         if (!req.user) {
             return errorResponse(res, '请先登录后导入作品', 401);
+        }
+        if (!isRoleAtLeast(req.user.role, 'admin')) {
+            return errorResponse(res, '无权导入作品', 403);
+        }
+
+        if (!isValidCodemaoWorkId(codemaoId)) {
+            return errorResponse(res, '作品ID格式不正确', 400);
         }
 
         const workInfo = await fetchCodemaoWork(codemaoId);
@@ -752,18 +777,24 @@ async function updateWork(req, res) {
             return errorResponse(res, '无权修改此作品', 403);
         }
 
-        if (name && String(name).length > 200) {
+        // [Bug5 修复] 用 !== undefined 判断字段是否传入,空字符串视为有效输入(允许清空)
+        // 原代码 if (name) / if (preview) 会忽略空字符串,导致无法清空名称/预览图
+        if (name !== undefined && String(name).length > 200) {
             return errorResponse(res, '名称不能超过200字', 400);
         }
 
-        if (description && String(description).length > 5000) {
+        if (description !== undefined && String(description).length > 5000) {
             return errorResponse(res, '描述不能超过5000字', 400);
         }
 
+        if (preview !== undefined && String(preview).length > 500) {
+            return errorResponse(res, '预览图地址不能超过500字', 400);
+        }
+
         const updateData = {};
-        if (name) updateData.name = String(name).substring(0, 200);
+        if (name !== undefined) updateData.name = String(name).substring(0, 200);
         if (description !== undefined) updateData.description = String(description).substring(0, 5000);
-        if (preview) updateData.preview = String(preview).substring(0, 500);
+        if (preview !== undefined) updateData.preview = String(preview).substring(0, 500);
 
         // H12: 修改描述或名称后重新审核，违规内容拦截，疑似违规回退到 pending 待人工复核
         if (updateData.description !== undefined || updateData.name !== undefined) {

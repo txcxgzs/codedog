@@ -139,7 +139,16 @@ router.post('/validate', async (req, res) => {
             return errorResponse(res, '极验未配置', 400);
         }
         
+        // 修复跨实例 bug: /validate 创建的是新 GeetestLib 实例，从未调用过 register()，
+        // lastRegisterSuccess 默认为 true，fallback 为 false（正常模式）。
+        // 当极验宕机时，/register 探测到故障返回本地随机 challenge，
+        // 但 /validate 仍以 fallback=false 向极验服务器发起真实验证，必然失败。
+        // 修复方案: validate 前先调用 register() 探测极验服务状态，更新实例的 lastRegisterSuccess 字段，
+        // 这样 validate 时能正确决定 fallback 模式（极验宕机时走本地校验 seccode）。
         const geetest = new GeetestLib(geetestId, geetestKey);
+        await geetest.register();
+
+        // 再执行 validate，根据 lastRegisterSuccess 决定 fallback 模式
         const result = await geetest.validate(challenge, validate, seccode);
         
         if (result.result === 'success') {

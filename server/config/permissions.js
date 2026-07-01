@@ -127,7 +127,8 @@ async function getRole(roleName, RolePermission = null) {
             if (dbRole) {
                 let permissions;
                 try {
-                    permissions = JSON.parse(dbRole.permissions || '[]');
+                    // 修复双重 parse：dbRole.permissions 已被模型 getter 解析为数组，禁止再次 JSON.parse
+                    permissions = Array.isArray(dbRole.permissions) ? dbRole.permissions : [];
                 } catch (parseError) {
                     console.error('解析角色权限JSON失败:', parseError);
                     permissions = [];
@@ -173,7 +174,8 @@ async function refreshRoleCache(RolePermission) {
             const fallback = DEFAULT_ROLES[role.role] || DEFAULT_ROLES.user;
             let permissions;
             try {
-                permissions = JSON.parse(role.permissions || '[]');
+                // 修复双重 parse：role.permissions 已被模型 getter 解析为数组，禁止再次 JSON.parse
+                permissions = Array.isArray(role.permissions) ? role.permissions : [];
             } catch (parseError) {
                 console.error('解析角色权限JSON失败:', parseError);
                 permissions = [];

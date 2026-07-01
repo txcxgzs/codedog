@@ -45,7 +45,11 @@ router.post('/', authMiddleware, geetestVerify('report'), async (req, res) => {
         } else if (type === 'post') {
             target = await DbAdapter.findByPk(Post, target_id);
         } else {
-            target = await DbAdapter.findByPk(User, target_id);
+            // 修复: type=user 时原代码按 User 主键(id)查找，但公开用户接口不返回本地主键，
+            // 前端只能拿到 codemao_user_id，导致永远找不到目标用户。
+            // 改为按 codemao_user_id 查找，前端传 target_id 时传 codemao_user_id。
+            // 注意: codemao_user_id 字段类型为 STRING，统一转为字符串比较避免类型不匹配。
+            target = await DbAdapter.findOne(User, { where: { codemao_user_id: String(target_id) } });
         }
         
         if (!target) {

@@ -487,10 +487,19 @@ class DatabaseMigration {
                 type: DataTypes.TEXT,
                 get() {
                     const v = this.getDataValue('permissions');
-                    return v ? JSON.parse(v) : {};
+                    // 修复双重 JSON.parse bug：与 models/index.js 一致，getter 始终返回数组
+                    if (!v) return [];
+                    if (Array.isArray(v)) return v;
+                    try {
+                        const parsed = JSON.parse(v);
+                        return Array.isArray(parsed) ? parsed : [];
+                    } catch (e) {
+                        console.error('RolePermission(migration).permissions JSON.parse 失败，回退为空数组:', e.message);
+                        return [];
+                    }
                 },
                 set(v) {
-                    this.setDataValue('permissions', JSON.stringify(v || {}));
+                    this.setDataValue('permissions', JSON.stringify(Array.isArray(v) ? v : (v ? [].concat(v) : [])));
                 }
             }
         }, {

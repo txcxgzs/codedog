@@ -278,22 +278,52 @@ async function updatePost(req, res) {
             return errorResponse(res, '无权修改此帖子', 403);
         }
 
-        if (title && String(title).length > 200) {
+        // [Bug2 修复] 用 !== undefined 判断字段是否传入,空字符串视为有效输入(允许清空)
+        // 但空标题/空正文不允许,需返回 400 提示
+        if (title !== undefined && String(title).length === 0) {
+            return errorResponse(res, '标题不能为空', 400);
+        }
+        if (title !== undefined && String(title).length > 200) {
             return errorResponse(res, '标题不能超过200字', 400);
         }
-
-        if (content && String(content).length > 50000) {
+        if (content !== undefined && String(content).length === 0) {
+            return errorResponse(res, '内容不能为空', 400);
+        }
+        if (content !== undefined && String(content).length > 50000) {
             return errorResponse(res, '内容不能超过50000字', 400);
         }
 
-        await DbAdapter.update(Post, {
-            title: title || post.title,
-            content: content || post.content,
-            category: category || post.category,
+        // 计算最终落库的标题和正文(传入用新值,未传入用旧值)
+        const finalTitle = title !== undefined ? title : post.title;
+        const finalContent = content !== undefined ? content : post.content;
+
+        // 统一构建 updateData:全部字段用 !== undefined 判断,避免 falsy 判断忽略空字符串
+        const updateData = {
+            title: finalTitle,
+            content: finalContent,
+            category: category !== undefined ? category : post.category,
             tags: tags !== undefined ? tags : post.tags,
             cover: cover !== undefined ? cover : post.cover
-        }, { where: { id } });
-        
+        };
+
+        // [Bug1 修复 P0] updatePost 缺少内容审核,用户可先发正常帖子再编辑成违规内容绕过审核
+        // 当 title 或 content 字段发生变更时,对变更后的最终内容调用 aiReview.fallbackReview
+        // 参照 createPost 的审核调用方式:
+        //   delete → 拒绝并返回 400
+        //   review → post.status='hidden'(待人工复核)
+        //   pass   → 正常更新(保持原 status)
+        if (title !== undefined || content !== undefined) {
+            const reviewResult = await aiReview.fallbackReview(`${finalTitle}\n${finalContent}`);
+            if (reviewResult.recommendation === 'delete') {
+                return errorResponse(res, `内容包含违规信息:${reviewResult.reason}`, 400);
+            }
+            if (reviewResult.recommendation === 'review') {
+                updateData.status = 'hidden';
+            }
+        }
+
+        await DbAdapter.update(Post, updateData, { where: { id } });
+
         const updatedPost = await DbAdapter.findByPk(Post, id, {
             include: [{
                 model: User,

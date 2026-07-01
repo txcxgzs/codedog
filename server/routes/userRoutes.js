@@ -8,7 +8,17 @@ const { authMiddleware } = require('../middleware/auth');
 const { errorResponse } = require('../middleware/response');
 const { createRateLimiter } = require('../middleware/rateLimit');
 
-const allowedAvatarTypes = new Set(['image/jpeg', 'image/png', 'image/webp']);
+// 头像 MIME 类型到扩展名的映射
+// 修复: 原 multer dest 选项生成无扩展名文件，某些静态服务/浏览器无法正确识别图片类型。
+// 改用 diskStorage 根据 mimetype 添加正确扩展名；不支持的格式在 filename 阶段直接拒绝。
+const avatarExtMap = {
+    'image/jpeg': '.jpg',
+    'image/png': '.png',
+    'image/webp': '.webp',
+    'image/gif': '.gif'
+};
+
+const allowedAvatarTypes = new Set(Object.keys(avatarExtMap));
 
 // 登录限流（按 IP+username 限速，防御暴力登录）
 const loginRateLimit = createRateLimiter({
@@ -37,6 +47,13 @@ function hasAllowedImageSignature(filePath, mimetype) {
             && bytes.slice(8, 12).toString('ascii') === 'WEBP';
     }
 
+    // GIF 文件签名: 前 6 字节为 'GIF87a' 或 'GIF89a'
+    if (mimetype === 'image/gif') {
+        if (bytes.length < 6) return false;
+        const sig = bytes.slice(0, 6).toString('ascii');
+        return sig === 'GIF87a' || sig === 'GIF89a';
+    }
+
     return false;
 }
 
@@ -48,7 +65,7 @@ function validateAvatarUpload(req, res, next) {
     try {
         if (!allowedAvatarTypes.has(req.file.mimetype) || !hasAllowedImageSignature(req.file.path, req.file.mimetype)) {
             fs.unlink(req.file.path, () => {});
-            return errorResponse(res, 'Only real JPG, PNG, or WebP images are allowed.', 400);
+            return errorResponse(res, 'Only real JPG, PNG, WebP, or GIF images are allowed.', 400);
         }
         next();
     } catch (error) {
@@ -62,8 +79,22 @@ if (!fs.existsSync(uploadDir)) {
     fs.mkdirSync(uploadDir, { recursive: true });
 }
 
+// 使用 diskStorage 替代 dest，根据 mimetype 添加正确的文件扩展名。
+// 修复前: multer dest 生成的文件无扩展名，某些静态服务/浏览器无法正确识别图片类型。
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => cb(null, uploadDir),
+    filename: (req, file, cb) => {
+        const ext = avatarExtMap[file.mimetype];
+        if (!ext) {
+            // 不支持的图片格式直接拒绝（与 fileFilter 双重保险）
+            return cb(new Error('不支持的图片格式'));
+        }
+        cb(null, Date.now() + '-' + Math.random().toString(36).slice(2, 8) + ext);
+    }
+});
+
 const upload = multer({
-    dest: uploadDir,
+    storage,
     limits: {
         fileSize: 2 * 1024 * 1024,
         files: 1,
@@ -73,7 +104,7 @@ const upload = multer({
         if (allowedAvatarTypes.has(file.mimetype)) {
             cb(null, true);
         } else {
-            cb(new Error('Only JPG, PNG, or WebP images are allowed.'));
+            cb(new Error('Only JPG, PNG, WebP, or GIF images are allowed.'));
         }
     }
 });

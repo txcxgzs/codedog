@@ -15,6 +15,8 @@ const fs = require('fs');
 const DbAdapter = require('../utils/dbAdapter');
 const GeetestService = require('../services/geetestService');
 const { escapeHtml } = require('../utils/security');
+// 引入内容审核服务,落库前做敏感词/违规检查(参照 commentController)
+const aiReview = require('../services/aiReview');
 
 const uploadDir = path.join(__dirname, '../uploads/avatars');
 if (!fs.existsSync(uploadDir)) {
@@ -275,7 +277,8 @@ async function syncUserWorks(codemaoUserId, localUserId) {
                         view_times: workDetail.view_times || 0,
                         praise_times: workDetail.praise_times || workDetail.liked_times || 0,
                         collection_times: workDetail.collect_times || 0,
-                        comment_count: 0,
+                        // 使用编程猫返回的真实评论数,避免写死为 0
+                        comment_count: workDetail.comment_times || 0,
                         status: 'published'
                     }
                 });
@@ -382,6 +385,25 @@ async function updateProfile(req, res) {
         if (String(escapedDoing).length > 200) {
             cleanupUploadedFile(req.file);
             return errorResponse(res, '正在做(转义后)不能超过200字', 400);
+        }
+
+        // 内容审核:对最终要保存的 nickname + bio + doing 拼接后调 aiReview.fallbackReview
+        // fallbackReview 返回 recommendation: pass / review / delete
+        // delete->严重违规,拒绝 400;review->需人工复核,整次拒绝提示用户修改;pass->正常更新
+        // 参照 commentController 的审核调用方式
+        const reviewContent = [escapedNickname, escapedBio, escapedDoing]
+            .filter(v => v != null && v !== '')
+            .join('\n');
+        if (reviewContent.trim()) {
+            const reviewResult = await aiReview.fallbackReview(reviewContent);
+            if (reviewResult.recommendation === 'delete') {
+                cleanupUploadedFile(req.file);
+                return errorResponse(res, `内容包含违规信息:${reviewResult.reason}`, 400);
+            }
+            if (reviewResult.recommendation === 'review') {
+                cleanupUploadedFile(req.file);
+                return errorResponse(res, `内容需人工审核,请修改后重试:${reviewResult.reason}`, 400);
+            }
         }
 
         await DbAdapter.update(User, {

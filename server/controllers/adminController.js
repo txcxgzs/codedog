@@ -27,6 +27,11 @@ const MAX_REALTIME_LOG_STRING_LENGTH = 2000;
 const VALID_USER_ROLES = ['user', 'reviewer', 'moderator', 'admin', 'superadmin'];
 const VALID_USER_STATUSES = ['active', 'disabled'];
 
+// 爬虫创建虚拟用户时使用的占位密码哈希
+// 此前使用非法字符串 '$2a$10$placeholder' 会导致 bcrypt 校验异常，这里在模块加载时
+// 运行时生成一次合法哈希并缓存，避免每个爬取请求都重复计算影响性能
+const PLACEHOLDER_PASSWORD_HASH = bcrypt.hashSync('crawl-placeholder-' + Date.now(), 10);
+
 function isSelf(req, user) {
     return String(DbAdapter.getId(req.user)) === String(DbAdapter.getId(user));
 }
@@ -542,6 +547,13 @@ async function deleteUser(req, res) {
         const userPosts = await DbAdapter.findAll(Post, { where: { user_id: uid }, attributes: ['id'] });
         affectedPostIds.push(...userPosts.map(p => DbAdapter.getId(p)));
 
+        // H1修复: 额外收集用户点赞/收藏过的作品ID。此前只收集了发布过和评论过的作品，
+        // 漏掉了点赞/收藏的作品，导致这些作品的 praise_times/favorite_times 在删除后无法重算而漂移
+        const userLikedWorks = await DbAdapter.findAll(Like, { where: { user_id: uid, work_id: { [Op.ne]: null } }, attributes: ['work_id'] });
+        affectedWorkIds.push(...userLikedWorks.map(l => l.work_id).filter(Boolean));
+        const userFavoritedWorks = await DbAdapter.findAll(Favorite, { where: { user_id: uid, work_id: { [Op.ne]: null } }, attributes: ['work_id'] });
+        affectedWorkIds.push(...userFavoritedWorks.map(f => f.work_id).filter(Boolean));
+
         // H13: 收集被删用户的关注/粉丝关系，用于后续重算 follower_count/following_count
         const userFollows = await DbAdapter.findAll(Follow, {
             where: { [Op.or]: [{ follower_id: uid }, { following_id: uid }] },
@@ -558,7 +570,9 @@ async function deleteUser(req, res) {
             await DbAdapter.destroy(Follow, { where: { [Op.or]: [{ follower_id: uid }, { following_id: uid }] }, transaction: t });
             await DbAdapter.destroy(Favorite, { where: { user_id: uid }, transaction: t });
             await DbAdapter.destroy(Like, { where: { user_id: uid }, transaction: t });
-            await DbAdapter.destroy(Comment, { where: { user_id: uid }, transaction: t });
+            // H4修复: 改为软删评论（status:'deleted'）。此前硬删会破坏评论树——若该用户顶层评论被他人回复，
+            // 删除后 parent_id 将悬空。软删保留行，重算 comment_count 时按 status:'active' 过滤不受影响
+            await DbAdapter.update(Comment, { status: 'deleted' }, { where: { user_id: uid }, transaction: t });
             await DbAdapter.destroy(Post, { where: { user_id: uid }, transaction: t });
             const userStudios = await DbAdapter.findAll(Studio, { where: { owner_id: uid }, transaction: t });
             for (const s of userStudios) {
@@ -749,7 +763,9 @@ async function deleteWork(req, res) {
             await DbAdapter.destroy(Favorite, { where: { work_id: wid }, transaction: t });
             // Comment 有 status 字段，软删保留历史可追溯
             await DbAdapter.update(Comment, { status: 'deleted' }, { where: { work_id: wid }, transaction: t });
-            await DbAdapter.destroy(Work, { where: { id: wid }, transaction: t });
+            // H3修复: 作品改为软删（status:'deleted'）。此前作品 destroy 硬删而评论仅软删，
+            // 会导致评论的 work_id 成为指向不存在作品的死指针。统一软删，保留作品行让外键不悬空，且数据可恢复
+            await DbAdapter.update(Work, { status: 'deleted' }, { where: { id: wid }, transaction: t });
 
             for (const sid of affectedStudioIds) {
                 const approvedCount = await DbAdapter.count(StudioWork, { where: { studio_id: sid, status: 'approved' }, transaction: t });
@@ -803,8 +819,8 @@ async function crawlWork(req, res) {
                 user = await DbAdapter.create(User, {
                     codemao_user_id: codemaoUserId,
                     username: `codemao_${codemaoUserId}`,
-                    email: `codemao_${codemaoUserId}@placeholder.com`,
-                    password: '$2a$10$placeholder',
+                    email: `codemao_${codemaoUserId}@example.invalid`,
+                    password: PLACEHOLDER_PASSWORD_HASH,
                     nickname: userInfo.nickname || `用户${codemaoUserId}`,
                     avatar: userInfo.avatar || null,
                     bio: userInfo.description || null,
@@ -823,6 +839,8 @@ async function crawlWork(req, res) {
             description: workDetail.description,
             preview: workDetail.preview,
             type: workType,
+            // H8修复: 补充 ide_type 字段（与 crawlHotWorks 保持一致）
+            ide_type: workDetail.ide_type || 'KITTEN',
             work_url: workDetail.player_url,
             user_id: user ? DbAdapter.getId(user) : null,
             codemao_author_id: codemaoUserId,
@@ -913,8 +931,8 @@ async function crawlHotWorks(req, res) {
                             user = await DbAdapter.create(User, {
                                 codemao_user_id: String(item.user_id),
                                 username: `codemao_${item.user_id}`,
-                                email: `codemao_${item.user_id}@placeholder.com`,
-                                password: '$2a$10$placeholder',
+                                email: `codemao_${item.user_id}@example.invalid`,
+                                password: PLACEHOLDER_PASSWORD_HASH,
                                 nickname: item.nickname || `用户${item.user_id}`,
                                 avatar: item.avatar_url,
                                 role: 'user',
@@ -1108,8 +1126,8 @@ async function crawlUserWorks(req, res) {
                 user = await DbAdapter.create(User, {
                     codemao_user_id: String(userId),
                     username: `codemao_${userId}`,
-                    email: `codemao_${userId}@placeholder.com`,
-                    password: '$2a$10$placeholder',
+                    email: `codemao_${userId}@example.invalid`,
+                    password: PLACEHOLDER_PASSWORD_HASH,
                     nickname: userInfo?.nickname || userInfo?.username || `用户${userId}`,
                     avatar: userInfo?.avatar_url || userInfo?.avatar,
                     bio: userInfo?.description,
@@ -1149,7 +1167,10 @@ async function crawlUserWorks(req, res) {
                     description: workDetail.description,
                     preview: workDetail.preview,
                     type: workType,
-                    work_url: workDetail.player_url,
+                    // H8修复: 补充 ide_type 字段（与 crawlHotWorks 保持一致）
+                    ide_type: workDetail.ide_type || 'KITTEN',
+                    // H11修复: work_url 增加 fallback，避免 player_url 为空时作品无法播放
+                    work_url: workDetail.player_url || `https://player.codemao.cn/new/${workDetail.id}`,
                     user_id: DbAdapter.getId(user),
                     codemao_author_id: String(userId),
                     codemao_author_name: workDetail.user_info?.nickname,
@@ -1232,8 +1253,8 @@ async function crawlPostWorks(req, res) {
                         user = await DbAdapter.create(User, {
                             codemao_user_id: authorId,
                             username: `codemao_${authorId}`,
-                            email: `codemao_${authorId}@placeholder.com`,
-                            password: '$2a$10$placeholder',
+                            email: `codemao_${authorId}@example.invalid`,
+                            password: PLACEHOLDER_PASSWORD_HASH,
                             nickname: workDetail.user_info?.nickname || `用户${authorId}`,
                             avatar: workDetail.user_info?.avatar,
                             bio: workDetail.user_info?.description,
@@ -1254,7 +1275,10 @@ async function crawlPostWorks(req, res) {
                     description: workDetail.description,
                     preview: workDetail.preview,
                     type: workType,
-                    work_url: workDetail.player_url,
+                    // H8修复: 补充 ide_type 字段（与 crawlHotWorks 保持一致）
+                    ide_type: workDetail.ide_type || 'KITTEN',
+                    // H11修复: work_url 增加 fallback，避免 player_url 为空时作品无法播放
+                    work_url: workDetail.player_url || `https://player.codemao.cn/new/${workDetail.id}`,
                     user_id: DbAdapter.getId(user),
                     codemao_author_id: String(workDetail.user_info?.id),
                     codemao_author_name: workDetail.user_info?.nickname,
@@ -1310,7 +1334,9 @@ async function crawlBanners(req, res) {
                     image_url: item.background_url || item.image_url || item.cover || item.picture || item.image || item.src,
                     link_url: item.target_url || item.link_url || item.url || item.link || '',
                     sort: i,
-                    is_active: true
+                    is_active: true,
+                    // H7修复: 标记来源为编程猫爬取，便于后续只清理爬取数据而不误删手工创建的轮播图
+                    source: 'codemao'
                 });
                 newBanners.push(DbAdapter.getId(banner));
             } catch (e) {
@@ -1323,8 +1349,9 @@ async function crawlBanners(req, res) {
             return errorResponse(res, '轮播图创建全部失败，旧数据已保留', 500);
         }
 
-        // 删除旧轮播图（排除刚创建的）
-        await DbAdapter.destroy(Banner, { where: { id: { [Op.notIn]: newBanners } } });
+        // H7修复: 只删除爬取来源(source='codemao')的旧轮播图，保留手工创建(source='manual' 或 null)的轮播图
+        // 此前无差别 destroy 会把管理员手工创建的轮播图一并删掉
+        await DbAdapter.destroy(Banner, { where: { id: { [Op.notIn]: newBanners }, source: 'codemao' } });
         
         const count = newBanners.length;
         
@@ -1501,6 +1528,11 @@ async function updateCommentStatus(req, res) {
 
         const oldStatus = comment.status;
         await DbAdapter.update(Comment, { status }, { where: { id: commentId } });
+        // H6修复: 父评论（顶层评论）被 hidden/deleted 时，同步级联子回复状态，避免子回复仍对用户可见
+        // 仅在隐藏/删除时级联；恢复为 active 时不自动恢复子回复（子回复可能曾被单独隐藏，避免违规内容复活）
+        if (!comment.parent_id && (status === 'hidden' || status === 'deleted')) {
+            await DbAdapter.update(Comment, { status }, { where: { parent_id: commentId } });
+        }
 
         // 仅在 active → 非active 时扣减，非active → active 时补回，避免重复扣减
         const wasActive = oldStatus === 'active';
@@ -1556,6 +1588,15 @@ async function deleteComment(req, res) {
             await DbAdapter.update(Comment, { status: 'deleted' }, { where: { id: commentId } });
             // 级联软删除子回复
             await DbAdapter.update(Comment, { status: 'deleted' }, { where: { parent_id: commentId } });
+
+            // H2修复: 清理父评论及所有子回复的点赞记录，避免孤儿点赞。
+            // 此前只清理了父评论 ID（或未清理），子回复被软删后其点赞成为孤儿数据。
+            // 这里先查出所有子回复 id（含父 id），用 Op.in 批量清理 Like 表
+            const childReplies = await DbAdapter.findAll(Comment, { where: { parent_id: commentId }, attributes: ['id'] });
+            const commentIdsForLikeCleanup = [Number(commentId), ...childReplies.map(c => DbAdapter.getId(c))];
+            if (commentIdsForLikeCleanup.length > 0) {
+                await DbAdapter.destroy(Like, { where: { comment_id: { [Op.in]: commentIdsForLikeCleanup } } });
+            }
 
             if (!comment.parent_id) {
                 if (comment.work_id) {
@@ -1920,7 +1961,8 @@ async function removeIpBan(req, res) {
  */
 async function getTrends(req, res) {
     try {
-        const days = parseInt(req.query.days) || 7;
+        // H13修复: days 限制在 1~90 之间，避免传入超大值导致循环过多或负值异常
+        const days = Math.min(Math.max(parseInt(req.query.days) || 7, 1), 90);
         const result = {
             users: [],
             works: [],
@@ -2751,7 +2793,8 @@ async function updateRolePermissions(req, res) {
 
         let parsedPermissions;
         try {
-            parsedPermissions = JSON.parse(updatedRolePerm.permissions);
+            // 修复双重 parse：updatedRolePerm.permissions 已被模型 getter 解析为数组，禁止再次 JSON.parse
+            parsedPermissions = Array.isArray(updatedRolePerm.permissions) ? updatedRolePerm.permissions : [];
         } catch (parseError) {
             console.error('解析角色权限JSON失败:', parseError);
             parsedPermissions = [];
@@ -2932,12 +2975,13 @@ async function updateStudio(req, res) {
         }
         
         await DbAdapter.update(Studio, {
-            name: name || studio.name,
+            // H14修复: name/join_type/status 改用 !== undefined 判断，此前用 || 会把空字符串当作 falsy 覆盖为旧值，导致无法设空
+            name: name !== undefined ? name : studio.name,
             description: description !== undefined ? description : studio.description,
             cover: cover !== undefined ? cover : studio.cover,
             is_public: is_public !== undefined ? is_public : studio.is_public,
-            join_type: join_type || studio.join_type,
-            status: status || studio.status,
+            join_type: join_type !== undefined ? join_type : studio.join_type,
+            status: status !== undefined ? status : studio.status,
             vice_owner_id: vice_owner_id !== undefined ? vice_owner_id : studio.vice_owner_id
         }, { where: { id } });
         

@@ -240,6 +240,9 @@ const fetchPost = async () => {
       isFavorited.value = !!res.data.favorited
       comments.value = res.data.comments || []
       fetchRelatedPosts()
+      // 初始化关注状态:已关注作者仍显示"关注"是因为 following 默认 false 未刷新
+      // 这里在拿到帖子后调用 followApi.check 来同步真实关注状态
+      checkFollowingStatus()
     }
   } catch (e) {
     console.error('获取帖子失败:', e)
@@ -247,6 +250,32 @@ const fetchPost = async () => {
     router.push('/community')
   } finally {
     loading.value = false
+  }
+}
+
+// 检查当前用户是否已关注帖子作者(基于 codemao_user_id)
+// 没登录或作者信息不全时直接保持 false
+const checkFollowingStatus = async () => {
+  if (!userStore.isLoggedIn) return
+  const codemaoUserId = post.value?.author?.codemao_user_id
+  if (!codemaoUserId) {
+    following.value = false
+    return
+  }
+  // 自己不需要关注自己
+  if (userStore.user?.id === post.value?.author?.id) {
+    following.value = false
+    return
+  }
+  try {
+    const res = await followApi.check(codemaoUserId)
+    if (res.code === 200) {
+      // 后端返回字段可能是 isFollowing 或 followed,这里兼容处理
+      following.value = !!(res.data?.isFollowing ?? res.data?.followed ?? res.data?.following)
+    }
+  } catch (e) {
+    // 静默失败,默认保持未关注状态
+    console.error('检查关注状态失败:', e)
   }
 }
 
@@ -390,7 +419,11 @@ const likeComment = async (comment) => {
 
 const replyTo = (comment) => {
   commentContent.value = `@${comment.user?.nickname || comment.user?.username} `
-  replyToCommentId.value = comment.id
+  // 与 WorkDetail.vue 保持一致:回复某个回复时,实际 parent_id 用该回复的 parent_id(顶层评论 id),
+  // 没有 parent_id(即回复的是顶层评论)则用 comment.id
+  // 这样可避免把子回复 id 当 parent_id 发给后端(后端 M18 限制只能回复顶层)
+  replyToCommentId.value = comment.parent_id || comment.id
+  // reply_to_user_id 始终用被回复者的 user_id(可能是子回复的作者,也可能是顶层评论作者)
   replyToUserId.value = comment.user_id
 }
 
@@ -447,8 +480,26 @@ const deleteComment = async (comment) => {
     await ElMessageBox.confirm('确定要删除这条评论吗？', '提示', { type: 'warning' })
     const res = await commentApi.deleteComment(comment.id)
     if (res.code === 200) {
-      comments.value = comments.value.filter(c => c.id !== comment.id)
-      post.value.comment_count = Math.max(0, (post.value.comment_count || 0) - 1)
+      // 区分顶层评论与回复:
+      // - 顶层评论(parent_id 为空):从 comments 数组中移除,并扣 comment_count
+      // - 回复(有 parent_id):从所在 parent.replies 中移除,不扣 comment_count
+      if (!comment.parent_id) {
+        // 顶层评论删除
+        comments.value = comments.value.filter(c => c.id !== comment.id)
+        post.value.comment_count = Math.max(0, (post.value.comment_count || 0) - 1)
+      } else {
+        // 回复删除:遍历所有顶层评论,在 replies 中找到并移除
+        for (const parent of comments.value) {
+          if (parent.replies && Array.isArray(parent.replies)) {
+            const idx = parent.replies.findIndex(r => r.id === comment.id)
+            if (idx > -1) {
+              parent.replies.splice(idx, 1)
+              break
+            }
+          }
+        }
+        // 回复删除不扣 comment_count(comment_count 只统计顶层评论数)
+      }
       ElMessage.success('评论已删除')
     }
   } catch (e) {

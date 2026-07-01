@@ -326,7 +326,10 @@ const Banner = sequelize.define('Banner', {
     image_url: { type: DataTypes.STRING(500), allowNull: false },
     link_url: { type: DataTypes.STRING(500) },
     sort: { type: DataTypes.INTEGER, defaultValue: 0 },
-    is_active: { type: DataTypes.BOOLEAN, defaultValue: true }
+    is_active: { type: DataTypes.BOOLEAN, defaultValue: true },
+    // 来源标识：'codemao' 表示编程猫爬取，'manual' 或 null 表示手工创建
+    // 用于爬取轮播图时只清理爬取来源数据，避免误删手工创建的轮播图
+    source: { type: DataTypes.STRING(20), allowNull: true, defaultValue: null }
 }, Object.assign({ tableName: 'banners' }, TIMESTAMP_OPTS));
 
 const IpBan = sequelize.define('IpBan', {
@@ -392,10 +395,22 @@ const RolePermission = sequelize.define('RolePermission', {
         type: DataTypes.TEXT,
         get() {
             const v = this.getDataValue('permissions');
-            return v ? JSON.parse(v) : {};
+            // getter 自动把存储的 JSON 字符串解析成数组返回；空值返回空数组
+            // （默认值用 [] 而非 {}，因为上层用 .includes 数组方法）
+            // 修复双重 JSON.parse bug：getter 始终返回数组，业务层禁止再次 parse
+            if (!v) return [];
+            if (Array.isArray(v)) return v;
+            try {
+                const parsed = JSON.parse(v);
+                return Array.isArray(parsed) ? parsed : [];
+            } catch (e) {
+                console.error('RolePermission.permissions JSON.parse 失败，回退为空数组:', e.message);
+                return [];
+            }
         },
         set(v) {
-            this.setDataValue('permissions', JSON.stringify(v || {}));
+            // setter 把传入的数组序列化为 JSON 字符串存储；空值兜底为空数组
+            this.setDataValue('permissions', JSON.stringify(v || []));
         }
     }
 }, Object.assign({ tableName: 'role_permissions' }, TIMESTAMP_OPTS));

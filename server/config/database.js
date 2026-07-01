@@ -79,15 +79,33 @@ if (dbType === 'mysql') {
     });
 
     // 修复 H2: 开启 SQLite 外键约束,并使用 WAL 模式提升并发读写性能
-    // afterConnect 钩子会在每次获取底层连接时触发
-    sequelize.addHook('afterConnect', async (connection) => {
-        try {
-            await connection.query('PRAGMA foreign_keys = ON');
-            await connection.query('PRAGMA journal_mode = WAL');
-        } catch (e) {
-            console.error('SQLite PRAGMA 设置失败:', e.message);
-        }
-    });
+    // 修复前: 使用 afterConnect 钩子调用 connection.query('PRAGMA ...'),
+    // 但 sqlite3 底层连接对象没有 query 方法(它只有 run/exec/all 等),PRAGMA 实际未生效。
+    // 改为在 testConnection() 中通过 sequelize.query 执行,并在启动时打日志确认生效。
+    // 注意: journal_mode = WAL 是数据库级持久化设置,执行一次即可;
+    // foreign_keys = ON 是连接级设置,SQLite 连接池默认单连接,启动时设置一次足够覆盖主流程。
+}
+
+/**
+ * 应用 SQLite PRAGMA 设置（外键约束 + WAL 日志模式）
+ * 在 testConnection 认证成功后调用，通过 sequelize.query 执行并验证生效情况。
+ */
+async function applySqlitePragmas() {
+    try {
+        // 开启外键约束
+        await sequelize.query('PRAGMA foreign_keys = ON');
+        // 切换为 WAL 日志模式（提升并发读写性能，数据库级持久化设置）
+        await sequelize.query('PRAGMA journal_mode = WAL');
+
+        // 验证 PRAGMA 是否真正生效（读取当前值并打印日志确认）
+        const [fkRows] = await sequelize.query('PRAGMA foreign_keys');
+        const [jmRows] = await sequelize.query('PRAGMA journal_mode');
+        const fkValue = fkRows && fkRows[0] ? fkRows[0].foreign_keys : 'unknown';
+        const jmValue = jmRows && jmRows[0] ? jmRows[0].journal_mode : 'unknown';
+        console.log(`✅ SQLite PRAGMA 已设置: foreign_keys = ${fkValue}, journal_mode = ${jmValue}`);
+    } catch (e) {
+        console.error('❌ SQLite PRAGMA 设置失败:', e.message);
+    }
 }
 
 /**
@@ -97,6 +115,10 @@ async function testConnection() {
     try {
         await sequelize.authenticate();
         console.log('✅ 数据库连接成功');
+        // SQLite 连接成功后立即应用 PRAGMA 设置（authenticate 之后、sync 之前）
+        if (dbType !== 'mysql') {
+            await applySqlitePragmas();
+        }
     } catch (error) {
         console.error('❌ 数据库连接失败:', error.message);
         throw error;

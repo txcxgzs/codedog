@@ -1,5 +1,5 @@
 const DbAdapter = require('../utils/dbAdapter');
-const { Comment, User, Work, Post, Notification } = require('../models');
+const { Comment, User, Work, Post, Notification, sequelize } = require('../models');
 const { successResponse, errorResponse, paginateResponse } = require('../middleware/response');
 const { isRoleAtLeast } = require('../config/permissions');
 // H12: 引入内容审核服务，落库前做敏感词检查
@@ -275,12 +275,21 @@ async function deleteComment(req, res) {
         // 级联软删除子回复，避免孤儿回复
         await DbAdapter.update(Comment, { status: 'deleted' }, { where: { parent_id: id } });
 
-        // M20: 清理该评论关联的点赞记录，并清零 like_count
+        // M20: 清理该评论及其子回复关联的点赞记录，并清零 like_count
+        // 修复 bug1: 级联软删子回复时,需同时清理子回复的 Like,避免孤儿点赞
+        const { Op } = require('sequelize');
         const { Like } = require('../models');
-        await DbAdapter.destroy(Like, { where: { comment_id: id } });
-        if ((comment.like_count || 0) > 0) {
-            await DbAdapter.update(Comment, { like_count: 0 }, { where: { id } });
-        }
+        // 查询所有 parent_id=id 的子回复 id 列表
+        const childReplies = await DbAdapter.findAll(Comment, {
+            where: { parent_id: id },
+            attributes: ['id']
+        });
+        // 将父评论 id 与所有子回复 id 一起作为 comment_id 的 Op.in 条件清理 Like
+        const commentIdsToClean = [id, ...childReplies.map(c => DbAdapter.getId(c))];
+        // 批量清理这些评论关联的点赞记录,避免孤儿点赞
+        await DbAdapter.destroy(Like, { where: { comment_id: { [Op.in]: commentIdsToClean } } });
+        // 批量清零这些评论的 like_count,避免子回复计数残留(此前仅清了父评论,子回复 like_count 未清)
+        await DbAdapter.update(Comment, { like_count: 0 }, { where: { id: { [Op.in]: commentIdsToClean } } });
 
         // 仅在旧状态为 active 且顶层评论时才递减 comment_count，避免 hidden→deleted 重复扣减
         if (wasActive && !comment.parent_id) {
@@ -318,25 +327,41 @@ async function likeComment(req, res) {
         }
 
         const { Like } = require('../models');
+        const { Op } = require('sequelize');
         const existing = await DbAdapter.findOne(Like, {
             where: { user_id: userId, comment_id: DbAdapter.getId(comment) }
         });
 
         if (existing) {
             // 已点赞 → 取消点赞（toggle）
-            const removed = await DbAdapter.destroy(Like, { where: { id: DbAdapter.getId(existing) } });
-            if (removed && (comment.like_count || 0) > 0) {
-                await DbAdapter.decrement(comment, 'like_count');
-            }
+            // 修复 bug3: destroy Like + decrement like_count 用事务包裹,保证一致性
+            // 修复 bug4: 不再用旧实例 like_count > 0 判断,改用原子 decrement 带 where 条件避免负数
+            await sequelize.transaction(async (t) => {
+                const removed = await DbAdapter.destroy(Like, {
+                    where: { id: DbAdapter.getId(existing) },
+                    transaction: t
+                });
+                if (removed) {
+                    // 原子 decrement: 仅当 like_count > 0 时才执行减 1,避免并发导致负数
+                    await DbAdapter.decrement(comment, 'like_count', {
+                        where: { like_count: { [Op.gt]: 0 } },
+                        transaction: t
+                    });
+                }
+            });
             await comment.reload();
             const newCount = Math.max(0, comment.like_count || 0);
             return successResponse(res, { like_count: newCount, liked: false }, '已取消点赞');
         }
 
+        // 修复 bug3: create Like + increment like_count 用事务包裹,中途失败回滚避免不一致
         try {
-            await DbAdapter.create(Like, {
-                user_id: userId,
-                comment_id: DbAdapter.getId(comment)
+            await sequelize.transaction(async (t) => {
+                await DbAdapter.create(Like, {
+                    user_id: userId,
+                    comment_id: DbAdapter.getId(comment)
+                }, { transaction: t });
+                await DbAdapter.increment(comment, 'like_count', { transaction: t });
             });
         } catch (createError) {
             if (createError.name === 'SequelizeUniqueConstraintError') {
@@ -345,7 +370,6 @@ async function likeComment(req, res) {
             throw createError;
         }
 
-        await DbAdapter.increment(comment, 'like_count');
         await comment.reload();
 
         const likeCount = Math.max(0, comment.like_count || 0);
