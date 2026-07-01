@@ -29,6 +29,21 @@ echo ""
 echo "Pulling latest code..."
 git pull origin main 2>/dev/null || echo "Warning: Could not pull, using local code"
 
+append_or_replace_env() {
+    local key="$1"
+    local value="$2"
+    if grep -q "^${key}=" .env 2>/dev/null; then
+        sed -i "s|^${key}=.*|${key}=${value}|" .env
+    else
+        echo "${key}=${value}" >> .env
+    fi
+}
+
+generate_secret() {
+    local bytes="$1"
+    openssl rand -hex "$bytes" 2>/dev/null || head -c "$bytes" /dev/urandom | od -An -tx1 | tr -d ' \n'
+}
+
 # Create .env if missing
 if [ ! -f .env ] || [ ! -s .env ]; then
     echo ""
@@ -63,20 +78,18 @@ if [ ! -f .env ] || [ ! -s .env ]; then
         echo ""
     fi
     
-    JWT_SECRET=$(openssl rand -hex 64 2>/dev/null || head -c 128 /dev/urandom | base64)
-    SESSION_SECRET=$(openssl rand -hex 32 2>/dev/null || head -c 64 /dev/urandom | base64)
-    
     cat > .env << ENVEOF
 SERVER_PORT=3001
 DB_TYPE=$DB_TYPE
+DB_PATH=/app/server/data/database.sqlite
 DB_HOST=$DB_HOST
 DB_PORT=$DB_PORT
 DB_NAME=$DB_NAME
 DB_USER=$DB_USER
 DB_PASSWORD=$DB_PASSWORD
-JWT_SECRET=$JWT_SECRET
+JWT_SECRET=$(generate_secret 64)
 JWT_EXPIRES_IN=7d
-SESSION_SECRET=$SESSION_SECRET
+SESSION_SECRET=$(generate_secret 32)
 CORS_ORIGIN=http://localhost:3001
 ENVEOF
     
@@ -85,7 +98,25 @@ else
     echo "Using existing .env"
 fi
 
-# Create directories and fix permissions
+# Repair incomplete existing .env files from older installers.
+if ! grep -q '^DB_PATH=' .env; then
+    append_or_replace_env "DB_PATH" "/app/server/data/database.sqlite"
+fi
+if ! grep -q '^JWT_EXPIRES_IN=' .env; then
+    append_or_replace_env "JWT_EXPIRES_IN" "7d"
+fi
+if ! grep -q '^CORS_ORIGIN=' .env || [ -z "$(grep '^CORS_ORIGIN=' .env | tail -1 | cut -d= -f2-)" ]; then
+    append_or_replace_env "CORS_ORIGIN" "http://localhost:3001"
+fi
+if ! grep -q '^JWT_SECRET=................................' .env; then
+    append_or_replace_env "JWT_SECRET" "$(generate_secret 64)"
+fi
+if ! grep -q '^SESSION_SECRET=................................' .env; then
+    append_or_replace_env "SESSION_SECRET" "$(generate_secret 32)"
+fi
+
+# Create directories and fix permissions. The container runs as a non-root app user,
+# so bind-mounted SQLite/upload directories must be writable from inside the container.
 echo ""
 echo "Preparing directories..."
 mkdir -p data uploads/avatars uploads/works
@@ -98,13 +129,16 @@ $COMPOSE_CMD build --no-cache
 
 echo ""
 echo "Starting service..."
+$COMPOSE_CMD down
 $COMPOSE_CMD up -d
 
 # Wait for startup
 echo ""
 echo "Waiting for service..."
-for i in $(seq 1 30); do
-    if curl -s http://localhost:3001/api/health > /dev/null 2>&1; then
+SERVICE_READY=0
+for i in $(seq 1 60); do
+    if curl -fs http://localhost:3001/api/health > /dev/null 2>&1; then
+        SERVICE_READY=1
         echo "Service started successfully!"
         break
     fi
@@ -113,11 +147,11 @@ for i in $(seq 1 30); do
 done
 echo ""
 
-# Check if running
-if ! $COMPOSE_CMD ps | grep -q "Up"; then
+if [ "$SERVICE_READY" != "1" ]; then
     echo ""
-    echo "ERROR: Container failed to start. Recent logs:"
-    $COMPOSE_CMD logs --tail=50 codedog
+    echo "ERROR: Service did not become healthy. Recent logs:"
+    $COMPOSE_CMD ps
+    $COMPOSE_CMD logs --tail=120 codedog
     exit 1
 fi
 
