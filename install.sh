@@ -112,7 +112,12 @@ install_docker_compose() {
     print_step "安装Docker Compose..."
     
     if docker compose version >/dev/null 2>&1; then
-        print_info "Docker Compose已安装"
+        COMPOSE_CMD="docker compose"
+        print_info "Docker Compose已安装 (docker compose)"
+        return 0
+    elif command -v docker-compose >/dev/null 2>&1; then
+        COMPOSE_CMD="docker-compose"
+        print_info "Docker Compose已安装 (docker-compose)"
         return 0
     fi
     
@@ -123,6 +128,7 @@ install_docker_compose() {
         -o /usr/local/bin/docker-compose
     
     $SUDO chmod +x /usr/local/bin/docker-compose
+    COMPOSE_CMD="docker-compose"
     
     print_success "Docker Compose安装完成"
 }
@@ -248,14 +254,17 @@ deploy_docker() {
     create_env
     create_directories
     
+    # 修复挂载目录权限
+    chmod -R a+rwX data uploads 2>/dev/null || true
+    
     # 停止旧容器
     print_info "停止旧容器..."
-    docker-compose down 2>/dev/null || true
+    $COMPOSE_CMD down 2>/dev/null || true
     
     # 构建并启动
     print_info "构建并启动容器（首次构建可能需要几分钟）..."
     export DOCKER_BUILDKIT=0
-    docker-compose up -d --build
+    $COMPOSE_CMD up -d --build
     
     # 等待服务启动
     wait_for_service
@@ -372,7 +381,7 @@ wait_for_service() {
     done
     
     echo ""
-    print_warning "服务启动超时，请检查日志: docker-compose logs -f"
+    print_warning "服务启动超时，请检查日志: $COMPOSE_CMD logs -f"
     return 1
 }
 
@@ -397,10 +406,10 @@ show_result() {
             echo -e "  访问地址: ${YELLOW}http://${SERVER_IP}:3001${NC}"
             echo ""
             echo "常用命令:"
-            echo "  查看状态: docker-compose ps"
-            echo "  查看日志: docker-compose logs -f"
-            echo "  重启服务: docker-compose restart"
-            echo "  停止服务: docker-compose down"
+            echo "  查看状态: $COMPOSE_CMD ps"
+            echo "  查看日志: $COMPOSE_CMD logs -f"
+            echo "  重启服务: $COMPOSE_CMD restart"
+            echo "  停止服务: $COMPOSE_CMD down"
             ;;
         baota)
             echo -e "  前端地址: ${YELLOW}http://${SERVER_IP}:${CLIENT_PORT}${NC}"

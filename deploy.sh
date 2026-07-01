@@ -1,38 +1,45 @@
 #!/bin/bash
 
-# CodeDog 一键部署脚本
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-echo "🚀 CodeDog 部署脚本"
-echo "===================="
+echo "========================================"
+echo "  CodeDog Deployment Script"
+echo "========================================"
 
-# 拉取最新代码
-echo "📥 拉取最新代码..."
-git pull origin main 2>/dev/null || echo "⚠ 无法拉取更新，使用本地代码继续"
-
-# 检查 Docker 是否安装
+# Check Docker
 if ! command -v docker &> /dev/null; then
-    echo "❌ 请先安装 Docker"
+    echo "ERROR: Docker not installed"
     exit 1
 fi
 
-# 检查 Docker Compose 是否安装
-if ! command -v docker-compose &> /dev/null && ! docker compose version &> /dev/null; then
-    echo "❌ 请先安装 Docker Compose"
+# Check Docker Compose - use whichever is available
+if docker compose version >/dev/null 2>&1; then
+    COMPOSE_CMD="docker compose"
+elif command -v docker-compose >/dev/null 2>&1; then
+    COMPOSE_CMD="docker-compose"
+else
+    echo "ERROR: Docker Compose not installed"
     exit 1
 fi
+echo "Using: $COMPOSE_CMD"
 
-# 强制创建 .env 文件
+# Pull latest code
+echo ""
+echo "Pulling latest code..."
+git pull origin main 2>/dev/null || echo "Warning: Could not pull, using local code"
+
+# Create .env if missing
 if [ ! -f .env ] || [ ! -s .env ]; then
-    echo "📦 创建环境配置..."
+    echo ""
+    echo "Creating .env configuration..."
     
     echo ""
-    echo "请选择数据库类型:"
-    echo "  1) SQLite (默认，轻量级)"
-    echo "  2) MySQL (需要提前安装MySQL)"
+    echo "Select database type:"
+    echo "  1) SQLite (default, lightweight)"
+    echo "  2) MySQL (requires MySQL server)"
     echo ""
-    read -p "请输入选项 [1-2]: " db_choice
+    read -p "Choice [1-2]: " db_choice
     
     DB_TYPE="sqlite"
     DB_HOST="localhost"
@@ -43,15 +50,15 @@ if [ ! -f .env ] || [ ! -s .env ]; then
     
     if [ "$db_choice" = "2" ]; then
         DB_TYPE="mysql"
-        read -p "MySQL主机地址 [localhost]: " input_host
+        read -p "MySQL host [localhost]: " input_host
         DB_HOST=${input_host:-localhost}
-        read -p "MySQL端口 [3306]: " input_port
+        read -p "MySQL port [3306]: " input_port
         DB_PORT=${input_port:-3306}
-        read -p "MySQL数据库名 [coding_dog]: " input_name
+        read -p "MySQL database [coding_dog]: " input_name
         DB_NAME=${input_name:-coding_dog}
-        read -p "MySQL用户名 [root]: " input_user
+        read -p "MySQL user [root]: " input_user
         DB_USER=${input_user:-root}
-        read -sp "MySQL密码: " input_pass
+        read -sp "MySQL password: " input_pass
         DB_PASSWORD=${input_pass}
         echo ""
     fi
@@ -73,27 +80,32 @@ SESSION_SECRET=$SESSION_SECRET
 CORS_ORIGIN=http://localhost:3001
 ENVEOF
     
-    echo "✅ .env 创建完成"
+    echo ".env created"
 else
-    echo "✅ 使用现有 .env 配置"
+    echo "Using existing .env"
 fi
 
-# 创建数据目录
+# Create directories and fix permissions
+echo ""
+echo "Preparing directories..."
 mkdir -p data uploads/avatars uploads/works
+chmod -R a+rwX data uploads 2>/dev/null || true
 
-# 构建并启动
-echo "📦 构建 Docker 镜像..."
-docker compose build --no-cache
+# Build and start
+echo ""
+echo "Building Docker image..."
+$COMPOSE_CMD build --no-cache
 
-echo "🚀 启动服务..."
-docker compose up -d
+echo ""
+echo "Starting service..."
+$COMPOSE_CMD up -d
 
-# 等待服务启动
-echo "⏳ 等待服务启动..."
+# Wait for startup
+echo ""
+echo "Waiting for service..."
 for i in $(seq 1 30); do
     if curl -s http://localhost:3001/api/health > /dev/null 2>&1; then
-        echo ""
-        echo "✅ 服务启动成功！"
+        echo "Service started successfully!"
         break
     fi
     echo -n "."
@@ -101,14 +113,28 @@ for i in $(seq 1 30); do
 done
 echo ""
 
-# 安装 CLI 工具箱
-echo "🛠️ 安装管理工具箱..."
+# Check if running
+if ! $COMPOSE_CMD ps | grep -q "Up"; then
+    echo ""
+    echo "ERROR: Container failed to start. Recent logs:"
+    $COMPOSE_CMD logs --tail=50 codedog
+    exit 1
+fi
+
+# Install CLI
+echo ""
+echo "Installing management tool..."
 if [ -f "$SCRIPT_DIR/install-cli.sh" ]; then
     chmod +x "$SCRIPT_DIR/install-cli.sh"
     bash "$SCRIPT_DIR/install-cli.sh"
 fi
 
 echo ""
-echo "✅ 部署完成！"
-echo "📍 访问地址: http://localhost:3001"
-echo "🛠️ 管理工具: 输入 codedog"
+echo "========================================"
+echo "  Deployment Complete!"
+echo "========================================"
+echo ""
+echo "  URL: http://localhost:3001"
+echo "  Admin: http://localhost:3001/admin"
+echo "  Tool: codedog"
+echo ""
