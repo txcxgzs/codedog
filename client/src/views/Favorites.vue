@@ -78,18 +78,6 @@ const selectedIds = ref([])
 const geetestDialog = ref(null)
 const geetestConfig = ref(null)
 
-const fetchGeetestConfig = async () => {
-  try {
-    const { geetestApi } = await import('@/api/geetest')
-    const res = await geetestApi.getConfig()
-    if (res.code === 200) {
-      geetestConfig.value = res.data
-    }
-  } catch (e) {
-    console.error('获取验证码配置失败:', e)
-  }
-}
-
 const getGeetestForFavorite = async () => {
   if (geetestConfig.value?.enabled && geetestConfig.value?.scenes?.favorite) {
     const data = await geetestDialog.value?.show('favorite')
