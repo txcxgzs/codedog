@@ -135,7 +135,7 @@
                   </div>
                   <p class="r-work--comment_content">{{ comment.content }}</p>
                   <div class="r-work--comment_actions">
-                    <span @click="likeComment(comment)">
+                    <span @click="likeComment(comment)" :class="{ 'r-work--comment_liked': comment.liked }">
                       <span class="r-work--comment_icon r-work--comment_icon_like"></span>
                       {{ comment.like_count || 0 }}
                     </span>
@@ -168,7 +168,7 @@
                             {{ reply.content }}
                           </p>
                           <div class="r-work--reply_actions">
-                            <span @click="likeComment(reply)">
+                            <span @click="likeComment(reply)" :class="{ 'r-work--comment_liked': reply.liked }">
                               <span class="r-work--comment_icon r-work--comment_icon_like"></span>
                               {{ reply.like_count || 0 }}
                             </span>
@@ -705,17 +705,23 @@ const submitComment = async () => {
       ...geetestData
     })
     if (res.code === 200) {
+      // 修复: 新建评论补 liked=false 默认值
+      // 后端 createComment 返回的对象无 liked 字段,导致点赞前 comment.liked 是 undefined
+      // 虽然后端 toggle 正常,但前端视觉状态初始不明确,显式置 false
+      const newComment = res.data
+      newComment.liked = false
+      newComment.like_count = newComment.like_count || 0
       if (replyingTo.value) {
         // 确定顶层父评论：如果 replyingTo 是回复(有 parent_id)则用其 parent_id，否则用 replyingTo.id
         const topLevelId = replyingTo.value.parent_id || replyingTo.value.id
         const parentComment = comments.value.find(c => c.id === topLevelId)
         if (parentComment) {
           if (!parentComment.replies) parentComment.replies = []
-          parentComment.replies.push(res.data)
+          parentComment.replies.push(newComment)
         }
         // 回复不增加顶层评论数
       } else {
-        comments.value.unshift(res.data)
+        comments.value.unshift(newComment)
         // 仅顶层评论增加计数
         work.value.comment_count = (work.value.comment_count || 0) + 1
       }
@@ -1358,11 +1364,23 @@ $border-color: #eee;
         background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23999'%3E%3Cpath d='M1 21h4V9H1v12zm22-11c0-1.1-.9-2-2-2h-6.31l.95-4.57.03-.32c0-.41-.17-.79-.44-1.06L14.17 1 7.59 7.59C7.22 7.95 7 8.45 7 9v10c0 1.1.9 2 2 2h9c.83 0 1.54-.5 1.84-1.22l3.02-7.05c.09-.23.14-.47.14-.73v-2z'/%3E%3C/svg%3E") no-repeat center;
         background-size: contain;
       }
+
+      // 已点赞: 图标变红,让用户看到当前是否已点赞
+      // 修复: 此前点赞图标是静态灰色,无法看出 liked 状态,导致用户以为点赞没生效反复点击
+      .r-work--comment_liked > &.r-work--comment_icon_like {
+        background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23f56c6c'%3E%3Cpath d='M1 21h4V9H1v12zm22-11c0-1.1-.9-2-2-2h-6.31l.95-4.57.03-.32c0-.41-.17-.79-.44-1.06L14.17 1 7.59 7.59C7.22 7.95 7 8.45 7 9v10c0 1.1.9 2 2 2h9c.83 0 1.54-.5 1.84-1.22l3.02-7.05c.09-.23.14-.47.14-.73v-2z'/%3E%3C/svg%3E") no-repeat center;
+        background-size: contain;
+      }
       
       &.r-work--comment_icon_reply {
         background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23999'%3E%3Cpath d='M10 9V5l-7 7 7 7v-4.1c5 0 8.5 1.6 11 5.1-1-5-4-10-11-11z'/%3E%3C/svg%3E") no-repeat center;
         background-size: contain;
       }
+    }
+
+    // 已点赞的文字也变红,与图标呼应
+    .r-work--comment_liked {
+      color: #f56c6c;
     }
   }
 }
