@@ -91,7 +91,7 @@ async function cleanup() {
 }
 
 async function main() {
-    await sequelize.sync({ alter: false });
+    await sequelize.sync({ alter: true });
 
     const activeUser = await createUser('user');
     const disabledUser = await createUser('user', 'disabled');

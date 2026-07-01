@@ -310,7 +310,7 @@ const PORT = process.env.PORT || process.env.SERVER_PORT || 3001;
 async function startServer() {
     try {
         await testConnection();
-        await sequelize.sync({ alter: false });
+        await sequelize.sync({ alter: true });
         if (sessionStore) {
             await sessionStore.sync();
         }

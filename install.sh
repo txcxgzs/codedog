@@ -136,20 +136,46 @@ create_env() {
         return 0
     fi
     
+    # 询问数据库类型
+    echo ""
+    echo "请选择数据库类型:"
+    echo "  1) SQLite (默认，轻量级，适合小规模部署)"
+    echo "  2) MySQL (适合生产环境，需要提前安装MySQL)"
+    echo ""
+    read -p "请输入选项 [1-2]: " db_choice
+    
+    case ${db_choice:-1} in
+        2)
+            DB_TYPE="mysql"
+            echo ""
+            read -p "MySQL主机地址 [localhost]: " DB_HOST
+            DB_HOST=${DB_HOST:-localhost}
+            read -p "MySQL端口 [3306]: " DB_PORT
+            DB_PORT=${DB_PORT:-3306}
+            read -p "MySQL数据库名 [coding_dog]: " DB_NAME
+            DB_NAME=${DB_NAME:-coding_dog}
+            read -p "MySQL用户名 [root]: " DB_USER
+            DB_USER=${DB_USER:-root}
+            read -sp "MySQL密码: " DB_PASSWORD
+            echo ""
+            ;;
+        *)
+            DB_TYPE="sqlite"
+            ;;
+    esac
+    
     if [ -f .env.example ]; then
         cp .env.example .env
     else
-        # 创建默认配置
         cat > .env << 'EOF'
 # 服务端口配置
 CLIENT_PORT=8080
 SERVER_PORT=3001
 
 # 数据库配置
-# 可选值: sqlite, mysql
 DB_TYPE=sqlite
 
-# MySQL配置（当DB_TYPE=mysql时使用）
+# MySQL配置
 DB_HOST=localhost
 DB_PORT=3306
 DB_NAME=coding_dog
@@ -160,31 +186,39 @@ DB_PASSWORD=
 JWT_SECRET=please-change-this-to-a-random-string-at-least-64-characters
 JWT_EXPIRES_IN=7d
 
-# Session配置（生产环境必填，至少32字符随机字符串）
+# Session配置
 SESSION_SECRET=
 
-# CORS配置（生产环境改为实际域名，多个域名用逗号分隔）
-CORS_ORIGIN=
+# CORS配置
+CORS_ORIGIN=http://localhost:8080
 EOF
     fi
     
-    # 生成安全的JWT密钥
+    # 写入数据库配置
+    sed -i "s/^DB_TYPE=.*/DB_TYPE=$DB_TYPE/" .env
+    if [ "$DB_TYPE" = "mysql" ]; then
+        sed -i "s/^DB_HOST=.*/DB_HOST=$DB_HOST/" .env
+        sed -i "s/^DB_PORT=.*/DB_PORT=$DB_PORT/" .env
+        sed -i "s/^DB_NAME=.*/DB_NAME=$DB_NAME/" .env
+        sed -i "s/^DB_USER=.*/DB_USER=$DB_USER/" .env
+        sed -i "s/^DB_PASSWORD=.*/DB_PASSWORD=$DB_PASSWORD/" .env
+    fi
+    
+    # 生成安全密钥
     JWT_SECRET=$(openssl rand -hex 64 2>/dev/null || cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 128 | head -n 1)
     if [ -n "$JWT_SECRET" ]; then
         sed -i "s/JWT_SECRET=.*/JWT_SECRET=$JWT_SECRET/" .env
     fi
 
-    # 修复：生成 Session 密钥（生产环境必需，至少32字符随机字符串）
     SESSION_SECRET=$(openssl rand -hex 32 2>/dev/null || cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 64 | head -n 1)
     if [ -n "$SESSION_SECRET" ]; then
         sed -i "s/SESSION_SECRET=.*/SESSION_SECRET=$SESSION_SECRET/" .env
     fi
 
-    # 修复：设置 CORS 来源（生产环境需改为实际域名，如 https://yourdomain.com）
     CORS_ORIGIN="http://localhost:8080"
     sed -i "s|^# *CORS_ORIGIN=.*|CORS_ORIGIN=$CORS_ORIGIN|; s|^CORS_ORIGIN=.*|CORS_ORIGIN=$CORS_ORIGIN|" .env
     
-    print_success "环境配置创建完成"
+    print_success "环境配置创建完成 (数据库: $DB_TYPE)"
 }
 
 # 创建必要目录
@@ -291,13 +325,29 @@ deploy_local() {
     npm install
     cd ..
     
-    # 安装前端依赖
-    print_info "安装前端依赖..."
+    # 安装前端依赖并构建
+    print_info "安装前端依赖并构建..."
     cd client
     npm install
+    npm run build
     cd ..
     
     print_success "依赖安装完成"
+    
+    # 启动后端服务
+    print_info "启动后端服务..."
+    cd server
+    nohup node app.js > ../server.log 2>&1 &
+    SERVER_PID=$!
+    cd ..
+    
+    # 等待服务启动
+    sleep 3
+    if curl -s http://localhost:3001/api/health > /dev/null 2>&1; then
+        print_success "后端服务启动成功 (PID: $SERVER_PID)"
+    else
+        print_warning "后端服务启动中，请稍后访问 http://localhost:3001"
+    fi
     
     show_result "local"
 }
@@ -365,10 +415,13 @@ show_result() {
         local)
             echo -e "  前端地址: ${YELLOW}http://localhost:8080${NC}"
             echo -e "  后端地址: ${YELLOW}http://localhost:3001${NC}"
+            echo -e "  管理后台: ${YELLOW}http://localhost:3001/admin${NC}"
             echo ""
-            echo "启动命令:"
-            echo "  后端: cd server && npm run dev"
-            echo "  前端: cd client && npm run dev"
+            echo "后端服务已自动启动。如需重启:"
+            echo "  cd server && node app.js"
+            echo ""
+            echo "前端开发模式（可选）:"
+            echo "  cd client && npm run dev"
             ;;
     esac
     
