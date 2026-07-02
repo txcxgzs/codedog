@@ -1,4 +1,5 @@
 #!/bin/bash
+set -e
 
 # CodeDog 更新脚本
 echo "📦 CodeDog 更新脚本"
@@ -22,6 +23,12 @@ if ! git rev-parse --git-dir > /dev/null 2>&1; then
     exit 1
 fi
 
+HOST_DB_PATH="$SCRIPT_DIR/data/database.sqlite"
+
+# 先停止服务，再进行备份，避免 WAL 模式热拷贝不一致
+echo "🛑 正在停止服务..."
+$COMPOSE_CMD down
+
 # 备份当前版本
 echo "💾 备份当前版本..."
 BACKUP_DIR="backup_$(date +%Y%m%d_%H%M%S)"
@@ -29,6 +36,13 @@ mkdir -p "$BACKUP_DIR"
 cp -r data "$BACKUP_DIR/" 2>/dev/null || true
 cp -r uploads "$BACKUP_DIR/" 2>/dev/null || true
 cp .env "$BACKUP_DIR/.env" 2>/dev/null || true
+
+# SQLite 使用 sqlite3 在线热备份
+if command -v sqlite3 >/dev/null 2>&1 && [ -f "$HOST_DB_PATH" ]; then
+    sqlite3 "$HOST_DB_PATH" ".backup '$BACKUP_DIR/database.sqlite'"
+    echo "✅ 数据库已使用 sqlite3 .backup 热备份"
+fi
+
 echo "备份已保存到: $BACKUP_DIR"
 
 # 拉取最新代码
@@ -46,7 +60,6 @@ echo "🔨 重新构建..."
 $COMPOSE_CMD build
 
 echo "🔄 重启服务..."
-$COMPOSE_CMD down
 $COMPOSE_CMD up -d
 
 echo "⏳ 等待服务启动..."

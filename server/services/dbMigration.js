@@ -568,6 +568,32 @@ class DatabaseMigration {
     }
 
     /**
+     * 判断源数据库和目标数据库是否指向同一个物理库
+     * 防止用户把 sqlite -> sqlite 且路径相同,或 mysql 库相同,导致自迁自并清空全库
+     */
+    isSameDatabase(sourceType, sourceConfig, targetType, targetConfig) {
+        if (sourceType !== targetType) return false;
+
+        if (sourceType === 'sqlite') {
+            const sourcePath = path.resolve(sourceConfig?.path || path.join(__dirname, '../migration_temp.sqlite'));
+            const targetPath = path.resolve(targetConfig?.path || path.join(__dirname, '../migration_temp.sqlite'));
+            return sourcePath === targetPath;
+        }
+
+        if (sourceType === 'mysql') {
+            const sHost = sourceConfig?.host || process.env.DB_HOST || 'localhost';
+            const tHost = targetConfig?.host || process.env.DB_HOST || 'localhost';
+            const sPort = sourceConfig?.port || process.env.DB_PORT || 3306;
+            const tPort = targetConfig?.port || process.env.DB_PORT || 3306;
+            const sDb = sourceConfig?.database || process.env.DB_NAME;
+            const tDb = targetConfig?.database || process.env.DB_NAME;
+            return sHost === tHost && String(sPort) === String(tPort) && sDb === tDb;
+        }
+
+        return false;
+    }
+
+    /**
      * 从源数据库读取数据
      * M16: 删除多余的 sync() 调用（源库表应已存在，不应有写副作用）
      * M14: 改用分批读取
@@ -631,11 +657,12 @@ class DatabaseMigration {
 
             // H5: sync 策略改进
             // ⚠️ 警告：force:true 会删表重建，所有原有数据丢失！仅在确认全量重导时使用 clearExisting=true
-            // alter:true 保留数据但 SQLite 对 alter 支持有限（如无法修改列类型）
+            // 非 clearExisting 时不使用 alter:true：SQLite 的 alter 会创建 *_backup 临时表并复制数据，
+            // 若中途失败会残留备份表导致启动死锁；且迁移目标库通常为空或已准备好 schema。
             if (clearExisting) {
                 await connection.sync({ force: true });
             } else {
-                await connection.sync({ alter: true });
+                await connection.sync();
             }
 
             // M15: 用事务包裹所有写入，保证原子性（全部成功或全部回滚）
@@ -726,6 +753,13 @@ class DatabaseMigration {
     async migrate(sourceType, sourceConfig, targetType, targetConfig, clearExisting = false) {
         console.log(`\n🚀 开始数据库迁移: ${sourceType} -> ${targetType}`);
         console.log('=====================================');
+
+        // 源库和目标库不能是同一个物理库,否则会先读后写覆盖自身,造成数据丢失
+        if (this.isSameDatabase(sourceType, sourceConfig, targetType, targetConfig)) {
+            const msg = '源数据库和目标数据库不能是同一个物理库,请检查迁移配置';
+            console.error(`❌ ${msg}`);
+            return { success: false, message: msg };
+        }
 
         try {
             const data = await this.readFromSource(sourceType, sourceConfig);

@@ -33,10 +33,13 @@ const { createSequelizeSessionStore } = require('./services/sessionStore');
 const app = express();
 app.disable('x-powered-by');
 
-const trustProxyEnabled = process.env.TRUST_PROXY !== 'false';
+// 信任代理：默认关闭。仅当明确设置 TRUST_PROXY=true 且前端有可信反向代理(Nginx/Cloudflare)时开启，
+// 否则 X-Forwarded-For 可被客户端伪造，导致限流、IP 白名单失效。
+const trustProxyEnabled = process.env.TRUST_PROXY === 'true';
 app.set('trust proxy', trustProxyEnabled ? 1 : false);
 
 const isProduction = process.env.NODE_ENV === 'production';
+const isDevelopment = process.env.NODE_ENV === 'development' || !isProduction;
 
 function setSecurityHeaders(res) {
     res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -95,9 +98,30 @@ async function ensureInitialSuperadmin() {
     }
 }
 
+// CORS 配置：默认不允许任意来源，只放行 CORS_ORIGIN 环境变量中配置的域名
+// 多个 origin 可用逗号分隔；未配置时生产环境拒绝跨域，开发环境放行 localhost
+const rawCorsOrigin = process.env.CORS_ORIGIN || '';
+const allowedOrigins = rawCorsOrigin
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean);
+
 app.use(cors((req, callback) => {
+    const requestOrigin = req.header('Origin');
+    let allow = false;
+
+    if (!requestOrigin) {
+        // 非浏览器同源请求(如 curl、服务器间调用)无需校验 Origin
+        allow = true;
+    } else if (allowedOrigins.length === 0) {
+        // 未配置 CORS_ORIGIN：开发环境放行 localhost，生产环境拒绝
+        allow = !isProduction && /^https?:\/\/localhost(:\d+)?$/.test(requestOrigin);
+    } else {
+        allow = allowedOrigins.some(o => o === requestOrigin);
+    }
+
     callback(null, {
-        origin: true,
+        origin: allow,
         credentials: true,
         optionsSuccessStatus: 204
     });
@@ -244,7 +268,30 @@ const PORT = process.env.PORT || process.env.SERVER_PORT || 3001;
 async function startServer() {
     try {
         await testConnection();
-        await sequelize.sync({ alter: true });
+
+        // 生产环境禁用 alter:true：Sequelize 对 SQLite 的 alter 会创建临时表并
+        // 复制数据，若中间崩溃会残留 *_backup 表，导致下次启动 id 唯一冲突。
+        // 仅开发环境允许 alter:true。
+        const syncOptions = isDevelopment ? { alter: true } : {};
+
+        // 启动前兜底：清理 SQLite 中残留的 Sequelize 临时/备份表
+        // 这些表通常是上一次 alter 中断遗留，会阻塞后续启动。
+        if (isProduction && sequelize.getDialectName() === 'sqlite') {
+            try {
+                const backupTables = await sequelize.query(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE '%_backup'",
+                    { type: sequelize.QueryTypes.SELECT }
+                );
+                for (const { name } of backupTables) {
+                    await sequelize.query(`DROP TABLE IF EXISTS "${name}"`);
+                    console.warn(`[启动清理] 已删除残留临时表: ${name}`);
+                }
+            } catch (cleanupError) {
+                console.warn('[启动清理] 清理残留临时表失败:', cleanupError.message);
+            }
+        }
+
+        await sequelize.sync(syncOptions);
         if (sessionStore) await sessionStore.sync();
         console.log('Database models synchronized.');
 

@@ -230,15 +230,17 @@ EOF
 # 创建必要目录
 create_directories() {
     print_step "创建必要目录..."
-    
-    mkdir -p server/data
-    mkdir -p server/uploads/avatars
-    mkdir -p server/uploads/works
-    
+
+    # 与 docker-compose.yml 挂载路径保持一致：./data 和 ./uploads
+    # 容器内通过 bind mount 映射到 /app/server/data 和 /app/uploads
+    mkdir -p data
+    mkdir -p uploads/avatars
+    mkdir -p uploads/works
+
     # 创建.gitkeep文件保持目录结构
-    touch server/uploads/.gitkeep
-    touch server/data/.gitkeep
-    
+    touch uploads/.gitkeep
+    touch data/.gitkeep
+
     print_success "目录创建完成"
 }
 

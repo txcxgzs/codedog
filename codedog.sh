@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # CodeDog 管理工具箱
-VERSION="1.0.0"
+VERSION="1.0.1"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
@@ -77,6 +77,12 @@ show_database_status() {
     $COMPOSE_CMD exec -T codedog ls -lah /app/server/data 2>/dev/null || true
 }
 
+main_loop() {
+    while true; do
+        show_menu
+    done
+}
+
 show_menu() {
     clear
     echo -e "${GREEN}======================================${NC}"
@@ -107,8 +113,13 @@ show_menu() {
         8) do_config ;;
         9) do_clean ;;
         0) exit 0 ;;
-        *) echo "无效选项"; sleep 1; show_menu ;;
+        *) echo "无效选项"; sleep 1 ;;
     esac
+}
+
+wait_enter() {
+    echo ""
+    read -p "按回车返回菜单..."
 }
 
 show_status() {
@@ -122,9 +133,9 @@ show_status() {
 
     echo ""
     echo "健康检查:"
-    HEALTH_LINE=$(docker inspect codedog 2>/dev/null | grep -m1 '"Status"' || true)
+    HEALTH_LINE=$(docker inspect codedog 2>/dev/null | grep -m1 '"Status":' | sed 's/^[[:space:]]*//' || true)
     if [ -n "$HEALTH_LINE" ]; then
-        echo "$HEALTH_LINE" | sed 's/^[[:space:]]*//'
+        echo "$HEALTH_LINE"
     else
         echo "Docker Health: 未知"
     fi
@@ -142,9 +153,7 @@ show_status() {
     echo ""
     show_database_status
 
-    echo ""
-    read -p "按回车返回菜单..."
-    show_menu
+    wait_enter
 }
 
 show_logs() {
@@ -159,40 +168,67 @@ show_logs() {
         2) $COMPOSE_CMD logs --tail=50 codedog ;;
         3) $COMPOSE_CMD logs --tail=100 codedog ;;
     esac
-    read -p "按回车返回菜单..."
-    show_menu
+    wait_enter
 }
 
 check_update() {
     echo "=== 检查更新 ==="
     git fetch origin 2>/dev/null
     LOCAL=$(git rev-parse HEAD)
-    REMOTE=$(git rev-parse "origin/$(git branch --show-current)" 2>/dev/null)
+    REMOTE=$(git rev-parse "origin/$(git branch --show-current 2>/dev/null || echo main)" 2>/dev/null)
     if [ "$LOCAL" = "$REMOTE" ]; then
         echo "已是最新版本"
     else
         echo "有新版本可用:"
-        git log HEAD..origin/$(git branch --show-current) --oneline --no-merges 2>/dev/null | head -10
+        git log HEAD..origin/$(git branch --show-current 2>/dev/null || echo main) --oneline --no-merges 2>/dev/null | head -10
     fi
-    echo ""
-    read -p "按回车返回菜单..."
-    show_menu
+    wait_enter
+}
+
+# 使用 sqlite3 在线热备份；WAL 模式下比 cp -r 更一致
+backup_sqlite() {
+    local backup_dir="$1"
+    if command -v sqlite3 >/dev/null 2>&1 && [ -f "$HOST_DB_PATH" ]; then
+        sqlite3 "$HOST_DB_PATH" ".backup '$backup_dir/database.sqlite'"
+        echo "数据库已使用 sqlite3 .backup 热备份"
+    elif [ -f "$HOST_DB_PATH" ]; then
+        cp "$HOST_DB_PATH" "$backup_dir/database.sqlite"
+        echo "sqlite3 未安装，已冷拷贝数据库"
+    fi
+}
+
+# 复制 data/uploads/.env 到备份目录；先拷贝非 DB 文件，DB 单独热备份
+backup_data() {
+    local backup_dir="$1"
+    mkdir -p "$backup_dir"
+    # 数据目录（排除已有旧数据库文件）
+    cp -r data "$backup_dir/" 2>/dev/null || true
+    # 上传文件
+    cp -r uploads "$backup_dir/" 2>/dev/null || true
+    # 环境变量
+    cp .env "$backup_dir/.env" 2>/dev/null || true
+    # SQLite 热备份，覆盖上面冷拷贝的数据库
+    if [ "$(get_db_type)" = "sqlite" ]; then
+        backup_sqlite "$backup_dir"
+    fi
+    echo "备份已保存到 $backup_dir"
 }
 
 do_update() {
     read -p "确定要更新吗? (y/n): " confirm
-    [ "$confirm" != "y" ] && show_menu
+    if [ "$confirm" != "y" ]; then
+        echo "已取消更新"
+        return
+    fi
 
-    echo "正在备份..."
+    echo "正在停止服务并备份（避免 WAL 模式热拷贝不一致）..."
+    $COMPOSE_CMD down
+
     BACKUP="backup_$(date +%Y%m%d_%H%M%S)"
-    mkdir -p "$BACKUP"
-    cp -r data "$BACKUP/" 2>/dev/null || true
-    cp -r uploads "$BACKUP/" 2>/dev/null || true
-    cp .env "$BACKUP/.env" 2>/dev/null || true
-    echo "备份已保存到 $BACKUP"
+    backup_data "$BACKUP"
 
     echo "正在拉取更新..."
-    git pull origin $(git branch --show-current)
+    git pull origin $(git branch --show-current 2>/dev/null || echo main)
 
     echo "正在修复持久化目录权限..."
     mkdir -p "$DATA_PATH" "$UPLOADS_PATH/avatars" "$UPLOADS_PATH/works"
@@ -200,7 +236,6 @@ do_update() {
 
     echo "正在重新构建..."
     $COMPOSE_CMD build --no-cache
-    $COMPOSE_CMD down
     $COMPOSE_CMD up -d
 
     echo "等待服务启动..."
@@ -219,8 +254,7 @@ do_update() {
         echo "服务未正常响应，最近日志："
         $COMPOSE_CMD logs --tail=120 codedog
     fi
-    read -p "按回车返回菜单..."
-    show_menu
+    wait_enter
 }
 
 do_fix() {
@@ -228,9 +262,10 @@ do_fix() {
     echo "1) 检查数据库状态"
     echo "2) 修复文件权限"
     echo "3) 修复敏感词表"
-    echo "4) 全部修复"
+    echo "4) 清理 SQLite 残留备份表（解决启动崩溃）"
+    echo "5) 全部修复"
     echo ""
-    read -p "请选择 [1-4]: " fix_choice
+    read -p "请选择 [1-5]: " fix_choice
 
     case $fix_choice in
         1)
@@ -249,15 +284,33 @@ do_fix() {
             fi
             ;;
         4)
+            if [ -f "$HOST_DB_PATH" ]; then
+                if command -v sqlite3 >/dev/null 2>&1; then
+                    BACKUP_TABLES=$(sqlite3 "$HOST_DB_PATH" "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE '%_backup';" 2>/dev/null || true)
+                    if [ -n "$BACKUP_TABLES" ]; then
+                        echo "发现残留备份表:"
+                        echo "$BACKUP_TABLES"
+                        echo "$BACKUP_TABLES" | while read -r t; do
+                            [ -n "$t" ] && sqlite3 "$HOST_DB_PATH" "DROP TABLE IF EXISTS \"$t\";" 2>/dev/null && echo "已删除: $t"
+                        done
+                    else
+                        echo "未发现残留备份表"
+                    fi
+                else
+                    echo "sqlite3 未安装，无法清理"
+                fi
+            else
+                echo "数据库文件不存在: $HOST_DB_PATH"
+            fi
+            ;;
+        5)
             mkdir -p "$DATA_PATH" "$UPLOADS_PATH/avatars" "$UPLOADS_PATH/works"
             chmod -R a+rwX "$DATA_PATH" "$UPLOADS_PATH" 2>/dev/null || true
             $COMPOSE_CMD restart codedog
             echo "全部修复完成，已重启服务"
             ;;
     esac
-    echo ""
-    read -p "按回车返回菜单..."
-    show_menu
+    wait_enter
 }
 
 do_database() {
@@ -271,8 +324,13 @@ do_database() {
         1)
             if [ -f "$HOST_DB_PATH" ]; then
                 BACKUP_FILE="$DATA_PATH/backup_$(date +%Y%m%d_%H%M%S).sqlite"
-                cp "$HOST_DB_PATH" "$BACKUP_FILE"
-                echo "备份已保存到: $BACKUP_FILE"
+                if command -v sqlite3 >/dev/null 2>&1; then
+                    sqlite3 "$HOST_DB_PATH" ".backup '$BACKUP_FILE'"
+                    echo "热备份已保存到: $BACKUP_FILE"
+                else
+                    cp "$HOST_DB_PATH" "$BACKUP_FILE"
+                    echo "冷拷贝已保存到: $BACKUP_FILE"
+                fi
             elif $COMPOSE_CMD exec -T codedog test -f "$CONTAINER_DB_PATH" >/dev/null 2>&1; then
                 BACKUP_FILE="$DATA_PATH/backup_$(date +%Y%m%d_%H%M%S).sqlite"
                 $COMPOSE_CMD cp codedog:"$CONTAINER_DB_PATH" "$BACKUP_FILE" && echo "备份已保存到: $BACKUP_FILE"
@@ -294,9 +352,7 @@ do_database() {
             fi
             ;;
     esac
-    echo ""
-    read -p "按回车返回菜单..."
-    show_menu
+    wait_enter
 }
 
 do_sensitive() {
@@ -317,9 +373,7 @@ do_sensitive() {
     else
         show_database_status
     fi
-    echo ""
-    read -p "按回车返回菜单..."
-    show_menu
+    wait_enter
 }
 
 do_config() {
@@ -330,18 +384,14 @@ do_config() {
     else
         echo ".env 文件不存在"
     fi
-    echo ""
-    read -p "按回车返回菜单..."
-    show_menu
+    wait_enter
 }
 
 do_clean() {
     echo "=== 清理缓存 ==="
     docker system prune -f 2>/dev/null
     echo "缓存清理完成"
-    echo ""
-    read -p "按回车返回菜单..."
-    show_menu
+    wait_enter
 }
 
-show_menu
+main_loop

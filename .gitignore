@@ -24,13 +24,22 @@ build/
 *.db
 server/data/
 server/*.sqlite
+data/
 
 # 上传文件（用户数据）
 server/uploads/*
 !server/uploads/.gitkeep
+uploads/
+
+# 自动备份目录
+backup_*/
 
 # 下载的临时文件
 server/downloaded/
+
+# 本地运行时目录
+.codebuddy/
+.data/
 
 # 日志文件
 logs/
