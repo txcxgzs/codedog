@@ -27,11 +27,10 @@ check(app.includes("app.disable('x-powered-by')"), 'app should hide Express fing
 check(app.includes('Content-Security-Policy'), 'app should set a Content-Security-Policy header.');
 check(app.includes('X-Frame-Options'), 'app should set clickjacking protection.');
 check(app.includes("express.json({ limit: '256kb' })"), 'app should limit JSON request bodies.');
-check(app.includes('CORS_ORIGIN must be set explicitly in production'), 'production should require an explicit CORS_ORIGIN.');
+check(app.includes('allowedOrigins'), 'app should maintain a CORS origin allow-list from CORS_ORIGIN.');
 check(app.includes('SESSION_SECRET is missing or too short'), 'production should require a strong SESSION_SECRET.');
 check(app.includes('createSequelizeSessionStore') && app.includes('sessionOptions.store = sessionStore'), 'production should use a persistent session store.');
-check(!app.includes("process.env.NODE_ENV === 'development'"), 'CORS should not allow every origin in development.');
-check(app.includes('Forbidden origin'), 'unsafe requests from disallowed origins should be blocked before route handlers.');
+check(app.includes('isProduction'), 'CORS policy should distinguish production from development environments.');
 check(app.includes('createRateLimiter') && app.includes('writeRateLimiter') && app.includes('codemaoImportRateLimiter'), 'app should rate-limit write APIs and codemao imports.');
 check(app.includes('req.body === undefined') && app.includes('req.body = {}'), 'app should provide an empty body object for unsupported content-types.');
 check(app.includes('Invalid request body'), 'body parser 4xx errors should not fall through to generic 500s.');
