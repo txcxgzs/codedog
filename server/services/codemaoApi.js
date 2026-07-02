@@ -82,7 +82,7 @@ const codemaoApi = {
                 `${CODEMAO_BASE_URL}/creation-tools/v1/works/${workId}`,
                 getAxiosConfig()
             ));
-            return response.data;
+            return codemaoApi.normalizeWorkUrls(response.data);
         } catch (error) {
             console.error('[编程猫] 获取作品详情失败:', error.message);
             return null;
@@ -100,7 +100,11 @@ const codemaoApi = {
                     params: { user_id: userId, offset, limit }
                 })
             );
-            return response.data;
+            const data = response.data;
+            if (data && Array.isArray(data.items)) {
+                data.items = data.items.map(item => codemaoApi.normalizeWorkUrls(item));
+            }
+            return data;
         } catch (error) {
             console.error('[编程猫] 获取用户作品失败:', error.message);
             return null;
@@ -118,7 +122,11 @@ const codemaoApi = {
                     params: { user_id: userId, offset, limit }
                 })
             );
-            return response.data;
+            const data = response.data;
+            if (data && Array.isArray(data.items)) {
+                data.items = data.items.map(item => codemaoApi.normalizeWorkUrls(item));
+            }
+            return data;
         } catch (error) {
             console.error('[编程猫] 获取用户收藏失败:', error.message);
             return null;
@@ -136,7 +144,24 @@ const codemaoApi = {
                     params: { type }
                 })
             );
-            return response.data;
+            const data = response.data;
+            if (data && Array.isArray(data.items)) {
+                data.items = data.items.map(item => {
+                    if (item && typeof item === 'object') {
+                        if (item.background_url && typeof item.background_url === 'string') {
+                            item.background_url = normalizeCodemaoImageUrl(item.background_url);
+                        }
+                        if (item.image_url && typeof item.image_url === 'string') {
+                            item.image_url = normalizeCodemaoImageUrl(item.image_url);
+                        }
+                        if (item.cover_url && typeof item.cover_url === 'string') {
+                            item.cover_url = normalizeCodemaoImageUrl(item.cover_url);
+                        }
+                    }
+                    return item;
+                });
+            }
+            return data;
         } catch (error) {
             console.error('[编程猫] 获取轮播图失败:', error.message);
             return null;
@@ -215,15 +240,15 @@ const codemaoApi = {
     /**
      * 获取所有论坛板块
      */
-    async getForumBoards() {
+    async getWorkInfo(workId) {
         try {
             const response = await axios.get(
-                `${CODEMAO_BASE_URL}/web/forums/boards/simples/all`,
+                `${CODEMAO_BASE_URL}/creation-tools/v1/works/${workId}`,
                 getAxiosConfig()
             );
-            return response.data;
+            return codemaoApi.normalizeWorkUrls(response.data);
         } catch (error) {
-            console.error('[编程猫] 获取论坛板块失败:', error.message);
+            console.error('[编程猫] 获取作品信息失败:', error.message);
             return null;
         }
     },
@@ -273,7 +298,11 @@ const codemaoApi = {
                 `${CODEMAO_BASE_URL}/api/fanfic/list/recommend`,
                 getAxiosConfig()
             );
-            return response.data;
+            const data = response.data;
+            if (data && Array.isArray(data.items)) {
+                data.items = data.items.map(item => codemaoApi.normalizeWorkUrls(item));
+            }
+            return data;
         } catch (error) {
             console.error('[编程猫] 获取推荐小说失败:', error.message);
             return null;
@@ -291,7 +320,11 @@ const codemaoApi = {
                     params: { offset, limit: Math.max(limit, 5) }
                 })
             );
-            return response.data;
+            const data = response.data;
+            if (data && Array.isArray(data.items)) {
+                data.items = data.items.map(item => codemaoApi.normalizeWorkUrls(item));
+            }
+            return data;
         } catch (error) {
             console.error('[编程猫] 获取发现作品失败:', error.message);
             return null;
@@ -316,9 +349,10 @@ const codemaoApi = {
 };
 
 /**
- * 规范化头像 URL：处理相对路径，确保可被前端直接加载
+ * 规范化图片/媒体 URL：处理相对路径，确保可被前端直接加载
+ * 编程猫部分接口返回的是相对路径(如 /app/... 或 //cdn...)，需要补全协议和域名
  */
-function normalizeAvatarUrl(url) {
+function normalizeCodemaoImageUrl(url) {
     if (!url || typeof url !== 'string') return null;
     url = url.trim();
     if (!url) return null;
@@ -326,6 +360,13 @@ function normalizeAvatarUrl(url) {
     if (url.startsWith('//')) return 'https:' + url;   // 协议相对，补全协议
     if (url.startsWith('/')) return 'https://cdn.codemao.cn' + url; // 相对路径，拼接CDN域名
     return url;
+}
+
+/**
+ * 规范化头像 URL（兼容旧函数名）
+ */
+function normalizeAvatarUrl(url) {
+    return normalizeCodemaoImageUrl(url);
 }
 
 /**
@@ -340,10 +381,46 @@ codemaoApi.normalizeCodemaoAvatar = function(rawUserInfo) {
         let val = rawUserInfo[field];
         if (val && typeof val === 'string') {
             val = val.trim();
-            if (val) return normalizeAvatarUrl(val);
+            if (val) return normalizeCodemaoImageUrl(val);
         }
     }
     return null;
+};
+
+/**
+ * 通用：规范化任意图片/媒体 URL
+ */
+codemaoApi.normalizeCodemaoImageUrl = normalizeCodemaoImageUrl;
+
+/**
+ * 规范化作品对象中的图片/播放器 URL
+ * 编程猫不同接口返回的封面字段名不一致(preview/preview_url/cover/cover_url/image_url)，
+ * 且部分接口返回相对路径，需要统一补全为可访问的绝对 URL。
+ */
+codemaoApi.normalizeWorkUrls = function(work) {
+    if (!work || typeof work !== 'object') return work;
+
+    const imageFields = ['preview', 'preview_url', 'cover', 'cover_url', 'image_url', 'picture', 'src'];
+    for (const field of imageFields) {
+        if (work[field] && typeof work[field] === 'string') {
+            work[field] = normalizeCodemaoImageUrl(work[field]);
+        }
+    }
+
+    // player_url / work_url 通常是播放器链接,也做规范化(协议相对路径等)
+    if (work.player_url && typeof work.player_url === 'string') {
+        work.player_url = normalizeCodemaoImageUrl(work.player_url);
+    }
+    if (work.work_url && typeof work.work_url === 'string') {
+        work.work_url = normalizeCodemaoImageUrl(work.work_url);
+    }
+
+    // 嵌套的作者头像也一并规范化
+    if (work.user_info && typeof work.user_info === 'object') {
+        work.user_info.avatar = codemaoApi.normalizeCodemaoAvatar(work.user_info);
+    }
+
+    return work;
 };
 
 module.exports = codemaoApi;

@@ -1060,7 +1060,7 @@ async function crawlWork(req, res) {
                 email: `codemao_${codemaoUserId}@example.invalid`,
                 password: PLACEHOLDER_PASSWORD_HASH,
                 nickname: safeProfile.nickname || `用户${codemaoUserId}`,
-                avatar: userInfo.avatar || null,
+                avatar: codemaoApi.normalizeCodemaoAvatar(userInfo),
                 bio: safeProfile.bio,
                 role: 'user',
                 status: 'active'
@@ -1240,7 +1240,7 @@ async function crawlHotWorks(req, res) {
                                     email: `codemao_${detailAuthorId}@example.invalid`,
                                     password: PLACEHOLDER_PASSWORD_HASH,
                                     nickname: safeProfile.nickname || `用户${detailAuthorId}`,
-                                    avatar: workDetail.user_info?.avatar_url || null,
+                                    avatar: codemaoApi.normalizeCodemaoAvatar(workDetail.user_info),
                                     role: 'user',
                                     status: 'active'
                                 });
@@ -1462,7 +1462,7 @@ async function crawlUserWorks(req, res) {
                     email: `codemao_${userId}@example.invalid`,
                     password: PLACEHOLDER_PASSWORD_HASH,
                     nickname: safeProfile.nickname || `用户${userId}`,
-                    avatar: userInfo?.avatar_url || userInfo?.avatar,
+                    avatar: codemaoApi.normalizeCodemaoAvatar(userInfo),
                     bio: safeProfile.bio,
                     role: 'user',
                     status: 'active'
