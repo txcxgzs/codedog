@@ -9,6 +9,13 @@ INSTALL_DIR="/usr/local/bin"
 
 echo "📦 安装 CodeDog CLI 工具..."
 
+# 修复: 先检查 codedog.sh 是否存在,避免生成无效 wrapper
+if [ ! -f "$SCRIPT_DIR/codedog.sh" ]; then
+    echo "❌ codedog.sh 不存在: $SCRIPT_DIR/codedog.sh"
+    echo "   请在项目根目录运行此脚本,或检查文件是否完整"
+    exit 1
+fi
+
 # 检查是否有 sudo 权限
 if [ "$EUID" -eq 0 ]; then
     SUDO=""
@@ -59,7 +66,11 @@ if command -v $CLI_NAME &> /dev/null; then
     echo "  7) 🛡️  敏感词管理"
     echo "  8) ⚙️  系统配置"
     echo "  9) 🧹 清理缓存"
+    # 修复: 安装成功时返回 0
+    exit 0
 else
     echo "❌ 安装失败，请手动将以下脚本添加到 PATH："
     echo "  $SCRIPT_DIR/codedog.sh"
+    # 修复: 安装失败时返回非 0,便于其他脚本检测
+    exit 1
 fi

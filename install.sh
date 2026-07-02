@@ -180,6 +180,8 @@ SERVER_PORT=3001
 
 # 数据库配置
 DB_TYPE=sqlite
+# SQLite 数据库文件路径(相对于 server 工作目录)
+DB_PATH=./data/database.sqlite
 
 # MySQL配置
 DB_HOST=localhost
@@ -213,12 +215,14 @@ EOF
     # 生成安全密钥
     JWT_SECRET=$(openssl rand -hex 64 2>/dev/null || cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 128 | head -n 1)
     if [ -n "$JWT_SECRET" ]; then
-        sed -i "s/JWT_SECRET=.*/JWT_SECRET=$JWT_SECRET/" .env
+        # 修复: 用 | 作为 sed 分隔符避免密钥含 / 导致替换失败;
+        #       同时处理 .env 里值被引号包裹的情况(如 JWT_SECRET="...")
+        sed -i "s|^JWT_SECRET=.*|JWT_SECRET=$JWT_SECRET|" .env
     fi
 
     SESSION_SECRET=$(openssl rand -hex 32 2>/dev/null || cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 64 | head -n 1)
     if [ -n "$SESSION_SECRET" ]; then
-        sed -i "s/SESSION_SECRET=.*/SESSION_SECRET=$SESSION_SECRET/" .env
+        sed -i "s|^SESSION_SECRET=.*|SESSION_SECRET=$SESSION_SECRET|" .env
     fi
 
     CORS_ORIGIN="http://localhost:8080"
@@ -264,8 +268,8 @@ deploy_docker() {
     $COMPOSE_CMD down 2>/dev/null || true
     
     # 构建并启动
+    # 修复: 不再强制禁用 BuildKit,新版 Docker 用 BuildKit 更快且支持多阶段构建缓存
     print_info "构建并启动容器（首次构建可能需要几分钟）..."
-    export DOCKER_BUILDKIT=0
     $COMPOSE_CMD up -d --build
     
     # 等待服务启动
@@ -292,18 +296,13 @@ deploy_baota() {
     create_env
     create_directories
     
-    # 安装后端依赖
+    # 修复: 用 subshell 执行 cd + npm install,避免 cd 失败后停留在错误目录
+    # 原 set -e 模式下若 npm install 失败会直接退出,但 cd 已改变当前目录影响后续步骤
     print_info "安装后端依赖..."
-    cd server
-    npm install --production
-    cd ..
+    ( cd server && npm install --production ) || { print_error "后端依赖安装失败"; exit 1; }
     
-    # 安装前端依赖并构建
     print_info "安装前端依赖并构建..."
-    cd client
-    npm install
-    npm run build
-    cd ..
+    ( cd client && npm install && npm run build ) || { print_error "前端构建失败"; exit 1; }
     
     print_success "构建完成"
     
@@ -330,20 +329,30 @@ deploy_local() {
     create_env
     create_directories
     
-    # 安装后端依赖
+    # 修复: 用 subshell 执行 cd + npm install,避免 cd 失败后影响后续步骤
     print_info "安装后端依赖..."
-    cd server
-    npm install
-    cd ..
+    ( cd server && npm install ) || { print_error "后端依赖安装失败"; exit 1; }
     
-    # 安装前端依赖并构建
     print_info "安装前端依赖并构建..."
-    cd client
-    npm install
-    npm run build
-    cd ..
+    ( cd client && npm install && npm run build ) || { print_error "前端构建失败"; exit 1; }
     
     print_success "依赖安装完成"
+    
+    # 修复: 启动前检查端口 3001 是否被占用,避免启动多个进程
+    if command_exists lsof; then
+        if lsof -i:3001 >/dev/null 2>&1; then
+            print_warning "端口 3001 已被占用,可能已有服务在运行"
+            print_info "如需重启,请先停止占用进程: lsof -i:3001"
+            print_info "或直接访问 http://localhost:3001"
+            return
+        fi
+    elif command_exists netstat; then
+        if netstat -tlnp 2>/dev/null | grep -q ":3001 "; then
+            print_warning "端口 3001 已被占用,可能已有服务在运行"
+            print_info "如需重启,请先停止占用进程"
+            return
+        fi
+    fi
     
     # 启动后端服务
     print_info "启动后端服务..."
@@ -358,6 +367,7 @@ deploy_local() {
         print_success "后端服务启动成功 (PID: $SERVER_PID)"
     else
         print_warning "后端服务启动中，请稍后访问 http://localhost:3001"
+        print_info "查看日志: tail -f server.log"
     fi
     
     show_result "local"

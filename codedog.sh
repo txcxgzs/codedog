@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # CodeDog 管理工具箱
-VERSION="1.0.1"
+VERSION="1.0.3"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
@@ -133,11 +133,20 @@ show_status() {
 
     echo ""
     echo "健康检查:"
-    HEALTH_LINE=$(docker inspect codedog 2>/dev/null | grep -m1 '"Status":' | sed 's/^[[:space:]]*//' || true)
-    if [ -n "$HEALTH_LINE" ]; then
-        echo "$HEALTH_LINE"
+    # 修复: 之前用 grep '"Status":' 抓的是 State.Status(恒为 running),不是 Healthcheck 状态
+    # 改用 docker inspect --format 直接取 Healthcheck 状态;无 healthcheck 时回退显示容器运行状态
+    HEALTH_STATUS=$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}no-healthcheck{{end}}' codedog 2>/dev/null || true)
+    if [ -n "$HEALTH_STATUS" ]; then
+        if [ "$HEALTH_STATUS" = "no-healthcheck" ]; then
+            echo "Docker Health: 未配置健康检查"
+            # 回退显示容器运行状态
+            CONTAINER_STATE=$(docker inspect --format='{{.State.Status}}' codedog 2>/dev/null || true)
+            [ -n "$CONTAINER_STATE" ] && echo "容器运行状态: $CONTAINER_STATE"
+        else
+            echo "Docker Health: $HEALTH_STATUS"
+        fi
     else
-        echo "Docker Health: 未知"
+        echo "Docker Health: 未知（容器不存在或无法访问）"
     fi
 
     echo ""
@@ -173,14 +182,30 @@ show_logs() {
 
 check_update() {
     echo "=== 检查更新 ==="
-    git fetch origin 2>/dev/null
-    LOCAL=$(git rev-parse HEAD)
-    REMOTE=$(git rev-parse "origin/$(git branch --show-current 2>/dev/null || echo main)" 2>/dev/null)
+    # 修复: 不再吞掉 git fetch 错误,失败时给出明确提示
+    if ! git fetch origin 2>&1; then
+        echo "拉取远程信息失败,请检查网络或 git 远程配置"
+        wait_enter
+        return
+    fi
+
+    CURRENT_BRANCH=$(git branch --show-current 2>/dev/null || echo main)
+    LOCAL=$(git rev-parse HEAD 2>/dev/null)
+    REMOTE=$(git rev-parse "origin/$CURRENT_BRANCH" 2>/dev/null)
+
+    # 修复: REMOTE 为空时不能直接比较,会误报"有新版本"
+    if [ -z "$LOCAL" ] || [ -z "$REMOTE" ]; then
+        echo "无法获取版本信息(LOCAL=$LOCAL, REMOTE=$REMOTE)"
+        echo "请检查 git 仓库状态和远程分支 origin/$CURRENT_BRANCH 是否存在"
+        wait_enter
+        return
+    fi
+
     if [ "$LOCAL" = "$REMOTE" ]; then
-        echo "已是最新版本"
+        echo "已是最新版本 (分支: $CURRENT_BRANCH, commit: ${LOCAL:0:8})"
     else
-        echo "有新版本可用:"
-        git log HEAD..origin/$(git branch --show-current 2>/dev/null || echo main) --oneline --no-merges 2>/dev/null | head -10
+        echo "有新版本可用 (分支: $CURRENT_BRANCH):"
+        git log HEAD..origin/$CURRENT_BRANCH --oneline --no-merges 2>/dev/null | head -10
     fi
     wait_enter
 }
@@ -214,46 +239,235 @@ backup_data() {
     echo "备份已保存到 $backup_dir"
 }
 
+# 清理 SQLite 残留 backup 表(避免 sync alter 残留导致启动崩溃)
+clean_backup_tables() {
+    if [ ! -f "$HOST_DB_PATH" ] || ! command -v sqlite3 >/dev/null 2>&1; then
+        return 0
+    fi
+    local BACKUP_TABLES
+    BACKUP_TABLES=$(sqlite3 "$HOST_DB_PATH" "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE '%_backup';" 2>/dev/null || true)
+    if [ -n "$BACKUP_TABLES" ]; then
+        echo "  发现残留 backup 表:"
+        echo "$BACKUP_TABLES" | sed 's/^/    /'
+        echo "$BACKUP_TABLES" | while read -r t; do
+            [ -n "$t" ] && sqlite3 "$HOST_DB_PATH" "DROP TABLE IF EXISTS \"$t\";" 2>/dev/null && echo "  已删除: $t"
+        done
+    else
+        echo "  无残留 backup 表"
+    fi
+}
+
+# 检测 .env 是否缺少生产必需的环境变量
+check_env_required() {
+    local missing=()
+    if [ ! -f "$SCRIPT_DIR/.env" ]; then
+        echo "  警告: .env 文件不存在"
+        return 1
+    fi
+    # JWT_SECRET / SESSION_SECRET 必填且 >= 32 字符
+    local jwt session
+    jwt=$(get_env_value "JWT_SECRET")
+    session=$(get_env_value "SESSION_SECRET")
+    if [ -z "$jwt" ] || [ ${#jwt} -lt 32 ]; then
+        missing+=("JWT_SECRET(需>=32字符)")
+    fi
+    if [ -z "$session" ] || [ ${#session} -lt 32 ]; then
+        missing+=("SESSION_SECRET(需>=32字符)")
+    fi
+    # 生产环境需要 CORS_ORIGIN
+    local node_env
+    node_env=$(get_env_value "NODE_ENV")
+    if [ "$node_env" = "production" ]; then
+        local cors
+        cors=$(get_env_value "CORS_ORIGIN")
+        if [ -z "$cors" ]; then
+            missing+=("CORS_ORIGIN(生产必需)")
+        fi
+    fi
+    if [ ${#missing[@]} -gt 0 ]; then
+        echo "  缺少必需环境变量:"
+        for m in "${missing[@]}"; do echo "    - $m"; done
+        return 1
+    fi
+    echo "  环境变量检查通过"
+    return 0
+}
+
+# 启动失败时智能诊断: 扫描日志中已知崩溃模式并给出修复建议
+diagnose_startup_failure() {
+    echo "=== 启动失败智能诊断 ==="
+    local LOGS
+    LOGS=$($COMPOSE_CMD logs --tail=80 codedog 2>/dev/null || true)
+
+    # 模式1: SQLite backup 表残留
+    if echo "$LOGS" | grep -qi "SQLITE_ERROR.*backup\|already exists.*backup\|UNIQUE constraint failed: users_backup"; then
+        echo "  [诊断] 检测到 SQLite backup 表残留导致崩溃"
+        echo "  [建议] 执行菜单 5(修复问题) → 选项 4(清理残留备份表)"
+    fi
+
+    # 模式2: JWT/SESSION 缺失
+    if echo "$LOGS" | grep -qi "JWT_SECRET\|SESSION_SECRET.*required\|SESSION_SECRET.*must"; then
+        echo "  [诊断] 检测到 JWT_SECRET 或 SESSION_SECRET 缺失/过短"
+        echo "  [建议] 在 .env 中设置 >=32 字符的 JWT_SECRET 和 SESSION_SECRET"
+    fi
+
+    # 模式3: CORS 缺失
+    if echo "$LOGS" | grep -qi "CORS_ORIGIN.*required\|CORS_ORIGIN.*must"; then
+        echo "  [诊断] 检测到生产环境缺少 CORS_ORIGIN"
+        echo "  [建议] 在 .env 中设置 CORS_ORIGIN=https://你的域名"
+    fi
+
+    # 模式4: getDialectName 旧 bug(已修但可能残留旧镜像)
+    if echo "$LOGS" | grep -qi "getDialectName is not a function"; then
+        echo "  [诊断] 检测到旧版本 Sequelize 适配代码"
+        echo "  [建议] 确认已 git pull 最新代码,并执行 --no-cache 重建"
+    fi
+
+    # 模式5: 端口占用
+    if echo "$LOGS" | grep -qi "EADDRINUSE\|port.*already in use"; then
+        echo "  [诊断] 检测到端口 3001 被占用"
+        echo "  [建议] 执行: lsof -i:3001 或 netstat -tlnp | grep 3001 查找占用进程"
+    fi
+
+    # 模式6: 数据库连接失败
+    if echo "$LOGS" | grep -qi "ECONNREFUSED\|connect ECONNREFUSED.*3306\|database.*connection.*fail"; then
+        echo "  [诊断] 检测到数据库连接失败"
+        echo "  [建议] 检查 DB_TYPE 配置和 MySQL 服务是否运行"
+    fi
+
+    # 模式7: 模块加载失败
+    if echo "$LOGS" | grep -qi "Cannot find module\|MODULE_NOT_FOUND"; then
+        echo "  [诊断] 检测到 Node 模块缺失"
+        echo "  [建议] 确认已 --no-cache 重建镜像; 检查 package.json 是否完整"
+    fi
+
+    echo ""
+    echo "--- 最近 40 行日志 ---"
+    echo "$LOGS" | tail -40
+    echo "---------------------"
+}
+
+# 智能更新: 更新前后自动处理常见"更新后仍异常"的场景
 do_update() {
-    read -p "确定要更新吗? (y/n): " confirm
+    echo "=== 执行更新(智能模式 v$VERSION) ==="
+    echo ""
+    echo "智能更新会自动处理:"
+    echo "  1) 更新前清理 SQLite 残留 backup 表(防启动崩溃)"
+    echo "  2) 更新前检查 .env 必需变量"
+    echo "  3) 更新后失败自动诊断日志"
+    echo "  4) 更新后询问是否执行数据修复脚本"
+    echo ""
+    read -p "开始更新? (y/n): " confirm
     if [ "$confirm" != "y" ]; then
-        echo "已取消更新"
+        echo "已取消"
+        wait_enter
         return
     fi
 
-    echo "正在停止服务并备份（避免 WAL 模式热拷贝不一致）..."
+    # ========== 步骤1: 停服务 + 备份 ==========
+    echo ""
+    echo "[1/8] 停止服务并备份..."
     $COMPOSE_CMD down
-
     BACKUP="backup_$(date +%Y%m%d_%H%M%S)"
     backup_data "$BACKUP"
 
-    echo "正在拉取更新..."
-    git pull origin $(git branch --show-current 2>/dev/null || echo main)
+    # ========== 步骤2: 预检 - 清理残留 backup 表 ==========
+    echo ""
+    echo "[2/8] 预检: 清理 SQLite 残留 backup 表..."
+    if [ "$(get_db_type)" = "sqlite" ]; then
+        clean_backup_tables
+    else
+        echo "  非 SQLite 模式,跳过"
+    fi
 
-    echo "正在修复持久化目录权限..."
+    # ========== 步骤3: 预检 - 环境变量 ==========
+    echo ""
+    echo "[3/8] 预检: 环境变量..."
+    check_env_required || true
+
+    # ========== 步骤4: git pull ==========
+    echo ""
+    echo "[4/8] 拉取更新..."
+    CURRENT_BRANCH=$(git branch --show-current 2>/dev/null || echo main)
+    if ! git pull origin "$CURRENT_BRANCH"; then
+        echo ""
+        echo "git pull 失败! 更新已中止"
+        echo "可能原因: 本地有未提交改动 / 网络问题 / 合并冲突"
+        echo "处理方法:"
+        echo "  1) 备份本地改动后执行: git stash 或 git checkout -- <file>"
+        echo "  2) 重新运行工具箱执行更新"
+        echo ""
+        echo "服务当前已停止,如需启动可执行: $COMPOSE_CMD up -d"
+        wait_enter
+        return 1
+    fi
+
+    # ========== 步骤5: 权限修复 ==========
+    echo ""
+    echo "[5/8] 修复持久化目录权限..."
     mkdir -p "$DATA_PATH" "$UPLOADS_PATH/avatars" "$UPLOADS_PATH/works"
     chmod -R a+rwX "$DATA_PATH" "$UPLOADS_PATH" 2>/dev/null || true
 
-    echo "正在重新构建..."
+    # ========== 步骤6: 重新构建 + 启动 ==========
+    echo ""
+    echo "[6/8] 重新构建并启动..."
     $COMPOSE_CMD build --no-cache
     $COMPOSE_CMD up -d
 
-    echo "等待服务启动..."
+    # ========== 步骤7: 等待启动 + 智能诊断 ==========
+    echo ""
+    echo "[7/8] 等待服务启动..."
     SERVICE_READY=0
     for i in $(seq 1 60); do
         if curl -fs http://localhost:3001/api/health > /dev/null 2>&1; then
             SERVICE_READY=1
-            echo "更新完成，服务已运行!"
+            echo ""
+            echo "服务已就绪"
             break
         fi
         echo -n "."
         sleep 2
     done
     echo ""
+
     if [ "$SERVICE_READY" != "1" ]; then
-        echo "服务未正常响应，最近日志："
-        $COMPOSE_CMD logs --tail=120 codedog
+        echo ""
+        echo "[!] 服务未在 120 秒内响应,进入诊断模式..."
+        diagnose_startup_failure
+        wait_enter
+        return 1
     fi
+
+    # ========== 步骤8: 智能数据修复提示 ==========
+    echo ""
+    echo "[8/8] 数据修复检查..."
+
+    # 检测是否存在 repairImageUrls.js
+    REPAIR_SCRIPT="$SCRIPT_DIR/server/scripts/repairImageUrls.js"
+    if [ -f "$REPAIR_SCRIPT" ]; then
+        echo "  检测到图片 URL 修复脚本: $REPAIR_SCRIPT"
+        echo "  此脚本用于修复历史数据中的图片/头像 URL(反引号包裹、相对路径)"
+        echo "  如果更新涉及图片/头像相关代码,建议执行"
+        echo ""
+        read -p "是否执行数据修复脚本? (y/n,默认n): " run_repair
+        if [ "$run_repair" = "y" ]; then
+            echo "  正在容器内执行修复脚本..."
+            $COMPOSE_CMD exec -T codedog node server/scripts/repairImageUrls.js 2>&1 | head -50
+            echo "  修复脚本执行完成"
+            # 修复后重启以刷新缓存
+            echo "  重启服务以应用修复..."
+            $COMPOSE_CMD restart codedog
+            sleep 3
+        else
+            echo "  已跳过数据修复(可稍后通过菜单 5 或手动执行)"
+        fi
+    else
+        echo "  无数据修复脚本"
+    fi
+
+    echo ""
+    echo "=== 更新完成 ==="
+    echo "更新流程: 备份 → 预检 → 拉取 → 构建 → 启动 → 诊断 → 修复"
     wait_enter
 }
 
@@ -263,9 +477,10 @@ do_fix() {
     echo "2) 修复文件权限"
     echo "3) 修复敏感词表"
     echo "4) 清理 SQLite 残留备份表（解决启动崩溃）"
-    echo "5) 全部修复"
+    echo "5) 执行图片/头像 URL 修复脚本"
+    echo "6) 全部修复"
     echo ""
-    read -p "请选择 [1-5]: " fix_choice
+    read -p "请选择 [1-6]: " fix_choice
 
     case $fix_choice in
         1)
@@ -284,29 +499,68 @@ do_fix() {
             fi
             ;;
         4)
-            if [ -f "$HOST_DB_PATH" ]; then
-                if command -v sqlite3 >/dev/null 2>&1; then
-                    BACKUP_TABLES=$(sqlite3 "$HOST_DB_PATH" "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE '%_backup';" 2>/dev/null || true)
-                    if [ -n "$BACKUP_TABLES" ]; then
-                        echo "发现残留备份表:"
-                        echo "$BACKUP_TABLES"
-                        echo "$BACKUP_TABLES" | while read -r t; do
-                            [ -n "$t" ] && sqlite3 "$HOST_DB_PATH" "DROP TABLE IF EXISTS \"$t\";" 2>/dev/null && echo "已删除: $t"
-                        done
-                    else
-                        echo "未发现残留备份表"
-                    fi
-                else
-                    echo "sqlite3 未安装，无法清理"
-                fi
+            if [ "$(get_db_type)" = "sqlite" ]; then
+                clean_backup_tables
             else
-                echo "数据库文件不存在: $HOST_DB_PATH"
+                echo "非 SQLite 模式,无需清理"
             fi
             ;;
         5)
+            # 新增: 一键执行数据修复脚本(反引号/相对路径)
+            REPAIR_SCRIPT="$SCRIPT_DIR/server/scripts/repairImageUrls.js"
+            if [ ! -f "$REPAIR_SCRIPT" ]; then
+                echo "修复脚本不存在: $REPAIR_SCRIPT"
+                echo "请先 git pull 获取最新代码"
+            elif ! $COMPOSE_CMD ps codedog 2>/dev/null | grep -qi "running"; then
+                echo "容器未运行,请先启动服务: $COMPOSE_CMD up -d"
+            else
+                echo "正在容器内执行修复脚本..."
+                echo "  修复范围: User.avatar / Work.preview / Work.work_url / Post.cover / Studio.cover / Banner.image_url"
+                $COMPOSE_CMD exec -T codedog node server/scripts/repairImageUrls.js 2>&1 | head -80
+                echo ""
+                echo "修复完成,重启服务以刷新缓存..."
+                $COMPOSE_CMD restart codedog
+                sleep 3
+                echo "已重启"
+            fi
+            ;;
+        6)
+            # 修复: 之前的"全部修复"只做了权限修复+重启,未执行其他修复项
+            # 现在依次执行: 权限修复 → 清理残留备份表 → 敏感词表检查 → 数据修复 → 重启
+            echo "[1/5] 修复文件权限..."
             mkdir -p "$DATA_PATH" "$UPLOADS_PATH/avatars" "$UPLOADS_PATH/works"
             chmod -R a+rwX "$DATA_PATH" "$UPLOADS_PATH" 2>/dev/null || true
+            echo "  权限修复完成"
+
+            echo "[2/5] 清理 SQLite 残留备份表..."
+            if [ "$(get_db_type)" = "sqlite" ]; then
+                clean_backup_tables
+            else
+                echo "  非 SQLite 模式,跳过"
+            fi
+
+            echo "[3/5] 检查敏感词表..."
+            if [ -f "$HOST_DB_PATH" ] && command -v sqlite3 >/dev/null 2>&1; then
+                if sqlite3 "$HOST_DB_PATH" "SELECT COUNT(*) FROM sensitive_words" >/dev/null 2>&1; then
+                    echo "  敏感词表正常"
+                else
+                    echo "  警告: 敏感词表无法读取,请检查数据库"
+                fi
+            else
+                echo "  跳过(数据库文件不存在或 sqlite3 未安装)"
+            fi
+
+            echo "[4/5] 执行图片/头像 URL 修复..."
+            REPAIR_SCRIPT="$SCRIPT_DIR/server/scripts/repairImageUrls.js"
+            if [ -f "$REPAIR_SCRIPT" ] && $COMPOSE_CMD ps codedog 2>/dev/null | grep -qi "running"; then
+                $COMPOSE_CMD exec -T codedog node server/scripts/repairImageUrls.js 2>&1 | tail -10
+            else
+                echo "  跳过(脚本不存在或容器未运行)"
+            fi
+
+            echo "[5/5] 重启服务..."
             $COMPOSE_CMD restart codedog
+            echo ""
             echo "全部修复完成，已重启服务"
             ;;
     esac
@@ -379,8 +633,19 @@ do_sensitive() {
 do_config() {
     echo "=== 系统配置 ==="
     if [ -f "$SCRIPT_DIR/.env" ]; then
-        echo "当前配置:"
-        sed -E 's/^(JWT_SECRET|SESSION_SECRET)=.*/\1=******/' "$SCRIPT_DIR/.env"
+        echo "当前配置(敏感信息已脱敏):"
+        # 修复: 之前只脱敏 JWT_SECRET/SESSION_SECRET,遗漏了 DB_PASSWORD、代理凭据、API key 等
+        # 现在覆盖所有常见敏感字段(密码/密钥/代理/令牌)
+        sed -E \
+            -e 's/^(JWT_SECRET|SESSION_SECRET)=.*/\1=******/' \
+            -e 's/^(DB_PASSWORD|MYSQL_PASSWORD|DATABASE_PASSWORD)=.*/\1=******/' \
+            -e 's/^(REDIS_PASSWORD)=.*/\1=******/' \
+            -e 's/^(HTTPS_PROXY|HTTP_PROXY|ALL_PROXY)=.*/\1=******/' \
+            -e 's/^([A-Z_]*_API_KEY)=.*/\1=******/' \
+            -e 's/^([A-Z_]*_SECRET)=.*/\1=******/' \
+            -e 's/^([A-Z_]*_TOKEN)=.*/\1=******/' \
+            -e 's/^(GEECAPTCHA_ID|GEECAPTCHA_KEY|HCAPTCHA_SECRET|HCAPTCHA_SITEKEY)=.*/\1=******/' \
+            "$SCRIPT_DIR/.env"
     else
         echo ".env 文件不存在"
     fi
@@ -389,9 +654,44 @@ do_config() {
 
 do_clean() {
     echo "=== 清理缓存 ==="
+    echo "将执行: docker system prune -f"
+    echo "此操作会删除所有未使用的镜像、容器、网络,释放磁盘空间"
+    echo "注意: 不会删除已命名的数据卷(如数据库卷)"
+    read -p "确认清理? (y/n): " clean_confirm
+    if [ "$clean_confirm" != "y" ]; then
+        echo "已取消"
+        wait_enter
+        return
+    fi
     docker system prune -f 2>/dev/null
     echo "缓存清理完成"
     wait_enter
 }
 
-main_loop
+# 支持 CLI 直接调用: bash codedog.sh <功能名>
+# 例: bash codedog.sh update  → 直接执行更新(智能模式)
+#     bash codedog.sh status  → 直接查看系统状态
+#     bash codedog.sh fix     → 进入修复菜单
+# 不带参数则进入交互式主循环
+dispatch_cli() {
+    local cmd="$1"
+    case "$cmd" in
+        update)  do_update ;;
+        status)  show_status ;;
+        logs)    show_logs ;;
+        check)   check_update ;;
+        fix)     do_fix ;;
+        db)      do_database ;;
+        sensitive) do_sensitive ;;
+        config)  do_config ;;
+        clean)   do_clean ;;
+        ""|menu) main_loop ;;
+        *)
+            echo "未知命令: $cmd"
+            echo "可用命令: update status logs check fix db sensitive config clean menu"
+            exit 1
+            ;;
+    esac
+}
+
+dispatch_cli "$1"
