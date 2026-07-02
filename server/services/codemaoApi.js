@@ -94,12 +94,12 @@ const codemaoApi = {
      */
     async getUserWorks(userId, offset = 0, limit = 20) {
         try {
-            const response = await axios.get(
+            const response = await requestWithRetry(() => axios.get(
                 `${CODEMAO_BASE_URL}/creation-tools/v1/user/center/work-list`,
                 getAxiosConfig({
                     params: { user_id: userId, offset, limit }
                 })
-            );
+            ));
             const data = response.data;
             if (data && Array.isArray(data.items)) {
                 data.items = data.items.map(item => codemaoApi.normalizeWorkUrls(item));
@@ -116,12 +116,12 @@ const codemaoApi = {
      */
     async getUserCollections(userId, offset = 0, limit = 20) {
         try {
-            const response = await axios.get(
+            const response = await requestWithRetry(() => axios.get(
                 `${CODEMAO_BASE_URL}/creation-tools/v1/user/center/collect/list`,
                 getAxiosConfig({
                     params: { user_id: userId, offset, limit }
                 })
-            );
+            ));
             const data = response.data;
             if (data && Array.isArray(data.items)) {
                 data.items = data.items.map(item => codemaoApi.normalizeWorkUrls(item));
@@ -138,12 +138,12 @@ const codemaoApi = {
      */
     async getBanners(type = 'OFFICIAL') {
         try {
-            const response = await axios.get(
+            const response = await requestWithRetry(() => axios.get(
                 `${CODEMAO_BASE_URL}/web/banners/all`,
                 getAxiosConfig({
                     params: { type }
                 })
-            );
+            ));
             const data = response.data;
             if (data && Array.isArray(data.items)) {
                 data.items = data.items.map(item => {
@@ -224,12 +224,12 @@ const codemaoApi = {
      */
     async getUserInfo(userId) {
         try {
-            const response = await axios.get(
+            const response = await requestWithRetry(() => axios.get(
                 `${CODEMAO_BASE_URL}/tiger/v3/web/accounts/info`,
                 getAxiosConfig({
                     params: { user_id: userId }
                 })
-            );
+            ));
             return response.data;
         } catch (error) {
             console.error('[编程猫] 获取用户信息失败:', error.message);
@@ -242,10 +242,10 @@ const codemaoApi = {
      */
     async getWorkInfo(workId) {
         try {
-            const response = await axios.get(
+            const response = await requestWithRetry(() => axios.get(
                 `${CODEMAO_BASE_URL}/creation-tools/v1/works/${workId}`,
                 getAxiosConfig()
-            );
+            ));
             return codemaoApi.normalizeWorkUrls(response.data);
         } catch (error) {
             console.error('[编程猫] 获取作品信息失败:', error.message);
@@ -258,12 +258,12 @@ const codemaoApi = {
      */
     async getBoardPosts(boardId, page = 1, pageSize = 20) {
         try {
-            const response = await axios.get(
+            const response = await requestWithRetry(() => axios.get(
                 `${CODEMAO_BASE_URL}/web/forums/boards/${boardId}/posts`,
                 getAxiosConfig({
                     params: { page, page_size: pageSize }
                 })
-            );
+            ));
             return response.data;
         } catch (error) {
             console.error('[编程猫] 获取帖子列表失败:', error.message);
@@ -276,12 +276,12 @@ const codemaoApi = {
      */
     async searchPosts(keyword, page = 1, pageSize = 20) {
         try {
-            const response = await axios.get(
+            const response = await requestWithRetry(() => axios.get(
                 `${CODEMAO_BASE_URL}/web/forums/posts/search`,
                 getAxiosConfig({
                     params: { q: keyword, page, page_size: pageSize }
                 })
-            );
+            ));
             return response.data;
         } catch (error) {
             console.error('[编程猫] 搜索帖子失败:', error.message);
@@ -294,10 +294,10 @@ const codemaoApi = {
      */
     async getRecommendFanfics() {
         try {
-            const response = await axios.get(
+            const response = await requestWithRetry(() => axios.get(
                 `${CODEMAO_BASE_URL}/api/fanfic/list/recommend`,
                 getAxiosConfig()
-            );
+            ));
             const data = response.data;
             if (data && Array.isArray(data.items)) {
                 data.items = data.items.map(item => codemaoApi.normalizeWorkUrls(item));
@@ -314,12 +314,12 @@ const codemaoApi = {
      */
     async getDiscoverWorks(offset = 0, limit = 20) {
         try {
-            const response = await axios.get(
+            const response = await requestWithRetry(() => axios.get(
                 `${CODEMAO_BASE_URL}/creation-tools/v1/pc/discover/subject-work`,
                 getAxiosConfig({
                     params: { offset, limit: Math.max(limit, 5) }
                 })
-            );
+            ));
             const data = response.data;
             if (data && Array.isArray(data.items)) {
                 data.items = data.items.map(item => codemaoApi.normalizeWorkUrls(item));
@@ -336,10 +336,10 @@ const codemaoApi = {
      */
     async getWorkInfo(workId) {
         try {
-            const response = await axios.get(
+            const response = await requestWithRetry(() => axios.get(
                 `${CODEMAO_BASE_URL}/creation-tools/v1/works/${workId}`,
                 getAxiosConfig()
-            );
+            ));
             return response.data;
         } catch (error) {
             console.error('[编程猫] 获取作品信息失败:', error.message);

@@ -125,7 +125,8 @@ async function getPosts(req, res) {
         const category = req.query.category || '';
         const keyword = req.query.keyword || '';
         const sortBy = req.query.sortBy || 'latest';
-        const isTop = req.query.isTop;
+        // 规范化 isTop 参数：统一转小写字符串，兼容 'true'/'1'/'yes' 等多种写法，避免布尔/数字类型差异导致判断失效
+        const isTopVal = String(req.query.isTop || '').toLowerCase();
         
         // 统一使用 'published' 状态
         const where = { status: 'published' };
@@ -138,7 +139,7 @@ async function getPosts(req, res) {
             where.category = category;
         }
 
-        if (isTop === 'true') {
+        if (isTopVal === 'true' || isTopVal === '1' || isTopVal === 'yes') {
             where.is_top = true;
         }
         

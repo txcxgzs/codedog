@@ -100,6 +100,9 @@ function shouldPromoteInitialAdmin(req, codemaoUserId, userCount) {
         console.warn('[SECURITY] 开发模式：首个用户将自动提升为超级管理员。生产环境请勿设置 ALLOW_FIRST_USER_SUPERADMIN=true');
         return true;
     }
+
+    // 显式返回 false，避免遗漏提升条件时返回 undefined 被当作真值误判
+    return false;
 }
 
 /**

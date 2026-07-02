@@ -6,7 +6,7 @@ const { errorResponse } = require('./response');
  * 避免在未配置 trust proxy 时被伪造 XFF 头绕过限流
  */
 function getClientIp(req) {
-    return req.ip || req.connection?.remoteAddress || 'unknown';
+    return req.ip || req.socket?.remoteAddress || 'unknown';
 }
 
 /**
