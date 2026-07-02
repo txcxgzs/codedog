@@ -356,6 +356,11 @@ function normalizeCodemaoImageUrl(url) {
     if (!url || typeof url !== 'string') return null;
     url = url.trim();
     if (!url) return null;
+    // 去除首尾反引号（编程猫部分接口返回的URL被 Markdown 代码块标记包裹）
+    while (url.startsWith('`') || url.endsWith('`')) {
+        url = url.replace(/^`+/, '').replace(/`+$/, '').trim();
+        if (!url) return null;
+    }
     if (/^https?:\/\//i.test(url)) return url;        // 完整URL，直接返回
     if (url.startsWith('//')) return 'https:' + url;   // 协议相对，补全协议
     if (url.startsWith('/')) return 'https://cdn.codemao.cn' + url; // 相对路径，拼接CDN域名

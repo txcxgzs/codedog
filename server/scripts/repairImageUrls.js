@@ -1,6 +1,7 @@
 /**
- * 修复历史数据中的相对路径图片 URL
- * 将以 / 或 // 开头的相对路径补全为 https://cdn.codemao.cn 开头的绝对 URL
+ * 修复历史数据中的图片 URL
+ * 1. 去除首尾反引号（编程猫部分接口返回被 Markdown 代码块标记包裹的 URL）
+ * 2. 将相对路径补全为绝对 URL
  *
  * 用法: node scripts/repairImageUrls.js
  */
@@ -11,6 +12,11 @@ function normalizeUrl(url) {
     if (!url || typeof url !== 'string') return url;
     url = url.trim();
     if (!url) return url;
+    // 去除首尾反引号
+    while (url.startsWith('`') || url.endsWith('`')) {
+        url = url.replace(/^`+/, '').replace(/`+$/, '').trim();
+        if (!url) return url;
+    }
     if (/^https?:\/\//i.test(url)) return url;       // 已是绝对 URL
     if (url.startsWith('//')) return 'https:' + url;  // 协议相对
     if (url.startsWith('/')) return 'https://cdn.codemao.cn' + url; // 相对路径
