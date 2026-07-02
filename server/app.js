@@ -78,7 +78,7 @@ function resolveSessionSecret() {
 }
 
 async function ensureInitialSuperadmin() {
-    const autoPromote = process.env.AUTO_FIRST_USER_SUPERADMIN !== 'false';
+    const autoPromote = process.env.AUTO_FIRST_USER_SUPERADMIN === 'true';
     if (!autoPromote) return;
 
     const userCount = await DbAdapter.count(User, {});

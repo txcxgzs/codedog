@@ -15,7 +15,7 @@ async function logOperation(req, action, targetType = null, targetId = null, det
             target_type: targetType,
             target_id: targetId,
             details: details ? JSON.stringify(details) : null,
-            ip_address: req.ip || req.headers['x-forwarded-for'] || req.connection?.remoteAddress,
+            ip_address: req.ip || req.socket?.remoteAddress || 'unknown',
             user_agent: req.headers['user-agent']
         });
     } catch (error) {

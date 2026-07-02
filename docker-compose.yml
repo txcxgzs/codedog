@@ -9,6 +9,7 @@ services:
     volumes:
       - ./data:/app/server/data
       - ./uploads:/app/server/uploads
+      - ./.data:/app/.data
     env_file:
       - .env
     environment:
@@ -23,8 +24,8 @@ services:
       - JWT_SECRET=${JWT_SECRET}
       - JWT_EXPIRES_IN=${JWT_EXPIRES_IN:-7d}
       - SESSION_SECRET=${SESSION_SECRET}
-      - CORS_ORIGIN=${CORS_ORIGIN:-auto}
-      - TRUST_PROXY=${TRUST_PROXY:-true}
+      - CORS_ORIGIN=${CORS_ORIGIN:-}
+      - TRUST_PROXY=${TRUST_PROXY:-false}
     restart: unless-stopped
     mem_limit: 512m
     cpus: '1.0'
