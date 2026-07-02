@@ -160,8 +160,17 @@ async function codemaoLogin(req, res, identity, password) {
         
         const codemaoUser = codemaoRes.user_info;
         const codemaoToken = codemaoRes.auth?.token || codemaoRes.token || null;
-        
-        // (报告3 #1) 新用户创建同样需走审核+转义，避免绕过本地内容审核与 XSS
+
+        // 诊断日志:打印编程猫返回的 user_info 字段名和疑似头像字段值，
+        // 用于确认不同接口头像字段名(avatar_url / avatar / portrait 等)
+        console.log('[codemaoLogin] user_info 字段:', Object.keys(codemaoUser || {}));
+        console.log('[codemaoLogin] 头像候选:', {
+            avatar_url: codemaoUser?.avatar_url,
+            avatar: codemaoUser?.avatar,
+            portrait: codemaoUser?.portrait,
+            resolved: codemaoApi.normalizeCodemaoAvatar(codemaoUser)
+        });
+
         // 与 updateProfile / 已存在用户路径保持一致：先对原始文本审核，审核通过才转义落库
         const newRawNickname = codemaoUser.nickname != null ? String(codemaoUser.nickname).trim() : '';
         const newRawBio = codemaoUser.description != null ? String(codemaoUser.description).trim() : '';
@@ -196,7 +205,7 @@ async function codemaoLogin(req, res, identity, password) {
                     email: codemaoRes.auth?.email || `codemao_${codemaoUser.id}@example.invalid`,
                     password: PLACEHOLDER_PASSWORD_HASH,
                     nickname: safeNickname,
-                    avatar: codemaoUser.avatar_url || codemaoUser.avatar,
+                    avatar: codemaoApi.normalizeCodemaoAvatar(codemaoUser),
                     bio: safeBio,
                     codemao_token: codemaoToken,
                     role: 'user',
@@ -242,7 +251,7 @@ async function codemaoLogin(req, res, identity, password) {
 
             const rawNickname = codemaoUser.nickname != null ? String(codemaoUser.nickname).trim() : '';
             const rawBio = codemaoUser.description != null ? String(codemaoUser.description).trim() : '';
-            const codemaoAvatar = codemaoUser.avatar_url || codemaoUser.avatar || null;
+            const codemaoAvatar = codemaoApi.normalizeCodemaoAvatar(codemaoUser);
 
             // 先对原始（未转义）文本做内容审核，与 updateProfile 顺序保持一致
             const reviewText = [rawNickname, rawBio].filter(v => v).join('\n');

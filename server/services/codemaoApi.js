@@ -315,4 +315,35 @@ const codemaoApi = {
     }
 };
 
+/**
+ * 规范化头像 URL：处理相对路径，确保可被前端直接加载
+ */
+function normalizeAvatarUrl(url) {
+    if (!url || typeof url !== 'string') return null;
+    url = url.trim();
+    if (!url) return null;
+    if (/^https?:\/\//i.test(url)) return url;        // 完整URL，直接返回
+    if (url.startsWith('//')) return 'https:' + url;   // 协议相对，补全协议
+    if (url.startsWith('/')) return 'https://cdn.codemao.cn' + url; // 相对路径，拼接CDN域名
+    return url;
+}
+
+/**
+ * 从编程猫 API 响应对象中提取头像 URL
+ * 编程猫不同接口(login/getUserInfo/discover/getWorkDetail)返回的 user_info
+ * 头像字段名不一致(avatar_url / avatar / portrait 等)，此函数穷举所有可能字段名
+ */
+codemaoApi.normalizeCodemaoAvatar = function(rawUserInfo) {
+    if (!rawUserInfo || typeof rawUserInfo !== 'object') return null;
+    const avatarFields = ['avatar_url', 'avatar', 'portrait', 'portrait_url', 'head_icon', 'head_icon_url', 'head_url', 'avatar_path'];
+    for (const field of avatarFields) {
+        let val = rawUserInfo[field];
+        if (val && typeof val === 'string') {
+            val = val.trim();
+            if (val) return normalizeAvatarUrl(val);
+        }
+    }
+    return null;
+};
+
 module.exports = codemaoApi;

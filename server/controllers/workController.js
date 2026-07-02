@@ -8,7 +8,7 @@ const { Op } = require('sequelize');
 const DbAdapter = require('../utils/dbAdapter');
 const codemaoApi = require('../services/codemaoApi');
 const { isRoleAtLeast } = require('../config/permissions');
-const { likeContains, escapeHtml } = require('../utils/security');
+const { likeContains } = require('../utils/security');
 // H12: 引入内容审核服务，落库前做敏感词检查
 const aiReview = require('../services/aiReview');
 // P0: 与 adminController 保持一致，爬虫创建虚拟用户时使用合法的占位密码哈希
@@ -160,9 +160,9 @@ async function ensureCodemaoUser(userInfo) {
             email: `codemao_${userInfo.id}@example.invalid`,
             // 修复: 使用合法的 bcrypt 占位哈希，避免非法字符串导致校验异常
             password: PLACEHOLDER_PASSWORD_HASH,
-            nickname: (!blocked && rawNickname) ? escapeHtml(rawNickname) : null,
-            avatar: userInfo.avatar,
-            bio: (!blocked && rawBio) ? escapeHtml(rawBio) : null,
+            nickname: (!blocked && rawNickname) ? rawNickname : null,
+            avatar: codemaoApi.normalizeCodemaoAvatar(userInfo),
+            bio: (!blocked && rawBio) ? rawBio : null,
             role: 'user',
             status: 'active'
         });

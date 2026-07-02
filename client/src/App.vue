@@ -60,7 +60,9 @@
             
             <el-dropdown trigger="click" @command="handleCommand">
               <div class="c-navigator--user_info">
-                <el-avatar :size="32" :src="userStore.user?.avatar || defaultAvatar" />
+                <el-avatar :size="32" :src="userStore.user?.avatar || defaultAvatar">
+                  {{ (userStore.user?.nickname || userStore.user?.username || '狗').charAt(0) }}
+                </el-avatar>
                 <span class="c-navigator--username">{{ userStore.user?.nickname || userStore.user?.username }}</span>
                 <el-icon class="el-icon--right"><CaretBottom /></el-icon>
               </div>

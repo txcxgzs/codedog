@@ -46,7 +46,7 @@ async function fetchAndSaveWork(workId) {
                     // M17: 生成合法 bcrypt 哈希（占位密码无法通过任何登录校验，但格式合法避免 bcrypt.compare 报错）
                     password: bcrypt.hashSync('seed-user-' + codemaoUserId + '-' + Date.now(), 10),
                     nickname: data.user_info.nickname,
-                    avatar: data.user_info.avatar,
+                    avatar: codemaoApi.normalizeCodemaoAvatar(data.user_info),
                     bio: data.user_info.description,
                     role: 'user',
                     status: 'active'

@@ -1200,8 +1200,8 @@ async function crawlHotWorks(req, res) {
                                 email: `codemao_${item.user_id}@example.invalid`,
                                 password: PLACEHOLDER_PASSWORD_HASH,
                                 nickname: safeProfile.nickname || `用户${item.user_id}`,
-                                avatar: item.avatar_url,
-                                role: 'user',
+                                avatar: codemaoApi.normalizeCodemaoAvatar(item),
+                role: 'user',
                                 status: 'active'
                             });
                         } catch (userCreateError) {
