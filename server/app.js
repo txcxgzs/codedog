@@ -276,7 +276,7 @@ async function startServer() {
 
         // 启动前兜底：清理 SQLite 中残留的 Sequelize 临时/备份表
         // 这些表通常是上一次 alter 中断遗留，会阻塞后续启动。
-        if (isProduction && sequelize.getDialectName() === 'sqlite') {
+        if (isProduction && sequelize.options.dialect === 'sqlite') {
             try {
                 const backupTables = await sequelize.query(
                     "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE '%_backup'",
