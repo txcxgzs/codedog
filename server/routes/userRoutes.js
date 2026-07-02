@@ -2,6 +2,7 @@ const express = require('express');
 const multer = require('multer');
 const fs = require('fs');
 const path = require('path');
+const sharp = require('sharp');
 const router = express.Router();
 const userController = require('../controllers/userController');
 const { authMiddleware } = require('../middleware/auth');
@@ -57,7 +58,7 @@ function hasAllowedImageSignature(filePath, mimetype) {
     return false;
 }
 
-function validateAvatarUpload(req, res, next) {
+async function validateAvatarUpload(req, res, next) {
     if (!req.file) {
         return next();
     }
@@ -67,6 +68,28 @@ function validateAvatarUpload(req, res, next) {
             fs.unlink(req.file.path, () => {});
             return errorResponse(res, '仅支持 JPG、PNG、WebP 格式头像，暂不支持 GIF 头像', 400);
         }
+
+        // 魔数校验通过后，使用 sharp 重新编码图片：
+        // - 裁剪为 512x512 居中封面，统一尺寸
+        // - 重新编码为 JPEG（mozjpeg 优化），剥离元数据与潜在恶意载荷
+        // - 重编码失败时降级保留原图（不阻断流程），仅记录日志
+        try {
+            const filePath = req.file.path;
+            const processedBuffer = await sharp(filePath)
+                .resize(512, 512, { fit: 'cover', position: 'center' })
+                .jpeg({ quality: 85, mozjpeg: true })
+                .toBuffer();
+            const newPath = filePath.replace(/\.(jpg|jpeg|png|webp|gif)$/i, '.jpg');
+            fs.writeFileSync(newPath, processedBuffer);
+            if (newPath !== filePath) {
+                fs.unlinkSync(filePath);
+                req.file.path = newPath;
+                req.file.filename = req.file.filename.replace(/\.(jpg|jpeg|png|webp|gif)$/i, '.jpg');
+            }
+        } catch (err) {
+            console.error('[Avatar] sharp 重编码失败，保留原图:', err.message);
+        }
+
         next();
     } catch (error) {
         fs.unlink(req.file.path, () => {});

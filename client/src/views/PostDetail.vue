@@ -728,7 +728,7 @@ $border-color: #eee;
       font-size: 12px;
       padding: 2px 8px;
       background: rgba($primary-color, 0.2);
-      color: darken($primary-color, 20%);
+      color: color.adjust($primary-color, $lightness: -20%);
       border-radius: 4px;
     }
   }
