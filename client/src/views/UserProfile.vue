@@ -5,7 +5,7 @@
       <div class="r-user--profile_card">
         <div class="r-user--cover"></div>
         <div class="r-user--profile_content">
-          <img :src="user.avatar || defaultAvatar" class="r-user--avatar" />
+          <AppImage :src="user.avatar || defaultAvatar" :fallback="defaultAvatar" class="r-user--avatar" />
           <div class="r-user--info">
             <div class="r-user--name_row">
               <h1 class="r-user--nickname">{{ user.nickname || user.username }}</h1>
@@ -107,7 +107,7 @@
           <el-tab-pane :label="`粉丝 ${user.follower_count || 0}`" name="followers">
             <div class="r-user--user_list" v-loading="loadingFollowers">
               <div v-for="u in followers" :key="u.id" class="r-user--user_item" @click="$router.push(`/user/${u.codemao_user_id}`)">
-                <img :src="u.avatar || defaultAvatar" class="r-user--user_avatar" />
+                <AppImage :src="u.avatar || defaultAvatar" :fallback="defaultAvatar" class="r-user--user_avatar" />
                 <div class="r-user--user_info">
                   <span class="r-user--user_name">{{ u.nickname || u.username }}</span>
                   <span class="r-user--user_bio">{{ u.bio || '暂无简介' }}</span>
@@ -124,7 +124,7 @@
           <el-tab-pane :label="`关注 ${user.following_count || 0}`" name="following">
             <div class="r-user--user_list" v-loading="loadingFollowing">
               <div v-for="u in following" :key="u.id" class="r-user--user_item" @click="$router.push(`/user/${u.codemao_user_id}`)">
-                <img :src="u.avatar || defaultAvatar" class="r-user--user_avatar" />
+                <AppImage :src="u.avatar || defaultAvatar" :fallback="defaultAvatar" class="r-user--user_avatar" />
                 <div class="r-user--user_info">
                   <span class="r-user--user_name">{{ u.nickname || u.username }}</span>
                   <span class="r-user--user_bio">{{ u.bio || '暂无简介' }}</span>
@@ -154,6 +154,7 @@ import { workApi } from '@/api/work'
 import { favoriteApi } from '@/api/favorite'
 import { followApi } from '@/api/follow'
 import { ElMessage } from 'element-plus'
+import AppImage from '@/components/AppImage.vue'
 
 const route = useRoute()
 const router = useRouter()

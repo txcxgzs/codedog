@@ -553,17 +553,22 @@ do_fix() {
             if [ ! -f "$REPAIR_SCRIPT" ]; then
                 echo "修复脚本不存在: $REPAIR_SCRIPT"
                 echo "请先 git pull 获取最新代码"
-            elif ! $COMPOSE_CMD ps codedog 2>/dev/null | grep -qi "running"; then
-                echo "容器未运行,请先启动服务: $COMPOSE_CMD up -d"
             else
-                echo "正在容器内执行修复脚本..."
-                echo "  修复范围: User.avatar / Work.preview / Work.work_url / Post.cover / Studio.cover / Banner.image_url"
-                $COMPOSE_CMD exec -T codedog node server/scripts/repairImageUrls.js 2>&1 | head -80
-                echo ""
-                echo "修复完成,重启服务以刷新缓存..."
-                $COMPOSE_CMD restart codedog
-                sleep 3
-                echo "已重启"
+                # 修复: docker compose ps 的 STATUS 列是 "Up X minutes (healthy)"，不含 "running" 字样
+                # 改用 docker inspect 取 State.Status，与 show_status 中的健康检查逻辑一致
+                CONTAINER_STATE=$(docker inspect --format='{{.State.Status}}' codedog 2>/dev/null || true)
+                if [ "$CONTAINER_STATE" != "running" ]; then
+                    echo "容器未运行(状态: ${CONTAINER_STATE:-不存在}),请先启动服务: $COMPOSE_CMD up -d"
+                else
+                    echo "正在容器内执行修复脚本..."
+                    echo "  修复范围: User.avatar / Work.preview / Work.work_url / Post.cover / Studio.cover / Banner.image_url"
+                    $COMPOSE_CMD exec -T codedog node server/scripts/repairImageUrls.js 2>&1 | head -80
+                    echo ""
+                    echo "修复完成,重启服务以刷新缓存..."
+                    $COMPOSE_CMD restart codedog
+                    sleep 3
+                    echo "已重启"
+                fi
             fi
             ;;
         6)
@@ -594,10 +599,12 @@ do_fix() {
 
             echo "[4/5] 执行图片/头像 URL 修复..."
             REPAIR_SCRIPT="$SCRIPT_DIR/server/scripts/repairImageUrls.js"
-            if [ -f "$REPAIR_SCRIPT" ] && $COMPOSE_CMD ps codedog 2>/dev/null | grep -qi "running"; then
+            # 修复: 同选项5，docker compose ps 的 STATUS 列不含 "running"，改用 docker inspect
+            CONTAINER_STATE_4=$(docker inspect --format='{{.State.Status}}' codedog 2>/dev/null || true)
+            if [ -f "$REPAIR_SCRIPT" ] && [ "$CONTAINER_STATE_4" = "running" ]; then
                 $COMPOSE_CMD exec -T codedog node server/scripts/repairImageUrls.js 2>&1 | tail -10
             else
-                echo "  跳过(脚本不存在或容器未运行)"
+                echo "  跳过(脚本不存在或容器未运行,状态: ${CONTAINER_STATE_4:-不存在})"
             fi
 
             echo "[5/5] 重启服务..."

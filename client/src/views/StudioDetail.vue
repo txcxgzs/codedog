@@ -95,7 +95,7 @@
           <div class="r-studio-detail--members">
             <div class="r-studio-detail--member_list">
               <div v-for="member in members" :key="member.id" class="r-studio-detail--member_item">
-                <img :src="member.avatar || defaultAvatar" class="r-studio-detail--member_avatar" />
+                <AppImage :src="member.avatar || defaultAvatar" :fallback="defaultAvatar" class="r-studio-detail--member_avatar" />
                 <div class="r-studio-detail--member_info">
                   <span class="r-studio-detail--member_name">{{ member.nickname || member.username }}</span>
                   <el-tag size="small" :type="member.memberRole === 'owner' ? 'danger' : member.memberRole === 'vice_owner' ? 'success' : member.memberRole === 'admin' ? 'warning' : 'info'">
@@ -155,7 +155,7 @@
             <el-table-column label="用户" min-width="150">
               <template #default="{ row }">
                 <div style="display: flex; align-items: center; gap: 8px;">
-                  <img :src="row.user?.avatar || defaultAvatar" style="width: 32px; height: 32px; border-radius: 50%;" />
+                  <AppImage :src="row.user?.avatar || defaultAvatar" :fallback="defaultAvatar" style="width: 32px; height: 32px; border-radius: 50%;" />
                   <span>{{ row.user?.nickname || row.user?.username }}</span>
                 </div>
               </template>
@@ -204,7 +204,7 @@
             <el-table-column label="成员" min-width="150">
               <template #default="{ row }">
                 <div style="display: flex; align-items: center; gap: 8px;">
-                  <img :src="row.avatar || defaultAvatar" style="width: 32px; height: 32px; border-radius: 50%;" />
+                  <AppImage :src="row.avatar || defaultAvatar" :fallback="defaultAvatar" style="width: 32px; height: 32px; border-radius: 50%;" />
                   <span>{{ row.nickname || row.username }}</span>
                 </div>
               </template>
@@ -258,6 +258,7 @@ import { workApi } from '@/api/work'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import GeetestDialog from '@/components/GeetestDialog.vue'
 import { useGeetestConfig } from '@/composables/useGeetestConfig'
+import AppImage from '@/components/AppImage.vue'
 
 const route = useRoute()
 const router = useRouter()

@@ -31,7 +31,7 @@
           @click="handleClick(item)"
         >
           <div class="r-notification--avatar">
-            <img v-if="item.sender?.avatar" :src="item.sender.avatar" />
+            <AppImage v-if="item.sender?.avatar" :src="item.sender.avatar" :fallback="defaultAvatar" />
             <span v-else class="r-notification--icon" :class="`r-notification--icon_${item.type}`"></span>
           </div>
           <div class="r-notification--content">
@@ -74,6 +74,10 @@ import { useNotificationStore } from '@/stores/notification'
 import { storeToRefs } from 'pinia'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { relativeTime as relativeTimeFmt } from '@/utils/format'
+import AppImage from '@/components/AppImage.vue'
+
+// 默认头像：sender 无 avatar 时作为 AppImage 的 fallback 显示
+const defaultAvatar = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI0ZFQzQzMyIvPjx0ZXh0IHg9IjUwIiB5PSI2MCIgZm9udC1zaXplPSI0MCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZmlsbD0id2hpdGUiPuahijwvdGV4dD48L3N2Zz4='
 
 const router = useRouter()
 const notificationStore = useNotificationStore()

@@ -26,7 +26,7 @@
             <div v-for="post in posts" :key="post.id" class="r-community--item" @click="$router.push(`/post/${post.id}`)">
               <div class="r-community--item_main">
                 <div class="r-community--item_header">
-                  <img :src="post.author?.avatar || defaultAvatar" class="r-community--item_avatar" />
+                  <AppImage :src="post.author?.avatar || defaultAvatar" :fallback="defaultAvatar" class="r-community--item_avatar" />
                   <div class="r-community--item_author">
                     <span class="r-community--item_name">{{ post.author?.nickname || post.author?.username }}</span>
                     <span class="r-community--item_time">{{ formatTime(post.created_at) }}</span>
@@ -148,6 +148,7 @@ import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import hljs from 'highlight.js'
 import 'highlight.js/styles/github.css'
+import AppImage from '@/components/AppImage.vue'
 
 // 配置 marked
 marked.setOptions({

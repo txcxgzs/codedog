@@ -5,7 +5,7 @@
         <div class="r-post--header">
           <h1 class="r-post--title">{{ post.title }}</h1>
           <div class="r-post--meta">
-            <img :src="post.author?.avatar || defaultAvatar" class="r-post--author_avatar" />
+            <AppImage :src="post.author?.avatar || defaultAvatar" :fallback="defaultAvatar" class="r-post--author_avatar" />
             <span class="r-post--author_name">{{ post.author?.nickname || post.author?.username }}</span>
             <span class="r-post--time">{{ formatTime(post.created_at) }}</span>
             <span class="r-post--views">{{ post.view_count }} 阅读</span>
@@ -67,7 +67,7 @@
           
           <div class="r-post--comment_list">
             <div v-for="comment in comments" :key="comment.id" class="r-post--comment_item">
-              <img :src="comment.user?.avatar || defaultAvatar" class="r-post--comment_avatar" @click="goToUser(comment)" style="cursor: pointer;" />
+              <AppImage :src="comment.user?.avatar || defaultAvatar" :fallback="defaultAvatar" class="r-post--comment_avatar" @click="goToUser(comment)" style="cursor: pointer;" />
               <div class="r-post--comment_body">
                 <div class="r-post--comment_header">
                   <span class="r-post--comment_name" @click="goToUser(comment)" style="cursor: pointer;">{{ comment.user?.nickname || comment.user?.username }}</span>
@@ -106,7 +106,7 @@
       <!-- 侧边栏 -->
       <aside class="r-post--sidebar">
         <div class="r-post--author_card">
-          <img :src="post.author?.avatar || defaultAvatar" class="r-post--author_card_avatar" />
+          <AppImage :src="post.author?.avatar || defaultAvatar" :fallback="defaultAvatar" class="r-post--author_card_avatar" />
           <div class="r-post--author_card_info">
             <h4>{{ post.author?.nickname || post.author?.username }}</h4>
             <p>{{ post.author?.bio || '这个人很懒，什么都没写' }}</p>
@@ -172,6 +172,7 @@ import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import hljs from 'highlight.js'
 import 'highlight.js/styles/github.css'
+import AppImage from '@/components/AppImage.vue'
 
 // 配置 marked
 marked.setOptions({

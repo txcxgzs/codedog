@@ -27,7 +27,7 @@
           
           <div class="r-work--meta">
             <div class="r-work--author" @click="goToAuthor">
-              <img :src="work.author?.avatar || defaultAvatar" class="r-work--author_avatar" />
+              <AppImage :src="work.author?.avatar || defaultAvatar" :fallback="defaultAvatar" class="r-work--author_avatar" />
               <div class="r-work--author_info">
                 <span class="r-work--author_name">{{ work.author?.nickname || work.author?.username || work.codemao_author_name }}</span>
                 <span class="r-work--publish_time">发布于 {{ formatTime(work.created_at) }}</span>
@@ -127,7 +127,7 @@
             <!-- 评论列表 -->
             <div class="r-work--comment_list" v-loading="loadingComments">
               <div v-for="comment in comments" :key="comment.id" class="r-work--comment_item">
-                <img :src="comment.user?.avatar || defaultAvatar" class="r-work--comment_avatar" @click="goUser(comment.user)" style="cursor: pointer;" />
+                <AppImage :src="comment.user?.avatar || defaultAvatar" :fallback="defaultAvatar" class="r-work--comment_avatar" @click="goUser(comment.user)" style="cursor: pointer;" />
                 <div class="r-work--comment_body">
                   <div class="r-work--comment_header">
                     <span class="r-work--comment_name" @click="goUser(comment.user)" style="cursor: pointer;">{{ comment.user?.nickname || comment.user?.username }}</span>
@@ -155,7 +155,7 @@
                   <div class="r-work--replies" v-if="comment.replies && comment.replies.length > 0">
                     <template v-for="(reply, index) in getVisibleReplies(comment)" :key="reply.id">
                       <div class="r-work--reply_item">
-                        <img :src="reply.user?.avatar || defaultAvatar" class="r-work--reply_avatar" @click="goUser(reply.user)" style="cursor: pointer;" />
+                        <AppImage :src="reply.user?.avatar || defaultAvatar" :fallback="defaultAvatar" class="r-work--reply_avatar" @click="goUser(reply.user)" style="cursor: pointer;" />
                         <div class="r-work--reply_body">
                           <div class="r-work--reply_header">
                             <span class="r-work--reply_name" @click="goUser(reply.user)" style="cursor: pointer;">{{ reply.user?.nickname || reply.user?.username }}</span>
@@ -332,6 +332,7 @@ import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import hljs from 'highlight.js'
 import 'highlight.js/styles/github.css'
+import AppImage from '@/components/AppImage.vue'
 
 // 配置 marked
 marked.setOptions({

@@ -121,7 +121,7 @@
         <!-- 用户卡片 -->
         <div class="r-home--user_card" v-if="userStore.isLoggedIn">
           <div class="r-home--user_header">
-            <img :src="userStore.user?.avatar || defaultAvatar" class="r-home--user_avatar" />
+            <AppImage :src="userStore.user?.avatar || defaultAvatar" :fallback="defaultAvatar" class="r-home--user_avatar" />
             <div class="r-home--user_info">
               <h4>{{ userStore.user?.nickname || userStore.user?.username }}</h4>
               <p>Lv.{{ userStore.user?.level || 1 }}</p>
@@ -178,7 +178,7 @@
           <div class="r-home--user_list">
             <div v-for="user in activeUsers" :key="user.id" class="r-home--user_item" @click="goUser(user)">
               <div class="r-home--user_avatar_wrap">
-                <img :src="user.avatar || defaultAvatar" class="r-home--user_avatar_sm" />
+                <AppImage :src="user.avatar || defaultAvatar" :fallback="defaultAvatar" class="r-home--user_avatar_sm" />
                 <span class="r-home--user_level_badge">Lv.{{ user.level }}</span>
               </div>
               <div class="r-home--user_info_sm">
@@ -201,6 +201,7 @@ import { useUserStore } from '@/stores/user'
 import { publicApi } from '@/api/public'
 import { workApi } from '@/api/work'
 import { postApi } from '@/api/post'
+import AppImage from '@/components/AppImage.vue'
 
 const router = useRouter()
 const userStore = useUserStore()

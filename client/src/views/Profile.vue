@@ -4,7 +4,7 @@
       <!-- 个人信息头部 -->
       <div class="r-profile--header">
         <div class="r-profile--avatar_section" @click="changeAvatar">
-          <img :src="userStore.user?.avatar || defaultAvatar" class="r-profile--avatar" />
+          <AppImage :src="userStore.user?.avatar || defaultAvatar" :fallback="defaultAvatar" class="r-profile--avatar" />
           <div class="r-profile--avatar_overlay">更换头像</div>
           <input
             type="file"
@@ -108,6 +108,7 @@ import { userApi } from '@/api/user'
 import { geetestApi } from '@/api/geetest'
 import { ElMessage } from 'element-plus'
 import GeetestDialog from '@/components/GeetestDialog.vue'
+import AppImage from '@/components/AppImage.vue'
 
 const userStore = useUserStore()
 const activeTab = ref('info')
