@@ -1,11 +1,11 @@
 #!/bin/sh
 
 echo "=========================================="
-echo "  Coding Dog - Docker Startup"
+echo "  编程狗 - Docker 启动"
 echo "=========================================="
 
 echo ""
-echo "=== Environment ==="
+echo "=== 环境信息 ==="
 echo "NODE_ENV: ${NODE_ENV:-development}"
 echo "DB_TYPE: ${DB_TYPE:-sqlite}"
 echo "PORT: ${PORT:-3001}"
@@ -16,26 +16,26 @@ chown -R app:app ./data ./uploads 2>/dev/null || true
 
 if [ "$DB_TYPE" = "sqlite" ] || [ -z "$DB_TYPE" ]; then
     echo ""
-    echo "=== SQLite Database ==="
+    echo "=== SQLite 数据库 ==="
     DB_FILE="${DB_PATH:-./data/database.sqlite}"
 
     if [ ! -f "$DB_FILE" ]; then
-        echo "Creating: $DB_FILE"
+        echo "创建数据库文件: $DB_FILE"
         touch "$DB_FILE" 2>/dev/null || {
-            echo "Permission denied, trying with sudo..."
+            echo "权限不足，尝试使用 sudo..."
             sudo touch "$DB_FILE" 2>/dev/null || true
         }
         chown app:app "$DB_FILE" 2>/dev/null || true
         chmod 664 "$DB_FILE" 2>/dev/null || true
     else
-        echo "Database exists: $DB_FILE"
+        echo "数据库已存在: $DB_FILE"
         # 清理可能残留的 Sequelize alter 临时表，避免重启死锁
         if command -v sqlite3 >/dev/null 2>&1; then
             BACKUP_TABLES=$(sqlite3 "$DB_FILE" "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE '%_backup';" 2>/dev/null || true)
             if [ -n "$BACKUP_TABLES" ]; then
-                echo "[entrypoint] 发现残留临时表，正在清理..."
+                echo "[启动] 发现残留临时表，正在清理..."
                 echo "$BACKUP_TABLES" | while read -r t; do
-                    [ -n "$t" ] && sqlite3 "$DB_FILE" "DROP TABLE IF EXISTS \"$t\";" 2>/dev/null && echo "[entrypoint] 已删除: $t"
+                    [ -n "$t" ] && sqlite3 "$DB_FILE" "DROP TABLE IF EXISTS \"$t\";" 2>/dev/null && echo "[启动] 已删除: $t"
                 done
             fi
         fi
@@ -50,29 +50,29 @@ fi
 
 if [ "$DB_TYPE" = "mysql" ]; then
     echo ""
-    echo "=== Waiting for MySQL ==="
-    
+    echo "=== 等待 MySQL 启动 ==="
+
     MAX_RETRIES=30
     RETRY_COUNT=0
-    
+
     while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
         if mysqladmin ping -h ${DB_HOST:-localhost} -P ${DB_PORT:-3306} -u ${DB_USER:-root} ${DB_PASSWORD:+-p$DB_PASSWORD} 2>/dev/null; then
-            echo "MySQL connected!"
+            echo "MySQL 已连接！"
             break
         fi
         RETRY_COUNT=$((RETRY_COUNT + 1))
-        echo "Waiting... ($RETRY_COUNT/$MAX_RETRIES)"
+        echo "等待中... ($RETRY_COUNT/$MAX_RETRIES)"
         sleep 2
     done
 
     if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
-        echo "ERROR: Cannot connect to MySQL"
+        echo "错误：无法连接 MySQL"
         exit 1
     fi
 fi
 
 echo ""
-echo "=== Starting Server ==="
+echo "=== 启动服务 ==="
 echo ""
 
 exec node app.js

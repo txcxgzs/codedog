@@ -171,16 +171,16 @@ async function removeFavorite(req, res) {
         // Bug-20: 修复数字ID混淆——当 workId 为数字且 resolveWork 通过本地 PK 匹配到了 work
         // 但该 work 的 codemao_work_id 并不等于传入的 workId 时,可能误删不同作品的收藏
         if (work && /^\d+$/.test(String(workId)) && String(work.codemao_work_id) !== String(workId)) {
-            // resolveWork 回退到本地 PK 查到了一个 codemao_work_id 不匹配的作品,
-            // 说明传入的 workId 可能确实是本地 PK,直接用 localWorkId 即可;
-            // 但如果用户本意是通过 codemao_work_id 取消收藏但数字恰好是别人的 PK,保守拒绝
-            // 对比模式:检查是否通过 codemao_work_id 匹配(优先路径命中了 codemao)
+            // resolveWork 回退到本地 PK 查到了一个 codemao_work_id 不匹配的作品
             const byCodemao = await DbAdapter.findOne(Work, { where: { codemao_work_id: String(workId) } });
             if (!byCodemao) {
-                // workId 作为 codemao_work_id 没找到,且作为本地 PK 查到了一个不同 codemao 的作品
-                // 这种情况下 localWorkId 指向的是其他作品,直接用作 work_id 会误删
-                console.warn(`[removeFavorite] workId=${workId} 作为本地PK匹配到作品 codemao_work_id=${work.codemao_work_id},但不匹配,可能误删`);
+                // workId 既不是 codemao_work_id,本地的PK又指向不同作品的work,直接拒绝
+                console.warn(`[removeFavorite] 拒绝: workId=${workId} 本地PK指向 codemao_work_id=${work.codemao_work_id},不匹配`);
+                return errorResponse(res, 'Work not found', 404);
             }
+            // byCodemao 存在: 说明 codemao_work_id 匹配,用 byCodemao 替代 work
+            work = byCodemao;
+            localWorkId = DbAdapter.getId(work);
         }
 
         if (!localWorkId) {

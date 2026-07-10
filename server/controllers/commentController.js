@@ -295,7 +295,7 @@ async function deleteComment(req, res) {
             // 级联软删所有多级子回复(不只直接子回复),避免深层回复残留
             let currentParentIds = [id];
             let totalDeleted = 1;
-            const maxDepth = 10; // 安全上限,防止无限循环
+            const maxDepth = 100; // 提高上限覆盖异常多级回复,while 内按实际子节点数自然终止
             for (let depth = 0; depth < maxDepth && currentParentIds.length > 0; depth++) {
                 const children = await DbAdapter.findAll(Comment, {
                     where: { parent_id: { [Op.in]: currentParentIds }, status: { [Op.ne]: 'deleted' } },

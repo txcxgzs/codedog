@@ -179,6 +179,42 @@ async function loadModels(args) {
         // dotenv not resolvable from this location; server/models/index.js loads
         // its own dotenv.config() (relative to CWD) when required below.
     }
+
+    // 修复: DB_PATH 路径解析问题
+    // config/database.js 使用 process.env.DB_PATH || './data/database.sqlite'
+    // 默认路径 ./data/ 是相对于 CWD(当前工作目录)解析的。
+    //
+    // 问题场景:
+    //   - 本地开发: server/.env 无 DB_PATH,默认 ./data/database.sqlite
+    //     * 从 server/ 运行 app.js → 解析为 server/data/database.sqlite ✓
+    //     * 从项目根运行 toolbox.js → 解析为 <root>/data/database.sqlite ✗(应为 server/data/)
+    //
+    // 修复策略: 如果 DB_PATH 是相对路径且解析后的文件不存在,
+    //          尝试相对于 server/ 目录解析(本地开发场景)
+    if (process.env.DB_TYPE !== 'mysql' && process.env.DB_PATH) {
+        const dbPath = process.env.DB_PATH;
+        if (!path.isAbsolute(dbPath)) {
+            const rootResolved = path.resolve(process.cwd(), dbPath);
+            if (!fs.existsSync(rootResolved)) {
+                // 尝试相对于 server/ 目录解析(本地开发场景)
+                const serverResolved = path.resolve(__dirname, '../server', dbPath);
+                if (fs.existsSync(serverResolved)) {
+                    process.env.DB_PATH = serverResolved;
+                }
+            }
+        }
+    } else if (!process.env.DB_PATH && process.env.DB_TYPE !== 'mysql') {
+        // DB_PATH 未设置且非 MySQL: 默认 ./data/database.sqlite
+        // 先检查 CWD/data/database.sqlite,不存在则用 server/data/database.sqlite
+        const defaultPath = path.resolve(process.cwd(), './data/database.sqlite');
+        if (!fs.existsSync(defaultPath)) {
+            const serverDefault = path.resolve(__dirname, '../server/data/database.sqlite');
+            if (fs.existsSync(serverDefault)) {
+                process.env.DB_PATH = serverDefault;
+            }
+        }
+    }
+
     // Redirect the bootstrap console.log noise (📦 加载Sequelize模型 etc.)
     // to stderr when --json so stdout stays pure JSON.
     const origLog = console.log;

@@ -31,7 +31,13 @@ echo "使用 Compose 命令：$COMPOSE_CMD"
 # 拉取最新代码
 echo ""
 echo "正在拉取最新代码..."
-git pull origin main 2>/dev/null || echo "警告：无法拉取最新代码，将继续使用本地代码部署"
+# 修复: 不再硬编码 main 分支，自动检测当前分支（兼容 main/master/其他分支名）
+CURRENT_BRANCH=$(git branch --show-current 2>/dev/null || echo "main")
+if [ -n "$CURRENT_BRANCH" ]; then
+    git pull origin "$CURRENT_BRANCH" 2>/dev/null || echo "警告：无法拉取最新代码，将继续使用本地代码部署"
+else
+    echo "警告：无法检测当前分支，跳过拉取"
+fi
 
 append_or_replace_env() {
     local key="$1"

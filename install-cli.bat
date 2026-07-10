@@ -32,7 +32,7 @@ if %errorlevel%==0 (
     echo   6) 数据库管理
     echo   7) 敏感词管理
     echo   8) 系统配置
-    echo   9) 清理缓存
+    echo   9) 验证码开关 (hCaptcha / 极验)
 ) else (
     echo ⚠ 安装可能未完全成功
     echo 请尝试以下方法：

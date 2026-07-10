@@ -204,6 +204,10 @@ EOF
     
     # 写入数据库配置
     sed -i "s/^DB_TYPE=.*/DB_TYPE=$DB_TYPE/" .env
+    # 修复: .env.example 中缺少 DB_PATH，若 .env 中没有则追加
+    if ! grep -q "^DB_PATH=" .env; then
+        echo "DB_PATH=./data/database.sqlite" >> .env
+    fi
     if [ "$DB_TYPE" = "mysql" ]; then
         sed -i "s/^DB_HOST=.*/DB_HOST=$DB_HOST/" .env
         sed -i "s/^DB_PORT=.*/DB_PORT=$DB_PORT/" .env

@@ -97,7 +97,7 @@ show_menu() {
     echo "  6) 数据库管理"
     echo "  7) 敏感词管理"
     echo "  8) 系统配置"
-    echo "  9) 清理缓存"
+    echo "  9) 验证码开关 (hCaptcha / 极验)"
     echo "  0) 退出"
     echo ""
     read -p "请选择操作 [0-9]: " choice
@@ -111,7 +111,7 @@ show_menu() {
         6) do_database ;;
         7) do_sensitive ;;
         8) do_config ;;
-        9) do_clean ;;
+        9) do_captcha_toggle ;;
         0) exit 0 ;;
         *) echo "无效选项"; sleep 1 ;;
     esac
@@ -138,15 +138,15 @@ show_status() {
     HEALTH_STATUS=$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}no-healthcheck{{end}}' codedog 2>/dev/null || true)
     if [ -n "$HEALTH_STATUS" ]; then
         if [ "$HEALTH_STATUS" = "no-healthcheck" ]; then
-            echo "Docker Health: 未配置健康检查"
+            echo "Docker 健康检查: 未配置健康检查"
             # 回退显示容器运行状态
             CONTAINER_STATE=$(docker inspect --format='{{.State.Status}}' codedog 2>/dev/null || true)
             [ -n "$CONTAINER_STATE" ] && echo "容器运行状态: $CONTAINER_STATE"
         else
-            echo "Docker Health: $HEALTH_STATUS"
+            echo "Docker 健康检查: $HEALTH_STATUS"
         fi
     else
-        echo "Docker Health: 未知（容器不存在或无法访问）"
+        echo "Docker 健康检查: 未知（容器不存在或无法访问）"
     fi
 
     echo ""
@@ -213,12 +213,25 @@ check_update() {
 # 使用 sqlite3 在线热备份；WAL 模式下比 cp -r 更一致
 backup_sqlite() {
     local backup_dir="$1"
-    if command -v sqlite3 >/dev/null 2>&1 && [ -f "$HOST_DB_PATH" ]; then
-        sqlite3 "$HOST_DB_PATH" ".backup '$backup_dir/database.sqlite'"
-        echo "数据库已使用 sqlite3 .backup 热备份"
-    elif [ -f "$HOST_DB_PATH" ]; then
-        cp "$HOST_DB_PATH" "$backup_dir/database.sqlite"
-        echo "sqlite3 未安装，已冷拷贝数据库"
+    # 修复: 优先使用 HOST_DB_PATH(Docker 路径),不存在则尝试 LEGACY_DB_PATH(本地路径)
+    local db_file=""
+    if [ -f "$HOST_DB_PATH" ]; then
+        db_file="$HOST_DB_PATH"
+    elif [ -f "$LEGACY_DB_PATH" ]; then
+        db_file="$LEGACY_DB_PATH"
+    fi
+
+    if [ -z "$db_file" ]; then
+        echo "  数据库文件不存在,跳过 SQLite 备份"
+        return 0
+    fi
+
+    if command -v sqlite3 >/dev/null 2>&1; then
+        sqlite3 "$db_file" ".backup '$backup_dir/database.sqlite'"
+        echo "数据库已使用 sqlite3 .backup 热备份 (源: $db_file)"
+    else
+        cp "$db_file" "$backup_dir/database.sqlite"
+        echo "sqlite3 未安装，已冷拷贝数据库 (源: $db_file)"
     fi
 }
 
@@ -228,10 +241,22 @@ backup_data() {
     mkdir -p "$backup_dir"
     # 数据目录（排除已有旧数据库文件）
     cp -r data "$backup_dir/" 2>/dev/null || true
+    # 修复: 本地/宝塔部署时数据库在 server/data/,也需备份
+    if [ -d "$SCRIPT_DIR/server/data" ]; then
+        mkdir -p "$backup_dir/server-data"
+        cp -r "$SCRIPT_DIR/server/data" "$backup_dir/server-data/" 2>/dev/null || true
+    fi
     # 上传文件
     cp -r uploads "$backup_dir/" 2>/dev/null || true
+    # 修复: 本地/宝塔部署时上传文件在 server/uploads/,也需备份
+    if [ -d "$SCRIPT_DIR/server/uploads" ]; then
+        mkdir -p "$backup_dir/server-uploads"
+        cp -r "$SCRIPT_DIR/server/uploads" "$backup_dir/server-uploads/" 2>/dev/null || true
+    fi
     # 环境变量
     cp .env "$backup_dir/.env" 2>/dev/null || true
+    # 修复: 本地开发可能有 server/.env,也需备份
+    cp "$SCRIPT_DIR/server/.env" "$backup_dir/server.env" 2>/dev/null || true
     # SQLite 热备份，覆盖上面冷拷贝的数据库
     if [ "$(get_db_type)" = "sqlite" ]; then
         backup_sqlite "$backup_dir"
@@ -241,16 +266,24 @@ backup_data() {
 
 # 清理 SQLite 残留 backup 表(避免 sync alter 残留导致启动崩溃)
 clean_backup_tables() {
-    if [ ! -f "$HOST_DB_PATH" ] || ! command -v sqlite3 >/dev/null 2>&1; then
+    # 修复: 优先使用 HOST_DB_PATH(Docker 路径),不存在则尝试 LEGACY_DB_PATH(本地路径)
+    local db_file=""
+    if [ -f "$HOST_DB_PATH" ]; then
+        db_file="$HOST_DB_PATH"
+    elif [ -f "$LEGACY_DB_PATH" ]; then
+        db_file="$LEGACY_DB_PATH"
+    fi
+
+    if [ -z "$db_file" ] || ! command -v sqlite3 >/dev/null 2>&1; then
         return 0
     fi
     local BACKUP_TABLES
-    BACKUP_TABLES=$(sqlite3 "$HOST_DB_PATH" "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE '%_backup';" 2>/dev/null || true)
+    BACKUP_TABLES=$(sqlite3 "$db_file" "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE '%_backup';" 2>/dev/null || true)
     if [ -n "$BACKUP_TABLES" ]; then
         echo "  发现残留 backup 表:"
         echo "$BACKUP_TABLES" | sed 's/^/    /'
         echo "$BACKUP_TABLES" | while read -r t; do
-            [ -n "$t" ] && sqlite3 "$HOST_DB_PATH" "DROP TABLE IF EXISTS \"$t\";" 2>/dev/null && echo "  已删除: $t"
+            [ -n "$t" ] && sqlite3 "$db_file" "DROP TABLE IF EXISTS \"$t\";" 2>/dev/null && echo "  已删除: $t"
         done
     else
         echo "  无残留 backup 表"
@@ -492,10 +525,19 @@ do_fix() {
             echo "权限修复完成"
             ;;
         3)
+            # 修复: 同时检查 Docker 路径和本地路径
+            local db_file=""
             if [ -f "$HOST_DB_PATH" ]; then
-                sqlite3 "$HOST_DB_PATH" "SELECT COUNT(*) FROM sensitive_words" 2>/dev/null && echo "敏感词表正常" || echo "无法读取敏感词表"
+                db_file="$HOST_DB_PATH"
+            elif [ -f "$LEGACY_DB_PATH" ]; then
+                db_file="$LEGACY_DB_PATH"
+            fi
+            if [ -n "$db_file" ]; then
+                sqlite3 "$db_file" "SELECT COUNT(*) FROM sensitive_words" 2>/dev/null && echo "敏感词表正常 (源: $db_file)" || echo "无法读取敏感词表"
             else
-                echo "数据库文件不存在: $HOST_DB_PATH"
+                echo "数据库文件不存在:"
+                echo "  已检查: $HOST_DB_PATH"
+                echo "  已检查: $LEGACY_DB_PATH"
             fi
             ;;
         4)
@@ -569,6 +611,19 @@ do_fix() {
 
 do_database() {
     echo "=== 数据库管理 ==="
+
+    # 修复: MySQL 模式下不支持 SQLite 文件操作，需提前提示
+    local db_type
+    db_type=$(get_db_type)
+    if [ "$db_type" = "mysql" ]; then
+        echo "当前数据库类型: MySQL"
+        echo "MySQL 模式下不支持通过工具箱直接备份/查看，请使用 MySQL 客户端工具操作"
+        echo "  备份: mysqldump -u $DB_USER -p $DB_NAME > backup.sql"
+        echo "  查看: mysql -u $DB_USER -p $DB_NAME -e 'SHOW TABLES;'"
+        wait_enter
+        return
+    fi
+
     echo "1) 备份数据库"
     echo "2) 查看数据库信息"
     echo ""
@@ -611,6 +666,17 @@ do_database() {
 
 do_sensitive() {
     echo "=== 敏感词管理 ==="
+
+    # 修复: MySQL 模式下不支持直接读取 SQLite 文件
+    local db_type
+    db_type=$(get_db_type)
+    if [ "$db_type" = "mysql" ]; then
+        echo "当前数据库类型: MySQL"
+        echo "MySQL 模式下不支持通过工具箱直接操作敏感词表，请使用后台管理界面"
+        wait_enter
+        return
+    fi
+
     echo "1) 查看统计"
     echo ""
     read -p "请选择 [1]: " sw_choice
@@ -668,6 +734,119 @@ do_clean() {
     wait_enter
 }
 
+# ==================== 验证码开关 ====================
+# 直接修改数据库 system_configs 表的 hcaptcha_enabled / geetest_enabled 字段
+# 用于验证码服务异常时紧急关闭，避免登录/发帖/评论被全部拦截
+# 注意：hCaptcha 中间件有 60 秒缓存，关闭后最多 60 秒生效；重启服务立即生效
+do_captcha_toggle() {
+    echo "=== 验证码开关 ==="
+    echo ""
+
+    # MySQL 模式下不支持直接读取 SQLite 文件
+    local db_type
+    db_type=$(get_db_type)
+    if [ "$db_type" = "mysql" ]; then
+        echo "当前数据库类型: MySQL"
+        echo "MySQL 模式下不支持通过工具箱直接修改验证码配置"
+        echo "请使用后台管理界面 → 系统配置 修改验证码开关"
+        wait_enter
+        return
+    fi
+
+    # 查找数据库文件：优先 Docker 路径，其次本地路径
+    local db_file=""
+    if [ -f "$HOST_DB_PATH" ]; then
+        db_file="$HOST_DB_PATH"
+    elif [ -f "$LEGACY_DB_PATH" ]; then
+        db_file="$LEGACY_DB_PATH"
+    else
+        echo "数据库文件不存在:"
+        echo "  已检查: $HOST_DB_PATH"
+        echo "  已检查: $LEGACY_DB_PATH"
+        echo ""
+        echo "可能原因:"
+        echo "  1) 项目尚未部署"
+        echo "  2) 数据库在容器内（请先 docker compose up -d）"
+        wait_enter
+        return
+    fi
+
+    if ! command -v sqlite3 >/dev/null 2>&1; then
+        echo "sqlite3 命令未安装，无法直接修改数据库"
+        echo "请安装 sqlite3: sudo apt-get install -y sqlite3  或  sudo yum install -y sqlite"
+        wait_enter
+        return
+    fi
+
+    echo "数据库: $db_file"
+    echo ""
+    echo "当前状态:"
+
+    # 读取当前 hCaptcha 状态
+    local hcaptcha_raw
+    hcaptcha_raw=$(sqlite3 "$db_file" "SELECT config_value FROM system_configs WHERE config_key='hcaptcha_enabled'" 2>/dev/null)
+    local hcaptcha_state="未配置(默认关闭)"
+    [ -n "$hcaptcha_raw" ] && hcaptcha_state="$hcaptcha_raw"
+    [ "$hcaptcha_raw" = "true" ] && hcaptcha_state="已开启"
+    [ "$hcaptcha_raw" = "false" ] && hcaptcha_state="已关闭"
+    echo "  hCaptcha: $hcaptcha_state"
+
+    # 读取当前极验状态
+    local geetest_raw
+    geetest_raw=$(sqlite3 "$db_file" "SELECT config_value FROM system_configs WHERE config_key='geetest_enabled'" 2>/dev/null)
+    local geetest_state="未配置(默认关闭)"
+    [ -n "$geetest_raw" ] && geetest_state="$geetest_raw"
+    [ "$geetest_raw" = "true" ] && geetest_state="已开启"
+    [ "$geetest_raw" = "false" ] && geetest_state="已关闭"
+    echo "  极验Geetest: $geetest_state"
+
+    echo ""
+    echo "  1) 关闭 hCaptcha 验证码（紧急放行）"
+    echo "  2) 开启 hCaptcha 验证码"
+    echo "  3) 关闭 极验Geetest 验证码"
+    echo "  4) 开启 极验Geetest 验证码"
+    echo "  5) 全部关闭 (验证码服务故障时使用)"
+    echo "  6) 全部开启"
+    echo "  0) 返回"
+    echo ""
+    read -p "请选择 [0-6]: " cap_choice
+
+    case "$cap_choice" in
+        1) set_system_config "$db_file" "hcaptcha_enabled" "false" ;;
+        2) set_system_config "$db_file" "hcaptcha_enabled" "true" ;;
+        3) set_system_config "$db_file" "geetest_enabled" "false" ;;
+        4) set_system_config "$db_file" "geetest_enabled" "true" ;;
+        5)
+            set_system_config "$db_file" "hcaptcha_enabled" "false"
+            set_system_config "$db_file" "geetest_enabled" "false"
+            ;;
+        6)
+            set_system_config "$db_file" "hcaptcha_enabled" "true"
+            set_system_config "$db_file" "geetest_enabled" "true"
+            ;;
+        0) return ;;
+    esac
+
+    echo ""
+    echo "提示: hCaptcha 中间件有 60 秒缓存，最多 60 秒后生效；重启服务立即生效。"
+    wait_enter
+}
+
+# 写入 system_configs 表的辅助函数：存在则更新，不存在则插入
+set_system_config() {
+    local db_file="$1"
+    local key="$2"
+    local val="$3"
+    local exists
+    exists=$(sqlite3 "$db_file" "SELECT config_key FROM system_configs WHERE config_key='$key'" 2>/dev/null)
+    if [ -z "$exists" ]; then
+        sqlite3 "$db_file" "INSERT INTO system_configs (config_key, config_value, created_at, updated_at) VALUES ('$key', '$val', datetime('now'), datetime('now'))" 2>/dev/null
+    else
+        sqlite3 "$db_file" "UPDATE system_configs SET config_value='$val', updated_at=datetime('now') WHERE config_key='$key'" 2>/dev/null
+    fi
+    echo "  [OK] $key 已设置为 $val"
+}
+
 # 支持 CLI 直接调用: bash codedog.sh <功能名>
 # 例: bash codedog.sh update  → 直接执行更新(智能模式)
 #     bash codedog.sh status  → 直接查看系统状态
@@ -685,10 +864,11 @@ dispatch_cli() {
         sensitive) do_sensitive ;;
         config)  do_config ;;
         clean)   do_clean ;;
+        captcha) do_captcha_toggle ;;
         ""|menu) main_loop ;;
         *)
             echo "未知命令: $cmd"
-            echo "可用命令: update status logs check fix db sensitive config clean menu"
+            echo "可用命令: update status logs check fix db sensitive config clean captcha menu"
             exit 1
             ;;
     esac
