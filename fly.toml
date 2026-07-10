@@ -1,0 +1,64 @@
+# ========================================
+# Fly.io 部署配置文件
+# 文档: https://fly.io/docs/apps/
+# ========================================
+# 使用方法:
+#   1. 安装 flyctl CLI: https://fly.io/docs/flyctl/install/
+#   2. 登录: flyctl auth login
+#   3. 创建应用: flyctl launch --no-deploy
+#   4. 创建持久卷: flyctl volumes create codedog_data
+#   5. 配置密钥: flyctl secrets set JWT_SECRET=xxx SESSION_SECRET=xxx
+#   6. 部署: flyctl deploy
+#
+# 免费额度说明:
+#   - 3 个 shared-cpu-1x VM(256MB RAM) 免费
+#   - 3GB 持久卷免费
+#   - 100GB 出站流量/月免费
+#   - 需绑信用卡(不会扣费,仅验证身份)
+# ========================================
+
+# 应用名(部署时 flyctl launch 会自动生成,也可手动改)
+app = "codedog"
+
+# 主服务配置
+[build]
+  dockerfile = "Dockerfile"
+
+# HTTP 服务
+[http_service]
+  internal_port = 3001
+  force_https = true
+  auto_start_machines = true
+  auto_stop_machines = false  # 不自动停止(保持长驻),若想省资源可改 true
+  min_machines_running = 1    # 至少保持1个实例运行
+
+  [http_service.concurrency]
+    type = "requests"
+    hard_limit = 100
+    soft_limit = 50
+
+# 实例配置(免费 shared-cpu-1x)
+[[vm]]
+  size = "shared-cpu-1x"  # 免费:256MB RAM,1核共享CPU
+  memory = 256            # 256MB 内存
+
+# 持久卷挂载:SQLite 数据库 + 上传文件
+# 需先执行: flyctl volumes create codedog_data --region nrt --size 1
+# 然后执行: flyctl volumes create codedog_uploads --region nrt --size 1
+[[mounts]]
+  source = "codedog_data"
+  destination = "/app/server/data"
+  processes = ["app"]
+
+[[mounts]]
+  source = "codedog_uploads"
+  destination = "/app/server/uploads"
+  processes = ["app"]
+
+# 健康检查
+[[http_service.checks]]
+  interval = "30s"
+  timeout = "10s"
+  grace_period = "60s"
+  method = "GET"
+  path = "/api/health"
