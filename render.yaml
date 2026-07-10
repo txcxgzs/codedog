@@ -1,0 +1,60 @@
+# ========================================
+# Render 部署配置文件
+# 文档: https://render.com/docs/blueprint-spec
+# ========================================
+# 使用方法:
+#   1. 将此文件提交到 GitHub 仓库根目录
+#   2. 在 Render 控制台点击 "New" → "Blueprint"
+#   3. 选择你的 GitHub 仓库,Render 会自动读取此配置
+#   4. 在 Render 环境变量中填写敏感信息(JWT_SECRET/SESSION_SECRET 等)
+#
+# Render 持久磁盘说明:
+#   - 磁盘挂载到 /app/server/data,SQLite 数据库文件持久化存储
+#   - 免费版无持久磁盘,需升级 Starter($7/月)才能使用磁盘
+#   - 磁盘大小 1GB 起步,足够小型社区使用
+# ========================================
+
+services:
+  # ====================================
+  # Web Service: 编程狗主服务(前后端一体)
+  # ====================================
+  - type: web
+    name: codedog
+    runtime: docker
+    plan: starter  # 免费版会休眠且无持久磁盘,建议用 starter($7/月)
+    region: singapore  # 新加坡节点,国内访问相对较快(可选 oregon/ohio/frankfurt/oregon)
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/health
+    autoDeploy: true  # 推送到 main 分支时自动部署
+
+    # 持久磁盘:保存 SQLite 数据库和上传的文件
+    # 免费版(plan: free)不支持磁盘,必须升级到 starter 或以上
+    disk:
+      name: codedog-data
+      mountPath: /app/server/data
+      sizeGB: 1  # 1GB 起步,可随时扩容
+
+    # 第二个磁盘:保存用户上传的头像/作品图片
+    disk:
+      name: codedog-uploads
+      mountPath: /app/server/uploads
+      sizeGB: 1
+
+    # 环境变量(非敏感的默认值,敏感信息在 Render 控制台手动填写)
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DB_TYPE
+        value: sqlite
+      - key: DB_PATH
+        value: /app/server/data/database.sqlite
+      - key: PORT
+        value: 3001
+      # 以下敏感变量请在 Render 控制台手动填写(不要写在此文件中):
+      # - JWT_SECRET: 至少64位随机字符串(可用 openssl rand -hex 64 生成)
+      # - SESSION_SECRET: 至少32位随机字符串(可用 openssl rand -hex 32 生成)
+      # - CORS_ORIGIN: 你的自定义域名(如 https://codedog.onrender.com 或自有域名)
+      # - JWT_EXPIRES_IN: 7d (默认7天)
+      # 可选(验证码):
+      # - GEETEST_ID / GEETEST_KEY
+      # - HCAPTCHA_SITE_KEY / HCAPTCHA_SECRET_KEY

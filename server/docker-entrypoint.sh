@@ -11,8 +11,9 @@ echo "DB_TYPE: ${DB_TYPE:-sqlite}"
 echo "PORT: ${PORT:-3001}"
 
 # 创建必要目录并修复权限
+# Render 持久磁盘挂载后可能属主为 root,需确保目录可写
 mkdir -p ./data ./uploads/avatars ./uploads/works
-chown -R app:app ./data ./uploads 2>/dev/null || true
+chmod -R 777 ./data ./uploads 2>/dev/null || true
 
 if [ "$DB_TYPE" = "sqlite" ] || [ -z "$DB_TYPE" ]; then
     echo ""
@@ -25,7 +26,6 @@ if [ "$DB_TYPE" = "sqlite" ] || [ -z "$DB_TYPE" ]; then
             echo "权限不足，尝试使用 sudo..."
             sudo touch "$DB_FILE" 2>/dev/null || true
         }
-        chown app:app "$DB_FILE" 2>/dev/null || true
         chmod 664 "$DB_FILE" 2>/dev/null || true
     else
         echo "数据库已存在: $DB_FILE"
@@ -39,13 +39,11 @@ if [ "$DB_TYPE" = "sqlite" ] || [ -z "$DB_TYPE" ]; then
                 done
             fi
         fi
-        chown app:app "$DB_FILE" 2>/dev/null || true
         chmod 664 "$DB_FILE" 2>/dev/null || true
     fi
 
     # 确保 data 目录可写
-    chown -R app:app ./data 2>/dev/null || true
-    chmod -R 775 ./data 2>/dev/null || true
+    chmod -R 777 ./data 2>/dev/null || true
 fi
 
 if [ "$DB_TYPE" = "mysql" ]; then

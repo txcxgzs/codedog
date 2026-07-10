@@ -32,9 +32,11 @@ RUN chmod +x /app/server/docker-entrypoint.sh
 # 创建数据目录
 RUN mkdir -p /app/server/data /app/server/uploads/avatars /app/server/uploads/works /app/server/downloaded
 
-# 修复：创建非 root 用户 app 并将 /app 目录所有权交给 app，避免容器以 root 运行
-RUN addgroup -S app && adduser -S app -G app && chown -R app:app /app
-
+# Render 兼容说明:
+# - Render 持久磁盘挂载到 /app/server/data 和 /app/server/uploads
+# - Render Docker 默认以 root 运行,挂载的磁盘属主也是 root
+# - 若使用 USER app,挂载的磁盘可能因权限不足导致 SQLite 写入失败
+# - 因此 Render 部署时不切换用户,Docker/宝塔部署仍可手动加 USER app
 # 环境变量默认值
 ENV PORT=3001
 ENV DB_TYPE=sqlite
@@ -43,8 +45,9 @@ ENV NODE_ENV=production
 
 EXPOSE 3001
 
-# 修复：以非 root 用户 app 运行，提升容器安全性
-USER app
+# Render 部署:以 root 运行(持久磁盘权限兼容)
+# Docker/宝塔部署:可取消下行注释以非 root 用户运行
+# USER app
 
 WORKDIR /app/server
 CMD ["./docker-entrypoint.sh"]
