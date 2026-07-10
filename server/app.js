@@ -78,9 +78,8 @@ function resolveSessionSecret() {
 }
 
 async function ensureInitialSuperadmin() {
-    const autoPromote = process.env.AUTO_FIRST_USER_SUPERADMIN === 'true';
-    if (!autoPromote) return;
-
+    // 启动时检查：如果数据库只有1个用户且不是超级管理员，自动提升
+    // 与 userController.js 的 shouldPromoteInitialAdmin 配合，双重保险
     const userCount = await DbAdapter.count(User, {});
     if (userCount === 0) {
         console.log('No users exist. The first logged-in user will become superadmin automatically.');
