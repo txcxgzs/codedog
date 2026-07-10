@@ -9,8 +9,8 @@
  *   4. avatar 是否为协议相对路径(以 // 开头)
  *   5. avatar 是否为非 http(s) 协议
  *
- * 用法(Docker 部署):
- *   docker compose exec codedog node server/scripts/checkAvatars.js
+ * 用法(Docker 部署,容器WORKDIR=/app/server):
+ *   docker compose exec codedog node scripts/checkAvatars.js
  *
  * 用法(本地/宝塔):
  *   cd server && node scripts/checkAvatars.js
