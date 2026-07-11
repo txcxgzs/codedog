@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # CodeDog 管理工具箱
-VERSION="1.0.3"
+VERSION="1.0.4"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
@@ -419,20 +419,64 @@ do_update() {
     check_env_required || true
 
     # ========== 步骤4: git pull ==========
+    # 服务器上可能有调试时手动修改的文件(Dockerfile/deploy.sh/app.js等),
+    # 直接 git pull 会被这些本地改动阻断。工具箱自动 stash 保存后重试。
     echo ""
     echo "[4/8] 拉取更新..."
     CURRENT_BRANCH=$(git branch --show-current 2>/dev/null || echo main)
     if ! git pull origin "$CURRENT_BRANCH"; then
-        echo ""
-        echo "git pull 失败! 更新已中止"
-        echo "可能原因: 本地有未提交改动 / 网络问题 / 合并冲突"
-        echo "处理方法:"
-        echo "  1) 备份本地改动后执行: git stash 或 git checkout -- <file>"
-        echo "  2) 重新运行工具箱执行更新"
-        echo ""
-        echo "服务当前已停止,如需启动可执行: $COMPOSE_CMD up -d"
-        wait_enter
-        return 1
+        # 检测是否有本地未提交改动
+        LOCAL_CHANGES=$(git status --porcelain 2>/dev/null)
+        if [ -n "$LOCAL_CHANGES" ]; then
+            echo ""
+            echo -e "${YELLOW}检测到本地有未提交改动,这些改动可能是之前调试时手动修改的:${NC}"
+            git status --short
+            echo ""
+            echo "工具箱可以自动 stash 保存这些改动(不会丢失),然后继续更新。"
+            echo "如需恢复,更新完成后可手动执行: git stash pop"
+            echo ""
+            read -p "是否自动 stash 本地改动并继续更新? (y/n): " stash_confirm
+            if [ "$stash_confirm" != "y" ]; then
+                echo -e "${YELLOW}已取消。更新已中止${NC}"
+                echo "服务当前已停止,如需启动可执行: $COMPOSE_CMD up -d"
+                wait_enter
+                return 1
+            fi
+            # stash 保存本地改动,带时间戳备注方便找回
+            STASH_MSG="toolbox-auto-stash-$(date +%Y%m%d_%H%M%S)"
+            if ! git stash push -m "$STASH_MSG"; then
+                echo -e "${RED}git stash 失败! 更新已中止${NC}"
+                echo "服务当前已停止,如需启动可执行: $COMPOSE_CMD up -d"
+                wait_enter
+                return 1
+            fi
+            echo -e "${GREEN}本地改动已 stash 保存: $STASH_MSG${NC}"
+            # 重试 git pull
+            if ! git pull origin "$CURRENT_BRANCH"; then
+                echo ""
+                echo -e "${RED}git pull 仍然失败! 更新已中止${NC}"
+                echo "可能原因: 网络问题 / 合并冲突"
+                echo "处理方法:"
+                echo "  1) 检查网络连接"
+                echo "  2) 手动执行: git pull origin $CURRENT_BRANCH"
+                echo "  3) 本地改动已 stash,可执行 git stash pop 恢复"
+                echo ""
+                echo "服务当前已停止,如需启动可执行: $COMPOSE_CMD up -d"
+                wait_enter
+                return 1
+            fi
+        else
+            echo ""
+            echo -e "${RED}git pull 失败! 更新已中止${NC}"
+            echo "可能原因: 网络问题 / 合并冲突"
+            echo "处理方法:"
+            echo "  1) 检查网络连接"
+            echo "  2) 手动执行: git pull origin $CURRENT_BRANCH"
+            echo ""
+            echo "服务当前已停止,如需启动可执行: $COMPOSE_CMD up -d"
+            wait_enter
+            return 1
+        fi
     fi
 
     # ========== 步骤5: 权限修复 ==========

@@ -243,10 +243,48 @@ echo  [OK] 备份已保存到: %BACKUP_DIR%
 echo  正在拉取更新...
 git pull origin %CURRENT_BRANCH%
 if %errorlevel% neq 0 (
-    echo  [!!] git pull 失败！请检查本地是否有未提交的改动或网络问题
-    echo.
-    pause
-    goto main
+    :: 检测是否有本地未提交改动
+    git status --porcelain > "%TEMP%\codedog_status.txt" 2>nul
+    for /f %%i in ("%TEMP%\codedog_status.txt") do set STATUS_SIZE=%%~zi
+    if !STATUS_SIZE! gtr 0 (
+        echo.
+        echo  [!] 检测到本地有未提交改动,可能是之前调试时手动修改的:
+        git status --short
+        echo.
+        echo  工具箱可以自动 stash 保存这些改动^(不会丢失^),然后继续更新。
+        echo  如需恢复,更新完成后可手动执行: git stash pop
+        echo.
+        set /p stash_confirm="是否自动 stash 本地改动并继续更新? (y/n): "
+        if /i "!stash_confirm!"=="y" (
+            git stash push -m "toolbox-auto-stash-%date:~0,4%%date:~5,2%%date:~8,2%_%time:~0,2%%time:~3,2%%time:~6,2%"
+            if !errorlevel! neq 0 (
+                echo  [!!] git stash 失败!
+                echo.
+                pause
+                goto main
+            )
+            echo  [OK] 本地改动已 stash 保存
+            :: 重试 git pull
+            git pull origin %CURRENT_BRANCH%
+            if !errorlevel! neq 0 (
+                echo  [!!] git pull 仍然失败！请检查网络问题或合并冲突
+                echo  本地改动已 stash,可执行 git stash pop 恢复
+                echo.
+                pause
+                goto main
+            )
+        ) else (
+            echo  已取消更新
+            echo.
+            pause
+            goto main
+        )
+    ) else (
+        echo  [!!] git pull 失败！请检查网络问题或合并冲突
+        echo.
+        pause
+        goto main
+    )
 )
 
 :: 重新构建 (仅 Docker 模式)
