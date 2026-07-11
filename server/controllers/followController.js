@@ -19,11 +19,12 @@ async function followUser(req, res) {
         }
         
         // 通过编程猫用户ID找到目标用户
-        const targetUser = await DbAdapter.findOne(User, { where: { codemao_user_id: codemaoUserId } });
+        // 修复: 拒绝关注已禁用账户,与公开资料接口 status:'active' 过滤策略保持一致
+        const targetUser = await DbAdapter.findOne(User, { where: { codemao_user_id: codemaoUserId, status: 'active' } });
         if (!targetUser) {
             return errorResponse(res, '用户不存在', 404);
         }
-        
+
         if (targetUser.id === DbAdapter.getId(req.user)) {
             return errorResponse(res, '不能关注自己', 400);
         }
@@ -85,11 +86,12 @@ async function unfollowUser(req, res) {
         const { codemaoUserId } = req.params;
         
         // 通过编程猫用户ID找到目标用户
-        const targetUser = await DbAdapter.findOne(User, { where: { codemao_user_id: codemaoUserId } });
+        // 修复: 不对已禁用账户执行取关操作,避免禁用用户的关注状态被篡改
+        const targetUser = await DbAdapter.findOne(User, { where: { codemao_user_id: codemaoUserId, status: 'active' } });
         if (!targetUser) {
             return errorResponse(res, '用户不存在', 404);
         }
-        
+
         const follow = await DbAdapter.findOne(Follow, {
             where: { follower_id: DbAdapter.getId(req.user), following_id: targetUser.id }
         });
@@ -138,7 +140,8 @@ async function getFollowers(req, res) {
         const { page, pageSize, offset } = DbAdapter.parsePagination(req.query);
 
         // 通过编程猫用户ID找到用户
-        const user = await DbAdapter.findOne(User, { where: { codemao_user_id: codemaoUserId } });
+        // 修复: 禁用用户不对外展示,与公开资料接口 status:'active' 过滤策略保持一致
+        const user = await DbAdapter.findOne(User, { where: { codemao_user_id: codemaoUserId, status: 'active' } });
         if (!user) {
             return errorResponse(res, '用户不存在', 404);
         }
@@ -148,6 +151,8 @@ async function getFollowers(req, res) {
             include: [{
                 model: User,
                 as: 'follower',
+                // 修复: 关联查询也过滤禁用用户,避免粉丝列表中暴露禁用账户信息
+                where: { status: 'active' },
                 attributes: ['id', 'codemao_user_id', 'username', 'nickname', 'avatar', 'bio', 'follower_count', 'work_count']
             }],
             order: [['created_at', 'DESC']],
@@ -175,7 +180,8 @@ async function getFollowing(req, res) {
         const { page, pageSize, offset } = DbAdapter.parsePagination(req.query);
 
         // 通过编程猫用户ID找到用户
-        const user = await DbAdapter.findOne(User, { where: { codemao_user_id: codemaoUserId } });
+        // 修复: 禁用用户不对外展示,与公开资料接口 status:'active' 过滤策略保持一致
+        const user = await DbAdapter.findOne(User, { where: { codemao_user_id: codemaoUserId, status: 'active' } });
         if (!user) {
             return errorResponse(res, '用户不存在', 404);
         }
@@ -185,6 +191,8 @@ async function getFollowing(req, res) {
             include: [{
                 model: User,
                 as: 'following',
+                // 修复: 关联查询也过滤禁用用户,避免关注列表中暴露禁用账户信息
+                where: { status: 'active' },
                 attributes: ['id', 'codemao_user_id', 'username', 'nickname', 'avatar', 'bio', 'follower_count', 'work_count']
             }],
             order: [['created_at', 'DESC']],
@@ -210,7 +218,8 @@ async function checkFollow(req, res) {
         const { codemaoUserId } = req.params;
         
         // 通过编程猫用户ID找到目标用户
-        const targetUser = await DbAdapter.findOne(User, { where: { codemao_user_id: codemaoUserId } });
+        // 修复: 禁用用户视为不存在,避免通过检查关注接口探测禁用账户
+        const targetUser = await DbAdapter.findOne(User, { where: { codemao_user_id: codemaoUserId, status: 'active' } });
         if (!targetUser) {
             return successResponse(res, { isFollowing: false });
         }

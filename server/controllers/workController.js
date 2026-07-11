@@ -741,7 +741,8 @@ async function getUserWorks(req, res) {
         const { page, pageSize, offset } = DbAdapter.parsePagination(req.query);
 
         const user = await DbAdapter.findOne(User, {
-            where: { codemao_user_id: String(codemaoUserId) },
+            // 修复: 禁用用户不对外展示作品,与公开资料接口 status:'active' 过滤策略保持一致
+            where: { codemao_user_id: String(codemaoUserId), status: 'active' },
             attributes: ['id']
         });
 
@@ -909,10 +910,12 @@ async function deleteWork(req, res) {
             // Bug-7: 同时清零 comment_count,与 adminController.deleteWork 保持一致
             await DbAdapter.update(Work, { status: 'deleted', praise_times: 0, collection_times: 0, comment_count: 0 }, { where: { id: wid }, transaction: t });
 
-            // M9: 重算受影响工作室的 work_count
+            // M9: 重算受影响工作室的 work_count 和 total_score
+            // 修复: 原先只重算 work_count 不重算 total_score,删除已评分作品后总分漂移
             for (const sid of affectedStudioIds) {
                 const approvedCount = await DbAdapter.count(StudioWork, { where: { studio_id: sid, status: 'approved' }, transaction: t });
-                await DbAdapter.update(Studio, { work_count: approvedCount }, { where: { id: sid }, transaction: t });
+                const totalScore = await DbAdapter.sum(StudioWork, 'score', { where: { studio_id: sid, status: 'approved' }, transaction: t }) || 0;
+                await DbAdapter.update(Studio, { work_count: approvedCount, total_score: totalScore }, { where: { id: sid }, transaction: t });
             }
 
             // M9 / 报告1 #8 / 报告3 #3: 重算作者 work_count，避免计数与实际作品数不一致

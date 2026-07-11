@@ -78,11 +78,11 @@ docker compose up -d
 ```yaml
 environment:
   - DB_TYPE=mysql
-  - MYSQL_HOST=your_host
-  - MYSQL_PORT=3306
-  - MYSQL_DATABASE=codedog
-  - MYSQL_USERNAME=your_user
-  - MYSQL_PASSWORD=your_password
+  - DB_HOST=your_host
+  - DB_PORT=3306
+  - DB_NAME=codedog
+  - DB_USER=your_user
+  - DB_PASSWORD=your_password
 ```
 
 ---

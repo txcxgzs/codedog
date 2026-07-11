@@ -990,9 +990,12 @@ async function deleteWork(req, res) {
             // 避免恢复后计数与已删除的 Like/Favorite/Comment 记录错位
             await DbAdapter.update(Work, { status: 'deleted', praise_times: 0, collection_times: 0, comment_count: 0 }, { where: { id: wid }, transaction: t });
 
+            // 修复: 重算受影响工作室的 work_count 和 total_score
+            // 原先只重算 work_count 不重算 total_score,删除已评分作品后总分漂移
             for (const sid of affectedStudioIds) {
                 const approvedCount = await DbAdapter.count(StudioWork, { where: { studio_id: sid, status: 'approved' }, transaction: t });
-                await DbAdapter.update(Studio, { work_count: approvedCount }, { where: { id: sid }, transaction: t });
+                const totalScore = await DbAdapter.sum(StudioWork, 'score', { where: { studio_id: sid, status: 'approved' }, transaction: t }) || 0;
+                await DbAdapter.update(Studio, { work_count: approvedCount, total_score: totalScore }, { where: { id: sid }, transaction: t });
             }
 
             // (报告1 #5 / Report4 #7) 重算作者 work_count，仅统计 status:'published'，
@@ -2152,9 +2155,11 @@ async function handleReport(req, res) {
                         // Bug-2: 清零计数字段,与 adminController.deleteWork 一致
                         await DbAdapter.update(Work, { status: 'deleted', praise_times: 0, collection_times: 0, comment_count: 0 }, { where: { id: wid }, transaction: t });
 
+                        // 修复: 重算受影响工作室的 work_count 和 total_score
                         for (const sid of affectedStudioIds) {
                             const approvedCount = await DbAdapter.count(StudioWork, { where: { studio_id: sid, status: 'approved' }, transaction: t });
-                            await DbAdapter.update(Studio, { work_count: approvedCount }, { where: { id: sid }, transaction: t });
+                            const totalScore = await DbAdapter.sum(StudioWork, 'score', { where: { studio_id: sid, status: 'approved' }, transaction: t }) || 0;
+                            await DbAdapter.update(Studio, { work_count: approvedCount, total_score: totalScore }, { where: { id: sid }, transaction: t });
                         }
 
                         // Bug-3: 重算作者 work_count,仅统计 published,与 adminController.deleteWork 一致
@@ -3269,9 +3274,11 @@ async function aiAutoHandleReports(req, res) {
                         await DbAdapter.update(Comment, { status: 'deleted' }, { where: { work_id: wid }, transaction: t });
                         // 修复: 清零 Work 计数,与 adminController.deleteWork 和 workController.deleteWork 保持一致
                         await DbAdapter.update(Work, { status: 'deleted', praise_times: 0, collection_times: 0, comment_count: 0 }, { where: { id: wid }, transaction: t });
+                        // 修复: 重算受影响工作室的 work_count 和 total_score
                         for (const sid of affectedStudioIds) {
                             const approvedCount = await DbAdapter.count(StudioWork, { where: { studio_id: sid, status: 'approved' }, transaction: t });
-                            await DbAdapter.update(Studio, { work_count: approvedCount }, { where: { id: sid }, transaction: t });
+                            const totalScore = await DbAdapter.sum(StudioWork, 'score', { where: { studio_id: sid, status: 'approved' }, transaction: t }) || 0;
+                            await DbAdapter.update(Studio, { work_count: approvedCount, total_score: totalScore }, { where: { id: sid }, transaction: t });
                         }
                     } else if (report.type === 'comment') {
                         const comment = await DbAdapter.findByPk(Comment, report.target_id, { transaction: t });
@@ -3625,28 +3632,70 @@ async function updateStudio(req, res) {
             }
         }
 
-        // 修复: 校验 vice_owner_id 是否为该工作室的 active 成员
-        if (vice_owner_id !== undefined && vice_owner_id !== null) {
+        // 修复: vice_owner_id 的变更必须同步 StudioMember.role,否则会出现"挂名副室长"
+        // 通用编辑接口此前只更新 Studio.vice_owner_id,不更新成员角色,导致副室长无实际管理权限
+        // 现在用事务包裹,降级旧副室长 + 提升新副室长 + 更新 Studio.vice_owner_id
+        if (vice_owner_id !== undefined) {
             const { StudioMember } = require('../models');
-            const memberRecord = await DbAdapter.findOne(StudioMember, {
-                where: { studio_id: id, user_id: vice_owner_id, status: 'active' }
-            });
-            if (!memberRecord) {
-                return errorResponse(res, '副室长必须为该工作室的活跃成员', 400);
+            const oldViceOwnerId = studio.vice_owner_id;
+
+            // 校验新副室长是否为该工作室的 active 成员
+            if (vice_owner_id !== null) {
+                const memberRecord = await DbAdapter.findOne(StudioMember, {
+                    where: { studio_id: id, user_id: vice_owner_id, status: 'active' }
+                });
+                if (!memberRecord) {
+                    return errorResponse(res, '副室长必须为该工作室的活跃成员', 400);
+                }
             }
+
+            await sequelize.transaction(async (t) => {
+                // 降级旧副室长的成员角色为 admin(如果旧副室长存在且不是 owner)
+                if (oldViceOwnerId && String(oldViceOwnerId) !== String(vice_owner_id)) {
+                    const oldViceMember = await DbAdapter.findOne(StudioMember, {
+                        where: { studio_id: id, user_id: oldViceOwnerId, role: 'vice_owner' },
+                        transaction: t
+                    });
+                    if (oldViceMember) {
+                        await DbAdapter.update(StudioMember, { role: 'admin' }, {
+                            where: { id: DbAdapter.getId(oldViceMember) },
+                            transaction: t
+                        });
+                    }
+                }
+
+                // 提升新副室长的成员角色为 vice_owner
+                if (vice_owner_id !== null) {
+                    await DbAdapter.update(StudioMember, { role: 'vice_owner' }, {
+                        where: { studio_id: id, user_id: vice_owner_id, status: 'active' },
+                        transaction: t
+                    });
+                }
+
+                // 更新 Studio.vice_owner_id 及其他字段
+                await DbAdapter.update(Studio, {
+                    name: finalName,
+                    description: finalDesc || null,
+                    cover: cover !== undefined ? cover : studio.cover,
+                    is_public: is_public !== undefined ? is_public : studio.is_public,
+                    join_type: join_type !== undefined ? join_type : studio.join_type,
+                    status: status !== undefined ? status : studio.status,
+                    vice_owner_id: vice_owner_id
+                }, { where: { id }, transaction: t });
+            });
+        } else {
+            // 不涉及 vice_owner_id 变更,直接更新其他字段
+            await DbAdapter.update(Studio, {
+                name: finalName,
+                description: finalDesc || null,
+                cover: cover !== undefined ? cover : studio.cover,
+                is_public: is_public !== undefined ? is_public : studio.is_public,
+                join_type: join_type !== undefined ? join_type : studio.join_type,
+                status: status !== undefined ? status : studio.status
+            }, { where: { id } });
         }
 
-        await DbAdapter.update(Studio, {
-            name: finalName,
-            description: finalDesc || null,
-            cover: cover !== undefined ? cover : studio.cover,
-            is_public: is_public !== undefined ? is_public : studio.is_public,
-            join_type: join_type !== undefined ? join_type : studio.join_type,
-            status: status !== undefined ? status : studio.status,
-            vice_owner_id: vice_owner_id !== undefined ? vice_owner_id : studio.vice_owner_id
-        }, { where: { id } });
-        
-        logOperation(req, 'update_studio', 'studio', id, { name, description, is_public, join_type, status });
+        logOperation(req, 'update_studio', 'studio', id, { name, description, is_public, join_type, status, vice_owner_id });
         
         const updatedStudio = await DbAdapter.findByPk(Studio, id);
         return successResponse(res, updatedStudio, '工作室已更新');

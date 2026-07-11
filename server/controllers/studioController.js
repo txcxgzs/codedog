@@ -97,20 +97,28 @@ async function createStudio(req, res) {
         // (参照 createPost 的非阻断审核约定:Post 无 pending 故用 hidden)
         const studioStatus = reviewResult.recommendation === 'review' ? 'pending' : 'active';
 
-        const existingOwner = await DbAdapter.findOne(Studio, { where: { owner_id: DbAdapter.getId(req.user), status: { [Op.ne]: 'banned' } } });
-        if (existingOwner) {
-            return errorResponse(res, '您已创建过工作室，每人只能创建一个', 400);
-        }
-
-        const existing = await DbAdapter.findOne(Studio, { where: { name } });
-        if (existing) {
-            return errorResponse(res, '工作室名称已存在', 400);
-        }
-
-        // (报告1 #10) 审核通过后存原始 name(不转义),渲染时才转义(与前端约定)。
-        // 修复: 查重用原始 name,存储也用原始 name,避免 escapeHtml 后查重失效(含 < > & 时永远查不到重复 → 可建重名)
-        // 修复: 避免反复编辑导致二次转义(& → &amp; → &amp;amp;)
+        // 修复: 将"一人只能创建一个工作室"和"名称查重"检查移入事务内
+        // 原先检查在事务外,并发请求可同时通过检查后各自创建,导致同一用户拥有多个工作室
         const studio = await sequelize.transaction(async (t) => {
+            // 事务内重新检查 owner 唯一性,防止并发绕过
+            const existingOwner = await DbAdapter.findOne(Studio, {
+                where: { owner_id: DbAdapter.getId(req.user), status: { [Op.ne]: 'banned' } },
+                transaction: t
+            });
+            if (existingOwner) {
+                const err = new Error('您已创建过工作室，每人只能创建一个');
+                err.statusCode = 400;
+                throw err;
+            }
+
+            // 事务内重新检查名称唯一性
+            const existing = await DbAdapter.findOne(Studio, { where: { name }, transaction: t });
+            if (existing) {
+                const err = new Error('工作室名称已存在');
+                err.statusCode = 400;
+                throw err;
+            }
+
             const newStudio = await DbAdapter.create(Studio, {
                 name: name,
                 description: description || null,
@@ -137,6 +145,10 @@ async function createStudio(req, res) {
         const msg = studioStatus === 'pending' ? '工作室已创建，正在审核中' : '工作室创建成功';
         return successResponse(res, studio, msg);
     } catch (error) {
+        // 事务内抛出的业务状态错误应返回 400,避免全部吞成 500
+        if (error.statusCode === 400) {
+            return errorResponse(res, error.message, 400);
+        }
         console.error('创建工作室错误:', error);
         return errorResponse(res, '创建工作室失败', 500);
     }
