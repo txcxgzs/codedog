@@ -16,6 +16,7 @@ const DbAdapter = require('../utils/dbAdapter');
 const GeetestService = require('../services/geetestService');
 // 引入内容审核服务,落库前做敏感词/违规检查(参照 commentController)
 const aiReview = require('../services/aiReview');
+const { safeLog } = require('../utils/safeLog');
 
 // codemao 登录创建本地用户时使用的占位密码哈希（与 adminController 占位密码方案一致）
 // 使用 crypto.randomBytes 生成强随机串再 bcrypt 哈希，避免弱随机或非法哈希字符串
@@ -130,7 +131,8 @@ async function codemaoLogin(req, res, identity, password) {
     try {
         const codemaoRes = await codemaoApi.login(identity, password);
         
-        console.log('编程猫登录响应: 用户', codemaoRes?.user_info?.nickname || '未知');
+        // 修复 PII 泄露: 原代码打印 nickname（明文PII）。已通过 safeLog 脱敏
+        safeLog('codemaoLogin', { nickname: codemaoRes?.user_info?.nickname, id: codemaoRes?.user_info?.id });
         
         if (!codemaoRes) {
             return errorResponse(res, '编程猫服务暂时不可用，请稍后重试', 502);
@@ -222,7 +224,8 @@ async function codemaoLogin(req, res, identity, password) {
             isFirstUser = true;
             await DbAdapter.update(User, { role: 'superadmin' }, { where: { id: DbAdapter.getId(user) } });
             user.role = 'superadmin';
-            console.log(`Initial administrator promoted: ${codemaoUser.nickname} (${codemaoUser.id})`);
+            // 修复 PII 泄露: 替换原直接打印 nickname + id 为 safeLog
+            safeLog('initAdmin', { nickname: codemaoUser.nickname, id: codemaoUser.id });
         } else if (created && userCount === 1) {
             console.warn('Initial user was not promoted. Set INITIAL_ADMIN_CODEMAO_ID or INITIAL_ADMIN_BOOTSTRAP_TOKEN to bootstrap a superadmin.');
         }

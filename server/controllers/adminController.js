@@ -16,6 +16,7 @@ const DbAdapter = require('../utils/dbAdapter');
 const { likeContains } = require('../utils/security');
 // H12: 引入内容审核服务，爬虫/管理员落库前对 nickname/bio/作品名+描述 做敏感词检查
 const aiReview = require('../services/aiReview');
+const { safeLog } = require('../utils/safeLog');
 
 // 爬取日志存储
 const crawlLogs = new Map();
@@ -1501,7 +1502,8 @@ async function crawlUserWorks(req, res) {
                 const workDetail = await codemaoApi.getWorkDetail(item.id);
                 if (!workDetail || !workDetail.id) continue;
                 
-                console.log('爬取作品详情:', {
+                // 修复 PII/资源链接泄露: 改用 safeLog 自动脱敏 preview/player_url 等
+                safeLog('crawlWorkDetail', {
                     id: workDetail.id,
                     name: workDetail.work_name,
                     preview: workDetail.preview,
@@ -1551,7 +1553,8 @@ async function crawlUserWorks(req, res) {
                     status: workStatus
                 });
                 
-                console.log('作品创建成功:', work.name, 'preview:', work.preview);
+                // 修复 PII 泄露: 改用 safeLog
+                safeLog('crawlWorkCreated', { id: work.id, name: work.name, preview: work.preview });
                 results.push(work);
             } catch (e) {
                 console.error(`爬取作品 ${item.id} 失败:`, e.message);
