@@ -1,25 +1,40 @@
+# ============================================================
+# 多阶段构建：把编译工具(g++/python3/make)隔离在 builder 阶段
+# 最终运行时镜像只带轻量依赖,apk add 从 385s 降到 ~30s
+# ============================================================
+
 # 第一阶段：构建前端
 FROM node:18-alpine AS frontend-builder
 WORKDIR /app/client
 COPY client/package*.json ./
-RUN npm install
+# 使用淘宝 npm 镜像,香港访问也比 npmjs.org 快
+RUN npm install --registry=https://registry.npmmirror.com
 COPY client/ ./
 RUN npm run build
 
-# 第二阶段：运行后端
+# 第二阶段：编译后端原生模块(sqlite3/sharp 需要 python3/make/g++)
+# 这一层只在 package.json 变化时重新执行,平时被 Docker 缓存复用
+FROM node:18-alpine AS backend-builder
+RUN apk add --no-cache python3 make g++
+COPY server/package*.json ./server/
+WORKDIR /app/server
+RUN npm install --production --registry=https://registry.npmmirror.com
+
+# 第三阶段：运行时镜像(不带编译工具,镜像更小、构建更快)
 FROM node:18-alpine
 WORKDIR /app
 
-# 安装必要工具（修复：补充 python3/make/g++，sqlite3 原生模块需要编译；mysql-client 供 entrypoint 探活；curl 供 healthcheck 探活）
-RUN apk add --no-cache netcat-openbsd python3 make g++ mysql-client curl
+# 只装运行时必需的轻量工具:
+# - netcat-openbsd: entrypoint 探活 MySQL
+# - mysql-client:  数据库操作工具
+# - curl:          healthcheck 探活
+# 注意:不再装 python3/make/g++,它们只在 backend-builder 阶段使用
+RUN apk add --no-cache netcat-openbsd mysql-client curl
 
-# 复制后端依赖并安装
-COPY server/package*.json ./server/
-WORKDIR /app/server
-RUN npm install --production
+# 从 backend-builder 复制已编译好的 node_modules(含 sqlite3/sharp 的 .node 二进制)
+COPY --from=backend-builder /app/server/node_modules ./server/node_modules
 
 # 复制后端源码
-WORKDIR /app
 COPY server/ ./server/
 
 # 复制前端构建产物

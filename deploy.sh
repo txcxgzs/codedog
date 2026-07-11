@@ -193,9 +193,13 @@ else
 fi
 
 # 构建并启动
+# 优化: 去掉 --no-cache,让 Docker 复用 layer 缓存
+# - apk add 和 npm install 层只在依赖变化时重新执行
+# - 只有 COPY 代码层每次重建,大幅缩短构建时间(从 6分钟 降到 ~1分钟)
+# - 如遇镜像异常需要全量重建,手动执行: docker compose build --no-cache
 echo ""
-echo "正在构建 Docker 镜像(强制 --no-cache,避免旧 layer 缓存)..."
-$COMPOSE_CMD build --no-cache
+echo "正在构建 Docker 镜像(复用 layer 缓存,如需全量重建请用 --no-cache)..."
+$COMPOSE_CMD build
 
 echo ""
 echo "正在启动服务..."
