@@ -1315,7 +1315,12 @@
               </div>
               <el-form :model="configForm" label-width="90px" class="r-admin--config_form">
                 <el-row :gutter="20">
-                  <el-col :span="10"><el-form-item label="API 地址"><el-input v-model="configForm.ai_api_url" placeholder="https://api.openai.com/v1/chat/completions" /></el-form-item></el-col>
+                  <el-col :span="10">
+                    <el-form-item label="API 地址">
+                      <el-input v-model="configForm.ai_api_url" placeholder="例如 https://api.siliconflow.cn/v1" @blur="autoCompleteAiApiUrl" clearable />
+                      <div style="font-size: 12px; color: #909399; margin-top: 4px; line-height: 1.4;">填到 /v1 即可（如 <code style="background:#f5f7fa;padding:0 4px;border-radius:3px;">https://api.siliconflow.cn/v1</code>），保存时自动补全 <code style="background:#f5f7fa;padding:0 4px;border-radius:3px;">/chat/completions</code>。已填完整 endpoint 不会改动。</div>
+                    </el-form-item>
+                  </el-col>
                   <el-col :span="6"><el-form-item label="模型"><el-input v-model="configForm.ai_model" placeholder="gpt-3.5-turbo" /></el-form-item></el-col>
                   <el-col :span="8"><el-form-item label="API Key"><el-input v-model="configForm.ai_api_key" show-password placeholder="sk-..." /></el-form-item></el-col>
                 </el-row>
@@ -2818,6 +2823,41 @@ JSON格式如下：
 2. confidence必须是0到1之间的数字
 3. violations数组为空时表示无违规
 4. riskLevel和recommendation必须匹配`
+
+// 规范化 AI API URL:与后端 server/services/aiReview.js#normalizeAiApiUrl 逻辑保持一致。
+// 兼容用户填到 /v1(自动补 /chat/completions)与填完整 endpoint 两种形式。
+// @param {string} rawUrl
+// @returns {string} 规范化后的 URL
+const normalizeAiApiUrl = (rawUrl) => {
+  if (!rawUrl || typeof rawUrl !== 'string') return ''
+  let url
+  try {
+    url = new URL(rawUrl.trim())
+  } catch (e) {
+    return rawUrl.trim() // 解析失败原样返回,留给后端报错
+  }
+  if (url.protocol !== 'https:' && url.protocol !== 'http:') {
+    return rawUrl.trim()
+  }
+  const pathname = url.pathname.replace(/\/+$/, '')
+  if (/\/chat\/completions$/.test(pathname)) {
+    return url.toString()
+  }
+  if (pathname === '' || pathname === '/v1' || /\/v\d+$/.test(pathname)) {
+    url.pathname = pathname + '/chat/completions'
+  }
+  return url.toString()
+}
+
+// 失焦时自动补全 API 地址,所见即所得,减少手动输入出错
+const autoCompleteAiApiUrl = () => {
+  const current = configForm.value.ai_api_url
+  if (!current || !current.trim()) return
+  const normalized = normalizeAiApiUrl(current)
+  if (normalized && normalized !== current) {
+    configForm.value.ai_api_url = normalized
+  }
+}
 
 const useDefaultPrompt = () => {
   configForm.value.ai_prompt = DEFAULT_AI_PROMPT

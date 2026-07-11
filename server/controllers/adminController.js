@@ -2765,7 +2765,9 @@ async function batchUpdateConfigs(req, res) {
         );
         
         if (hasDbConfig) {
+            // 修复 Bug: 换行符检查只对 db_/mysql_ 项生效,不应波及 ai_prompt 等多行文本字段
             for (const [key, value] of Object.entries(filteredConfigs)) {
+                if (!(key.startsWith('db_') || key.startsWith('mysql_'))) continue;
                 if (/[\r\n\0]/.test(String(value ?? ''))) {
                     return errorResponse(res, `${key} 包含非法换行字符`, 400);
                 }

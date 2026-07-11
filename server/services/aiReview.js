@@ -347,6 +347,37 @@ function extractJSONObject(text) {
     }
 }
 
+// 规范化 AI API URL:兼容用户填到 /v1(自动补 /chat/completions)与填完整 endpoint 两种形式。
+// 防止 SSRF:必须用 new URL 解析后操作路径,拒绝带 .. 或非法协议的输入。
+// 末尾多余的 / 会清掉,避免 //chat/completions 这种双斜杠路径。
+// @returns {string} 规范化后的完整 endpoint URL(/v1/chat/completions)
+function normalizeAiApiUrl(rawUrl) {
+    if (!rawUrl || typeof rawUrl !== 'string') return '';
+    let url;
+    try {
+        url = new URL(rawUrl.trim());
+    } catch (e) {
+        return rawUrl.trim(); // 解析失败原样返回,让后续 validateAIEndpoint 报错
+    }
+    // 拒绝协议不是 http(s) 的输入,避免 javascript:/data: 等
+    if (url.protocol !== 'https:' && url.protocol !== 'http:') {
+        return rawUrl.trim();
+    }
+    // 去掉路径末尾的 /,便于统一判断
+    let pathname = url.pathname.replace(/\/+$/, '');
+    // 已包含 /chat/completions(无论在哪个层级)则原样返回
+    if (/\/chat\/completions$/.test(pathname)) {
+        return url.toString();
+    }
+    // 自动补全:仅当路径以 /v1 结尾(或不带路径)时补 /chat/completions
+    // 避免把用户自定义的 /v1/something/else 路径意外覆盖
+    if (pathname === '' || pathname === '/v1' || /\/v\d+$/.test(pathname)) {
+        pathname += '/chat/completions';
+    }
+    url.pathname = pathname;
+    return url.toString();
+}
+
 async function getAIConfig() {
     // 修正：敏感词 API 的 URL/启用状态/密钥统一从数据库 SystemConfig 读取（后台可改），
     // 不再使用环境变量，方便运维在后台直接调整而无需重启服务
@@ -363,7 +394,7 @@ async function getAIConfig() {
 
     return {
         enabled: configMap.ai_enabled === 'true',
-        apiUrl: configMap.ai_api_url || '',
+        apiUrl: normalizeAiApiUrl(configMap.ai_api_url || ''),
         apiKey: configMap.ai_api_key || '',
         model: configMap.ai_model || 'gpt-3.5-turbo',
         prompt: configMap.ai_prompt || DEFAULT_PROMPT,
@@ -417,7 +448,9 @@ async function reviewContent(type, content) {
 
         // 修复 Bug1:validateAIEndpoint 改为 async,需要 await 等待 DNS 解析完成,
         // 并返回已校验的安全 IP,用于在下方 axios 请求中「固定 IP」防 DNS 重绑定绕过
-        const validatedAiIp = await validateAIEndpoint(config.apiUrl);
+        // 兼容用户填到 /v1(自动补 /chat/completions)与填完整 endpoint 两种形式
+        const normalizedAiApiUrl = normalizeAiApiUrl(config.apiUrl);
+        const validatedAiIp = await validateAIEndpoint(normalizedAiApiUrl);
 
         // 修复提示词注入：用 XML 标签 <user_content> 包裹用户内容，
         // 并在 prompt 末尾追加安全说明，明确告知 AI 标签内是数据而非指令，
@@ -447,7 +480,7 @@ async function reviewContent(type, content) {
         // - maxRedirects:0:阻止 302 跳转到内网地址绕过 IP 校验
         // - rejectUnauthorized: 强制 TLS 证书校验(在 buildPinnedIpAgents 内设置)
         const { httpsAgent: aiHttpsAgent, httpAgent: aiHttpAgent } = buildPinnedIpAgents(validatedAiIp);
-        const response = await axios.post(config.apiUrl, requestBody, {
+        const response = await axios.post(normalizedAiApiUrl, requestBody, {
             headers: {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${config.apiKey}`
@@ -720,5 +753,6 @@ module.exports = {
     DEFAULT_PROMPT,
     fallbackReview,
     builtinSensitiveCheck,
-    externalSensitiveCheck
+    externalSensitiveCheck,
+    normalizeAiApiUrl
 };
