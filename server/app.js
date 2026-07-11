@@ -52,7 +52,7 @@ function setSecurityHeaders(res) {
         "base-uri 'self'",
         "object-src 'none'",
         "frame-ancestors 'none'",
-        "script-src 'self' https://static.geetest.com https://*.geetest.com https://hcaptcha.com https://*.hcaptcha.com https://static.cloudflareinsights.com 'sha256-woUEpn988/d1lffqaFZ+jz+X5Lq2Kh9MoieNyiJyuzY='",
+        "script-src 'self' https://static.geetest.com https://*.geetest.com https://hcaptcha.com https://*.hcaptcha.com 'sha256-woUEpn988/d1lffqaFZ+jz+X5Lq2Kh9MoieNyiJyuzY='",
         "style-src 'self' 'unsafe-inline'",
         "img-src 'self' data: https://*.codemao.cn https://cdn-community.bcmcdn.com",
         "font-src 'self' data:",
