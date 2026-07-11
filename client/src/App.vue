@@ -422,13 +422,14 @@ $shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
   }
   
   .c-navigator--user_info {
-    display: flex;
+    display: inline-flex;
     align-items: center;
     gap: 8px;
     cursor: pointer;
     padding: 4px 8px;
     border-radius: 20px;
     transition: background 0.2s;
+    position: relative;
     
     &:hover {
       background: #f5f5f5;

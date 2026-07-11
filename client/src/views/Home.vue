@@ -129,12 +129,6 @@
           </div>
           <p class="r-home--user_bio">{{ userStore.user?.bio || '这个人很懒，什么都没写~' }}</p>
           <el-button type="primary" class="r-home--publish_btn" @click="$router.push('/publish')">📝 发布作品</el-button>
-          <div class="r-home--kittenn_wrapper">
-            <span class="r-home--kittenn_ribbon">独立于编程猫提供的服务</span>
-            <a href="javascript:;" class="r-home--kittenn_btn" @click.prevent="showKittennTip">
-              🚀 使用 KittenN PLUS
-            </a>
-          </div>
         </div>
         
         <!-- 登录卡片 -->
@@ -213,13 +207,6 @@ const hotWorks = ref([])
 const activeUsers = ref([])
 const featuredPosts = ref([])
 
-const showKittennTip = () => {
-  ElMessage({
-    message: '🚧 KittenN PLUS 正在开发中，敬请期待！',
-    type: 'info',
-    duration: 3000
-  })
-}
 const importantPosts = ref([])
 const loadingFeatured = ref(false)
 const loadingLatest = ref(false)
@@ -464,60 +451,6 @@ $border-color: #eee;
     font-weight: 600;
     font-size: 14px;
     box-shadow: 0 4px 12px rgba($primary-color, 0.3);
-  }
-  
-  .r-home--kittenn_wrapper {
-    position: relative;
-    margin-top: 10px;
-  }
-  
-  .r-home--kittenn_ribbon {
-    position: absolute;
-    top: -8px;
-    right: -8px;
-    background: linear-gradient(135deg, #ff6b6b 0%, #ee5a5a 100%);
-    color: #fff;
-    font-size: 10px;
-    padding: 2px 8px;
-    border-radius: 4px;
-    z-index: 1;
-    box-shadow: 0 2px 6px rgba(238, 90, 90, 0.4);
-    white-space: nowrap;
-    
-    &::before {
-      content: '';
-      position: absolute;
-      left: -4px;
-      bottom: -4px;
-      width: 0;
-      height: 0;
-      border-style: solid;
-      border-width: 4px 4px 0 0;
-      border-color: #cc4444 transparent transparent transparent;
-    }
-  }
-  
-  .r-home--kittenn_btn {
-    display: block;
-    width: 100%;
-    height: 40px;
-    line-height: 40px;
-    text-align: center;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    color: #fff;
-    border-radius: 8px;
-    font-weight: 600;
-    font-size: 14px;
-    text-decoration: none;
-    transition: all 0.3s ease;
-    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
-    cursor: pointer;
-    
-    &:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 6px 16px rgba(102, 126, 234, 0.4);
-      color: #fff;
-    }
   }
 }
 
