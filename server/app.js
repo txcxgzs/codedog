@@ -52,10 +52,13 @@ function setSecurityHeaders(res) {
         "base-uri 'self'",
         "object-src 'none'",
         "frame-ancestors 'none'",
+        // script-src 保持严格:未知 JS 一旦放行,XSS 直接成真
         "script-src 'self' https://static.geetest.com https://*.geetest.com https://hcaptcha.com https://*.hcaptcha.com 'sha256-woUEpn988/d1lffqaFZ+jz+X5Lq2Kh9MoieNyiJyuzY='",
-        "style-src 'self' 'unsafe-inline'",
-        "img-src 'self' data: https://*.codemao.cn https://*.bcmcdn.com",
-        "font-src 'self' data:",
+        // style/img/font 放宽到 https: + data:,能加载任何 HTTPS 源,
+        // 这三类就算被注入也只能改显示/显示图片,不会执行任意代码
+        "style-src 'self' 'unsafe-inline' https:",
+        "img-src 'self' data: https: http:",
+        "font-src 'self' data: https:",
         "connect-src 'self' https://*.codemao.cn wss://*.codemao.cn https://*.geetest.com https://hcaptcha.com https://*.hcaptcha.com",
         "frame-src 'self' https://*.codemao.cn https://hcaptcha.com/",
         "form-action 'self'"
