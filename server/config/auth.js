@@ -144,6 +144,7 @@ module.exports = {
     JWT_EXPIRES_IN,
     JWT_ISSUER: 'codedog-community',
     JWT_AUDIENCE: 'codedog-frontend',
+    JWT_COOKIE_NAME: 'cd_token', // httpOnly cookie 名称,前端不可读
     isValidJwtSecret,
     isValidSessionSecret,
     resolveSessionSecret

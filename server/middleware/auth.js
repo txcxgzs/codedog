@@ -1,6 +1,6 @@
 const jwt = require('jsonwebtoken');
 const { isRoleAtLeast } = require('../config/permissions');
-const { JWT_SECRET } = require('../config/auth');
+const { JWT_SECRET, JWT_COOKIE_NAME, JWT_EXPIRES_IN } = require('../config/auth');
 const { errorResponse } = require('./response');
 const { User } = require('../models');
 const DbAdapter = require('../utils/dbAdapter');
@@ -18,6 +18,98 @@ function getBearerToken(req) {
     // JWT 实际长度通常 100-500 字节,4096 是合理上限(给超长自定义 token 留余量)
     if (match[1].length > 4096) return null;
     return match[1];
+}
+
+/**
+ * 手动解析 Cookie 头,提取指定名称的 value
+ * 不依赖 cookie-parser,降低依赖体积
+ * 安全:只接受 base64url/JWT 字符集,避免任何异常输入
+ */
+function parseCookieToken(req, cookieName) {
+    const cookieHeader = req.headers.cookie || '';
+    if (!cookieHeader) return null;
+    // 拆分时跳过空段,防止恶意 ";;" 攻击
+    const parts = cookieHeader.split(';');
+    for (const part of parts) {
+        const eqIdx = part.indexOf('=');
+        if (eqIdx < 0) continue;
+        const name = part.slice(0, eqIdx).trim();
+        if (name !== cookieName) continue;
+        const value = part.slice(eqIdx + 1).trim();
+        // URL-decode 同源浏览器自动做的
+        let decoded;
+        try {
+            decoded = decodeURIComponent(value);
+        } catch (e) {
+            return null;
+        }
+        if (!/^[a-zA-Z0-9._-]+$/.test(decoded)) return null;
+        if (decoded.length > 4096) return null;
+        return decoded;
+    }
+    return null;
+}
+
+/**
+ * 解析 token 的统一入口: 优先读 httpOnly cookie, 后备读 Authorization 头
+ * 顺序: cookie 优先(防 XSS 偷), header 兼容旧版前端和外部 API 调用
+ */
+function getToken(req) {
+    return parseCookieToken(req, JWT_COOKIE_NAME) || getBearerToken(req);
+}
+
+/**
+ * 计算 JWT 过期时间对应的 cookie Max-Age(秒)
+ * 支持 '7d' / '24h' / '60s' / 数字秒
+ */
+function getCookieMaxAge() {
+    const exp = String(JWT_EXPIRES_IN || '7d');
+    const match = exp.match(/^(\d+)([smhd])$/);
+    if (!match) return 7 * 24 * 60 * 60; // 默认 7 天
+    const n = parseInt(match[1], 10);
+    const unit = match[2];
+    const multiplier = { s: 1, m: 60, h: 3600, d: 86400 }[unit] || 86400;
+    return n * multiplier;
+}
+
+/**
+ * 把 token 写入 httpOnly cookie
+ * - httpOnly: JS 读不到,防 XSS 偷 token
+ * - sameSite=Lax: 阻止跨站 POST, 防 CSRF; 但允许站内 GET
+ * - secure: 生产环境 true(HTTPS), 开发环境 false(HTTP 调试)
+ * - maxAge 与 JWT 过期一致, 浏览器关页面不会丢(除非过期)
+ */
+function setTokenCookie(res, token) {
+    const isProduction = process.env.NODE_ENV === 'production';
+    const parts = [
+        `${JWT_COOKIE_NAME}=${encodeURIComponent(token)}`,
+        `Path=/`,
+        `HttpOnly`,
+        `SameSite=Lax`,
+        `Max-Age=${getCookieMaxAge()}`,
+    ];
+    if (isProduction) {
+        parts.push('Secure');
+    }
+    res.setHeader('Set-Cookie', parts.join('; '));
+}
+
+/**
+ * 清除 token cookie(登出用)
+ * 设为过去时间,浏览器立即删除
+ */
+function clearTokenCookie(res) {
+    const parts = [
+        `${JWT_COOKIE_NAME}=`,
+        `Path=/`,
+        `HttpOnly`,
+        `SameSite=Lax`,
+        `Max-Age=0`,
+    ];
+    if (process.env.NODE_ENV === 'production') {
+        parts.push('Secure');
+    }
+    res.setHeader('Set-Cookie', parts.join('; '));
 }
 
 async function resolveUserFromToken(token) {
@@ -57,7 +149,7 @@ async function resolveUserFromToken(token) {
 }
 
 async function authMiddleware(req, res, next) {
-    const token = getBearerToken(req);
+    const token = getToken(req);
 
     if (!token) {
         return res.status(401).json({
@@ -81,7 +173,7 @@ async function authMiddleware(req, res, next) {
 }
 
 async function optionalAuth(req, res, next) {
-    const token = getBearerToken(req);
+    const token = getToken(req);
 
     if (token) {
         try {
@@ -148,4 +240,4 @@ function reviewerOrAboveMiddleware(req, res, next) {
     next();
 }
 
-module.exports = { authMiddleware, adminMiddleware, optionalAuth, reviewerOrAboveMiddleware };
+module.exports = { authMiddleware, adminMiddleware, optionalAuth, reviewerOrAboveMiddleware, setTokenCookie, clearTokenCookie };

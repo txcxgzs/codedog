@@ -146,6 +146,7 @@ function avatarUpload(req, res, next) {
 }
 
 router.post('/login', loginRateLimit, userController.login);
+router.post('/logout', authMiddleware, userController.logout);
 router.get('/me', authMiddleware, userController.getCurrentUser);
 router.put('/profile', authMiddleware, avatarUpload, validateAvatarUpload, userController.updateProfile);
 router.get('/:codemaoId', userController.getUserById);

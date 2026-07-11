@@ -17,6 +17,8 @@ const { likeContains } = require('../utils/security');
 // H12: 引入内容审核服务，爬虫/管理员落库前对 nickname/bio/作品名+描述 做敏感词检查
 const aiReview = require('../services/aiReview');
 const { safeLog } = require('../utils/safeLog');
+// 修复: token 写 httpOnly cookie 防止 XSS 偷
+const { setTokenCookie } = require('../middleware/auth');
 
 // 爬取日志存储
 const crawlLogs = new Map();
@@ -476,6 +478,9 @@ async function impersonateUser(req, res) {
             JWT_SECRET,
             { expiresIn: JWT_EXPIRES_IN, issuer: 'codedog-community', audience: 'codedog-frontend' }
         );
+
+        // 修复: 写 httpOnly cookie
+        setTokenCookie(res, token);
 
         logOperation(req, 'impersonate_user', 'user', userId);
 

@@ -22,6 +22,9 @@ let isHandling401 = false
 
 request.interceptors.request.use(
   config => {
+    // 修复: token 改用 httpOnly cookie(后端自动通过 Set-Cookie 下发)
+    // 浏览器自动随同源请求携带,前端无需手动管理 Authorization 头
+    // 兼容: 如果用户还在用旧版本(sessionStorage 有 token),仍可工作
     const token = sessionStorage.getItem('token')
     if (token) {
       config.headers.Authorization = `Bearer ${token}`

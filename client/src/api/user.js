@@ -19,6 +19,14 @@ export const userApi = {
   getCurrentUser() {
     return request.get('/users/me')
   },
+
+  /**
+   * 退出登录
+   * 后端会清除 httpOnly cookie
+   */
+  logout() {
+    return request.post('/users/logout')
+  },
   
   /**
    * 更新用户资料

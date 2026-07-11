@@ -17,6 +17,8 @@ const GeetestService = require('../services/geetestService');
 // 引入内容审核服务,落库前做敏感词/违规检查(参照 commentController)
 const aiReview = require('../services/aiReview');
 const { safeLog } = require('../utils/safeLog');
+// 修复: token 改用 httpOnly cookie 防止 XSS 偷取; 同时保留返回体字段兼容旧前端
+const { setTokenCookie, clearTokenCookie } = require('../middleware/auth');
 
 // codemao 登录创建本地用户时使用的占位密码哈希（与 adminController 占位密码方案一致）
 // 使用 crypto.randomBytes 生成强随机串再 bcrypt 哈希，避免弱随机或非法哈希字符串
@@ -286,7 +288,10 @@ async function codemaoLogin(req, res, identity, password) {
             JWT_SECRET,
             { expiresIn: JWT_EXPIRES_IN, issuer: 'codedog-community', audience: 'codedog-frontend' }
         );
-        
+
+        // 修复: 写 httpOnly cookie, 前端无感升级 (兼容旧 sessionStorage 路径)
+        setTokenCookie(res, token);
+
         // 构建返回消息
         let message = '编程猫登录成功';
         if (isFirstUser) {
@@ -446,6 +451,20 @@ async function syncUserWorks(codemaoUserId, localUserId) {
         // Bug-10: 释放同步锁
         clearTimeout(lockTimer);
         syncLocks.delete(lockKey);
+    }
+}
+
+/**
+ * 登出: 清除服务端 httpOnly cookie
+ * 即使 JWT 本身还有效,cookie 没了前端也调不通任何 API
+ */
+async function logout(req, res) {
+    try {
+        clearTokenCookie(res);
+        return successResponse(res, null, '已登出');
+    } catch (error) {
+        console.error('登出错误:', error);
+        return errorResponse(res, '登出失败', 500);
     }
 }
 
@@ -688,6 +707,7 @@ function getLoginErrorMessage(codemaoRes) {
 
 module.exports = {
     login,
+    logout,
     getCurrentUser,
     updateProfile,
     getUserById
