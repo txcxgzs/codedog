@@ -284,34 +284,54 @@ async function startServer() {
             }
         }
 
-        // 迁移(必须在 sync 之前): 给已有 studios 表添加 owner_claim 列
-        // 背景: 生产环境 sync 不带 alter,新增的 owner_claim 字段不会自动加到老数据库
-        // 若不补列,Studio 模型定义的唯一索引会在 sync 时因找不到列而报错启动失败
+        // 迁移(必须在 sync 之前): 补齐老数据库缺失的列
+        // 背景: 生产环境 sync 不带 alter,新增字段不会自动加到老数据库
+        // 查询/写入时因找不到列而报错(SQLITE_ERROR: no such column)
+        // 这里统一预检并 ALTER TABLE 补齐所有已知的新增列
         try {
             const dialect = sequelize.options.dialect;
-            let hasOwnerClaim = false;
-            if (dialect === 'sqlite') {
-                const cols = await sequelize.query("PRAGMA table_info(studios)", { type: sequelize.QueryTypes.SELECT });
-                hasOwnerClaim = cols.some(c => c.name === 'owner_claim');
-            } else if (dialect === 'mysql') {
-                const cols = await sequelize.query("SHOW COLUMNS FROM studios LIKE 'owner_claim'", { type: sequelize.QueryTypes.SELECT });
-                hasOwnerClaim = cols.length > 0;
+
+            // 通用: 检查表是否存在且缺少某列,缺少则 ALTER TABLE ADD COLUMN
+            async function ensureColumn(tableName, columnName, columnDef) {
+                if (dialect === 'sqlite') {
+                    const cols = await sequelize.query(`PRAGMA table_info(${tableName})`, { type: sequelize.QueryTypes.SELECT });
+                    if (!cols.some(c => c.name === columnName)) {
+                        console.log(`[迁移] 给 ${tableName} 表添加 ${columnName} 列...`);
+                        await sequelize.query(`ALTER TABLE ${tableName} ADD COLUMN ${columnDef.sqlite}`);
+                        return true;
+                    }
+                } else if (dialect === 'mysql') {
+                    const cols = await sequelize.query(`SHOW COLUMNS FROM ${tableName} LIKE '${columnName}'`, { type: sequelize.QueryTypes.SELECT });
+                    if (cols.length === 0) {
+                        console.log(`[迁移] 给 ${tableName} 表添加 ${columnName} 列...`);
+                        await sequelize.query(`ALTER TABLE ${tableName} ADD COLUMN ${columnDef.mysql}`);
+                        return true;
+                    }
+                }
+                return false;
             }
 
-            if (!hasOwnerClaim) {
-                console.log('[迁移] 给 studios 表添加 owner_claim 列...');
-                if (dialect === 'sqlite') {
-                    await sequelize.query("ALTER TABLE studios ADD COLUMN owner_claim INTEGER");
-                } else if (dialect === 'mysql') {
-                    await sequelize.query("ALTER TABLE studios ADD COLUMN owner_claim INT NULL");
-                }
-                // 回填: 非 banned 工作室的 owner_claim = owner_id
+            // User 表新增字段
+            await ensureColumn('users', 'token_version', { sqlite: 'INTEGER DEFAULT 0', mysql: 'INT DEFAULT 0' });
+            await ensureColumn('users', 'password_changed_at', { sqlite: 'DATETIME', mysql: 'DATETIME NULL' });
+
+            // Post 表新增字段
+            await ensureColumn('posts', 'hidden_reason', { sqlite: 'VARCHAR(50)', mysql: 'VARCHAR(50) NULL' });
+
+            // Banner 表新增字段
+            await ensureColumn('banners', 'source', { sqlite: 'VARCHAR(20)', mysql: 'VARCHAR(20) NULL' });
+
+            // Studio 表新增字段 + 回填 owner_claim
+            const addedOwnerClaim = await ensureColumn('studios', 'owner_claim', { sqlite: 'INTEGER', mysql: 'INT NULL' });
+            if (addedOwnerClaim) {
                 await sequelize.query("UPDATE studios SET owner_claim = owner_id WHERE status != 'banned' AND owner_claim IS NULL");
-                console.log('[迁移] owner_claim 列添加并回填完成');
+                console.log('[迁移] owner_claim 已回填 = owner_id');
             }
+
+            console.log('[迁移] 列预检完成');
         } catch (migrationErr) {
-            // 表可能尚未创建(首次部署),sync 后会自动带 owner_claim 列,忽略
-            console.warn('[迁移] owner_claim 预检跳过:', migrationErr.message);
+            // 表可能尚未创建(首次部署),sync 后会自动带所有列,忽略
+            console.warn('[迁移] 列预检跳过:', migrationErr.message);
         }
 
         await sequelize.sync(syncOptions);
