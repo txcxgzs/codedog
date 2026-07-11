@@ -255,13 +255,12 @@ const impersonateUser = async (user) => {
     await ElMessageBox.confirm(`确定要以 ${user.nickname || user.username} 的身份登录吗？该操作将生成一个临时登录 Token。`, '一键登录', { type: 'warning' })
     const res = await adminApi.impersonateUser(user.id)
     if (res.code === 200) {
-      // 仅当尚未保存过 admin_token 时才保存当前管理员 Token，避免连续 impersonate 覆盖原始管理员凭证
-      if (!sessionStorage.getItem('admin_token')) {
-        const adminToken = sessionStorage.getItem('token')
-        if (adminToken) sessionStorage.setItem('admin_token', adminToken)
-      }
-      // 设置被模拟用户的 Token
-      sessionStorage.setItem('token', res.data.token)
+      // 修复: token 改用 httpOnly cookie, 后端已通过 Set-Cookie 写入被模拟用户身份
+      // 原管理员身份由后端在 JWT payload 的 impersonatedBy 字段记录
+      // 前端不需要也无法操作 cookie
+      // 修复: 设置一个非 token 的标志位, 告诉前端"现在处于 impersonate 状态"(用于显示"恢复管理员"按钮)
+      //      真正恢复要调后端 /restore-from-impersonate 接口
+      sessionStorage.setItem('admin_token', '1')
       ElMessage.success(`正在以 ${user.nickname || user.username} 身份登录...`)
 
       // 强制刷新页面以更新所有状态

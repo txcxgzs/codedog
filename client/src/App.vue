@@ -141,19 +141,29 @@ const defaultAvatar = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy5
 let isCheckingHCaptcha = false
 let hcaptchaCheckInterval = null
 
-// 是否处于 impersonate（一键登录）状态：sessionStorage 中存在 admin_token 即表示当前是临时身份
+// 是否处于 impersonate（一键登录）状态：当前用户对象上的 nickname 字段会含"（由 XXX 模拟）"等标记
+// 修复: cookie 模式下, 前端无法直接判断是否处于 impersonate 状态. 这里改为简单判断: 是否有 admin_token 标志位
 const hasAdminToken = computed(() => !!sessionStorage.getItem('admin_token'))
 
 /**
- * 恢复管理员身份：把保存的 admin_token 写回 token，清除 admin_token 标记后跳转后台
+ * 恢复管理员身份: 调后端 /admin/users/restore-from-impersonate 接口
+ * 修复: 之前用 sessionStorage 存 admin_token, cookie 模式下 JS 读不到 cookie, 必须走后端接口
+ * 后端从 JWT.impersonatedBy 字段取出原管理员, 重新签发 token 写入 cookie
  */
-const restoreAdmin = () => {
-  const adminToken = sessionStorage.getItem('admin_token')
-  if (!adminToken) return
-  sessionStorage.setItem('token', adminToken)
-  sessionStorage.removeItem('admin_token')
-  // 强制刷新页面，确保所有 store/组件状态重新初始化
-  window.location.href = '/admin'
+const restoreAdmin = async () => {
+  try {
+    const { adminApi } = await import('@/api/admin')
+    const res = await adminApi.restoreFromImpersonate()
+    if (res.code === 200) {
+      // 清理 impersonate 标志, 强制刷新页面让 store 重新加载 admin 用户信息
+      sessionStorage.removeItem('admin_token')
+      window.location.href = '/admin'
+    } else {
+      ElMessage.error(res.msg || '恢复失败')
+    }
+  } catch (e) {
+    ElMessage.error('恢复管理员身份失败: ' + (e?.response?.data?.msg || e.message))
+  }
 }
 
 const checkHCaptcha = async () => {

@@ -473,8 +473,16 @@ async function impersonateUser(req, res) {
         }
 
         // 生成 Token
+        // 修复: 加 impersonatedBy 字段, 恢复管理员身份时用此字段重新签 admin token
         const token = jwt.sign(
-            { id: DbAdapter.getId(user), username: user.username, role: user.role, token_version: user.token_version || 0 },
+            {
+                id: DbAdapter.getId(user),
+                username: user.username,
+                role: user.role,
+                token_version: user.token_version || 0,
+                impersonatedBy: DbAdapter.getId(req.user), // 记录是哪个管理员在操作
+                impersonatorRole: req.user.role
+            },
             JWT_SECRET,
             { expiresIn: JWT_EXPIRES_IN, issuer: 'codedog-community', audience: 'codedog-frontend' }
         );
@@ -497,6 +505,97 @@ async function impersonateUser(req, res) {
     } catch (error) {
         console.error('一键登录错误', error);
         return errorResponse(res, '操作失败', 500);
+    }
+}
+
+/**
+ * 从 impersonate 状态恢复为原管理员身份
+ * 修复: cookie 模式下原 sessionStorage admin_token 已失效,改用 JWT 字段记录管理员 ID
+ * 流程: 读当前 cookie → JWT 验证 → 取出 impersonatedBy → 用管理员 ID 重新签 token → 写 cookie
+ */
+async function restoreFromImpersonate(req, res) {
+    try {
+        // req.user 是当前被模拟用户, JWT payload 里有 impersonatedBy 字段
+        // 修复: 该字段在 resolveUserFromToken 中会一并解码, 但当前实现没返回, 需要从原始 token 重新解析
+        const tokenCookieName = require('../config/auth').JWT_COOKIE_NAME;
+        const cookieHeader = req.headers.cookie || '';
+        let rawToken = null;
+        for (const part of cookieHeader.split(';')) {
+            const eqIdx = part.indexOf('=');
+            if (eqIdx < 0) continue;
+            if (part.slice(0, eqIdx).trim() !== tokenCookieName) continue;
+            try {
+                rawToken = decodeURIComponent(part.slice(eqIdx + 1).trim());
+            } catch (e) { /* ignore */ }
+            break;
+        }
+        // 后备: 如果 cookie 路径拿不到, 尝试 Authorization 头
+        if (!rawToken) {
+            const authHeader = req.headers.authorization || '';
+            const m = authHeader.match(/^bearer\s+([a-zA-Z0-9._-]+)$/i);
+            if (m) rawToken = m[1];
+        }
+        if (!rawToken) {
+            return errorResponse(res, '未找到 token', 401);
+        }
+
+        let decoded;
+        try {
+            decoded = require('jsonwebtoken').verify(rawToken, require('../config/auth').JWT_SECRET, {
+                algorithms: ['HS256'],
+                issuer: 'codedog-community',
+                audience: 'codedog-frontend'
+            });
+        } catch (e) {
+            return errorResponse(res, 'token 无效', 401);
+        }
+
+        if (!decoded.impersonatedBy) {
+            return errorResponse(res, '当前未处于 impersonate 状态', 400);
+        }
+
+        // 取出原管理员, 重新签 token
+        const adminUser = await DbAdapter.findByPk(User, decoded.impersonatedBy);
+        if (!adminUser) {
+            return errorResponse(res, '原管理员账户不存在', 404);
+        }
+        if (adminUser.status !== 'active') {
+            return errorResponse(res, '原管理员账户已被禁用', 403);
+        }
+
+        // 重新签发 admin 身份 token
+        const newToken = require('jsonwebtoken').sign(
+            {
+                id: DbAdapter.getId(adminUser),
+                username: adminUser.username,
+                role: adminUser.role,
+                token_version: adminUser.token_version || 0
+                // 不带 impersonatedBy 字段, 表示非 impersonate 状态
+            },
+            require('../config/auth').JWT_SECRET,
+            {
+                expiresIn: require('../config/auth').JWT_EXPIRES_IN,
+                issuer: 'codedog-community',
+                audience: 'codedog-frontend'
+            }
+        );
+
+        setTokenCookie(res, newToken);
+        logOperation(req, 'restore_from_impersonate', 'user', DbAdapter.getId(req.user));
+
+        return successResponse(res, {
+            token: newToken,
+            user: {
+                id: adminUser.id,
+                username: adminUser.username,
+                nickname: adminUser.nickname,
+                avatar: adminUser.avatar,
+                role: adminUser.role
+            }
+        }, '已恢复管理员身份');
+    } catch (error) {
+        console.error('恢复管理员身份错误:', error);
+        return errorResponse(res, '恢复失败', 500);
     }
 }
 
@@ -4249,6 +4348,7 @@ module.exports = {
     updateUserLevel,
     updateUser,
     impersonateUser,
+    restoreFromImpersonate,
     updateWork,
     updatePost,
     getPosts,

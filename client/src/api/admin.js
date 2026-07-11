@@ -45,7 +45,12 @@ export const adminApi = {
   impersonateUser(userId) {
     return request.post(`/admin/users/${userId}/impersonate`)
   },
-  
+
+  // 修复: 从 impersonate 状态恢复为原管理员身份 (cookie 模式专用, 通过 JWT.impersonatedBy 字段)
+  restoreFromImpersonate() {
+    return request.post(`/admin/users/restore-from-impersonate`)
+  },
+
   updateUserPassword(userId, newPassword) {
     return request.put(`/admin/users/${userId}/password`, { newPassword })
   },

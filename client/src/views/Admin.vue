@@ -64,11 +64,12 @@
             <el-icon><Setting /></el-icon>
             <span>系统设置</span>
           </el-menu-item>
-          <el-menu-item index="logs" v-if="['admin', 'superadmin'].includes(userStore.user?.role)">
+          <!-- 修复: 收紧 log:view 权限仅 superadmin, 菜单也对应收紧,避免 admin 看到但点 403 -->
+          <el-menu-item index="logs" v-if="userStore.user?.role === 'superadmin'">
             <el-icon><List /></el-icon>
             <span>操作日志</span>
           </el-menu-item>
-          <el-menu-item index="realtime-logs" v-if="['admin', 'superadmin'].includes(userStore.user?.role)">
+          <el-menu-item index="realtime-logs" v-if="userStore.user?.role === 'superadmin'">
             <el-icon><Monitor /></el-icon>
             <span>实时日志</span>
           </el-menu-item>
