@@ -19,6 +19,17 @@ function isStudioManagerRole(role) {
     return role === 'owner' || role === 'vice_owner' || role === 'admin';
 }
 
+// 统一重算工作室 work_count 和 total_score(仅统计 approved 作品)
+// 修复: 之前 reviewWork/toggleWorkStatus/removeWork/leaveStudio 只更新 work_count
+// 不更新 total_score,导致工作室总分在上下架/移除/退出后漂移
+async function recalculateStudioStats(studioId, transaction) {
+    const [workCount, totalScore] = await Promise.all([
+        DbAdapter.count(StudioWork, { where: { studio_id: studioId, status: 'approved' }, transaction }),
+        DbAdapter.sum(StudioWork, 'score', { where: { studio_id: studioId, status: 'approved' }, transaction })
+    ]);
+    await DbAdapter.update(Studio, { work_count: workCount, total_score: totalScore || 0 }, { where: { id: studioId }, transaction });
+}
+
 function isValidJoinType(joinType) {
     return joinType == null || VALID_JOIN_TYPES.includes(joinType);
 }
@@ -395,10 +406,10 @@ async function leaveStudio(req, res) {
             if (studio && sameId(studio.vice_owner_id, DbAdapter.getId(req.user))) {
                 await DbAdapter.update(Studio, { vice_owner_id: null }, { where: { id: id }, transaction: t });
             }
-            // 如果有已通过审核的作品被移除,重算工作室 work_count
+            // 如果有已通过审核的作品被移除,重算工作室 work_count 和 total_score
+            // 修复: 原先只重算 work_count 不重算 total_score,导致退出成员的已评分作品分数仍被计入
             if (removedStudioWorks.length > 0) {
-                const approvedCount = await DbAdapter.count(StudioWork, { where: { studio_id: id, status: 'approved' }, transaction: t });
-                await DbAdapter.update(Studio, { work_count: approvedCount }, { where: { id: id }, transaction: t });
+                await recalculateStudioStats(id, t);
             }
         });
 
@@ -791,10 +802,9 @@ async function reviewWork(req, res) {
                 const count = Array.isArray(affectedRows) ? affectedRows[0] : affectedRows;
                 if (count > 0) {
                     approved = true;
-                    const studio = await DbAdapter.findByPk(Studio, id, { transaction: t });
-                    if (studio) {
-                        await DbAdapter.increment(studio, 'work_count', { transaction: t });
-                    }
+                    // 修复: 用 recalculateStudioStats 统一重算 work_count 和 total_score
+                    // 避免"先评分后审核通过"时 total_score 不增加的漂移
+                    await recalculateStudioStats(id, t);
                 }
             });
             if (!approved) {
@@ -865,10 +875,10 @@ async function removeWork(req, res) {
                 transaction: t
             });
             if (destroyed) {
-                // 原子递减: 仅当 work_count > 0 时才减 1
-                await DbAdapter.decrement(Studio, 'work_count', { where: { id, work_count: { [Op.gt]: 0 } }, transaction: t });
+                // 修复: 移除已评分作品时 total_score 也需减少,用 recalculateStudioStats 统一重算
+                await recalculateStudioStats(id, t);
             } else {
-                // 非 approved(如 pending/rejected): 直接删不递减
+                // 非 approved(如 pending/rejected): 直接删不重算
                 await DbAdapter.destroy(StudioWork, {
                     where: { id: DbAdapter.getId(studioWork), studio_id: id },
                     transaction: t
@@ -915,7 +925,8 @@ async function toggleWorkStatus(req, res) {
                 if (cnt === 0) {
                     throw new Error('当前状态不允许下架');
                 }
-                await DbAdapter.decrement(Studio, 'work_count', { where: { id, work_count: { [Op.gt]: 0 } }, transaction: t });
+                // 修复: 下架已评分作品时 total_score 也需减少,用 recalculateStudioStats 统一重算
+                await recalculateStudioStats(id, t);
             });
             return successResponse(res, null, '作品已下架');
         } else if (action === 'up') {
@@ -929,7 +940,8 @@ async function toggleWorkStatus(req, res) {
                 if (cnt === 0) {
                     throw new Error('当前状态不允许上架');
                 }
-                await DbAdapter.increment(Studio, 'work_count', { where: { id }, transaction: t });
+                // 修复: 上架已评分作品时 total_score 也需增加,用 recalculateStudioStats 统一重算
+                await recalculateStudioStats(id, t);
             });
             return successResponse(res, null, '作品已上架');
         }

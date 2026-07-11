@@ -2143,8 +2143,9 @@ async function handleReport(req, res) {
 
                         await DbAdapter.destroy(Notification, { where: { related_id: wid, related_type: 'work' }, transaction: t });
                         await DbAdapter.destroy(StudioWork, { where: { work_id: wid }, transaction: t });
-                        // Bug-3: 清理针对该作品的所有 Report 记录,避免其他 pending report 变悬空
-                        await DbAdapter.destroy(ReportModel, { where: { type: 'work', target_id: wid }, transaction: t });
+                        // Bug-3: 清理针对该作品的其他 Report 记录,避免 pending report 变悬空
+                        // 修复: 排除当前 reportId,保留当前举报记录作为审核审计资料,否则后续 update 会无效
+                        await DbAdapter.destroy(ReportModel, { where: { type: 'work', target_id: wid, id: { [Op.ne]: reportId } }, transaction: t });
                         await DbAdapter.destroy(Like, { where: { work_id: wid }, transaction: t });
                         await DbAdapter.destroy(Favorite, { where: { work_id: wid }, transaction: t });
                         await DbAdapter.update(Comment, { status: 'deleted' }, { where: { work_id: wid }, transaction: t });
@@ -2179,9 +2180,10 @@ async function handleReport(req, res) {
                     const { Like, Report: ReportModel } = require('../models');
                     await sequelize.transaction(async (t) => {
                         await DbAdapter.update(Comment, { status: 'deleted' }, { where: { id: report.target_id }, transaction: t });
-                        // Bug-1: 清理该评论相关的 Report 记录(type='comment', target_id=评论ID)
+                        // Bug-1: 清理该评论相关的其他 Report 记录(type='comment', target_id=评论ID)
                         // 与 work 分支清理 work Report 的逻辑对齐
-                        await DbAdapter.destroy(ReportModel, { where: { type: 'comment', target_id: report.target_id }, transaction: t });
+                        // 修复: 排除当前 reportId,保留当前举报记录作为审核审计资料
+                        await DbAdapter.destroy(ReportModel, { where: { type: 'comment', target_id: report.target_id, id: { [Op.ne]: reportId } }, transaction: t });
 
                         // 修复: 级联软删所有多级子回复(不只直接子回复),与 commentController 保持一致
                         let currentParentIds = [report.target_id];
@@ -2418,6 +2420,9 @@ async function addIpBan(req, res) {
             banned_by: DbAdapter.getId(req.user),
             expires_at: expires_at ? new Date(expires_at) : null
         });
+        // 修复: 封禁后立即失效缓存,确保新封禁的 IP 在下一次请求就被拦截
+        const { invalidateIpBanCache } = require('../middleware/ipBan');
+        invalidateIpBanCache(ip_address);
         logOperation(req, 'add_ip_ban', 'ip_ban', DbAdapter.getId(ipBan), { ip: ip_address, reason });
 
         return successResponse(res, ipBan, '封禁成功');
@@ -2440,6 +2445,9 @@ async function removeIpBan(req, res) {
         }
 
         await DbAdapter.destroy(IpBan, { where: { id: DbAdapter.getId(ipBan) } });
+        // 修复: 解封后立即失效缓存,确保被解封的 IP 在下一次请求就能正常访问
+        const { invalidateIpBanCache } = require('../middleware/ipBan');
+        invalidateIpBanCache(ipBan.ip);
         logOperation(req, 'remove_ip_ban', 'ip_ban', ipBanId, { ip: ipBan.ip });
 
         return successResponse(res, null, '解除封禁成功');

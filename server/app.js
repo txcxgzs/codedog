@@ -28,6 +28,7 @@ const hcaptchaRoutes = require('./routes/hcaptchaRoutes');
 const dbMigrationRoutes = require('./routes/dbMigration');
 const { hcaptchaGuard } = require('./middleware/hcaptcha');
 const { createRateLimiter } = require('./middleware/rateLimit');
+const { ipBanMiddleware } = require('./middleware/ipBan');
 const { createSequelizeSessionStore } = require('./services/sessionStore');
 
 const app = express();
@@ -190,6 +191,9 @@ const sessionOptions = {
 if (sessionStore) sessionOptions.store = sessionStore;
 
 app.use(session(sessionOptions));
+
+// IP 封禁中间件: 置于限流之前,被封禁 IP 直接 403,不占用限流配额
+app.use(ipBanMiddleware);
 
 app.use('/api', writeRateLimiter);
 app.use('/api/users/login', loginRateLimiter);

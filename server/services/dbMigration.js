@@ -96,7 +96,10 @@ class DatabaseMigration {
             codemao_token: DataTypes.TEXT,
             role: { type: DataTypes.STRING(20), defaultValue: 'user', validate: { isIn: [['user', 'reviewer', 'moderator', 'admin', 'superadmin']] } },
             status: { type: DataTypes.STRING(20), defaultValue: 'active', validate: { isIn: [['active', 'disabled']] } },
-            is_active_dalao: { type: DataTypes.BOOLEAN, defaultValue: false }
+            is_active_dalao: { type: DataTypes.BOOLEAN, defaultValue: false },
+            // 修复: 补齐与 models/index.js 一致的字段,避免迁移后生产报"列不存在"
+            token_version: { type: DataTypes.INTEGER, defaultValue: 0 },
+            password_changed_at: { type: DataTypes.DATE, allowNull: true }
         }, {
             tableName: 'users',
             timestamps: true,
@@ -150,6 +153,8 @@ class DatabaseMigration {
             category: { type: DataTypes.STRING(50), defaultValue: 'discussion' },
             cover: { type: DataTypes.STRING(500) },
             status: { type: DataTypes.STRING(20), defaultValue: 'published', validate: { isIn: [['published', 'draft', 'hidden', 'deleted']] } },
+            // 修复: 补齐 hidden_reason,与 models/index.js 一致,迁移时保留 AI隐藏/人工隐藏 的区分
+            hidden_reason: { type: DataTypes.STRING(50), allowNull: true, defaultValue: null },
             // H4: Post.tags 补 get/set，与主模型一致（返回 [] 而非 null）
             tags: {
                 type: DataTypes.TEXT,
@@ -239,7 +244,9 @@ class DatabaseMigration {
             image_url: { type: DataTypes.STRING(500), allowNull: false },
             link_url: { type: DataTypes.STRING(500) },
             sort: { type: DataTypes.INTEGER, defaultValue: 0 },
-            is_active: { type: DataTypes.BOOLEAN, defaultValue: true }
+            is_active: { type: DataTypes.BOOLEAN, defaultValue: true },
+            // 修复: 补齐 source 字段,与 models/index.js 一致,迁移时保留轮播图来源标识
+            source: { type: DataTypes.STRING(20), allowNull: true, defaultValue: null }
         }, {
             tableName: 'banners',
             timestamps: true,
