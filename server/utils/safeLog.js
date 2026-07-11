@@ -42,10 +42,36 @@ const KEEP_FIELDS = new Set([
 
 const MAX_STRING_LENGTH = 200;
 
-function maskValue(v) {
+// 智能打码字符串值:头/中/尾各保留 1~2 字符(可读性最大化,泄露最小化)
+// - 短字符串(<=8)只保留首 1 字符,避免暴露比例过高
+// - 中等字符串(9-32)头尾各 1,中间用 * 填充
+// - 长字符串(>32)头尾各 2,中间用 * 填充(保留长度感)
+// - email 特殊:保留用户名首 2 + @ + 域(fo***@gmail.com)
+// 输出:首尾字符保留,中间用 1~2 个 * 表示
+function maskValue(v, keyHint) {
     if (v == null) return v;
     if (typeof v === 'string') {
+        // 短字符串:全部打码
         if (v.length <= 4) return '***';
+        // email 特殊:保留用户名首 2 + @ + 域
+        // 字段名含 email (如 user_email / contact_email) 都按 email 处理
+        if (keyHint && keyHint.includes('email')) {
+            const at = v.indexOf('@');
+            const user = v.slice(0, at);
+            const domain = v.slice(at);
+            if (user.length <= 2) return `*${domain}`;
+            return user.slice(0, 2) + '***' + domain;
+        }
+        // token/key/secret 等高熵值:头+中+尾三段式
+        // 短(5-16):头 1 + ** + 尾 1
+        // 中(17-32):头 2 + *** + 尾 1
+        // 长(>32):头 2 + *** + 尾 2
+        if (v.length <= 16) {
+            return v.slice(0, 1) + '**' + v.slice(-1);
+        }
+        if (v.length <= 32) {
+            return v.slice(0, 2) + '***' + v.slice(-1);
+        }
         return v.slice(0, 2) + '***' + v.slice(-2);
     }
     if (typeof v === 'number' || typeof v === 'boolean') return v;
@@ -74,12 +100,16 @@ function maskSensitive(data) {
     const result = {};
     for (const [k, v] of Object.entries(data)) {
         const lowerKey = k.toLowerCase();
-        if (MASK_FIELDS.has(lowerKey) || MASK_FIELDS.has(k)) {
-            result[k] = maskValue(v);
-        } else if (DROP_FIELDS.has(lowerKey) || DROP_FIELDS.has(k)) {
-            // 整字段丢弃,不输出
+        // 匹配敏感字段:精确匹配 OR 字段名包含敏感关键词
+        // (如 user_email / contact_email / new_password 都视为敏感)
+        const isMask = MASK_FIELDS.has(lowerKey) || [...MASK_FIELDS].some(f => lowerKey.includes(f));
+        const isDrop = DROP_FIELDS.has(lowerKey) || [...DROP_FIELDS].some(f => lowerKey.includes(f));
+        const isKeep = KEEP_FIELDS.has(lowerKey) || [...KEEP_FIELDS].some(f => lowerKey.includes(f));
+        if (isMask) {
+            result[k] = maskValue(v, lowerKey);
+        } else if (isDrop) {
             continue;
-        } else if (KEEP_FIELDS.has(lowerKey) || KEEP_FIELDS.has(k)) {
+        } else if (isKeep) {
             result[k] = typeof v === 'string' ? truncateString(v) : v;
         } else {
             // 未知字段,根据值类型决定
