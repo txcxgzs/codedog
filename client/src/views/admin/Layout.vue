@@ -163,6 +163,8 @@ $sidebar-width: 240px;
     
     img {
       height: 32px;
+      flex-shrink: 0;
+      display: block;
     }
     
     span {
@@ -250,6 +252,8 @@ $sidebar-width: 240px;
     img {
       width: 32px;
       height: 32px;
+      flex-shrink: 0;
+      display: block;
       border-radius: 50%;
     }
     

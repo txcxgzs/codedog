@@ -296,6 +296,8 @@ $shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
   .c-navigator--logo_img {
     height: 38px;
     width: auto;
+    flex-shrink: 0;
+    display: block;
   }
   
   .c-navigator--logo_text {

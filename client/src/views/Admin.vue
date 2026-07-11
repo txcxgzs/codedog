@@ -551,7 +551,7 @@
             <!-- 查看模式 -->
             <template v-if="!workEditing">
               <div style="display: flex; gap: 20px; margin-bottom: 20px;">
-                <img :src="workDetail.preview" style="width: 200px; height: 150px; object-fit: cover; border-radius: 8px; background: #f0f0f0;" referrerpolicy="no-referrer" />
+                <img :src="workDetail.preview" style="width: 200px; height: 150px; flex-shrink: 0; object-fit: cover; border-radius: 8px; background: #f0f0f0;" referrerpolicy="no-referrer" />
                 <div style="flex: 1;">
                   <h3 style="margin: 0 0 8px;">{{ workDetail.name }}</h3>
                   <p style="color: #666; margin: 0 0 8px;">作者: {{ workDetail.codemao_author_name }}</p>
@@ -586,7 +586,7 @@
               <el-form :model="workEditForm" label-width="80px">
                 <el-form-item label="封面图">
                   <div style="display: flex; gap: 12px; align-items: flex-start;">
-                    <img :src="workEditForm.preview || workDetail.preview" style="width: 160px; height: 120px; object-fit: cover; border-radius: 6px; background: #f0f0f0;" referrerpolicy="no-referrer" />
+                    <img :src="workEditForm.preview || workDetail.preview" style="width: 160px; height: 120px; flex-shrink: 0; object-fit: cover; border-radius: 6px; background: #f0f0f0;" referrerpolicy="no-referrer" />
                     <div style="flex: 1;">
                       <el-input v-model="workEditForm.preview" placeholder="输入新的封面图片URL" />
                       <p style="font-size: 12px; color: #999; margin: 4px 0 0;">留空则保持原封面</p>
@@ -4598,6 +4598,8 @@ $sidebar-width: 200px;
   .r-admin--user_detail_avatar {
     width: 80px;
     height: 80px;
+    flex-shrink: 0;
+    display: block;
     border-radius: 50%;
     object-fit: cover;
   }
