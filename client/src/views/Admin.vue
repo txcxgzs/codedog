@@ -2631,16 +2631,16 @@ const getMigrationStats = async () => {
 }
 
 const geetestPassRate = computed(() => {
-  if (!captchaStats.value?.geetest) return 0
+  if (!captchaStats.value?.geetest) return '0.0'
   const { show = 0, pass = 0 } = captchaStats.value.geetest
-  if (show === 0) return 0
+  if (show === 0) return '0.0'
   return ((pass / show) * 100).toFixed(1)
 })
 
 const hcaptchaPassRate = computed(() => {
-  if (!captchaStats.value?.hcaptcha) return 0
+  if (!captchaStats.value?.hcaptcha) return '0.0'
   const { show = 0, pass = 0 } = captchaStats.value.hcaptcha
-  if (show === 0) return 0
+  if (show === 0) return '0.0'
   return ((pass / show) * 100).toFixed(1)
 })
 const savingConfigs = ref(false)
@@ -3174,7 +3174,9 @@ const fetchTrends = async () => {
 
 const renderChart = (data) => {
   if (!chartRef.value) return
-  
+  // 修复: 不足 2 个数据点时不绘制,避免除以零导致 stepX 为 Infinity
+  if (!data.dates || data.dates.length < 2) return
+
   const canvas = document.createElement('canvas')
   canvas.width = chartRef.value.offsetWidth
   canvas.height = 300
@@ -3270,6 +3272,11 @@ const fetchUsers = async () => {
 }
 
 const toggleUserRole = async (user) => {
+  // 修复: 只允许在 admin/user 之间切换,避免 reviewer/moderator/superadmin 被误提升为 admin
+  if (!['admin', 'user'].includes(user.role)) {
+    ElMessage.warning('请使用修改角色功能切换该用户角色')
+    return
+  }
   const newRole = user.role === 'admin' ? 'user' : 'admin'
   try {
     const res = await adminApi.updateUserRole(user.id, newRole)
@@ -3299,9 +3306,13 @@ const handleToggleActiveDalao = async (user, val) => {
       ElMessage.success(val ? '已授予「活跃大佬」荣誉' : '已取消「活跃大佬」荣誉')
       addHonorNoteAuto(val ? '授予「活跃大佬」荣誉' : '取消「活跃大佬」荣誉')
     } else {
+      // 修复: API 失败时回滚 UI 状态,与 admin/Users.vue 保持一致
+      user.is_active_dalao = !val
       ElMessage.error(res.msg || '操作失败')
     }
   } catch (e) {
+    // 修复: 网络错误时也回滚
+    user.is_active_dalao = !val
     ElMessage.error('操作失败')
   }
 }

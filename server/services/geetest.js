@@ -23,10 +23,27 @@ class GeetestLib {
 
     register() {
         return new Promise((resolve) => {
+            // 修复: 添加 10 秒超时,防止 SDK 回调永不触发导致请求永久挂起
+            let resolved = false;
+            const timer = setTimeout(() => {
+                if (resolved) return;
+                resolved = true;
+                console.error('[极验] 注册超时(10s),切换到宕机模式');
+                this.lastRegisterSuccess = false;
+                resolve({
+                    success: 0,
+                    gt: this.captchaId,
+                    challenge: this._randomStr(),
+                    new_captcha: true
+                });
+            }, 10000);
+
             this.geetest.register(null, (err, data) => {
+                if (resolved) return;
+                resolved = true;
+                clearTimeout(timer);
                 if (err) {
                     console.error('[极验] 注册失败:', err);
-                    // 极验服务不可达，标记为宕机模式，validate 时将使用 fallback=true 本地校验
                     this.lastRegisterSuccess = false;
                     resolve({
                         success: 0,
@@ -36,7 +53,6 @@ class GeetestLib {
                     });
                 } else {
                     console.log('[极验] 注册成功:', data);
-                    // 标记 register 是否成功：success===1 为正常，其余视为宕机
                     this.lastRegisterSuccess = data.success === 1;
                     resolve({
                         success: data.success,
@@ -58,10 +74,15 @@ class GeetestLib {
 
             console.log('[极验] 调用SDK验证...');
 
-            // 正确的调用方式: validate(fallback, result, callback)
-            // fallback: false 表示正常模式（向极验服务器校验），true 表示宕机模式（本地校验 seccode）
-            // 根据 register 结果决定：register 成功用 false（安全），register 失败/宕机用 true（避免极验故障导致 DoS）
-            // 若实例未调用过 register（如 routes /validate 直接调用），lastRegisterSuccess 默认 true，保持原安全行为
+            // 修复: 添加 8 秒超时,防止 SDK 回调永不触发导致请求永久挂起
+            let resolved = false;
+            const timer = setTimeout(() => {
+                if (resolved) return;
+                resolved = true;
+                console.error('[极验] 验证超时(8s)');
+                resolve({ result: 'fail', reason: '验证超时' });
+            }, 8000);
+
             const fallback = this.lastRegisterSuccess ? false : true;
             console.log('[极验] 当前模式:', fallback ? '宕机模式(本地校验)' : '正常模式(服务器校验)');
             this.geetest.validate(fallback, {
@@ -69,8 +90,11 @@ class GeetestLib {
                 geetest_validate: validate,
                 geetest_seccode: seccode
             }, (err, success) => {
+                if (resolved) return;
+                resolved = true;
+                clearTimeout(timer);
                 console.log('[极验] SDK回调:', { err, success });
-                
+
                 if (err) {
                     console.error('[极验] 验证错误:', err);
                     resolve({ result: 'fail', reason: err.message || '验证错误' });

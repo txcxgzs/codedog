@@ -30,10 +30,12 @@ class HCaptchaService {
             // 修复：不记录完整响应（可能含敏感信息），只记录关键结果字段
             console.log('[hCaptcha] 验证结果:', response.data?.success, response.data?.error_codes?.length || 0);
 
+            // 修复: 添加 response.data 空值保护,避免 response.data 为 null 时抛 TypeError
+            const data = response.data || {};
             return {
-                success: response.data.success,
-                score: response.data.score,
-                reason: response.data['error-codes']?.join(', ') || null
+                success: !!data.success,
+                score: data.score,
+                reason: Array.isArray(data['error-codes']) ? data['error-codes'].join(', ') || null : null
             };
         } catch (error) {
             console.error('hCaptcha验证失败:', error.message);

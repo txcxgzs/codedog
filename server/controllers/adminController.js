@@ -1976,22 +1976,30 @@ async function deleteComment(req, res) {
         await sequelize.transaction(async (t) => {
             await DbAdapter.update(Comment, { status: 'deleted' }, { where: { id: commentId }, transaction: t });
 
-            // 级联软删除子回复，避免孤儿回复
-            await DbAdapter.update(Comment, { status: 'deleted' }, { where: { parent_id: commentId }, transaction: t });
+            // 修复: 级联软删所有多级子回复(不只直接子回复),与 commentController 保持一致
+            let currentParentIds = [commentId];
+            const maxDepth = 100;
+            for (let depth = 0; depth < maxDepth && currentParentIds.length > 0; depth++) {
+                const children = await DbAdapter.findAll(Comment, {
+                    where: { parent_id: { [Op.in]: currentParentIds }, status: { [Op.ne]: 'deleted' } },
+                    attributes: ['id'],
+                    transaction: t
+                });
+                if (children.length === 0) break;
+                const childIds = children.map(c => DbAdapter.getId(c));
+                await DbAdapter.update(Comment, { status: 'deleted' }, {
+                    where: { id: { [Op.in]: childIds } },
+                    transaction: t
+                });
+                // 清理子回复的 Like 记录 + 清零 like_count
+                await DbAdapter.destroy(Like, { where: { comment_id: { [Op.in]: childIds } }, transaction: t });
+                await DbAdapter.update(Comment, { like_count: 0 }, { where: { id: { [Op.in]: childIds } }, transaction: t });
+                currentParentIds = childIds;
+            }
 
-            // M20: 清理该评论及其子回复关联的点赞记录，并清零 like_count
-            // 查询所有 parent_id=commentId 的子回复 id 列表（软删不改变 parent_id，仍可查到）
-            const childReplies = await DbAdapter.findAll(Comment, {
-                where: { parent_id: commentId },
-                attributes: ['id'],
-                transaction: t
-            });
-            // 用数组形式收集 id，避免 Number(commentId) 对字符串 ID 返回 NaN
-            const commentIdsToClean = [commentId, ...childReplies.map(c => DbAdapter.getId(c))];
-            // 批量清理这些评论关联的点赞记录
-            await DbAdapter.destroy(Like, { where: { comment_id: { [Op.in]: commentIdsToClean } }, transaction: t });
-            // 批量清零这些评论的 like_count（此前仅清了父评论，子回复 like_count 未清）
-            await DbAdapter.update(Comment, { like_count: 0 }, { where: { id: { [Op.in]: commentIdsToClean } }, transaction: t });
+            // 清理父评论自身的 Like 记录 + 清零 like_count
+            await DbAdapter.destroy(Like, { where: { comment_id: commentId }, transaction: t });
+            await DbAdapter.update(Comment, { like_count: 0 }, { where: { id: commentId }, transaction: t });
 
             // 仅在旧状态为 active 且顶层评论时才递减 comment_count，避免 hidden→deleted 重复扣减
             // Bug-1 修复: 改用原子条件 decrement(where:{comment_count:{[Op.gt]:0}}),与其他 controller 统一,
@@ -2156,17 +2164,29 @@ async function handleReport(req, res) {
                         // 与 work 分支清理 work Report 的逻辑对齐
                         await DbAdapter.destroy(ReportModel, { where: { type: 'comment', target_id: report.target_id }, transaction: t });
 
-                        // 级联软删除子回复
-                        await DbAdapter.update(Comment, { status: 'deleted' }, { where: { parent_id: report.target_id }, transaction: t });
+                        // 修复: 级联软删所有多级子回复(不只直接子回复),与 commentController 保持一致
+                        let currentParentIds = [report.target_id];
+                        const maxDepth = 100;
+                        for (let depth = 0; depth < maxDepth && currentParentIds.length > 0; depth++) {
+                            const children = await DbAdapter.findAll(Comment, {
+                                where: { parent_id: { [Op.in]: currentParentIds }, status: { [Op.ne]: 'deleted' } },
+                                attributes: ['id'],
+                                transaction: t
+                            });
+                            if (children.length === 0) break;
+                            const childIds = children.map(c => DbAdapter.getId(c));
+                            await DbAdapter.update(Comment, { status: 'deleted' }, {
+                                where: { id: { [Op.in]: childIds } },
+                                transaction: t
+                            });
+                            await DbAdapter.destroy(Like, { where: { comment_id: { [Op.in]: childIds } }, transaction: t });
+                            await DbAdapter.update(Comment, { like_count: 0 }, { where: { id: { [Op.in]: childIds } }, transaction: t });
+                            currentParentIds = childIds;
+                        }
 
-                        const childReplies = await DbAdapter.findAll(Comment, {
-                            where: { parent_id: report.target_id },
-                            attributes: ['id'],
-                            transaction: t
-                        });
-                        const commentIdsToClean = [report.target_id, ...childReplies.map(c => DbAdapter.getId(c))];
-                        await DbAdapter.destroy(Like, { where: { comment_id: { [Op.in]: commentIdsToClean } }, transaction: t });
-                        await DbAdapter.update(Comment, { like_count: 0 }, { where: { id: { [Op.in]: commentIdsToClean } }, transaction: t });
+                        // 清理父评论自身的 Like 记录 + 清零 like_count
+                        await DbAdapter.destroy(Like, { where: { comment_id: report.target_id }, transaction: t });
+                        await DbAdapter.update(Comment, { like_count: 0 }, { where: { id: report.target_id }, transaction: t });
 
                         // Bug-3: 仅在旧状态为 active 且顶层评论时才递减 comment_count
                         if (wasActive && isTopLevel) {
@@ -2616,7 +2636,7 @@ async function deleteAnnouncement(req, res) {
 async function getSystemConfigs(req, res) {
     try {
         const configs = await DbAdapter.findAll(SystemConfig, {});
-        const sensitiveKeys = ['ai_api_key', 'hcaptcha_secret_key', 'geetest_key', 'SESSION_SECRET', 'JWT_SECRET', 'DATABASE_PASSWORD'];
+        const sensitiveKeys = ['ai_api_key', 'hcaptcha_secret_key', 'geetest_key', 'sensitive_api_key', 'SESSION_SECRET', 'JWT_SECRET', 'DATABASE_PASSWORD'];
         const result = {};
         configs.forEach(c => {
             if (sensitiveKeys.includes(c.config_key)) {
@@ -3052,9 +3072,15 @@ async function aiBatchReviewReports(req, res) {
             return errorResponse(res, '单次最多审核20条举报', 400);
         }
 
+        // 修复: 校验 reportIds 元素类型,与 aiAutoHandleReports 保持一致
+        const validReportIds = reportIds.filter(id => Number.isInteger(Number(id))).map(Number);
+        if (validReportIds.length === 0) {
+            return errorResponse(res, '请提供有效的举报ID', 400);
+        }
+
         const results = [];
 
-        for (const reportId of reportIds) {
+        for (const reportId of validReportIds) {
             const report = await DbAdapter.findByPk(Report, reportId, {
                 include: [
                     { model: Work, as: 'work', attributes: ['name', 'description'] },
@@ -3207,7 +3233,8 @@ async function aiAutoHandleReports(req, res) {
                         await DbAdapter.destroy(Like, { where: { work_id: wid }, transaction: t });
                         await DbAdapter.destroy(Favorite, { where: { work_id: wid }, transaction: t });
                         await DbAdapter.update(Comment, { status: 'deleted' }, { where: { work_id: wid }, transaction: t });
-                        await DbAdapter.update(Work, { status: 'deleted' }, { where: { id: wid }, transaction: t });
+                        // 修复: 清零 Work 计数,与 adminController.deleteWork 和 workController.deleteWork 保持一致
+                        await DbAdapter.update(Work, { status: 'deleted', praise_times: 0, collection_times: 0, comment_count: 0 }, { where: { id: wid }, transaction: t });
                         for (const sid of affectedStudioIds) {
                             const approvedCount = await DbAdapter.count(StudioWork, { where: { studio_id: sid, status: 'approved' }, transaction: t });
                             await DbAdapter.update(Studio, { work_count: approvedCount }, { where: { id: sid }, transaction: t });
@@ -3216,13 +3243,33 @@ async function aiAutoHandleReports(req, res) {
                         const comment = await DbAdapter.findByPk(Comment, report.target_id, { transaction: t });
                         if (comment) {
                             const wasActive = comment.status === 'active';
+                            const { Like } = require('../models');
                             await DbAdapter.update(Comment, { status: 'deleted' }, { where: { id: report.target_id }, transaction: t });
-                            // 级联软删子回复
-                            await DbAdapter.update(Comment, { status: 'deleted' }, { where: { parent_id: report.target_id }, transaction: t });
+                            // 修复: 级联软删所有多级子回复(不只直接子回复) + 清理 Like + 清零 like_count
+                            let currentParentIds = [report.target_id];
+                            const maxDepth = 100;
+                            for (let depth = 0; depth < maxDepth && currentParentIds.length > 0; depth++) {
+                                const children = await DbAdapter.findAll(Comment, {
+                                    where: { parent_id: { [Op.in]: currentParentIds }, status: { [Op.ne]: 'deleted' } },
+                                    attributes: ['id'],
+                                    transaction: t
+                                });
+                                if (children.length === 0) break;
+                                const childIds = children.map(c => DbAdapter.getId(c));
+                                await DbAdapter.update(Comment, { status: 'deleted' }, {
+                                    where: { id: { [Op.in]: childIds } },
+                                    transaction: t
+                                });
+                                await DbAdapter.destroy(Like, { where: { comment_id: { [Op.in]: childIds } }, transaction: t });
+                                await DbAdapter.update(Comment, { like_count: 0 }, { where: { id: { [Op.in]: childIds } }, transaction: t });
+                                currentParentIds = childIds;
+                            }
+                            // 清理父评论自身的 Like 记录 + 清零 like_count
+                            await DbAdapter.destroy(Like, { where: { comment_id: report.target_id }, transaction: t });
+                            await DbAdapter.update(Comment, { like_count: 0 }, { where: { id: report.target_id }, transaction: t });
                             if (wasActive && !comment.parent_id) {
                                 if (comment.work_id) {
                                     const work = await DbAdapter.findByPk(Work, comment.work_id, { transaction: t });
-                                    // 原子条件递减：仅当 comment_count > 0 时递减，避免 check-then-decrement 竞态导致负数
                                     if (work) await DbAdapter.decrement(work, 'comment_count', { where: { comment_count: { [Op.gt]: 0 } }, transaction: t });
                                 }
                                 if (comment.post_id) {
@@ -3235,10 +3282,21 @@ async function aiAutoHandleReports(req, res) {
                         const { Like, Favorite, Comment, Notification } = require('../models');
                         const pid = report.target_id;
                         await DbAdapter.destroy(Notification, { where: { related_id: pid, related_type: 'post' }, transaction: t });
+                        // 修复: 清理挂在帖子评论上的 Like(comment_id),与 handleReport 保持一致
+                        const postComments = await DbAdapter.findAll(Comment, {
+                            where: { post_id: pid },
+                            attributes: ['id'],
+                            transaction: t
+                        });
+                        const commentIds = postComments.map(c => DbAdapter.getId(c));
+                        if (commentIds.length > 0) {
+                            await DbAdapter.destroy(Like, { where: { comment_id: { [Op.in]: commentIds } }, transaction: t });
+                        }
                         await DbAdapter.destroy(Like, { where: { post_id: pid }, transaction: t });
                         await DbAdapter.destroy(Favorite, { where: { post_id: pid }, transaction: t });
                         await DbAdapter.update(Comment, { status: 'deleted' }, { where: { post_id: pid }, transaction: t });
-                        await DbAdapter.update(Post, { status: 'deleted' }, { where: { id: pid }, transaction: t });
+                        // 修复: 清零 Post 计数,与 handleReport 保持一致
+                        await DbAdapter.update(Post, { status: 'deleted', like_count: 0, collection_count: 0, comment_count: 0 }, { where: { id: pid }, transaction: t });
                     } else if (report.type === 'user') {
                         // 与 handleReport 高危用户举报分支保持一致：禁用用户
                         // 批量场景下若当前管理员权限不足以处理该用户（低权限不能禁高权限），则跳过禁用动作，
@@ -3532,7 +3590,18 @@ async function updateStudio(req, res) {
                 console.warn(`[admin] 管理员更新工作室名称/描述为疑似违规内容,已放行(管理特权)`);
             }
         }
-        
+
+        // 修复: 校验 vice_owner_id 是否为该工作室的 active 成员
+        if (vice_owner_id !== undefined && vice_owner_id !== null) {
+            const { StudioMember } = require('../models');
+            const memberRecord = await DbAdapter.findOne(StudioMember, {
+                where: { studio_id: id, user_id: vice_owner_id, status: 'active' }
+            });
+            if (!memberRecord) {
+                return errorResponse(res, '副室长必须为该工作室的活跃成员', 400);
+            }
+        }
+
         await DbAdapter.update(Studio, {
             name: finalName,
             description: finalDesc || null,

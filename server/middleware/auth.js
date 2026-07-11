@@ -83,7 +83,8 @@ async function optionalAuth(req, res, next) {
             req.user = await resolveUserFromToken(token);
         } catch (error) {
             // 修复 M6: 仅 JWT 类错误(签名/过期)静默降级为游客;DB 等其他故障返回 503
-            if (error.name === 'JsonWebTokenError' || error.name === 'TokenExpiredError') {
+            // 修复: 补充 NotBeforeError 捕获,该错误也是 JWT 类错误应按游客处理
+            if (error.name === 'JsonWebTokenError' || error.name === 'TokenExpiredError' || error.name === 'NotBeforeError') {
                 // 令牌无效或过期,按游客处理
             } else if (error.statusCode === 401 || error.statusCode === 403) {
                 // 用户不存在/被禁用,也按游客处理(保持原有行为)

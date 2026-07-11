@@ -58,7 +58,13 @@ function createRateLimiter({ windowMs, max, keyPrefix = 'rate-limit', keyGenerat
         }
 
         const now = Date.now();
-        const keySuffix = keyGenerator ? keyGenerator(req) : getClientIp(req);
+        // 修复: keyGenerator 异常时回退到 IP 维度,与 skip 的异常保护一致
+        let keySuffix;
+        try {
+            keySuffix = keyGenerator ? keyGenerator(req) : getClientIp(req);
+        } catch (e) {
+            keySuffix = getClientIp(req);
+        }
         const key = `${keyPrefix}:${keySuffix}`;
         const current = buckets.get(key);
 

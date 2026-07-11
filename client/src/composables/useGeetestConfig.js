@@ -27,7 +27,8 @@ export function useGeetestConfig() {
       try {
         const res = await geetestApi.getConfig()
         if (res.code === 200) {
-          config.value = res.data
+          // 修复: 合并而非整体替换,保留 product 等默认字段
+          config.value = { ...config.value, ...res.data }
           loaded = true
         }
       } catch (e) {

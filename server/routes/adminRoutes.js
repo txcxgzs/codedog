@@ -33,7 +33,7 @@ router.get('/admin-users', requireRole('admin'), adminController.getAdminUsers);
  */
 router.get('/users', requirePermission('user:view'), adminController.getUsers);
 router.get('/users/:userId', requirePermission('user:view'), adminController.getUserDetail);
-router.put('/users/:userId', requireRole('admin'), adminController.updateUser);
+router.put('/users/:userId', requirePermission('user:edit'), adminController.updateUser);
 router.post('/users/:userId/impersonate', requireRole('admin'), adminController.impersonateUser);
 router.put('/users/:userId/password', requireRole('admin'), adminController.updateUserPassword);
 router.put('/users/:userId/status', requirePermission('user:disable'), adminController.updateUserStatus);
@@ -97,14 +97,14 @@ router.post('/crawl/work', requirePermission('crawl:works'), adminController.cra
 router.post('/crawl/hot', requirePermission('crawl:works'), adminController.crawlHotWorks);
 router.post('/crawl/user', requirePermission('crawl:works'), adminController.crawlUserWorks);
 router.post('/crawl/posts', requirePermission('crawl:works'), adminController.crawlPostWorks);
-router.post('/crawl/banners', requireRole('admin'), adminController.crawlBanners);
+router.post('/crawl/banners', requirePermission('crawl:works'), adminController.crawlBanners);
 router.get('/crawl/logs', requirePermission('crawl:works'), adminController.getCrawlLogs);
 
 /**
  * 实时日志
  */
-router.get('/logs/realtime', requireRole('admin'), adminController.getRealtimeLogs);
-router.delete('/logs/realtime', requireRole('admin'), adminController.clearRealtimeLogs);
+router.get('/logs/realtime', requirePermission('log:view'), adminController.getRealtimeLogs);
+router.delete('/logs/realtime', requirePermission('log:view'), adminController.clearRealtimeLogs);
 
 /**
  * 公告管理

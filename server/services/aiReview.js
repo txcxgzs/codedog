@@ -422,7 +422,9 @@ async function reviewContent(type, content) {
         // 修复提示词注入：用 XML 标签 <user_content> 包裹用户内容，
         // 并在 prompt 末尾追加安全说明，明确告知 AI 标签内是数据而非指令，
         // 防止用户内容中的恶意指令影响 AI 审核行为
-        const safeContent = `<user_content>${String(content)}</user_content>`;
+        // 修复: 转义用户内容中的 </user_content> 标签,防止 prompt injection 标签逃逸
+        const escapedContent = String(content).replace(/<\/user_content>/gi, '&lt;/user_content&gt;');
+        const safeContent = `<user_content>${escapedContent}</user_content>`;
         const prompt = config.prompt
             .replace('{{type}}', () => String(type))
             .replace('{{content}}', () => safeContent)

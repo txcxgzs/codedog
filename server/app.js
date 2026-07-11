@@ -61,21 +61,8 @@ function setSecurityHeaders(res) {
     ].join('; '));
 }
 
-function resolveSessionSecret() {
-    const configuredSecret = process.env.SESSION_SECRET;
-    if (isValidSessionSecret(configuredSecret)) {
-        return configuredSecret;
-    }
-
-    const message = 'SESSION_SECRET is missing or too short. Set a random secret with at least 32 characters.';
-    if (isProduction) {
-        console.error(message);
-        process.exit(1);
-    }
-
-    console.warn(`${message} Generated an in-memory development secret for this process.`);
-    return crypto.randomBytes(32).toString('hex');
-}
+// 修复: 删除本地 resolveSessionSecret,改用 auth.js 的持久化版本,确保 PM2 cluster 各 worker 共享同一密钥
+// isValidSessionSecret 仍保留用于其他校验场景
 
 async function ensureInitialSuperadmin() {
     // 启动时检查：如果数据库只有1个用户且不是超级管理员，自动提升
@@ -179,7 +166,8 @@ app.use((req, res, next) => {
         const normalizedPageSize = Number.isFinite(pageSize) && pageSize > 0 ? pageSize : 20;
         normalizedQuery.pageSize = String(Math.min(normalizedPageSize, 100));
     }
-    Object.defineProperty(req, 'query', { value: normalizedQuery, configurable: true, enumerable: true });
+    // 修复: 添加 writable: true,避免后续中间件无法重新赋值 req.query
+    Object.defineProperty(req, 'query', { value: normalizedQuery, writable: true, configurable: true, enumerable: true });
     next();
 });
 
@@ -313,13 +301,39 @@ async function startServer() {
 
         await ensureInitialSuperadmin();
 
-        app.listen(PORT, () => {
+        // 修复: 保存 server 实例用于优雅停机和错误处理
+        const server = app.listen(PORT, () => {
             console.log(`Server started on port ${PORT}`);
             console.log(`API: http://localhost:${PORT}/api`);
             if (isProduction) {
                 console.warn('[WARNING] 生产环境：限流、hCaptcha缓存、角色权限缓存均为进程内状态。多实例部署时请使用Redis等共享存储，否则限流可被绕过、权限不同步。');
             }
         });
+
+        // 修复: 处理端口占用等启动错误
+        server.on('error', (err) => {
+            if (err.code === 'EADDRINUSE') {
+                console.error(`端口 ${PORT} 已被占用,请检查是否有其他进程正在运行`);
+            } else {
+                console.error('服务器启动失败:', err.message);
+            }
+            process.exit(1);
+        });
+
+        // 修复: 添加优雅停机处理,确保 PM2 reload/stop 时正在处理的请求完成
+        function gracefulShutdown(signal) {
+            console.log(`收到 ${signal},开始优雅停机...`);
+            server.close(async () => {
+                try {
+                    await sequelize.close();
+                } catch (e) { /* 忽略关闭错误 */ }
+                process.exit(0);
+            });
+            // 5秒后强制退出
+            setTimeout(() => process.exit(1), 5000).unref();
+        }
+        process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+        process.on('SIGINT', () => gracefulShutdown('SIGINT'));
     } catch (error) {
         console.error('Failed to start server:', error);
         process.exit(1);

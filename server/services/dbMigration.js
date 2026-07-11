@@ -35,7 +35,9 @@ class DatabaseMigration {
      * 获取数据库连接
      * M26: MySQL 分支添加 utf8mb4 字符集，支持 emoji 等 4 字节字符
      */
-    async getConnection(dbType, config = {}) {
+    async getConnection(dbType, config) {
+        // 修复: 显式处理 null,ES6 默认参数对 null 不生效
+        config = config || {};
         if (dbType === 'mysql') {
             const sequelize = new Sequelize(
                 config.database || process.env.DB_NAME,

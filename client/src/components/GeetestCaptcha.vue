@@ -68,6 +68,8 @@ const init = async () => {
       script.onerror = () => {
         error.value = '验证码脚本加载失败'
         loading.value = false
+        // 修复: 脚本加载失败时通知父组件禁用验证码,否则用户无法通过登录验证
+        emit('ready', { enabled: false })
       }
       document.head.appendChild(script)
     } else {
@@ -76,6 +78,8 @@ const init = async () => {
   } catch (e) {
     error.value = e.message || '验证码初始化失败'
     loading.value = false
+    // 修复: 初始化失败时也通知父组件禁用验证码,否则用户无法通过登录验证
+    emit('ready', { enabled: false })
     emit('error', e)
   }
 }
@@ -97,7 +101,10 @@ const loadCaptcha = async (gt, challenge, offline, newCaptcha, product) => {
   }, (captcha) => {
     captchaObj.value = captcha
     
-    captcha.appendTo(captchaBox.value)
+    // 修复: 检查 DOM ref 是否存在,避免组件卸载后 appendTo(null) 抛错
+    if (captchaBox.value) {
+      captcha.appendTo(captchaBox.value)
+    }
     
     captcha.onReady(() => {
       loading.value = false

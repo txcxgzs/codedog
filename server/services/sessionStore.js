@@ -3,7 +3,9 @@ const { DataTypes, Op } = require('sequelize');
 function getExpiration(sessionData, ttlMs) {
     const cookieExpires = sessionData?.cookie?.expires;
     if (cookieExpires) {
-        return new Date(cookieExpires);
+        // 修复: 校验 Date 有效性,避免 Invalid Date 导致会话永不过期
+        const d = new Date(cookieExpires);
+        if (!isNaN(d.getTime())) return d;
     }
 
     const originalMaxAge = sessionData?.cookie?.originalMaxAge;

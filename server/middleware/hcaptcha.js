@@ -24,7 +24,9 @@ async function isHcaptchaEnabled() {
 
     // 故意不吞异常:DB 故障应让上层 catch 返回 503,而不是降级为 false 放行
     const enabledConfig = await DbAdapter.findOne(SystemConfig, { where: { config_key: 'hcaptcha_enabled' } });
-    hcaptchaEnabledCache = enabledConfig && enabledConfig.config_value === 'true';
+    // 修复: 用 !! 强制转为布尔值,避免 enabledConfig 为 null 时缓存值为 null,
+    // 与哨兵值 null 冲突导致缓存永不命中
+    hcaptchaEnabledCache = !!(enabledConfig && enabledConfig.config_value === 'true');
     hcaptchaCacheExpiry = now + HCAPTCHA_CACHE_TTL;
     return hcaptchaEnabledCache;
 }
@@ -80,10 +82,12 @@ async function verifyHcaptcha(token, secret) {
         });
         // 修复 L9: 日志不再打印整个 response.data,只打印布尔结果,避免泄露
         console.log('[hCaptcha] 验证结果:', response.data?.success);
-        return response.data.success;
+        // 修复: 统一使用可选链 + 强制布尔值,避免 response.data 为 null 时抛 TypeError
+        return !!response.data?.success;
     } catch (error) {
         if (error.response) {
-            console.error('hCaptcha验证失败:', error.response.status, error.response.data);
+            // 修复: 错误日志不打印完整 response.data,只打印状态码和错误码,避免泄露
+            console.error('hCaptcha验证失败:', error.response.status, error.response.data?.success, error.response.data?.error_codes);
         } else {
             console.error('hCaptcha验证失败:', error.message);
         }

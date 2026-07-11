@@ -76,10 +76,10 @@ const searchKeyword = ref('')
 const batchMode = ref(false)
 const selectedIds = ref([])
 const geetestDialog = ref(null)
-const geetestConfig = ref(null)
 
+// 修复: 删除本地未赋值的 geetestConfig,改用 composable 提供的 geetestEnabled
 const getGeetestForFavorite = async () => {
-  if (geetestConfig.value?.enabled && geetestConfig.value?.scenes?.favorite) {
+  if (geetestEnabled.value) {
     const data = await geetestDialog.value?.show('favorite')
     if (!data) return null
     return data

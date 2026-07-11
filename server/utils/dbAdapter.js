@@ -115,8 +115,9 @@ class DbAdapter {
         return await instance.save();
     }
 
+    // 修复: 添加空值保护,避免 instance 为 null/undefined 时抛 TypeError
     static getId(instance) {
-        return instance.id;
+        return instance?.id ?? null;
     }
 }
 

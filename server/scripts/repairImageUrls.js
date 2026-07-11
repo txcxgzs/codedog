@@ -19,7 +19,9 @@ function normalizeUrl(url) {
     }
     if (/^https?:\/\//i.test(url)) return url;       // 已是绝对 URL
     if (url.startsWith('//')) return 'https:' + url;  // 协议相对
-    if (url.startsWith('/')) return 'https://cdn.codemao.cn' + url; // 相对路径
+    // 修复: 本地上传路径保持不变,避免被错误转换为 CDN URL
+    if (url.startsWith('/uploads/')) return url;
+    if (url.startsWith('/')) return 'https://cdn.codemao.cn' + url; // 其他相对路径补全 CDN 域名
     return url;
 }
 

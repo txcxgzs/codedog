@@ -78,7 +78,14 @@ if (dbType === 'mysql') {
             idle: 10000
         },
         retry: {
-            max: 3
+            max: 3,
+            // 修复: 添加 match 模式,只重试连接类错误,避免对所有错误(如约束冲突)重试
+            match: [
+                /SQLITE_BUSY/,
+                /SQLITE_LOCKED/,
+                /SequelizeConnectionTimedOutError/,
+                /SequelizeConnectionError/
+            ]
         },
         // 修复 H2(连接级, Report 2 #23): SQLite 的 foreign_keys 是「连接级」设置,
         // 不是数据库级持久化设置。本配置启用了连接池(pool.max=2),仅在启动主连接执行

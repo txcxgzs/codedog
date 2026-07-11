@@ -91,7 +91,8 @@ async function cleanup() {
 }
 
 async function main() {
-    await sequelize.sync({ alter: true });
+    // 修复: 移除 sync({ alter: true }),防止误改生产数据库表结构;仅验证连接
+    await sequelize.authenticate();
 
     const activeUser = await createUser('user');
     const disabledUser = await createUser('user', 'disabled');

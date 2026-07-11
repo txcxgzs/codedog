@@ -450,7 +450,16 @@ const deleteStudio = async (studio) => {
     if (res.code === 200) {
       ElMessage.success('已解散')
       detailDialogVisible.value = false
+      // 修复: 清理详情状态,避免残留已删除工作室的数据
+      studioDetail.value = null
+      studioMembers.value = []
+      studioWorks.value = []
+      pendingMembers.value = []
+      pendingWorks.value = []
       fetchStudios()
+    } else {
+      // 修复: 补充失败反馈,避免用户点击无响应
+      ElMessage.error(res.msg || '删除失败')
     }
   } catch (e) { if (e !== 'cancel') ElMessage.error('删除失败') }
 }

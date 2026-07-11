@@ -147,8 +147,13 @@ router.beforeEach(async (to, from, next) => {
       if (error?.response?.status === 401) {
         next({ name: 'Login', query: { redirect: to.fullPath } })
       } else {
-        // 网络错误：阻止本次导航，保留在原页面，避免用户体验降级
-        next(false)
+        // 修复: 初始导航网络错误时 next(false) 会导致空白页;
+        // 若目标页不需要登录态则放行,否则跳登录页
+        if (!to.meta.requiresAuth && !to.meta.requiresAdmin) {
+          next()
+        } else {
+          next({ name: 'Login', query: { redirect: to.fullPath } })
+        }
       }
       return
     }

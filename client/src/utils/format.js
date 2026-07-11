@@ -11,7 +11,7 @@
  * @returns {string} 格式化后的时间字符串，解析失败返回空字符串
  */
 export function formatTime(time, fmt = 'YYYY-MM-DD HH:mm') {
-  if (!time) return ''
+  if (time === null || time === undefined || time === '') return ''
   let date
   if (time instanceof Date) {
     date = time
@@ -42,7 +42,7 @@ export function formatTime(time, fmt = 'YYYY-MM-DD HH:mm') {
  * @returns {string} 相对时间字符串
  */
 export function relativeTime(time) {
-  if (!time) return ''
+  if (time === null || time === undefined || time === '') return ''
   let date
   if (typeof time === 'string') {
     // 兼容 MySQL 时间格式
@@ -56,6 +56,8 @@ export function relativeTime(time) {
   }
   if (isNaN(date.getTime())) return ''
   const diff = Date.now() - date.getTime()
+  // 修复: 未来时间直接显示格式化日期,避免负数 diff 被误判为"刚刚"
+  if (diff < 0) return formatTime(time)
   if (diff < 60000) return '刚刚'
   if (diff < 3600000) return Math.floor(diff / 60000) + '分钟前'
   if (diff < 86400000) return Math.floor(diff / 3600000) + '小时前'

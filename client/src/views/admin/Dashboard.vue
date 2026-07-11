@@ -148,7 +148,8 @@ const formatTime = (time) => {
 const fetchStats = async () => {
   try {
     const res = await adminApi.getStats()
-    if (res.code === 200) {
+    // 修复: 校验 res.data 非空,避免 null 赋值导致模板渲染崩溃
+    if (res.code === 200 && res.data) {
       stats.value = res.data
     }
   } catch (e) {

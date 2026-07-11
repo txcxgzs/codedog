@@ -196,6 +196,16 @@ const editUser = (user) => {
 }
 
 const saveUser = async () => {
+  // 修复: 防止管理员修改自己的角色(自我降级/提权)
+  if (editForm.value.id === userStore.user?.id && editForm.value.role !== userStore.user.role) {
+    ElMessage.warning('不能修改自己的角色')
+    return
+  }
+  // 修复: 防止非 superadmin 设置 superadmin 角色
+  if (userStore.user?.role !== 'superadmin' && editForm.value.role === 'superadmin') {
+    ElMessage.warning('无权设置超级管理员')
+    return
+  }
   try {
     const res = await adminApi.updateUser(editForm.value.id, {
       nickname: editForm.value.nickname,

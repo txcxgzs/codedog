@@ -126,7 +126,8 @@ const loadCaptcha = (gt, challenge, offline, newCaptcha, product) => {
       loading.value = false
     })
     
-    if (product !== 'bind') {
+    // 修复: 检查 DOM ref 是否存在,避免组件卸载后 appendTo(null) 抛错
+    if (product !== 'bind' && captchaBox.value) {
       captcha.appendTo(captchaBox.value)
     }
   })

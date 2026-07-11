@@ -332,17 +332,18 @@ const codemaoApi = {
     },
 
     /**
-     * 获取作品详情（简化版，用于批量爬取）
+     * 获取所有论坛板块
+     * 修复: 补充 seedData.js 所需的 getForumBoards 函数
      */
-    async getWorkInfo(workId) {
+    async getForumBoards() {
         try {
             const response = await requestWithRetry(() => axios.get(
-                `${CODEMAO_BASE_URL}/creation-tools/v1/works/${workId}`,
+                `${CODEMAO_BASE_URL}/web/forums/boards`,
                 getAxiosConfig()
             ));
             return response.data;
         } catch (error) {
-            console.error('[编程猫] 获取作品信息失败:', error.message);
+            console.error('[编程猫] 获取论坛板块失败:', error.message);
             return null;
         }
     }

@@ -4,7 +4,11 @@ const { errorResponse } = require('./response');
 function geetestVerify(scene) {
     return async (req, res, next) => {
         try {
-            const { geetest_challenge, geetest_validate, geetest_seccode } = req.body;
+            // 修复: req.body 可能为 undefined,添加空值保护
+            const { geetest_challenge, geetest_validate, geetest_seccode } = req.body || {};
+            if (!geetest_challenge || !geetest_validate || !geetest_seccode) {
+                return errorResponse(res, '请完成验证码验证', 400);
+            }
 
             const result = await GeetestService.verify(
                 scene,

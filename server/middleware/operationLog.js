@@ -38,7 +38,10 @@ function logAction(action, getTargetType = null, getTargetId = null, getDetails 
                     const targetType = getTargetType ? getTargetType(req) : null;
                     const targetId = getTargetId ? getTargetId(req, data) : null;
                     const details = getDetails ? getDetails(req, data) : null;
-                    logOperation(req, action, targetType, targetId, details);
+                    // 修复: 添加 .catch 防止未处理的 Promise 拒绝
+                    logOperation(req, action, targetType, targetId, details).catch(e => {
+                        console.error('记录操作日志异步失败:', e.message);
+                    });
                 }
             } catch (e) {
                 console.error('记录操作日志失败:', e.message);

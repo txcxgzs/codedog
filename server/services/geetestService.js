@@ -44,11 +44,13 @@ class GeetestService {
                 return { success: false, reason: '验证码配置不完整' };
             }
 
-            await this.recordStats(scene, 'verify', req);
-
+            // 修复: 参数校验提前到 recordStats('verify') 之前,避免统计口径不一致
             if (!challenge || !validate || !seccode) {
+                await this.recordStats(scene, 'fail', req);
                 return { success: false, reason: '请完成验证码验证' };
             }
+
+            await this.recordStats(scene, 'verify', req);
 
             const geetest = new GeetestLib(config.geetestId, config.geetestKey);
             // 先调用 register 检测极验服务是否可达，以便 validate 选择正确的 fallback 模式

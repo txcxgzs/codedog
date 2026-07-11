@@ -31,6 +31,11 @@ async function fetchAndSaveWork(workId) {
             return existing;
         }
 
+        // 修复: 校验 data.user_info 是否存在,避免编程猫接口异常时抛 TypeError
+        if (!data || !data.id || !data.user_info || !data.user_info.id) {
+            return null;
+        }
+
         // 使用编程猫用户ID查找或创建用户
         const codemaoUserId = String(data.user_info.id);
 
@@ -176,7 +181,8 @@ async function fetchForumPosts() {
                 if (!postsData || !postsData.items) continue;
 
                 for (const post of postsData.items) {
-                    const workIdMatch = post.content?.match(/work\/(\d+)/);
+                    // 修复: 正则加边界约束,避免匹配 network/123、framework/456 等子串
+                    const workIdMatch = post.content?.match(/\/work\/(\d+)/);
                     if (workIdMatch) {
                         const result = await fetchAndSaveWork(parseInt(workIdMatch[1]));
                         if (result) {
@@ -200,14 +206,15 @@ async function fetchForumPosts() {
 async function searchAndFetchWorks(keyword, limit = 50) {
     try {
         console.log(`\n🔍 搜索: ${keyword}`);
-        const data = await codemaoApi.searchPosts(keyword, 1, 50);
+        // 修复: 使用 limit 参数而非硬编码 50
+        const data = await codemaoApi.searchPosts(keyword, 1, limit);
         if (!data || !data.items) return { count: 0, authorIds: [] };
 
         let count = 0;
         const authorIds = new Set();
 
         for (const post of data.items) {
-            const workIdMatch = post.content?.match(/work\/(\d+)/);
+            const workIdMatch = post.content?.match(/\/work\/(\d+)/);
             if (workIdMatch) {
                 const result = await fetchAndSaveWork(parseInt(workIdMatch[1]));
                 if (result) {
