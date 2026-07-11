@@ -55,21 +55,23 @@ router.post('/', authMiddleware, geetestVerify('report'), async (req, res) => {
         if (!target) {
             return errorResponse(res, '举报目标不存在', 404);
         }
-        if ((type === 'work' || type === 'post') && target.status !== 'published') {
+        // 修复: hidden 作品仍允许被举报（用户可对已被管理员隐藏的内容追加证据）,
+        // 只有 deleted 状态才视为不存在
+        if ((type === 'work' || type === 'post') && target.status === 'deleted') {
             return errorResponse(res, '举报目标不存在', 404);
         }
-        if (type === 'comment' && target.status !== 'active') {
+        if (type === 'comment' && target.status === 'deleted') {
             return errorResponse(res, '举报目标不存在', 404);
         }
         if (type === 'comment' && target.work_id) {
             const work = await DbAdapter.findByPk(Work, target.work_id);
-            if (!work || work.status !== 'published') {
+            if (!work || work.status === 'deleted') {
                 return errorResponse(res, '举报目标不存在', 404);
             }
         }
         if (type === 'comment' && target.post_id) {
             const post = await DbAdapter.findByPk(Post, target.post_id);
-            if (!post || post.status !== 'published') {
+            if (!post || post.status === 'deleted') {
                 return errorResponse(res, '举报目标不存在', 404);
             }
         }

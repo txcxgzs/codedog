@@ -409,6 +409,9 @@ async function syncUserWorks(codemaoUserId, localUserId) {
 
                 if (created) {
                     syncCount++;
+                } else if (record && record.status === 'hidden') {
+                    // 修复: 管理员已隐藏的作品,不被 sync 流程覆盖状态(hidden 是管理员主动设置)
+                    console.log(`[syncUserWorks] 作品 ${workDetail.id} 已被管理员隐藏,跳过状态同步`);
                 } else if (record && record.status === 'published' && workStatus === 'pending') {
                     // 已存在作品重新审核:编程猫若将作品改为违规内容,本地同步为 pending
                     await DbAdapter.update(Work, { status: 'pending' }, { where: { id: record.id } });
