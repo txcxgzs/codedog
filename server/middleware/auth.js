@@ -8,11 +8,16 @@ const DbAdapter = require('../utils/dbAdapter');
 /**
  * 从 Authorization 头解析 Bearer token
  * 修复 L10: 用正则替代 split(' '),避免多空格/异常输入导致解析失败
+ * 修复: 添加 token 长度上限(4096),防止异常长字符串消耗 CPU/JWT 解析时间
+ * 修复: 字符集校验,只接受 base64url 字符(a-zA-Z0-9-_.)+JWT 必需的 . 分隔符
  */
 function getBearerToken(req) {
     const header = req.headers.authorization || '';
-    const match = header.match(/^bearer\s+(.+)$/i);
-    return match ? match[1] : null;
+    const match = header.match(/^bearer\s+([a-zA-Z0-9._-]+)$/i);
+    if (!match) return null;
+    // JWT 实际长度通常 100-500 字节,4096 是合理上限(给超长自定义 token 留余量)
+    if (match[1].length > 4096) return null;
+    return match[1];
 }
 
 async function resolveUserFromToken(token) {

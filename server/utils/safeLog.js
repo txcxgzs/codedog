@@ -3,9 +3,15 @@
  *
  * 设计目标：
  * 1. 默认对敏感字段（password/token/api_key/secret/cookie/email）打码
- * 2. 大对象（用户/作品）只输出关键审计字段，丢弃全量数据
+ * 2. 任何字段都不丢弃 — 即使是 description/avatar/bio 也只是截断到 80 字符保留可读性
  * 3. 长字符串截断，防止日志爆炸
  * 4. 通过环境变量 SAFE_LOG=0 可关闭脱敏（开发时用）
+ * 5. 永不抛错 — safeLog 永远不应该导致业务请求失败
+ *
+ * 关键不变量：
+ * - safeLog 内部 try/catch 包裹,即使内部出错也只打一行 fallback
+ * - 不修改传入的 data (纯函数,递归返回新对象)
+ * - 任何 typeof 异常值(函数/Symbol/Error 对象)都安全降级为 String()
  *
  * 不改变业务行为,仅替换 console.log 入口。
  */
@@ -88,15 +94,42 @@ function truncateString(v, maxLen = MAX_STRING_LENGTH) {
  * - 对象只保留 KEEP_FIELDS,其他字段丢弃
  * - 命中 MASK_FIELDS 的字段值打码
  */
-function maskSensitive(data) {
+function maskSensitive(data, _seen = new WeakSet()) {
+    // 循环引用检测: 防止 self.self.self 无限递归
+    if (data != null && typeof data === 'object') {
+        if (_seen.has(data)) return '[Circular]';
+        _seen.add(data);
+    }
+    // 类型防御: 处理 function/Symbol/Error/Map/Set 等 typeof === 'object' 但非普通对象的情况
     if (data == null) return data;
     if (typeof data === 'string') return truncateString(data);
-    if (typeof data !== 'object') return data;
+    if (typeof data === 'number' || typeof data === 'boolean') return data;
+    if (typeof data === 'function') return '[Function]';
+    if (typeof data === 'symbol') return '[Symbol]';
+    if (typeof data === 'bigint') return '[BigInt]';
+    if (typeof data !== 'object') return String(data);
+    // Date / RegExp / Error 等内置对象
+    if (data instanceof Date) return data.toISOString();
+    if (data instanceof RegExp) return data.toString();
+    if (data instanceof Error) return data.message;
+    if (data instanceof Map) return `[Map(${data.size})]`;
+    if (data instanceof Set) return `[Set(${data.size})]`;
+    // Buffer / TypedArray
+    if (data instanceof Buffer) return `[Buffer(${data.length}B)]`;
+    if (ArrayBuffer.isView(data)) return `[${data.constructor.name}(${data.length})]`;
     if (Array.isArray(data)) {
-        return data.map(item => maskSensitive(item));
+        return data.map(item => maskSensitive(item, _seen));
+    }
+    // 普通对象 - 浅拷贝 + 递归脱敏
+    // Object.entries 对有原型链的对象也可能抛错(罕见), 保护一下
+    let entries;
+    try {
+        entries = Object.entries(data);
+    } catch (e) {
+        return '[Object]';
     }
     const result = {};
-    for (const [k, v] of Object.entries(data)) {
+    for (const [k, v] of entries) {
         const lowerKey = k.toLowerCase();
         // 匹配敏感字段:精确匹配 OR 字段名包含敏感关键词
         // (如 user_email / contact_email / new_password 都视为敏感)
@@ -116,9 +149,15 @@ function maskSensitive(data) {
                 result[k] = truncateString(v);
             } else if (typeof v === 'number' || typeof v === 'boolean' || v == null) {
                 result[k] = v;
+            } else if (typeof v === 'function' || typeof v === 'symbol' || typeof v === 'bigint') {
+                result[k] = String(v);
             } else {
                 // 复杂对象/数组,递归脱敏
-                result[k] = maskSensitive(v);
+                try {
+                    result[k] = maskSensitive(v, _seen);
+                } catch (e) {
+                    result[k] = '[unserializable]';
+                }
             }
         }
     }
@@ -132,12 +171,23 @@ function maskSensitive(data) {
  * @param {'log'|'warn'|'error'} level - console 级别
  */
 function safeLog(tag, data, level = 'log') {
-    if (SAFE_LOG_ENABLED) {
-        const masked = maskSensitive(data);
-        console[level](`[${tag}]`, masked);
-    } else {
-        // 开发模式:原始输出
-        console[level](`[${tag}]`, data);
+    // 最外层 try/catch: 保证 safeLog 永不抛错影响业务
+    // 即使 maskSensitive 内部遇到未预期的对象结构,只输出 fallback
+    try {
+        if (SAFE_LOG_ENABLED) {
+            const masked = maskSensitive(data);
+            console[level](`[${tag}]`, masked);
+        } else {
+            // 开发模式:原始输出
+            console[level](`[${tag}]`, data);
+        }
+    } catch (e) {
+        // 兜底: 输出 tag + 错误信息,绝不传播
+        try {
+            console[level](`[${tag}] <safeLog-failed: ${e.message}>`);
+        } catch (_) {
+            // 极端情况 console 也失败,什么都不做
+        }
     }
 }
 
