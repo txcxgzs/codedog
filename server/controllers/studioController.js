@@ -13,6 +13,12 @@ function sameId(left, right) {
     return String(left) === String(right);
 }
 
+// 判断角色是否具有工作室管理权限(owner > vice_owner > admin)
+// 用于统一管理操作的鉴权条件,避免遗漏 vice_owner
+function isStudioManagerRole(role) {
+    return role === 'owner' || role === 'vice_owner' || role === 'admin';
+}
+
 function isValidJoinType(joinType) {
     return joinType == null || VALID_JOIN_TYPES.includes(joinType);
 }
@@ -523,7 +529,7 @@ async function reviewMember(req, res) {
             where: { studio_id: id, user_id: DbAdapter.getId(req.user), status: 'active' }
         });
         
-        if (!adminMember || (adminMember.role !== 'owner' && adminMember.role !== 'admin')) {
+        if (!adminMember || !isStudioManagerRole(adminMember.role)) {
             return errorResponse(res, '无权审核申请', 403);
         }
         
@@ -755,7 +761,7 @@ async function reviewWork(req, res) {
             where: { studio_id: id, user_id: DbAdapter.getId(req.user), status: 'active' }
         });
         
-        if (!adminMember || (adminMember.role !== 'owner' && adminMember.role !== 'admin')) {
+        if (!adminMember || !isStudioManagerRole(adminMember.role)) {
             return errorResponse(res, '无权审核作品', 403);
         }
         
@@ -839,7 +845,7 @@ async function removeWork(req, res) {
             where: { studio_id: id, user_id: DbAdapter.getId(req.user), status: 'active' }
         });
         
-        if (!adminMember || (adminMember.role !== 'owner' && adminMember.role !== 'admin')) {
+        if (!adminMember || !isStudioManagerRole(adminMember.role)) {
             return errorResponse(res, '无权移除作品', 403);
         }
         
@@ -886,7 +892,7 @@ async function toggleWorkStatus(req, res) {
             where: { studio_id: id, user_id: DbAdapter.getId(req.user), status: 'active' }
         });
         
-        if (!adminMember || (adminMember.role !== 'owner' && adminMember.role !== 'admin')) {
+        if (!adminMember || !isStudioManagerRole(adminMember.role)) {
             return errorResponse(res, '无权操作作品', 403);
         }
         
@@ -948,7 +954,7 @@ async function getPendingMembers(req, res) {
             where: { studio_id: id, user_id: DbAdapter.getId(req.user), status: 'active' }
         });
         
-        if (!adminMember || (adminMember.role !== 'owner' && adminMember.role !== 'admin')) {
+        if (!adminMember || !isStudioManagerRole(adminMember.role)) {
             return errorResponse(res, '无权查看', 403);
         }
         
@@ -977,7 +983,7 @@ async function getPendingWorks(req, res) {
             where: { studio_id: id, user_id: DbAdapter.getId(req.user), status: 'active' }
         });
         
-        if (!adminMember || (adminMember.role !== 'owner' && adminMember.role !== 'admin')) {
+        if (!adminMember || !isStudioManagerRole(adminMember.role)) {
             return errorResponse(res, '无权查看', 403);
         }
         
@@ -1074,7 +1080,7 @@ async function kickMember(req, res) {
             where: { studio_id: id, user_id: DbAdapter.getId(req.user), status: 'active' }
         });
         
-        if (!adminMember || (adminMember.role !== 'owner' && adminMember.role !== 'admin')) {
+        if (!adminMember || !isStudioManagerRole(adminMember.role)) {
             return errorResponse(res, '无权移除成员', 403);
         }
         
@@ -1089,8 +1095,14 @@ async function kickMember(req, res) {
         if (member.role === 'owner') {
             return errorResponse(res, '不能移除创建者', 400);
         }
-        
-        if (member.role === 'admin' && adminMember.role !== 'owner') {
+
+        // 修复 BOLA: 副室长是 owner 亲自任命的二把手,只有 owner 才能踢出
+        if (member.role === 'vice_owner' && adminMember.role !== 'owner') {
+            return errorResponse(res, '无权移除副室长，仅创建者可操作', 403);
+        }
+
+        // 管理员只有 owner 或副室长才能踢出
+        if (member.role === 'admin' && adminMember.role !== 'owner' && adminMember.role !== 'vice_owner') {
             return errorResponse(res, '无权移除管理员', 403);
         }
 
