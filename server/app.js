@@ -284,6 +284,36 @@ async function startServer() {
             }
         }
 
+        // 迁移(必须在 sync 之前): 给已有 studios 表添加 owner_claim 列
+        // 背景: 生产环境 sync 不带 alter,新增的 owner_claim 字段不会自动加到老数据库
+        // 若不补列,Studio 模型定义的唯一索引会在 sync 时因找不到列而报错启动失败
+        try {
+            const dialect = sequelize.options.dialect;
+            let hasOwnerClaim = false;
+            if (dialect === 'sqlite') {
+                const cols = await sequelize.query("PRAGMA table_info(studios)", { type: sequelize.QueryTypes.SELECT });
+                hasOwnerClaim = cols.some(c => c.name === 'owner_claim');
+            } else if (dialect === 'mysql') {
+                const cols = await sequelize.query("SHOW COLUMNS FROM studios LIKE 'owner_claim'", { type: sequelize.QueryTypes.SELECT });
+                hasOwnerClaim = cols.length > 0;
+            }
+
+            if (!hasOwnerClaim) {
+                console.log('[迁移] 给 studios 表添加 owner_claim 列...');
+                if (dialect === 'sqlite') {
+                    await sequelize.query("ALTER TABLE studios ADD COLUMN owner_claim INTEGER");
+                } else if (dialect === 'mysql') {
+                    await sequelize.query("ALTER TABLE studios ADD COLUMN owner_claim INT NULL");
+                }
+                // 回填: 非 banned 工作室的 owner_claim = owner_id
+                await sequelize.query("UPDATE studios SET owner_claim = owner_id WHERE status != 'banned' AND owner_claim IS NULL");
+                console.log('[迁移] owner_claim 列添加并回填完成');
+            }
+        } catch (migrationErr) {
+            // 表可能尚未创建(首次部署),sync 后会自动带 owner_claim 列,忽略
+            console.warn('[迁移] owner_claim 预检跳过:', migrationErr.message);
+        }
+
         await sequelize.sync(syncOptions);
         if (sessionStore) await sessionStore.sync();
         console.log('Database models synchronized.');
