@@ -353,7 +353,13 @@ const loading = ref(true)
 
 const renderedDescription = computed(() => {
   if (!work.value?.description) return '暂无描述'
-  return DOMPurify.sanitize(marked(work.value.description))
+  // 显式禁用危险标签/属性,防御 mxss(markup mutation XSS)绕过攻击。
+  // 默认 DOMPurify 已禁 onerror/onload 等,但某些 mXSS 变形 payload 仍可能绕过,
+  // 显式 FORBID_TAGS + FORBID_ATTR 是防御性深度。
+  return DOMPurify.sanitize(marked(work.value.description), {
+    FORBID_TAGS: ['style', 'form', 'input', 'iframe', 'object', 'embed', 'script'],
+    FORBID_ATTR: ['onerror', 'onload', 'onclick', 'onmouseover', 'style', 'formaction']
+  })
 })
 const loadingRelated = ref(false)
 const loadingComments = ref(false)
