@@ -8,7 +8,7 @@ const path = require('path');
 const fs = require('fs');
 
 const { sequelize, testConnection } = require('./config/database');
-const { isValidSessionSecret } = require('./config/auth');
+const { isValidSessionSecret, resolveSessionSecret } = require('./config/auth');
 const { User } = require('./models');
 const DbAdapter = require('./utils/dbAdapter');
 
