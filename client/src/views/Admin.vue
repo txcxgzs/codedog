@@ -558,7 +558,7 @@
                   <div style="display: flex; gap: 8px; flex-wrap: wrap;">
                     <el-tag>{{ getTypeName(workDetail.type) }}</el-tag>
                     <el-tag :type="workDetail.is_featured ? 'warning' : 'info'">{{ workDetail.is_featured ? '已精选' : '未精选' }}</el-tag>
-                    <el-tag :type="workDetail.status === 'published' ? 'success' : 'info'">{{ workDetail.status === 'published' ? '已发布' : workDetail.status }}</el-tag>
+                    <el-tag :type="workDetail.status === 'published' ? 'success' : workDetail.status === 'hidden' ? 'warning' : 'info'">{{ workDetail.status === 'published' ? '已发布' : workDetail.status === 'hidden' ? '已隐藏' : workDetail.status === 'deleted' ? '已删除' : workDetail.status === 'pending' ? '待审核' : workDetail.status === 'rejected' ? '已驳回' : workDetail.status }}</el-tag>
                   </div>
                 </div>
               </div>
@@ -575,9 +575,29 @@
                   <a :href="workDetail.work_url" target="_blank" style="color: #409eff;">查看原作品</a>
                 </el-descriptions-item>
               </el-descriptions>
-              <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px;">
-                <el-button type="danger" plain @click="handleDeleteWork(workDetail)">删除作品</el-button>
-                <el-button type="primary" @click="enterWorkEdit">编辑</el-button>
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 20px;">
+                <el-dropdown trigger="click" @command="(cmd) => handleWorkMoreAction(cmd, workDetail)">
+                  <el-button>
+                    更多操作<el-icon class="el-icon--right"><CaretBottom /></el-icon>
+                  </el-button>
+                  <template #dropdown>
+                    <el-dropdown-menu>
+                      <el-dropdown-item command="hide" :disabled="workDetail.status === 'hidden'">
+                        <el-icon><View /></el-icon>{{ workDetail.status === 'hidden' ? '已是隐藏状态' : '隐藏作品' }}
+                      </el-dropdown-item>
+                      <el-dropdown-item command="unhide" :disabled="workDetail.status !== 'hidden'">
+                        <el-icon><View /></el-icon>取消隐藏
+                      </el-dropdown-item>
+                      <el-dropdown-item command="delete" divided>
+                        <span style="color: #f56c6c;"><el-icon><Delete /></el-icon>删除作品</span>
+                      </el-dropdown-item>
+                    </el-dropdown-menu>
+                  </template>
+                </el-dropdown>
+                <div style="display: flex; gap: 8px;">
+                  <el-button @click="workDetailVisible = false">关闭</el-button>
+                  <el-button type="primary" @click="enterWorkEdit">编辑</el-button>
+                </div>
               </div>
             </template>
 
@@ -603,7 +623,9 @@
                   <el-col :span="8"><el-form-item label="状态">
                     <el-select v-model="workEditForm.status" style="width: 100%">
                       <el-option label="已发布" value="published" />
-                      <el-option label="草稿" value="draft" />
+                      <el-option label="待审核" value="pending" />
+                      <el-option label="已驳回" value="rejected" />
+                      <el-option label="已隐藏" value="hidden" />
                       <el-option label="已删除" value="deleted" />
                     </el-select>
                   </el-form-item></el-col>
@@ -3632,10 +3654,37 @@ const toggleWorkFeatured = async (work) => {
 
 const handleDeleteWork = async (work) => {
   try {
-    await ElMessageBox.confirm('确定删除该作品？', '提示', { type: 'warning' })
+    await ElMessageBox.confirm('确定删除该作品？删除后前台不可见，数据保留在数据库。', '提示', { type: 'warning' })
     const res = await adminApi.deleteWork(work.id)
     if (res.code === 200) { fetchWorks(); ElMessage.success('删除成功') }
   } catch (e) {}
+}
+
+// 更多操作:隐藏/取消隐藏/删除
+const handleWorkMoreAction = async (cmd, work) => {
+  if (cmd === 'hide') {
+    try {
+      await ElMessageBox.confirm('隐藏后该作品从前台列表和详情页移除,数据保留,可在编辑中恢复。', '提示', { type: 'warning' })
+      const res = await adminApi.updateWork(work.id, { status: 'hidden' })
+      if (res.code === 200) {
+        ElMessage.success('已隐藏')
+        // 同步本地状态,关闭弹窗并刷新列表
+        workDetail.value.status = 'hidden'
+        fetchWorks()
+      }
+    } catch (e) {}
+  } else if (cmd === 'unhide') {
+    try {
+      const res = await adminApi.updateWork(work.id, { status: 'published' })
+      if (res.code === 200) {
+        ElMessage.success('已恢复显示')
+        workDetail.value.status = 'published'
+        fetchWorks()
+      }
+    } catch (e) {}
+  } else if (cmd === 'delete') {
+    handleDeleteWork(work)
+  }
 }
 
 const searchComments = () => { commentPage.value = 1; fetchComments() }

@@ -380,9 +380,17 @@ async function updateUser(req, res) {
             return errorResponse(res, '用户不存在', 404);
         }
 
-        // 检查权限
-        if (!canManageExistingUser(req, user)) {
+        // 角色层级检查(防止同级互改):即使目标是自己,只要改 role/status
+        // 仍需通过 canManageUser(自己对自己永远是 true,但保留作为防御)
+        if (!canManageUser(operatorRole, user.role)) {
             return errorResponse(res, 'Cannot manage this user', 403);
+        }
+
+        // 修复: 仅 role/status 变更时禁止操作自己(防止自我降权/自我禁用),
+        // nickname/email/is_active_dalao 等无害字段允许超级管理员对自己操作
+        const isSelfUpdate = isSelf(req, user);
+        if (isSelfUpdate && (role !== undefined || status !== undefined)) {
+            return errorResponse(res, '不能修改自己的角色或状态', 400);
         }
 
         if (role && role !== user.role) {
@@ -884,7 +892,7 @@ async function updateWork(req, res) {
             return errorResponse(res, '作品不存在', 404);
         }
 
-        const VALID_WORK_STATUSES = ['pending', 'published', 'rejected', 'deleted'];
+        const VALID_WORK_STATUSES = ['pending', 'published', 'rejected', 'hidden', 'deleted'];
         const updateData = {};
         if (name !== undefined) {
             const trimmedName = String(name).trim();

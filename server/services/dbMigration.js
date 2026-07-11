@@ -125,7 +125,7 @@ class DatabaseMigration {
             collection_times: { type: DataTypes.INTEGER, defaultValue: 0 },
             comment_count: { type: DataTypes.INTEGER, defaultValue: 0 },
             is_featured: { type: DataTypes.BOOLEAN, defaultValue: false },
-            status: { type: DataTypes.STRING(20), defaultValue: 'published', validate: { isIn: [['pending', 'published', 'rejected', 'deleted']] } }
+            status: { type: DataTypes.STRING(20), defaultValue: 'published', validate: { isIn: [['pending', 'published', 'rejected', 'hidden', 'deleted']] } }
         }, {
             tableName: 'works',
             timestamps: true,
