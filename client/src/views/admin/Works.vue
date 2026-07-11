@@ -21,7 +21,7 @@
       <el-table-column prop="id" label="ID" width="80" />
       <el-table-column label="封面" width="120">
         <template #default="{ row }">
-          <img :src="row.preview" class="r-admin-works--cover" />
+          <img :src="row.preview" class="r-admin-works--cover" referrerpolicy="no-referrer" />
         </template>
       </el-table-column>
       <el-table-column prop="name" label="作品名称" min-width="200" />

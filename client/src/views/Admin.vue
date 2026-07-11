@@ -190,7 +190,7 @@
             <el-table-column label="用户信息" min-width="150">
               <template #default="{ row }">
                 <div class="r-admin--user_cell" @click="showUserDetail(row)" style="cursor: pointer;">
-                  <img :src="row.avatar || defaultAvatar" class="r-admin--user_avatar" />
+                  <img :src="row.avatar || defaultAvatar" class="r-admin--user_avatar" referrerpolicy="no-referrer" />
                   <div>
                     <div class="r-admin--user_name">{{ row.nickname || row.username }}</div>
                     <div class="r-admin--user_email">{{ row.email }}</div>
@@ -244,7 +244,7 @@
           </div>
           <div v-else-if="userDetail" class="r-admin--user_detail">
             <div class="r-admin--user_detail_header">
-              <img :src="userDetail.user.avatar || defaultAvatar" class="r-admin--user_detail_avatar" />
+              <img :src="userDetail.user.avatar || defaultAvatar" class="r-admin--user_detail_avatar" referrerpolicy="no-referrer" />
               <div class="r-admin--user_detail_info">
                 <h3>{{ userDetail.user.nickname || userDetail.user.username }}</h3>
                 <p>@{{ userDetail.user.username }} · {{ userDetail.user.email }}</p>
@@ -446,7 +446,7 @@
             <el-table-column label="用户信息" min-width="150">
               <template #default="{ row }">
                 <div style="display: flex; align-items: center; gap: 8px;">
-                  <img :src="row.avatar || defaultAvatar" style="width: 32px; height: 32px; border-radius: 50%;" />
+                  <img :src="row.avatar || defaultAvatar" style="width: 32px; height: 32px; border-radius: 50%;" referrerpolicy="no-referrer" />
                   <span>{{ row.nickname || row.username }}</span>
                 </div>
               </template>
@@ -501,7 +501,7 @@
             <el-table-column label="作品" min-width="200">
               <template #default="{ row }">
                 <div class="r-admin--work_cell">
-                  <img :src="row.preview" class="r-admin--work_cover" />
+                  <img :src="row.preview" class="r-admin--work_cover" referrerpolicy="no-referrer" />
                   <div>
                     <div class="r-admin--work_name">{{ row.name }}</div>
                     <div class="r-admin--work_author">{{ row.codemao_author_name }}</div>
@@ -551,7 +551,7 @@
             <!-- 查看模式 -->
             <template v-if="!workEditing">
               <div style="display: flex; gap: 20px; margin-bottom: 20px;">
-                <img :src="workDetail.preview" style="width: 200px; height: 150px; object-fit: cover; border-radius: 8px; background: #f0f0f0;" />
+                <img :src="workDetail.preview" style="width: 200px; height: 150px; object-fit: cover; border-radius: 8px; background: #f0f0f0;" referrerpolicy="no-referrer" />
                 <div style="flex: 1;">
                   <h3 style="margin: 0 0 8px;">{{ workDetail.name }}</h3>
                   <p style="color: #666; margin: 0 0 8px;">作者: {{ workDetail.codemao_author_name }}</p>
@@ -586,7 +586,7 @@
               <el-form :model="workEditForm" label-width="80px">
                 <el-form-item label="封面图">
                   <div style="display: flex; gap: 12px; align-items: flex-start;">
-                    <img :src="workEditForm.preview || workDetail.preview" style="width: 160px; height: 120px; object-fit: cover; border-radius: 6px; background: #f0f0f0;" />
+                    <img :src="workEditForm.preview || workDetail.preview" style="width: 160px; height: 120px; object-fit: cover; border-radius: 6px; background: #f0f0f0;" referrerpolicy="no-referrer" />
                     <div style="flex: 1;">
                       <el-input v-model="workEditForm.preview" placeholder="输入新的封面图片URL" />
                       <p style="font-size: 12px; color: #999; margin: 4px 0 0;">留空则保持原封面</p>
@@ -645,7 +645,7 @@
             <el-table-column label="用户" width="120">
               <template #default="{ row }">
                 <div class="r-admin--user_cell" v-if="row.user">
-                  <img :src="row.user.avatar || defaultAvatar" class="r-admin--user_avatar" />
+                  <img :src="row.user.avatar || defaultAvatar" class="r-admin--user_avatar" referrerpolicy="no-referrer" />
                   <span>{{ row.user.nickname || row.user.username }}</span>
                 </div>
               </template>
@@ -835,7 +835,7 @@
             <el-table-column label="用户" min-width="150">
               <template #default="{ row }">
                 <div style="display: flex; align-items: center; gap: 8px;">
-                  <img :src="row.avatar || defaultAvatar" style="width: 32px; height: 32px; border-radius: 50%;" />
+                  <img :src="row.avatar || defaultAvatar" style="width: 32px; height: 32px; border-radius: 50%;" referrerpolicy="no-referrer" />
                   <span>{{ row.nickname || row.username }}</span>
                 </div>
               </template>
@@ -914,7 +914,7 @@
             <el-table-column prop="id" label="ID" width="60" />
             <el-table-column label="图片" width="150">
               <template #default="{ row }">
-                <img :src="row.image_url" style="width: 120px; height: 60px; object-fit: cover; border-radius: 4px;" />
+                <img :src="row.image_url" style="width: 120px; height: 60px; object-fit: cover; border-radius: 4px;" referrerpolicy="no-referrer" />
               </template>
             </el-table-column>
             <el-table-column prop="title" label="标题" min-width="150" />
@@ -1049,7 +1049,7 @@
           </div>
           <div v-else-if="studioDetail" class="r-admin--studio_detail">
             <div class="r-admin--studio_detail_header">
-              <img :src="studioDetail.studio.logo || defaultStudioCover" class="r-admin--studio_detail_logo" />
+              <img :src="studioDetail.studio.logo || defaultStudioCover" class="r-admin--studio_detail_logo" referrerpolicy="no-referrer" />
               <div class="r-admin--studio_detail_info">
                 <h3>{{ studioDetail.studio.name }}</h3>
                 <p>{{ studioDetail.studio.description || '暂无描述' }}</p>

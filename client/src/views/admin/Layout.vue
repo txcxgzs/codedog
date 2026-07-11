@@ -3,7 +3,7 @@
     <!-- 侧边栏 -->
     <aside class="r-admin--sidebar">
       <div class="r-admin--logo">
-        <img src="https://static.codemao.cn/community/shequ_logo.png" alt="编程狗社区" />
+        <img src="https://static.codemao.cn/community/shequ_logo.png" alt="编程狗社区" referrerpolicy="no-referrer" />
         <span>管理后台</span>
       </div>
       
@@ -69,7 +69,7 @@
         <div class="r-admin--header_right">
           <el-dropdown trigger="click" @command="handleCommand">
             <div class="r-admin--user">
-              <img :src="userStore.user?.avatar || defaultAvatar" />
+              <img :src="userStore.user?.avatar || defaultAvatar" referrerpolicy="no-referrer" />
               <span>{{ userStore.user?.nickname || userStore.user?.username }}</span>
               <el-icon><ArrowDown /></el-icon>
             </div>

@@ -10,7 +10,7 @@
       <el-table-column prop="id" label="ID" width="80" />
       <el-table-column label="图片" width="200">
         <template #default="{ row }">
-          <img :src="row.image_url" class="r-admin-banners--image" />
+          <img :src="row.image_url" class="r-admin-banners--image" referrerpolicy="no-referrer" />
         </template>
       </el-table-column>
       <el-table-column prop="title" label="标题" min-width="200" />

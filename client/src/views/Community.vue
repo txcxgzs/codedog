@@ -42,7 +42,7 @@
                   <span><span class="r-community--stat_icon r-community--stat_icon_comment"></span>{{ post.comment_count }}</span>
                 </div>
               </div>
-              <img v-if="post.cover" :src="post.cover" class="r-community--item_cover" />
+              <img v-if="post.cover" :src="post.cover" class="r-community--item_cover" referrerpolicy="no-referrer" />
             </div>
             
             <el-empty v-if="!loading && posts.length === 0" description="暂无帖子" />

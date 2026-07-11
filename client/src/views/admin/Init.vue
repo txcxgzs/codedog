@@ -4,7 +4,7 @@
       <!-- 左侧装饰 -->
       <div class="r-init--banner">
         <div class="r-init--banner_content">
-          <img src="https://static.codemao.cn/community/shequ_logo.png" alt="编程狗社区" class="r-init--logo">
+          <img src="https://static.codemao.cn/community/shequ_logo.png" alt="编程狗社区" class="r-init--logo" referrerpolicy="no-referrer">
           <h2>欢迎使用编程狗社区</h2>
           <p>第一个使用编程猫登录的用户将自动成为管理员</p>
           <div class="r-init--steps">

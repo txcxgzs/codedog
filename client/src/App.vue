@@ -6,7 +6,7 @@
       <div class="c-navigator--header-content">
         <!-- Logo -->
         <a href="/" class="c-navigator--logo_wrap">
-          <img src="https://static.codemao.cn/community/shequ_logo.png" alt="编程狗社区" class="c-navigator--logo_img">
+          <img src="https://static.codemao.cn/community/shequ_logo.png" alt="编程狗社区" class="c-navigator--logo_img" referrerpolicy="no-referrer">
           <span class="c-navigator--logo_text">编程狗社区</span>
         </a>
         

@@ -178,7 +178,7 @@
             <el-table-column label="作品" min-width="200">
               <template #default="{ row }">
                 <div style="display: flex; align-items: center; gap: 8px;">
-                  <img :src="row.work?.preview || defaultWorkCover" style="width: 48px; height: 36px; border-radius: 4px; object-fit: cover;" />
+                  <img :src="row.work?.preview || defaultWorkCover" style="width: 48px; height: 36px; border-radius: 4px; object-fit: cover;" referrerpolicy="no-referrer" />
                   <div>
                     <div>{{ row.work?.name }}</div>
                     <div style="font-size: 12px; color: #999;">by {{ row.user?.nickname || row.user?.username }}</div>
@@ -235,7 +235,7 @@
       <div class="r-studio-detail--my_works" v-loading="myWorksLoading">
         <template v-if="myWorks.length > 0">
           <div v-for="work in myWorks" :key="work.id" class="r-studio-detail--my_work_item" @click="handleSubmitWork(work.codemao_work_id)">
-            <img :src="work.preview || defaultWorkCover" />
+            <img :src="work.preview || defaultWorkCover" referrerpolicy="no-referrer" />
             <div class="r-studio-detail--my_work_name">{{ work.name }}</div>
           </div>
         </template>

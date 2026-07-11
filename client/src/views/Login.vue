@@ -4,7 +4,7 @@
       <!-- 左侧装饰 -->
       <div class="r-login--banner">
         <div class="r-login--banner_content">
-          <img src="https://static.codemao.cn/community/shequ_logo.png" alt="编程狗社区" class="r-login--logo">
+          <img src="https://static.codemao.cn/community/shequ_logo.png" alt="编程狗社区" class="r-login--logo" referrerpolicy="no-referrer">
           <h2>欢迎来到编程狗社区</h2>
           <p>发现、分享、创作有趣的编程作品</p>
           <div class="r-login--features">

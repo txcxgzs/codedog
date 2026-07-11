@@ -1,6 +1,7 @@
 <template>
   <!-- 图片加载失败时自动回退到 fallback 占位图，避免出现破图 -->
-  <img :src="currentSrc" @error="handleError" v-bind="$attrs" />
+  <!-- referrerpolicy="no-referrer": 不发送 Referer,绕过编程猫 CDN 防盗链 -->
+  <img :src="currentSrc" @error="handleError" referrerpolicy="no-referrer" v-bind="$attrs" />
 </template>
 
 <script setup>

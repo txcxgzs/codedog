@@ -38,7 +38,7 @@
             </div>
             <div class="r-publish--preview_content">
               <div class="r-publish--preview_cover">
-                <img :src="previewData.preview" alt="预览">
+                <img :src="previewData.preview" alt="预览" referrerpolicy="no-referrer">
               </div>
               <div class="r-publish--preview_info">
                 <h4>{{ previewData.name }}</h4>

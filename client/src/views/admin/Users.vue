@@ -21,7 +21,7 @@
       <el-table-column prop="id" label="ID" width="80" />
       <el-table-column label="头像" width="80">
         <template #default="{ row }">
-          <img :src="row.avatar || defaultAvatar" class="r-admin-users--avatar" />
+          <img :src="row.avatar || defaultAvatar" class="r-admin-users--avatar" referrerpolicy="no-referrer" />
         </template>
       </el-table-column>
       <el-table-column prop="username" label="用户名" width="150" />

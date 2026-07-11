@@ -346,6 +346,38 @@ async function startServer() {
             console.warn('帖子状态迁移跳过:', e.message);
         }
 
+        // 修复: 清理数据库中图片URL的反引号污染
+        // 背景: 宝塔终端执行 curl/命令时,会自动给 https:// 开头的URL加反引号,
+        // 导致存入数据库的 avatar/preview/cover 等字段值形如 `https://...`,
+        // 前端渲染时 src 属性值带反引号,图片无法加载
+        try {
+            const { User, Work, Studio, Post, Banner } = require('./models');
+            const cleanFields = [
+                { model: User, field: 'avatar', label: 'users.avatar' },
+                { model: Work, field: 'preview', label: 'works.preview' },
+                { model: Work, field: 'work_url', label: 'works.work_url' },
+                { model: Studio, field: 'cover', label: 'studios.cover' },
+                { model: Studio, field: 'cover_url', label: 'studios.cover_url' },
+                { model: Post, field: 'cover', label: 'posts.cover' },
+                { model: Banner, field: 'image_url', label: 'banners.image_url' }
+            ];
+            for (const { model, field, label } of cleanFields) {
+                // SQL REPLACE 清理反引号,只更新含反引号的行
+                const result = await sequelize.query(
+                    `UPDATE ${model.getTableName()} SET ${field} = REPLACE(${field}, '\`', '') WHERE ${field} LIKE '%\`%'`,
+                    { type: sequelize.QueryTypes.UPDATE }
+                );
+                // SQLite 返回 [undefined, affectedCount], MySQL 返回 [affectedCount]
+                const affected = Array.isArray(result) ? (result[1] || result[0] || 0) : 0;
+                if (affected > 0) {
+                    console.log(`[清理] ${label} 去除反引号: ${affected} 行`);
+                }
+            }
+            console.log('[清理] 图片URL反引号清理完成');
+        } catch (cleanErr) {
+            console.warn('[清理] 图片URL反引号清理跳过:', cleanErr.message);
+        }
+
         try {
             const { refreshRoleCache } = require('./config/permissions');
             const { RolePermission } = require('./models');

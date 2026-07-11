@@ -77,7 +77,7 @@
               <el-table-column label="成员" min-width="150">
                 <template #default="{ row }">
                   <div style="display: flex; align-items: center; gap: 8px;">
-                    <img :src="row.avatar || defaultAvatar" style="width: 32px; height: 32px; border-radius: 50%;" />
+                    <img :src="row.avatar || defaultAvatar" style="width: 32px; height: 32px; border-radius: 50%;" referrerpolicy="no-referrer" />
                     <span>{{ row.nickname || row.username }}</span>
                   </div>
                 </template>
@@ -100,7 +100,7 @@
               <el-table-column label="作品" min-width="200">
                 <template #default="{ row }">
                   <div style="display: flex; align-items: center; gap: 8px;">
-                    <img :src="row.preview || defaultWorkCover" style="width: 48px; height: 48px; border-radius: 4px; object-fit: cover;" />
+                    <img :src="row.preview || defaultWorkCover" style="width: 48px; height: 48px; border-radius: 4px; object-fit: cover;" referrerpolicy="no-referrer" />
                     <div>
                       <div>{{ row.name }}</div>
                       <div style="font-size: 12px; color: #999;">by {{ row.submitUser?.nickname || row.submitUser?.username }}</div>
@@ -134,7 +134,7 @@
               <el-table-column label="用户" min-width="150">
                 <template #default="{ row }">
                   <div style="display: flex; align-items: center; gap: 8px;">
-                    <img :src="row.user?.avatar || defaultAvatar" style="width: 32px; height: 32px; border-radius: 50%;" />
+                    <img :src="row.user?.avatar || defaultAvatar" style="width: 32px; height: 32px; border-radius: 50%;" referrerpolicy="no-referrer" />
                     <span>{{ row.user?.nickname || row.user?.username }}</span>
                   </div>
                 </template>
@@ -157,7 +157,7 @@
               <el-table-column label="作品" min-width="200">
                 <template #default="{ row }">
                   <div style="display: flex; align-items: center; gap: 8px;">
-                    <img :src="row.work?.preview || defaultWorkCover" style="width: 48px; height: 36px; border-radius: 4px; object-fit: cover;" />
+                    <img :src="row.work?.preview || defaultWorkCover" style="width: 48px; height: 36px; border-radius: 4px; object-fit: cover;" referrerpolicy="no-referrer" />
                     <div>
                       <div>{{ row.work?.name }}</div>
                       <div style="font-size: 12px; color: #999;">by {{ row.user?.nickname || row.user?.username }}</div>

@@ -14,11 +14,11 @@
                 rel="noopener noreferrer"
                 class="r-home--banner_item"
               >
-                <img :src="banner.safeImage" :alt="banner.title">
+                <img :src="banner.safeImage" :alt="banner.title" referrerpolicy="no-referrer">
                 <div class="r-home--banner_title">{{ banner.title }}</div>
               </a>
               <div v-else class="r-home--banner_item">
-                <img :src="banner.safeImage" :alt="banner.title">
+                <img :src="banner.safeImage" :alt="banner.title" referrerpolicy="no-referrer">
                 <div class="r-home--banner_title">{{ banner.title }}</div>
               </div>
             </el-carousel-item>

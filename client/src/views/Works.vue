@@ -35,7 +35,7 @@
       <div class="work-grid" v-loading="loading">
         <div v-for="work in works" :key="work.id" class="work-card" @click="$router.push(`/work/${work.codemao_work_id}`)">
           <div class="card-cover">
-            <img :src="work.preview" :alt="work.name" loading="lazy">
+            <img :src="work.preview" :alt="work.name" loading="lazy" referrerpolicy="no-referrer">
             <span class="card-tag" v-if="work.type">{{ getTypeName(work.type) }}</span>
           </div>
           <div class="card-body">
