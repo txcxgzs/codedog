@@ -2116,6 +2116,14 @@ async function handleReport(req, res) {
                 const work = await DbAdapter.findByPk(Work, report.target_id);
                 if (work) {
                     targetOwnerId = work.user_id;
+                    // BOLA 防御: 校验内容所有者角色,与 aiAutoHandleReports 保持一致
+                    // 低权限管理员不能通过举报机制删除高权限用户的内容
+                    if (targetOwnerId) {
+                        const owner = await DbAdapter.findByPk(User, targetOwnerId, { attributes: ['role'] });
+                        if (owner && !canManageUser(req.user.role, owner.role)) {
+                            return errorResponse(res, '无权处理该内容所有者的内容', 403);
+                        }
+                    }
                     const wid = report.target_id;
                     const { Like, Favorite, Comment, StudioWork, Notification, Report: ReportModel } = require('../models');
                     // L4: 多表关联清理用事务包裹，Comment 软删保留历史可追溯
@@ -2155,6 +2163,13 @@ async function handleReport(req, res) {
                 const comment = await DbAdapter.findByPk(Comment, report.target_id);
                 if (comment) {
                     targetOwnerId = comment.user_id;
+                    // BOLA 防御: 校验内容所有者角色,与 aiAutoHandleReports 保持一致
+                    if (targetOwnerId) {
+                        const owner = await DbAdapter.findByPk(User, targetOwnerId, { attributes: ['role'] });
+                        if (owner && !canManageUser(req.user.role, owner.role)) {
+                            return errorResponse(res, '无权处理该内容所有者的内容', 403);
+                        }
+                    }
                     const wasActive = comment.status === 'active';
                     const isTopLevel = !comment.parent_id;
                     const { Like, Report: ReportModel } = require('../models');
@@ -2210,6 +2225,13 @@ async function handleReport(req, res) {
                 const post = await DbAdapter.findByPk(Post, report.target_id);
                 if (post) {
                     targetOwnerId = post.user_id;
+                    // BOLA 防御: 校验内容所有者角色,与 aiAutoHandleReports 保持一致
+                    if (targetOwnerId) {
+                        const owner = await DbAdapter.findByPk(User, targetOwnerId, { attributes: ['role'] });
+                        if (owner && !canManageUser(req.user.role, owner.role)) {
+                            return errorResponse(res, '无权处理该内容所有者的内容', 403);
+                        }
+                    }
                     const pid = report.target_id;
                     const { Like, Favorite, Comment, Notification } = require('../models');
                     await sequelize.transaction(async (t) => {
