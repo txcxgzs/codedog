@@ -3,8 +3,13 @@
 # 最终运行时镜像只带轻量依赖,apk add 从 385s 降到 ~30s
 # ============================================================
 
+# ============================================================
+# 镜像源优化:统一使用清华源,香港访问比默认 dl-cdn.alpinelinux.org 快很多
+# Node 版本:升级到 20,解决 marked@17+ 需要 Node>=20 的兼容问题
+# ============================================================
+
 # 第一阶段：构建前端
-FROM node:18-alpine AS frontend-builder
+FROM node:20-alpine AS frontend-builder
 WORKDIR /app/client
 COPY client/package*.json ./
 # 使用淘宝 npm 镜像,香港访问也比 npmjs.org 快
@@ -14,22 +19,25 @@ RUN npm run build
 
 # 第二阶段：编译后端原生模块(sqlite3/sharp 需要 python3/make/g++)
 # 这一层只在 package.json 变化时重新执行,平时被 Docker 缓存复用
-FROM node:18-alpine AS backend-builder
-RUN apk add --no-cache python3 make g++
+FROM node:20-alpine AS backend-builder
+# 换清华源加速 apk(默认 dl-cdn.alpinelinux.org 香港访问很慢)
+RUN sed -i 's|dl-cdn.alpinelinux.org|mirrors.tuna.tsinghua.edu.cn|g' /etc/apk/repositories && \
+    apk add --no-cache python3 make g++
 COPY server/package*.json ./server/
 WORKDIR /app/server
 RUN npm install --production --registry=https://registry.npmmirror.com
 
 # 第三阶段：运行时镜像(不带编译工具,镜像更小、构建更快)
-FROM node:18-alpine
+FROM node:20-alpine
 WORKDIR /app
 
-# 只装运行时必需的轻量工具:
+# 换清华源加速 apk,只装运行时必需的轻量工具:
 # - netcat-openbsd: entrypoint 探活 MySQL
 # - mysql-client:  数据库操作工具
 # - curl:          healthcheck 探活
 # 注意:不再装 python3/make/g++,它们只在 backend-builder 阶段使用
-RUN apk add --no-cache netcat-openbsd mysql-client curl
+RUN sed -i 's|dl-cdn.alpinelinux.org|mirrors.tuna.tsinghua.edu.cn|g' /etc/apk/repositories && \
+    apk add --no-cache netcat-openbsd mysql-client curl
 
 # 从 backend-builder 复制已编译好的 node_modules(含 sqlite3/sharp 的 .node 二进制)
 COPY --from=backend-builder /app/server/node_modules ./server/node_modules
