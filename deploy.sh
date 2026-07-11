@@ -32,9 +32,19 @@ echo "使用 Compose 命令：$COMPOSE_CMD"
 echo ""
 echo "正在拉取最新代码..."
 # 修复: 不再硬编码 main 分支，自动检测当前分支（兼容 main/master/其他分支名）
+# 优化: git pull 加 30 秒超时,避免服务器访问 GitHub 慢导致脚本无限卡住
+# 超时后不阻塞部署,继续使用本地已有代码(刚 clone 的代码已是最新)
 CURRENT_BRANCH=$(git branch --show-current 2>/dev/null || echo "main")
 if [ -n "$CURRENT_BRANCH" ]; then
-    git pull origin "$CURRENT_BRANCH" 2>/dev/null || echo "警告：无法拉取最新代码，将继续使用本地代码部署"
+    timeout 30 git pull origin "$CURRENT_BRANCH" 2>/dev/null
+    PULL_EXIT=$?
+    if [ $PULL_EXIT -eq 0 ]; then
+        echo "代码已是最新"
+    elif [ $PULL_EXIT -eq 124 ]; then
+        echo "警告：拉取代码超时(30秒),GitHub 可能不可达,继续使用本地代码部署"
+    else
+        echo "警告：无法拉取最新代码(退出码 $PULL_EXIT),继续使用本地代码部署"
+    fi
 else
     echo "警告：无法检测当前分支，跳过拉取"
 fi
