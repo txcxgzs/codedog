@@ -23,12 +23,10 @@ const MASK_FIELDS = new Set([
     'codemao_password',
 ]);
 
-// 字段级丢弃：键存在但值不输出（避免整对象/敏感 blob 进日志）
-const DROP_FIELDS = new Set([
-    'avatar', 'bio', 'description', 'preview', 'cover',
-    'player_url', 'work_url', 'preview_url',
-    'user_info', 'work', 'works', 'post', 'comment',
-    'session_data', 'request_body', 'response_data',
+// 字段级截断（保留前 80 字符，不脱敏）：用于资源 URL/描述等需要看内容但不应爆日志的字段
+const TRUNCATE_ONLY_FIELDS = new Set([
+    'description', 'bio', 'preview', 'cover', 'content',
+    'player_url', 'work_url', 'preview_url', 'work_url',
 ]);
 
 // 字段级保留：除上述外,这些字段输出（非白名单,仅审计常用）
@@ -78,10 +76,10 @@ function maskValue(v, keyHint) {
     return '[masked]';
 }
 
-function truncateString(v) {
+function truncateString(v, maxLen = MAX_STRING_LENGTH) {
     if (typeof v !== 'string') return v;
-    if (v.length <= MAX_STRING_LENGTH) return v;
-    return v.slice(0, MAX_STRING_LENGTH) + `... [truncated ${v.length - MAX_STRING_LENGTH} chars]`;
+    if (v.length <= maxLen) return v;
+    return v.slice(0, maxLen) + `... [truncated ${v.length - maxLen} chars]`;
 }
 
 /**
@@ -103,12 +101,13 @@ function maskSensitive(data) {
         // 匹配敏感字段:精确匹配 OR 字段名包含敏感关键词
         // (如 user_email / contact_email / new_password 都视为敏感)
         const isMask = MASK_FIELDS.has(lowerKey) || [...MASK_FIELDS].some(f => lowerKey.includes(f));
-        const isDrop = DROP_FIELDS.has(lowerKey) || [...DROP_FIELDS].some(f => lowerKey.includes(f));
+        const isTruncate = TRUNCATE_ONLY_FIELDS.has(lowerKey) || [...TRUNCATE_ONLY_FIELDS].some(f => lowerKey.includes(f));
         const isKeep = KEEP_FIELDS.has(lowerKey) || [...KEEP_FIELDS].some(f => lowerKey.includes(f));
         if (isMask) {
             result[k] = maskValue(v, lowerKey);
-        } else if (isDrop) {
-            continue;
+        } else if (isTruncate) {
+            // 资源/描述类:截断到 80 字符,保留可读性
+            result[k] = typeof v === 'string' ? truncateString(v, 80) : v;
         } else if (isKeep) {
             result[k] = typeof v === 'string' ? truncateString(v) : v;
         } else {

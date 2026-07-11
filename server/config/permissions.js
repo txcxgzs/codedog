@@ -70,9 +70,9 @@ const DEFAULT_ROLES = {
             'banner:delete',
             'statistics:view',
             'crawl:works',
-            // 修复: 补充系统级权限,与 adminMiddleware 放宽配合
-            // 缺失这些权限会导致 admin 无法访问日志/敏感词/系统配置/角色管理路由
-            'log:view',
+            // 修复: 移除 admin 的 log:view 权限,改为 superadmin only。
+            // 原因: getRealtimeLogs / getOperationLogs 返回的日志含管理员操作链(谁改了谁),
+            // admin 角色可读 = 越权(普通 admin 能看到 superadmin 隐藏作品等敏感操作记录)
             'sensitive:manage',
             'config:manage',
             'role:manage'
