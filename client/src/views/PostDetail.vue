@@ -302,7 +302,10 @@ const fetchRelatedPosts = async () => {
     if (res.code === 200) {
       relatedPosts.value = (res.data.list || []).filter(p => p.id !== post.value?.id).slice(0, 5)
     }
-  } catch (e) {}
+  } catch (e) {
+    // 相关帖子为辅助内容,静默失败但不影响主帖展示,仅记录日志便于调试
+    console.error('获取相关帖子失败:', e)
+  }
 }
 
 const likeLoading = ref(false)
@@ -656,6 +659,8 @@ onMounted(() => {
 </script>
 
 <style lang="scss" scoped>
+@use 'sass:color';
+
 $primary-color: #FEC433;
 $text-color: #333;
 $text-secondary: #666;

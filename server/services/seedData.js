@@ -28,7 +28,9 @@ async function fetchAndSaveWork(workId) {
 
         const existing = await Work.findOne({ where: { codemao_work_id: String(data.id) } });
         if (existing) {
-            return existing;
+            // 修复: 返回值结构与新建分支统一,补上 authorId 字段
+            // 调用方通过 result.authorId 收集作者ID,缺失会导致已存在作品的作者不被收集
+            return { work: existing, authorId: String(data.user_info?.id || existing.codemao_author_id || '') };
         }
 
         // 修复: 校验 data.user_info 是否存在,避免编程猫接口异常时抛 TypeError

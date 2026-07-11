@@ -706,7 +706,8 @@ class DatabaseMigration {
                         }
                         return r;
                     });
-                    await model.bulkCreate(cleanedRows, { ignoreDuplicates: true, transaction: t });
+                    // 修复: 补充 validate:true,确保模型级校验不被跳过,避免无效数据入库
+                    await model.bulkCreate(cleanedRows, { ignoreDuplicates: true, validate: true, transaction: t });
                     console.log(`  ${name}: ${cleanedRows.length} 条`);
                 };
 

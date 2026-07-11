@@ -73,11 +73,11 @@ async function hcaptchaGuard(req, res, next) {
 
 async function verifyHcaptcha(token, secret) {
     try {
-        const response = await axios.post('https://hcaptcha.com/siteverify', null, {
-            params: {
-                secret,
-                response: token
-            },
+        // 修复: secret 放在请求体而非 URL params,避免被代理/负载均衡器日志泄露
+        const params = new URLSearchParams();
+        params.append('secret', secret);
+        params.append('response', token);
+        const response = await axios.post('https://hcaptcha.com/siteverify', params.toString(), {
             timeout: 10000
         });
         // 修复 L9: 日志不再打印整个 response.data,只打印布尔结果,避免泄露
@@ -87,7 +87,8 @@ async function verifyHcaptcha(token, secret) {
     } catch (error) {
         if (error.response) {
             // 修复: 错误日志不打印完整 response.data,只打印状态码和错误码,避免泄露
-            console.error('hCaptcha验证失败:', error.response.status, error.response.data?.success, error.response.data?.error_codes);
+            // 修复: hCaptcha API 返回字段名是 error-codes(连字符),不是 error_codes(下划线)
+            console.error('hCaptcha验证失败:', error.response.status, error.response.data?.success, error.response.data?.['error-codes']);
         } else {
             console.error('hCaptcha验证失败:', error.message);
         }

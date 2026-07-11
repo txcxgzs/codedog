@@ -7,26 +7,19 @@ const GEETEST_KEY = process.env.GEETEST_KEY || '';
 
 class GeetestService {
     static async getConfig() {
-        try {
-            const [idConfig, keyConfig, enabledConfig] = await Promise.all([
-                DbAdapter.findOne(SystemConfig, { where: { config_key: 'geetest_id' } }),
-                DbAdapter.findOne(SystemConfig, { where: { config_key: 'geetest_key' } }),
-                DbAdapter.findOne(SystemConfig, { where: { config_key: 'geetest_enabled' } })
-            ]);
+        // 修复: DB 故障时不再返回 enabled:false(fail-open 安全隐患),
+        // 而是抛出异常,由 verify 的 catch 返回 fail-closed 拒绝验证
+        const [idConfig, keyConfig, enabledConfig] = await Promise.all([
+            DbAdapter.findOne(SystemConfig, { where: { config_key: 'geetest_id' } }),
+            DbAdapter.findOne(SystemConfig, { where: { config_key: 'geetest_key' } }),
+            DbAdapter.findOne(SystemConfig, { where: { config_key: 'geetest_enabled' } })
+        ]);
 
-            return {
-                geetestId: (idConfig && idConfig.config_value) || GEETEST_ID,
-                geetestKey: (keyConfig && keyConfig.config_value) || GEETEST_KEY,
-                enabled: (enabledConfig && enabledConfig.config_value) === 'true'
-            };
-        } catch (error) {
-            console.error('[Geetest] failed to load config:', error);
-            return {
-                geetestId: GEETEST_ID,
-                geetestKey: GEETEST_KEY,
-                enabled: false
-            };
-        }
+        return {
+            geetestId: (idConfig && idConfig.config_value) || GEETEST_ID,
+            geetestKey: (keyConfig && keyConfig.config_value) || GEETEST_KEY,
+            enabled: (enabledConfig && enabledConfig.config_value) === 'true'
+        };
     }
 
     static async verify(scene, challenge, validate, seccode, req) {

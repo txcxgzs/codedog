@@ -79,6 +79,7 @@ const sortBy = ref('latest')
 const currentType = ref('')
 
 const formatNum = (n) => {
+  if (n == null) return 0
   if (n >= 10000) return (n / 10000).toFixed(1) + 'w'
   if (n >= 1000) return (n / 1000).toFixed(1) + 'k'
   return n

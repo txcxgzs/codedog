@@ -69,7 +69,13 @@ const DEFAULT_ROLES = {
             'banner:edit',
             'banner:delete',
             'statistics:view',
-            'crawl:works'
+            'crawl:works',
+            // 修复: 补充系统级权限,与 adminMiddleware 放宽配合
+            // 缺失这些权限会导致 admin 无法访问日志/敏感词/系统配置/角色管理路由
+            'log:view',
+            'sensitive:manage',
+            'config:manage',
+            'role:manage'
         ]
     },
     superadmin: {

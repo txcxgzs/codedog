@@ -245,7 +245,7 @@ const checkFollow = async () => {
   try {
     const res = await followApi.check(user.value.codemao_user_id)
     if (res.code === 200) {
-      isFollowing.value = res.data.isFollowing
+      isFollowing.value = !!(res.data?.isFollowing ?? res.data?.followed ?? res.data?.following)
     }
   } catch (error) {
     console.error('检查关注失败:', error)

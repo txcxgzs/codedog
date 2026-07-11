@@ -181,8 +181,9 @@
       </div>
       <template #footer>
         <el-button @click="detailDialogVisible = false">关闭</el-button>
-        <el-button type="primary" @click="showEditDialog(studioDetail)">编辑工作室</el-button>
-        <el-button type="danger" @click="deleteStudio(studioDetail)">解散工作室</el-button>
+        <!-- 修复: studioDetail 在对话框关闭动画期间可能为 null,加 v-if 防止点击报错 -->
+        <el-button v-if="studioDetail" type="primary" @click="showEditDialog(studioDetail)">编辑工作室</el-button>
+        <el-button v-if="studioDetail" type="danger" @click="deleteStudio(studioDetail)">解散工作室</el-button>
       </template>
     </el-dialog>
     

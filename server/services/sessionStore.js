@@ -64,7 +64,9 @@ function createSequelizeSessionStore(session, sequelize, { ttlMs = 30 * 60 * 100
                     return callback(null, null);
                 }
 
-                if (new Date(record.expires).getTime() <= Date.now()) {
+                // 修复: 校验日期有效性,NaN <= Date.now() 为 false 会导致已过期会话永不过期
+                const expiresTime = new Date(record.expires).getTime();
+                if (isNaN(expiresTime) || expiresTime <= Date.now()) {
                     await this.destroy(sid, () => {});
                     return callback(null, null);
                 }

@@ -1086,35 +1086,39 @@ async function crawlWork(req, res) {
         // 识别作品类型 (主类型
         const workType = workDetail.type || 'KITTEN';
 
-        const work = await DbAdapter.create(Work, {
-            codemao_work_id: workDetail.id,
-            name: workDetail.work_name,
-            description: workDetail.description,
-            preview: workDetail.preview,
-            type: workType,
-            // H8修复: 补充 ide_type 字段（与 crawlHotWorks 保持一致）
-            ide_type: workDetail.ide_type || 'KITTEN',
-            // 修复: player_url 为空时回退到标准播放器 URL,避免 work_url 落库为空
-            work_url: workDetail.player_url || `https://player.codemao.cn/new/${workDetail.id}`,
-            user_id: user ? DbAdapter.getId(user) : null,
-            codemao_author_id: codemaoUserId,
-            codemao_author_name: userInfo.nickname || '未知作者',
-            view_times: workDetail.view_times || 0,
-            // 中·脏数据: praise_times/collection_times 归 0,与 workController 保持一致
-            // 外部数据是编程猫总计数,本地无 Like/Favorite 记录→不能直接写入
-            praise_times: 0,
-            collection_times: 0,
-            // Bug-2(脏数据): comment_count 始终从 0 开始,不使用外部 comment_times
-            comment_count: 0,
-            status: workStatus
-        });
+        // 修复: create Work + 重算 work_count 用事务包裹,与 workController.publishWork 保持一致
+        const work = await sequelize.transaction(async (t) => {
+            const newWork = await DbAdapter.create(Work, {
+                codemao_work_id: workDetail.id,
+                name: workDetail.work_name,
+                description: workDetail.description,
+                preview: workDetail.preview,
+                type: workType,
+                // H8修复: 补充 ide_type 字段（与 crawlHotWorks 保持一致）
+                ide_type: workDetail.ide_type || 'KITTEN',
+                // 修复: player_url 为空时回退到标准播放器 URL,避免 work_url 落库为空
+                work_url: workDetail.player_url || `https://player.codemao.cn/new/${workDetail.id}`,
+                user_id: user ? DbAdapter.getId(user) : null,
+                codemao_author_id: codemaoUserId,
+                codemao_author_name: userInfo.nickname || '未知作者',
+                view_times: workDetail.view_times || 0,
+                // 中·脏数据: praise_times/collection_times 归 0,与 workController 保持一致
+                // 外部数据是编程猫总计数,本地无 Like/Favorite 记录→不能直接写入
+                praise_times: 0,
+                collection_times: 0,
+                // Bug-2(脏数据): comment_count 始终从 0 开始,不使用外部 comment_times
+                comment_count: 0,
+                status: workStatus
+            }, { transaction: t });
 
-        // 修复: 新增作品后重算作者 work_count,仅统计 published,避免计数不更新
-        if (user) {
-            const authorId = DbAdapter.getId(user);
-            const authorWorkCount = await DbAdapter.count(Work, { where: { user_id: authorId, status: 'published' } });
-            await DbAdapter.update(User, { work_count: authorWorkCount }, { where: { id: authorId } });
-        }
+            // 修复: 新增作品后重算作者 work_count,仅统计 published,避免计数不更新
+            if (user) {
+                const authorId = DbAdapter.getId(user);
+                const authorWorkCount = await DbAdapter.count(Work, { where: { user_id: authorId, status: 'published' }, transaction: t });
+                await DbAdapter.update(User, { work_count: authorWorkCount }, { where: { id: authorId }, transaction: t });
+            }
+            return newWork;
+        });
 
         return successResponse(res, work, '爬取成功');
     } catch (error) {

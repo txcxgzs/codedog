@@ -17,10 +17,11 @@ router.use(adminMiddleware);
 
 /**
  * 统计数据
+ * 修复: 补充 requirePermission,配合 adminMiddleware 放宽至 reviewer+
  */
-router.get('/stats', adminController.getStats);
-router.get('/trends', adminController.getTrends);
-router.get('/captcha-stats', requireRole('admin'), adminController.getCaptchaStats);
+router.get('/stats', requirePermission('statistics:view'), adminController.getStats);
+router.get('/trends', requirePermission('statistics:view'), adminController.getTrends);
+router.get('/captcha-stats', requirePermission('statistics:view'), adminController.getCaptchaStats);
 
 /**
  * 角色管理（仅超级管理员）

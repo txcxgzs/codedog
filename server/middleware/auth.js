@@ -99,7 +99,10 @@ async function optionalAuth(req, res, next) {
 }
 
 /**
- * 管理员权限中间件（admin 及以上）
+ * 管理后台权限中间件（reviewer 及以上）
+ * 修复: 原先要求 admin+,导致 reviewer/moderator 的细粒度权限完全失效。
+ * 现改为 reviewer+ 即可进入后台,由各路由的 requirePermission 做细粒度控制。
+ * 无 requirePermission 保护的路由需自行补上 requireRole('admin') 或 requirePermission。
  */
 function adminMiddleware(req, res, next) {
     if (!req.user) {
@@ -109,7 +112,7 @@ function adminMiddleware(req, res, next) {
             data: null
         });
     }
-    if (!isRoleAtLeast(req.user.role, 'admin')) {
+    if (!isRoleAtLeast(req.user.role, 'reviewer')) {
         return res.status(403).json({
             code: 403,
             msg: '权限不足，需要管理员或以上权限',

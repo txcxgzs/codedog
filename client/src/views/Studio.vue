@@ -21,7 +21,7 @@
       </div>
       
       <div class="r-studio--tabs">
-        <el-radio-group v-model="activeTab" @change="fetchStudios">
+        <el-radio-group v-model="activeTab" @change="handleTabChange">
           <el-radio-button label="all">全部工作室</el-radio-button>
           <el-radio-button label="my" v-if="userStore.isLoggedIn">我的工作室</el-radio-button>
         </el-radio-group>
@@ -128,6 +128,12 @@ const createRules = {
 const roleText = (role) => {
   const map = { owner: '创建者', admin: '管理员', member: '成员' }
   return map[role] || ''
+}
+
+// 修复: 切换标签时重置分页,避免从"我的工作室"切回"全部"时停留在非第一页
+const handleTabChange = () => {
+  currentPage.value = 1
+  fetchStudios()
 }
 
 const fetchStudios = async () => {

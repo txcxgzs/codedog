@@ -1033,8 +1033,9 @@ async function setMemberRole(req, res) {
         
         // Bug-10/Bug-15: 整个 setMemberRole 操作(降级/提升副室长 + 改成员 role)必须在同一事务内,
         // 避免降级路径中清除 vice_owner_id 与改 role 不在同一事务导致并发不一致
-        const studio = await DbAdapter.findByPk(Studio, id);
+        // 修复: studio 查询移入事务内,避免 TOCTOU 竞态(事务外读取的快照在事务内可能已过期)
         await sequelize.transaction(async (t) => {
+            const studio = await DbAdapter.findByPk(Studio, id, { transaction: t });
             // 如果被修改的成员是副室长且角色降级，清除副室长引用
             if (member.role === 'vice_owner' && role !== 'vice_owner') {
                 if (studio && sameId(studio.vice_owner_id, member.user_id)) {

@@ -3555,7 +3555,10 @@ const fetchWorks = async () => {
       keyword: workSearch.value, type: workTypeFilter.value, isFeatured: workFeaturedFilter.value
     })
     if (res.code === 200) { works.value = res.data.list; workTotal.value = res.data.pagination?.total || res.data.total || 0 }
-  } catch (e) {}
+  } catch (e) {
+    console.error('获取作品列表失败:', e)
+    ElMessage.error('获取作品列表失败')
+  }
   loadingWorks.value = false
 }
 
@@ -3605,7 +3608,10 @@ const fetchComments = async () => {
       userId: commentUserId.value, workId: commentWorkId.value
     })
     if (res.code === 200) { comments.value = res.data.list; commentTotal.value = res.data.pagination?.total || res.data.total || 0 }
-  } catch (e) {}
+  } catch (e) {
+    console.error('获取评论列表失败:', e)
+    ElMessage.error('获取评论列表失败')
+  }
   loadingComments.value = false
 }
 
@@ -3634,7 +3640,10 @@ const fetchReports = async () => {
       type: reportTypeFilter.value, status: reportStatusFilter.value
     })
     if (res.code === 200) { reports.value = res.data.list; reportTotal.value = res.data.pagination?.total || res.data.total || 0 }
-  } catch (e) {}
+  } catch (e) {
+    console.error('获取举报列表失败:', e)
+    ElMessage.error('获取举报列表失败')
+  }
   loadingReports.value = false
 }
 
@@ -3662,7 +3671,10 @@ const fetchBanners = async () => {
   try {
     const res = await adminApi.getBanners()
     if (res.code === 200) banners.value = res.data
-  } catch (e) {}
+  } catch (e) {
+    console.error('获取轮播图失败:', e)
+    ElMessage.error('获取轮播图失败')
+  }
   loadingBanners.value = false
 }
 
