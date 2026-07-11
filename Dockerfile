@@ -23,8 +23,10 @@ FROM node:20-alpine AS backend-builder
 # 换清华源加速 apk(默认 dl-cdn.alpinelinux.org 香港访问很慢)
 RUN sed -i 's|dl-cdn.alpinelinux.org|mirrors.tuna.tsinghua.edu.cn|g' /etc/apk/repositories && \
     apk add --no-cache python3 make g++
-COPY server/package*.json ./server/
+# 修复: WORKDIR 必须在 COPY 之前,否则 COPY ./server/ 会落到根目录
+# 导致后续 npm install 在 /app/server/ 找不到 package.json
 WORKDIR /app/server
+COPY server/package*.json ./
 RUN npm install --production --registry=https://registry.npmmirror.com
 
 # 第三阶段：运行时镜像(不带编译工具,镜像更小、构建更快)
