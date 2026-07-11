@@ -253,6 +253,23 @@ async function buildCountMap(ctx, model, groupField, where) {
     return map;
 }
 
+// 修复: 新增 buildSumMap 用于 SUM 聚合,支持 total_score 重算
+// 与 buildCountMap 同模式,但聚合方式为 SUM(sumField)
+async function buildSumMap(ctx, model, groupField, sumField, where) {
+    const { sequelize } = ctx.models;
+    const rows = await model.findAll({
+        attributes: [groupField, [sequelize.fn('SUM', sequelize.col(sumField)), 'total']],
+        where,
+        group: [groupField],
+        raw: true
+    });
+    const map = new Map();
+    for (const r of rows) {
+        if (r[groupField] != null) map.set(Number(r[groupField]), Number(r.total) || 0);
+    }
+    return map;
+}
+
 // Count rows in `model` whose `field` is non-null and references a missing `refModel.refField`.
 async function countOrphanRows(ctx, model, field, refModel, refField) {
     const table = model.getTableName();
@@ -376,19 +393,23 @@ async function runConsistencyCheck(ctx, args) {
     }
     result.checks.report_dangling_targets = { drift_count: danglingReports.length, sample: danglingReports.slice(0, 100) };
 
-    // 6. Studio member_count / work_count drift
+    // 6. Studio member_count / work_count / total_score drift
+    // 修复: 增加 total_score 检查,与 repair-counts 保持一致,避免 total_score 漂移后无法被发现
     const memberByStudio = await buildCountMap(ctx, StudioMember, 'studio_id', { status: 'active' });
     const studioWorkByStudio = await buildCountMap(ctx, StudioWork, 'studio_id', { status: 'approved' });
-    const studios = await Studio.findAll({ attributes: ['id', 'name', 'status', 'member_count', 'work_count'], raw: true });
+    const studioScoreByStudio = await buildSumMap(ctx, StudioWork, 'studio_id', 'score', { status: 'approved' });
+    const studios = await Studio.findAll({ attributes: ['id', 'name', 'status', 'member_count', 'work_count', 'total_score'], raw: true });
     const studioDrifts = [];
     for (const s of studios) {
         const members = memberByStudio.get(s.id) || 0;
         const sw = studioWorkByStudio.get(s.id) || 0;
-        if (s.member_count !== members || s.work_count !== sw) {
+        const ts = studioScoreByStudio.get(s.id) || 0;
+        if (s.member_count !== members || s.work_count !== sw || Number(s.total_score) !== ts) {
             studioDrifts.push({
                 id: s.id, name: s.name, status: s.status,
                 member_count: { stored: s.member_count, actual: members },
-                work_count: { stored: s.work_count, actual: sw }
+                work_count: { stored: s.work_count, actual: sw },
+                total_score: { stored: Number(s.total_score), actual: ts }
             });
         }
     }
@@ -409,7 +430,7 @@ async function runConsistencyCheck(ctx, args) {
             { Check: 'User follower/following_count', Drifts: userFollowDrifts.length },
             { Check: 'Comment orphan replies (soft-deleted/missing parent)', Drifts: orphanReplies.length },
             { Check: 'Report dangling targets', Drifts: danglingReports.length },
-            { Check: 'Studio member_count/work_count', Drifts: studioDrifts.length }
+            { Check: 'Studio member_count/work_count/total_score', Drifts: studioDrifts.length }
         ]);
         printSample(args, 'Work counter drifts', workDrifts);
         printSample(args, 'User.work_count drifts', userWorkDrifts);
@@ -446,10 +467,12 @@ async function runRepairCounts(ctx, args) {
     const followingByUser = await buildCountMap(ctx, Follow, 'follower_id', {});
     const memberByStudio = await buildCountMap(ctx, StudioMember, 'studio_id', { status: 'active' });
     const studioWorkByStudio = await buildCountMap(ctx, StudioWork, 'studio_id', { status: 'approved' });
+    // 修复: 新增 total_score 的 SUM 聚合,使 repair-counts 能检测并修复 total_score 漂移
+    const studioScoreByStudio = await buildSumMap(ctx, StudioWork, 'studio_id', 'score', { status: 'approved' });
 
     const works = await Work.findAll({ attributes: ['id', 'praise_times', 'collection_times', 'comment_count'], raw: true });
     const users = await User.findAll({ attributes: ['id', 'work_count', 'follower_count', 'following_count'], raw: true });
-    const studios = await Studio.findAll({ attributes: ['id', 'member_count', 'work_count'], raw: true });
+    const studios = await Studio.findAll({ attributes: ['id', 'member_count', 'work_count', 'total_score'], raw: true });
 
     const planned = { work_counters: [], user_work_count: [], user_follow_counts: [], studio_counts: [] };
 
@@ -481,10 +504,12 @@ async function runRepairCounts(ctx, args) {
     for (const s of studios) {
         const mc = memberByStudio.get(s.id) || 0;
         const wkc = studioWorkByStudio.get(s.id) || 0;
-        if (s.member_count !== mc || s.work_count !== wkc) {
+        const tsc = studioScoreByStudio.get(s.id) || 0;
+        // 修复: 比较 total_score 时将 stored 转 Number,避免字符串/数字类型差异导致误报
+        if (s.member_count !== mc || s.work_count !== wkc || Number(s.total_score) !== tsc) {
             planned.studio_counts.push({
-                id: s.id, member_count: mc, work_count: wkc,
-                prev: { member_count: s.member_count, work_count: s.work_count }
+                id: s.id, member_count: mc, work_count: wkc, total_score: tsc,
+                prev: { member_count: s.member_count, work_count: s.work_count, total_score: Number(s.total_score) }
             });
         }
     }
@@ -516,8 +541,9 @@ async function runRepairCounts(ctx, args) {
                 applied.user_follow_counts += 1;
             }
             for (const s of planned.studio_counts) {
+                // 修复: 同时写入 total_score,与检测逻辑保持一致
                 await Studio.update(
-                    { member_count: s.member_count, work_count: s.work_count },
+                    { member_count: s.member_count, work_count: s.work_count, total_score: s.total_score },
                     { where: { id: s.id }, transaction: t }
                 );
                 applied.studio_counts += 1;
@@ -546,7 +572,7 @@ async function runRepairCounts(ctx, args) {
             { Target: 'Work counters (praise/collection/comment)', 'Planned updates': planned.work_counters.length },
             { Target: 'User.work_count', 'Planned updates': planned.user_work_count.length },
             { Target: 'User follower/following_count', 'Planned updates': planned.user_follow_counts.length },
-            { Target: 'Studio member_count/work_count', 'Planned updates': planned.studio_counts.length }
+            { Target: 'Studio member_count/work_count/total_score', 'Planned updates': planned.studio_counts.length }
         ]);
         if (!args.dryRun) {
             console.log('');
@@ -575,7 +601,8 @@ async function runRepairCounts(ctx, args) {
         printSample(args, 'Studio count updates', planned.studio_counts.map((p) => ({
             id: p.id,
             member: `${p.prev.member_count}→${p.member_count}`,
-            work: `${p.prev.work_count}→${p.work_count}`
+            work: `${p.prev.work_count}→${p.work_count}`,
+            score: `${p.prev.total_score}→${p.total_score}`
         })));
     }
     emitResult(args, result);

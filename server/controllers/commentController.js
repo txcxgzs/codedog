@@ -1,7 +1,7 @@
 const DbAdapter = require('../utils/dbAdapter');
 const { Comment, User, Work, Post, Notification, sequelize } = require('../models');
 const { successResponse, errorResponse, paginateResponse } = require('../middleware/response');
-const { isRoleAtLeast } = require('../config/permissions');
+const { isRoleAtLeast, canManageUser } = require('../config/permissions');
 // H12: 引入内容审核服务，落库前做敏感词检查
 const aiReview = require('../services/aiReview');
 
@@ -206,12 +206,17 @@ async function getWorkComments(req, res) {
             include: [{
                 model: User,
                 as: 'user',
+                // 修复: 过滤禁用用户的作者信息,与 followController 公开资料策略一致
+                // 使用 required: false 使评论仍可见但 user 为 null,避免历史评论凭空消失
+                where: { status: 'active' },
+                required: false,
                 attributes: ['id', 'codemao_user_id', 'username', 'nickname', 'avatar']
             }, {
                 model: User,
                 as: 'reply_to_user',
-                attributes: ['id', 'codemao_user_id', 'username', 'nickname'],
-                required: false
+                where: { status: 'active' },
+                required: false,
+                attributes: ['id', 'codemao_user_id', 'username', 'nickname']
             }, {
                 // 报告4 #22: 评论回复递归深度限制
                 // 此处 replies include 故意只展开一层,内部仅包含 User(replies 作者/被回复者),
@@ -225,12 +230,15 @@ async function getWorkComments(req, res) {
                 include: [{
                     model: User,
                     as: 'user',
+                    where: { status: 'active' },
+                    required: false,
                     attributes: ['id', 'codemao_user_id', 'username', 'nickname', 'avatar']
                 }, {
                     model: User,
                     as: 'reply_to_user',
-                    attributes: ['id', 'codemao_user_id', 'username', 'nickname'],
-                    required: false
+                    where: { status: 'active' },
+                    required: false,
+                    attributes: ['id', 'codemao_user_id', 'username', 'nickname']
                 }]
             }],
             order: [['created_at', 'DESC']],
@@ -280,6 +288,13 @@ async function deleteComment(req, res) {
 
         if (!sameId(comment.user_id, DbAdapter.getId(req.user)) && !isRoleAtLeast(req.user.role, 'moderator')) {
             return errorResponse(res, '无权删除此评论', 403);
+        }
+        // 修复: moderator 删除他人评论时需校验目标作者角色,不能删除同级或上级管理员的评论
+        if (!sameId(comment.user_id, DbAdapter.getId(req.user)) && comment.user_id) {
+            const targetAuthor = await DbAdapter.findByPk(User, comment.user_id, { attributes: ['id', 'role'] });
+            if (targetAuthor && !canManageUser(req.user.role, targetAuthor.role)) {
+                return errorResponse(res, '无权删除此用户的评论', 403);
+            }
         }
 
         if (comment.status === 'deleted') {

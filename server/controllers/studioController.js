@@ -126,7 +126,10 @@ async function createStudio(req, res) {
                 owner_id: DbAdapter.getId(req.user),
                 is_public: is_public !== false,
                 join_type: join_type || 'apply',
-                status: studioStatus
+                status: studioStatus,
+                // 修复: 设置 owner_claim 实现数据库级唯一约束
+                // 当 status != 'banned' 时 owner_claim = owner_id,唯一索引阻止并发创建
+                owner_claim: DbAdapter.getId(req.user)
             }, { transaction: t });
 
             // Bug-17: 审核结果为 review 时创建 pending 工作室,owner 成员也应为 pending,
@@ -148,6 +151,10 @@ async function createStudio(req, res) {
         // 事务内抛出的业务状态错误应返回 400,避免全部吞成 500
         if (error.statusCode === 400) {
             return errorResponse(res, error.message, 400);
+        }
+        // 修复: 捕获 owner_claim 唯一约束错误,返回友好提示
+        if (error.name === 'SequelizeUniqueConstraintError') {
+            return errorResponse(res, '您已创建过工作室，每人只能创建一个', 400);
         }
         console.error('创建工作室错误:', error);
         return errorResponse(res, '创建工作室失败', 500);
@@ -354,18 +361,37 @@ async function joinStudio(req, res) {
             // 直接加入:事务包裹 create/update 成员 + 自增 member_count,避免并发计数错乱(Report4 #12)
             // 并在事务外 reload 返回最新 pending/active 状态(报告1 #11)
             await sequelize.transaction(async (t) => {
+                let shouldIncrement = false;
                 if (existing) {
-                    await DbAdapter.update(StudioMember, { status }, { where: { id: DbAdapter.getId(existing) }, transaction: t });
+                    // 修复: 仅当 status='rejected' 时才更新为 active 并计数
+                    // 防止并发请求同时将同一条 rejected 记录改为 active,导致 member_count 重复+1
+                    const [affectedRows] = await StudioMember.update(
+                        { status },
+                        { where: { id: DbAdapter.getId(existing), status: 'rejected' }, transaction: t }
+                    );
+                    shouldIncrement = affectedRows === 1;
                 } else {
-                    await DbAdapter.create(StudioMember, {
-                        studio_id: id,
-                        user_id: DbAdapter.getId(req.user),
-                        role: 'member',
-                        status
-                    }, { transaction: t });
+                    // 新成员:用 create + 捕获唯一约束错误防止并发重复创建
+                    try {
+                        await DbAdapter.create(StudioMember, {
+                            studio_id: id,
+                            user_id: DbAdapter.getId(req.user),
+                            role: 'member',
+                            status
+                        }, { transaction: t });
+                        shouldIncrement = true;
+                    } catch (e) {
+                        // 并发时唯一约束可能触发(如果有),此时不计数
+                        if (e.name === 'SequelizeUniqueConstraintError') {
+                            return successResponse(res, null, '您已是工作室成员');
+                        }
+                        throw e;
+                    }
                 }
-                // 原子 +1 避免 read-modify-write 竞态
-                await DbAdapter.increment(studio, 'member_count', { transaction: t });
+                // 仅在确实新增了 active 成员时才 +1
+                if (shouldIncrement) {
+                    await DbAdapter.increment(studio, 'member_count', { transaction: t });
+                }
             });
             await studio.reload();
             member = await DbAdapter.findOne(StudioMember, {

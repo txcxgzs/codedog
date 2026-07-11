@@ -6,7 +6,7 @@ const DbAdapter = require('../utils/dbAdapter');
 const { Post, User, Comment, sequelize } = require('../models');
 const { successResponse, errorResponse, paginateResponse } = require('../middleware/response');
 const { Op } = require('sequelize');
-const { isRoleAtLeast } = require('../config/permissions');
+const { isRoleAtLeast, canManageUser } = require('../config/permissions');
 const { likeContains } = require('../utils/security');
 // H12: 引入内容审核服务，落库前做敏感词检查
 const aiReview = require('../services/aiReview');
@@ -161,6 +161,10 @@ async function getPosts(req, res) {
             include: [{
                 model: User,
                 as: 'author',
+                // 修复: 过滤禁用用户的作者信息,与 followController 公开资料策略一致
+                // 使用 required: false 使帖子仍可见但 author 为 null,避免历史内容凭空消失
+                where: { status: 'active' },
+                required: false,
                 attributes: ['id', 'codemao_user_id', 'username', 'nickname', 'avatar']
             }],
             order,
@@ -186,6 +190,9 @@ async function getPostDetail(req, res) {
             include: [{
                 model: User,
                 as: 'author',
+                // 修复: 过滤禁用用户的作者信息,与 followController 公开资料策略一致
+                where: { status: 'active' },
+                required: false,
                 attributes: ['id', 'codemao_user_id', 'username', 'nickname', 'avatar', 'bio']
             }]
         });
@@ -243,6 +250,9 @@ async function getPostDetail(req, res) {
                 include: [{
                     model: User,
                     as: 'user',
+                    // 修复: 过滤禁用用户的作者信息,与 followController 公开资料策略一致
+                    where: { status: 'active' },
+                    required: false,
                     attributes: ['id', 'codemao_user_id', 'username', 'nickname', 'avatar']
                 }, {
                     model: Comment,
@@ -254,12 +264,15 @@ async function getPostDetail(req, res) {
                     include: [{
                         model: User,
                         as: 'user',
+                        where: { status: 'active' },
+                        required: false,
                         attributes: ['id', 'codemao_user_id', 'username', 'nickname', 'avatar']
                     }, {
                         model: User,
                         as: 'reply_to_user',
-                        attributes: ['id', 'codemao_user_id', 'username', 'nickname', 'avatar'],
-                        required: false
+                        where: { status: 'active' },
+                        required: false,
+                        attributes: ['id', 'codemao_user_id', 'username', 'nickname', 'avatar']
                     }]
                 }],
                 order: [['created_at', 'DESC']],
@@ -424,6 +437,14 @@ async function deletePost(req, res) {
         
         if (post.user_id !== DbAdapter.getId(req.user) && !isRoleAtLeast(req.user.role, 'moderator')) {
             return errorResponse(res, '无权删除此帖子', 403);
+        }
+        // 修复: moderator 删除他人帖子时需校验目标作者角色,不能删除同级或上级管理员的内容
+        if (post.user_id !== DbAdapter.getId(req.user) && post.user_id) {
+            const { User } = require('../models');
+            const targetAuthor = await DbAdapter.findByPk(User, post.user_id, { attributes: ['id', 'role'] });
+            if (targetAuthor && !canManageUser(req.user.role, targetAuthor.role)) {
+                return errorResponse(res, '无权删除此用户的帖子', 403);
+            }
         }
 
         const pid = DbAdapter.getId(post);

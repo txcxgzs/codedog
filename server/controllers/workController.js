@@ -7,7 +7,7 @@ const { successResponse, errorResponse, paginateResponse } = require('../middlew
 const { Op } = require('sequelize');
 const DbAdapter = require('../utils/dbAdapter');
 const codemaoApi = require('../services/codemaoApi');
-const { isRoleAtLeast } = require('../config/permissions');
+const { isRoleAtLeast, canManageUser } = require('../config/permissions');
 const { likeContains } = require('../utils/security');
 // H12: 引入内容审核服务，落库前做敏感词检查
 const aiReview = require('../services/aiReview');
@@ -292,6 +292,10 @@ async function getWorks(req, res) {
             include: [{
                 model: User,
                 as: 'author',
+                // 修复: 过滤禁用用户的作者信息,与 followController 公开资料策略一致
+                // 使用 required: false 使作品仍可见但 author 为 null,避免历史内容凭空消失
+                where: { status: 'active' },
+                required: false,
                 attributes: ['id', 'codemao_user_id', 'username', 'nickname', 'avatar']
             }],
             order,
@@ -312,16 +316,19 @@ async function getWorks(req, res) {
 async function getWorkDetail(req, res) {
     try {
         const codemaoId = req.params.codemaoId;
-        
+
         const work = await DbAdapter.findOne(Work, {
             where: { codemao_work_id: String(codemaoId) },
             include: [{
                 model: User,
                 as: 'author',
+                // 修复: 过滤禁用用户的作者信息,与 followController 公开资料策略一致
+                where: { status: 'active' },
+                required: false,
                 attributes: ['id', 'codemao_user_id', 'username', 'nickname', 'avatar', 'bio']
             }]
         });
-        
+
         if (!work) {
             return errorResponse(res, '作品不存在', 404);
         }
@@ -363,6 +370,9 @@ async function getWorkByCodemaoId(req, res) {
             include: [{
                 model: User,
                 as: 'author',
+                // 修复: 过滤禁用用户的作者信息,与 followController 公开资料策略一致
+                where: { status: 'active' },
+                required: false,
                 attributes: ['id', 'codemao_user_id', 'username', 'nickname', 'avatar', 'bio']
             }]
         });
@@ -881,6 +891,14 @@ async function deleteWork(req, res) {
         const isOwner = work.user_id != null && String(work.user_id) === String(DbAdapter.getId(req.user));
         if (!isOwner && !isRoleAtLeast(req.user.role, 'moderator')) {
             return errorResponse(res, '无权删除此作品', 403);
+        }
+        // 修复: moderator 删除他人内容时需校验目标作者角色,不能删除同级或上级管理员的内容
+        if (!isOwner && work.user_id) {
+            const { User } = require('../models');
+            const targetAuthor = await DbAdapter.findByPk(User, work.user_id, { attributes: ['id', 'role'] });
+            if (targetAuthor && !canManageUser(req.user.role, targetAuthor.role)) {
+                return errorResponse(res, '无权删除此用户的作品', 403);
+            }
         }
 
         const { Like, Favorite, Comment, StudioWork, Notification, Studio } = require('../models');

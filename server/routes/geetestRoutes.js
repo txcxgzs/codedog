@@ -5,10 +5,21 @@ const { successResponse, errorResponse } = require('../middleware/response');
 const { SystemConfig, CaptchaStats } = require('../models');
 const DbAdapter = require('../utils/dbAdapter');
 const { Op } = require('sequelize');
+// 修复: 引入限流器,为 GET /register 添加专项限流
+// 该接口每次请求都会查配置并向极验发起外部注册请求(SDK 最长可等待 10 秒),
+// 全局写限流主动跳过 GET,匿名用户可反复触发造成资源耗尽
+const { createRateLimiter } = require('../middleware/rateLimit');
 
 // 从环境变量获取默认配置
 const GEETEST_ID = process.env.GEETEST_ID || '';
 const GEETEST_KEY = process.env.GEETEST_KEY || '';
+
+// 极验注册专项限流: 单 IP 每分钟最多 10 次,防止匿名资源耗尽
+const geetestRegisterRateLimiter = createRateLimiter({
+    windowMs: 60 * 1000,
+    max: 10,
+    keyPrefix: 'geetest-register'
+});
 
 async function recordStats(type, scene, action, req) {
     try {
@@ -87,7 +98,7 @@ router.post('/show', async (req, res) => {
     }
 });
 
-router.get('/register', async (req, res) => {
+router.get('/register', geetestRegisterRateLimiter, async (req, res) => {
     try {
         let geetestId = GEETEST_ID;
         let geetestKey = GEETEST_KEY;

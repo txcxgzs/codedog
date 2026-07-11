@@ -711,8 +711,11 @@ async function deleteUser(req, res) {
                 const affectedStudioIdsFromUserWorks = [...new Set(affectedStudioWorksFromUserWorks.map(sw => sw.studio_id))];
                 await DbAdapter.destroy(StudioWork, { where: { work_id: { [Op.in]: userWorkIds } }, transaction: t });
                 for (const sid of affectedStudioIdsFromUserWorks) {
+                    // 修复: 同时重算 work_count 和 total_score,与 removeStudioMember/removeStudioWork 保持一致
+                    // 此前只重算 work_count,导致工作室总分漂移且无法通过 repair-counts 恢复
                     const approvedCount = await DbAdapter.count(StudioWork, { where: { studio_id: sid, status: 'approved' }, transaction: t });
-                    await DbAdapter.update(Studio, { work_count: approvedCount }, { where: { id: sid }, transaction: t });
+                    const approvedScore = await DbAdapter.sum(StudioWork, 'score', { where: { studio_id: sid, status: 'approved' }, transaction: t }) || 0;
+                    await DbAdapter.update(Studio, { work_count: approvedCount, total_score: approvedScore }, { where: { id: sid }, transaction: t });
                 }
             }
             // Bug-3: 改为软删作品（status:'deleted'），与 Comment 软删保持一致，避免评论 work_id 成为死指针
@@ -3171,6 +3174,12 @@ async function aiAutoHandleReports(req, res) {
         if (validReportIds.length === 0) {
             return errorResponse(res, '举报ID数组格式无效', 400);
         }
+        // 修复: 添加批量上限,防止一次提交数千 ID 长时间占用连接和数据库事务
+        // 与 aiBatchReviewReports 的 20 条上限保持同量级,这里放宽到 50 条
+        const AI_AUTO_HANDLE_MAX_BATCH = 50;
+        if (validReportIds.length > AI_AUTO_HANDLE_MAX_BATCH) {
+            return errorResponse(res, `单次最多处理 ${AI_AUTO_HANDLE_MAX_BATCH} 条举报，请分批提交`, 400);
+        }
 
         const results = { handled: 0, passed: 0, deleted: 0 };
 
@@ -3587,10 +3596,14 @@ async function updateStudioStatus(req, res) {
         if (!studio) {
             return errorResponse(res, '工作室不存在', 404);
         }
-        
-        await DbAdapter.update(Studio, { status }, { where: { id } });
+
+        // 修复: 同步 owner_claim 字段,保持"每人一个工作室"并发不变量
+        // banned 工作室的 owner_claim 置 NULL,允许该 owner 创建新工作室(唯一索引允许多个 NULL)
+        // 非 banned 状态恢复 owner_claim = owner_id,重新占用唯一索引
+        const ownerClaim = status === 'banned' ? null : studio.owner_id;
+        await DbAdapter.update(Studio, { status, owner_claim: ownerClaim }, { where: { id } });
         logOperation(req, 'update_studio_status', 'studio', id, { status });
-        
+
         const updatedStudio = await DbAdapter.findByPk(Studio, id);
         return successResponse(res, updatedStudio, '工作室状态已更新');
     } catch (error) {
@@ -3635,6 +3648,11 @@ async function updateStudio(req, res) {
         // 修复: vice_owner_id 的变更必须同步 StudioMember.role,否则会出现"挂名副室长"
         // 通用编辑接口此前只更新 Studio.vice_owner_id,不更新成员角色,导致副室长无实际管理权限
         // 现在用事务包裹,降级旧副室长 + 提升新副室长 + 更新 Studio.vice_owner_id
+        // 修复: 同步 owner_claim 字段。finalStatus 为本次更新后的工作室状态,
+        // banned → owner_claim=null;其他 → owner_claim=owner_id,保证并发不变量
+        const finalStatus = status !== undefined ? status : studio.status;
+        const finalOwnerClaim = finalStatus === 'banned' ? null : studio.owner_id;
+
         if (vice_owner_id !== undefined) {
             const { StudioMember } = require('../models');
             const oldViceOwnerId = studio.vice_owner_id;
@@ -3679,8 +3697,9 @@ async function updateStudio(req, res) {
                     cover: cover !== undefined ? cover : studio.cover,
                     is_public: is_public !== undefined ? is_public : studio.is_public,
                     join_type: join_type !== undefined ? join_type : studio.join_type,
-                    status: status !== undefined ? status : studio.status,
-                    vice_owner_id: vice_owner_id
+                    status: finalStatus,
+                    vice_owner_id: vice_owner_id,
+                    owner_claim: finalOwnerClaim
                 }, { where: { id }, transaction: t });
             });
         } else {
@@ -3691,7 +3710,8 @@ async function updateStudio(req, res) {
                 cover: cover !== undefined ? cover : studio.cover,
                 is_public: is_public !== undefined ? is_public : studio.is_public,
                 join_type: join_type !== undefined ? join_type : studio.join_type,
-                status: status !== undefined ? status : studio.status
+                status: finalStatus,
+                owner_claim: finalOwnerClaim
             }, { where: { id } });
         }
 
@@ -3709,28 +3729,40 @@ async function setWorkScore(req, res) {
     try {
         const { id } = req.params;
         const { score } = req.body;
-        
+
         const StudioWork = require('../models').StudioWork;
-        const studioWork = await DbAdapter.findByPk(StudioWork, id);
-        if (!studioWork) {
-            return errorResponse(res, '作品记录不存在', 404);
-        }
-
         const parsedScore = Math.max(0, parseInt(score, 10) || 0);
-        const oldScore = studioWork.score || 0;
-        await DbAdapter.update(StudioWork, { score: parsedScore }, { where: { id } });
 
-        const studio = await DbAdapter.findByPk(Studio, studioWork.studio_id);
-        let totalScore = 0;
-        if (studio) {
-            totalScore = await DbAdapter.sum(StudioWork, 'score', { where: { studio_id: studioWork.studio_id, status: 'approved' } }) || 0;
-            await DbAdapter.update(Studio, { total_score: totalScore }, { where: { id: DbAdapter.getId(studio) } });
-        }
+        // 修复: 用事务 + SELECT FOR UPDATE 包裹 score 更新 + total_score 重算
+        // 原先非事务化: 更新分数 → SUM → 写 total_score,并发评分可能写回旧汇总值
+        let oldScore, totalScore = 0;
+        await sequelize.transaction(async (t) => {
+            const studioWork = await DbAdapter.findByPk(StudioWork, id, {
+                transaction: t,
+                lock: t.LOCK.UPDATE
+            });
+            if (!studioWork) {
+                const err = new Error('作品记录不存在');
+                err.statusCode = 404;
+                throw err;
+            }
+            oldScore = studioWork.score || 0;
+            await DbAdapter.update(StudioWork, { score: parsedScore }, { where: { id }, transaction: t });
+
+            const studio = await DbAdapter.findByPk(Studio, studioWork.studio_id, { transaction: t });
+            if (studio) {
+                totalScore = await DbAdapter.sum(StudioWork, 'score', { where: { studio_id: studioWork.studio_id, status: 'approved' }, transaction: t }) || 0;
+                await DbAdapter.update(Studio, { total_score: totalScore }, { where: { id: DbAdapter.getId(studio) }, transaction: t });
+            }
+        });
 
         logOperation(req, 'set_work_score', 'studio_work', id, { oldScore, newScore: parsedScore });
 
         return successResponse(res, { score: parsedScore, totalScore }, '积分已更改');
     } catch (error) {
+        if (error.statusCode === 404) {
+            return errorResponse(res, '作品记录不存在', 404);
+        }
         console.error('设置作品积分错误:', error);
         return errorResponse(res, '设置失败', 500);
     }
@@ -3841,6 +3873,12 @@ async function updateStudioMember(req, res) {
             return errorResponse(res, '无效的角色值', 400);
         }
 
+        // 修复: 禁止通过此接口将成员提升为 owner,避免制造"伪室长"
+        // owner 只能通过专门的转移流程(同时更新 Studio.owner_id)变更
+        if (role === 'owner') {
+            return errorResponse(res, '不能通过此接口设置室长，请使用专门的室长转移流程', 400);
+        }
+
         const member = await DbAdapter.findOne(StudioMember, {
             where: { studio_id: studioId, user_id: userId }
         });
@@ -3919,10 +3957,12 @@ async function removeStudioMember(req, res) {
             if (studio && String(studio.vice_owner_id) === String(userId)) {
                 await DbAdapter.update(Studio, { vice_owner_id: null }, { where: { id: DbAdapter.getId(studio) }, transaction: t });
             }
-            // Bug-8: 如果有已通过审核的作品被移除,重算工作室 work_count
+            // Bug-8: 如果有已通过审核的作品被移除,重算工作室 work_count 和 total_score
+            // 修复: 此前只重算 work_count 不重算 total_score,导致工作室总分漂移且无法通过 repair-counts 恢复
             if (removedStudioWorks.length > 0 && studio) {
                 const approvedCount = await DbAdapter.count(StudioWork, { where: { studio_id: studioId, status: 'approved' }, transaction: t });
-                await DbAdapter.update(Studio, { work_count: approvedCount }, { where: { id: DbAdapter.getId(studio) }, transaction: t });
+                const approvedScore = await DbAdapter.sum(StudioWork, 'score', { where: { studio_id: studioId, status: 'approved' }, transaction: t }) || 0;
+                await DbAdapter.update(Studio, { work_count: approvedCount, total_score: approvedScore }, { where: { id: DbAdapter.getId(studio) }, transaction: t });
             }
         });
 
@@ -4072,36 +4112,47 @@ async function updateStudioPoints(req, res) {
         const { id } = req.params;
         const { points, action, note } = req.body;
         
-        const studio = await DbAdapter.findByPk(Studio, id);
-        if (!studio) {
-            return errorResponse(res, '工作室不存在', 404);
-        }
-
         const parsedPoints = parseInt(points, 10);
         if (!Number.isFinite(parsedPoints) || parsedPoints < -10000 || parsedPoints > 10000) {
             return errorResponse(res, '积分必须是-10000 到 10000 之间的有效数字', 400);
         }
 
-        let newPoints;
-        if (action === 'add') {
-            newPoints = Math.max(0, (studio.points || 0) + parsedPoints);
-        } else {
-            newPoints = Math.max(0, parsedPoints);
-        }
-        
-        const newLevel = Math.min(10, Math.floor(newPoints / 100) + 1);
-        
-        await DbAdapter.update(Studio, { points: newPoints, level: newLevel }, { where: { id } });
-        logOperation(req, 'update_studio_points', 'studio', id, { 
-            oldPoints: studio.points, 
-            newPoints, 
-            action, 
-            note 
+        // 修复: 使用事务 + SELECT FOR UPDATE 防止并发 read-modify-write 竞态
+        // 原先读取 points → 内存相加 → 写回,并发两次加分只生效一次(丢失更新)
+        let oldPoints, newPoints, newLevel;
+        await sequelize.transaction(async (t) => {
+            const studio = await DbAdapter.findByPk(Studio, id, {
+                transaction: t,
+                lock: t.LOCK.UPDATE
+            });
+            if (!studio) {
+                const err = new Error('工作室不存在');
+                err.statusCode = 404;
+                throw err;
+            }
+            oldPoints = studio.points || 0;
+            if (action === 'add') {
+                newPoints = Math.max(0, oldPoints + parsedPoints);
+            } else {
+                newPoints = Math.max(0, parsedPoints);
+            }
+            newLevel = Math.min(10, Math.floor(newPoints / 100) + 1);
+            await DbAdapter.update(Studio, { points: newPoints, level: newLevel }, { where: { id }, transaction: t });
         });
-        
+
+        logOperation(req, 'update_studio_points', 'studio', id, {
+            oldPoints,
+            newPoints,
+            action,
+            note
+        });
+
         const updatedStudio = await DbAdapter.findByPk(Studio, id);
         return successResponse(res, updatedStudio, '积分已更改');
     } catch (error) {
+        if (error.statusCode === 404) {
+            return errorResponse(res, '工作室不存在', 404);
+        }
         console.error('更新工作室积分错误', error);
         return errorResponse(res, '更新失败', 500);
     }

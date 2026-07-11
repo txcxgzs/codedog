@@ -168,8 +168,14 @@ const Studio = sequelize.define('Studio', {
     is_public: { type: DataTypes.BOOLEAN, defaultValue: true },
     join_type: { type: DataTypes.STRING(20), defaultValue: 'public' },
     // M7: status 改为 ENUM，覆盖 controller 实际使用的 active/pending/banned，预留 dissolved
-    status: { type: DataTypes.ENUM('active', 'pending', 'dissolved', 'banned'), defaultValue: 'active' }
-}, Object.assign({ tableName: 'studios' }, TIMESTAMP_OPTS));
+    status: { type: DataTypes.ENUM('active', 'pending', 'dissolved', 'banned'), defaultValue: 'active' },
+    // 修复: owner_claim 用于数据库级"每人一个工作室"并发保护
+    // 当 status != 'banned' 时等于 owner_id,banned 时为 NULL
+    // 唯一索引允许多个 NULL,因此被封禁的工作室不会阻止用户创建新工作室
+    owner_claim: { type: DataTypes.INTEGER, allowNull: true, defaultValue: null }
+}, Object.assign({ tableName: 'studios', indexes: [
+    { name: 'owner_claim_unique', unique: true, fields: ['owner_claim'] }
+] }, TIMESTAMP_OPTS));
 
 const StudioMember = sequelize.define('StudioMember', {
     id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },

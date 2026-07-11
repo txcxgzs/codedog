@@ -197,7 +197,9 @@ app.use(ipBanMiddleware);
 
 app.use('/api', writeRateLimiter);
 app.use('/api/users/login', loginRateLimiter);
-app.use('/api/works/codemao', codemaoImportRateLimiter);
+// 修复: 专项限流应挂在实际执行导入的路由 POST /api/works/import/:codemaoId 上
+// 原先挂在 /api/works/codemao(GET 只读接口),无法限制实际触发编程猫 API + 审核 + 写库的导入操作
+app.use('/api/works/import', codemaoImportRateLimiter);
 
 app.use(hcaptchaGuard);
 
