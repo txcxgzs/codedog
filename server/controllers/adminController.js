@@ -3209,7 +3209,8 @@ async function aiAutoHandleReports(req, res) {
             try {
                 if (report.type === 'work') {
                     const work = await DbAdapter.findByPk(Work, report.target_id, { attributes: ['name', 'description', 'status'] });
-                    if (work && work.status !== 'deleted') {
+                    // 修复: hidden 作品已由管理员处理过,跳过 AI 审核避免重复处理
+                    if (work && work.status !== 'deleted' && work.status !== 'hidden') {
                         actualContent = `${work.name || ''} ${work.description || ''}`;
                     }
                 } else if (report.type === 'comment') {

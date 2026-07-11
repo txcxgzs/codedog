@@ -13,7 +13,13 @@
         <div class="r-myworks--grid" v-if="works.length > 0">
           <div v-for="work in works" :key="work.id" class="r-myworks--card">
             <div class="r-myworks--card_cover" :style="{ backgroundImage: `url(${work.preview})` }">
-              <div class="r-myworks--card_overlay">
+              <!-- 隐藏状态遮罩:管理员隐藏的作品,作者本人不可查看详情,但可删除 -->
+              <div v-if="work.status === 'hidden'" class="r-myworks--hidden_mask">
+                <el-tag type="warning" size="small">已被管理员隐藏</el-tag>
+                <p class="r-myworks--hidden_hint">如有疑问请联系管理员</p>
+                <el-button type="danger" size="small" @click="deleteWork(work)">删除</el-button>
+              </div>
+              <div class="r-myworks--card_overlay" v-else>
                 <el-button type="primary" size="small" @click="$router.push(`/work/${work.codemao_work_id}`)">查看</el-button>
                 <el-button type="danger" size="small" @click="deleteWork(work)">删除</el-button>
               </div>
@@ -199,7 +205,7 @@ $border-color: #eee;
     background-size: cover;
     background-position: center;
     position: relative;
-    
+
     .r-myworks--card_overlay {
       position: absolute;
       inset: 0;
@@ -210,6 +216,25 @@ $border-color: #eee;
       gap: 12px;
       opacity: 0;
       transition: opacity 0.3s;
+    }
+
+    // 隐藏状态遮罩:作品被管理员隐藏,作者本人不可查看详情
+    .r-myworks--hidden_mask {
+      position: absolute;
+      inset: 0;
+      background: rgba(0,0,0,0.6);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      color: #fff;
+
+      .r-myworks--hidden_hint {
+        margin: 0;
+        font-size: 12px;
+        opacity: 0.85;
+      }
     }
   }
   

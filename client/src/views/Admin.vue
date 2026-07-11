@@ -523,6 +523,13 @@
                 </el-tag>
               </template>
             </el-table-column>
+            <el-table-column prop="status" label="状态" width="100">
+              <template #default="{ row }">
+                <el-tag :type="row.status === 'published' ? 'success' : row.status === 'hidden' ? 'warning' : row.status === 'deleted' ? 'danger' : 'info'" size="small">
+                  {{ row.status === 'published' ? '已发布' : row.status === 'hidden' ? '已隐藏' : row.status === 'deleted' ? '已删除' : row.status === 'pending' ? '待审核' : row.status === 'rejected' ? '已驳回' : row.status }}
+                </el-tag>
+              </template>
+            </el-table-column>
             <el-table-column prop="created_at" label="发布时间" width="110">
               <template #default="{ row }">{{ formatDate(row.created_at) }}</template>
             </el-table-column>
