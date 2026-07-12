@@ -11,6 +11,9 @@ class ProxyService {
         this._cache = [];
         this._cacheTime = 0;
         this._cacheTTL = 5 * 60 * 1000;
+        this._deadProxies = new Set();
+        this._failCount = 0;
+        this._maxFailBeforeSwitch = 3;
     }
 
     async loadConfig() {
@@ -129,10 +132,41 @@ class ProxyService {
     }
 
     pickOne() {
-        if (this.currentProxy) return this.currentProxy;
-        if (this._cache.length === 0) return null;
-        const idx = Math.floor(Math.random() * this._cache.length);
-        return this._cache[idx];
+        const alive = this._cache.filter(p => !this._deadProxies.has(p.url));
+        if (alive.length > 0) {
+            const idx = Math.floor(Math.random() * alive.length);
+            return alive[idx];
+        }
+        if (this.currentProxy && !this._deadProxies.has(this.currentProxy.url)) return this.currentProxy;
+        return null;
+    }
+
+    async markDead(proxyUrl) {
+        if (!proxyUrl) return;
+        this._deadProxies.add(proxyUrl);
+        this._failCount++;
+        console.warn(`[代理] 标记死亡: ${proxyUrl}, 死亡数: ${this._deadProxies.size}`);
+        if (this.currentProxy && this.currentProxy.url === proxyUrl) {
+            const next = this.pickOne();
+            if (next) {
+                await this.saveCurrentProxy(next);
+                console.log(`[代理] 自动切换至: ${next.url}`);
+            } else {
+                this.currentProxy = null;
+                await this.saveCurrentProxy(null);
+                console.warn('[代理] 代理池全部死亡, 已清空当前代理');
+            }
+        }
+    }
+
+    getAxiosConfigWithRetry(config = {}, maxRetries = 2) {
+        const self = this;
+        return {
+            ...self.getAxiosConfig(config),
+            __proxyRetry: true,
+            __maxRetries: maxRetries,
+            __proxyService: self
+        };
     }
 
     async testProxy(proxyUrl) {

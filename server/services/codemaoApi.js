@@ -175,35 +175,46 @@ const codemaoApi = {
      * 编程猫登录
      */
     async login(identity, password) {
-        try {
-            console.log('[编程猫] 尝试登录');
+        let lastError = null;
+        for (let attempt = 0; attempt < 3; attempt++) {
+            try {
+                console.log(`[编程猫] 尝试登录 (第${attempt + 1}次)`);
 
-            const baseConfig = { timeout: 15000, headers: DEFAULT_HEADERS };
-            const axiosConfig = proxyService.getAxiosConfig(baseConfig);
+                const baseConfig = { timeout: 15000, headers: DEFAULT_HEADERS };
+                const axiosConfig = proxyService.getAxiosConfig(baseConfig);
 
-            const response = await axios.post(
-                `${CODEMAO_BASE_URL}/tiger/v3/web/accounts/login`,
-                { pid: CODEMAO_PID, identity, password },
-                axiosConfig
-            );
-            
-            console.log('[编程猫] 登录成功');
-            return response.data;
-        } catch (error) {
-            console.error('[编程猫] 登录失败:', error.message);
+                const response = await axios.post(
+                    `${CODEMAO_BASE_URL}/tiger/v3/web/accounts/login`,
+                    { pid: CODEMAO_PID, identity, password },
+                    axiosConfig
+                );
 
-            if (error.response) {
-                console.error('[编程猫] 响应状态:', error.response.status);
+                console.log('[编程猫] 登录成功');
+                return response.data;
+            } catch (error) {
+                lastError = error;
+                console.error(`[编程猫] 登录失败 (第${attempt + 1}次):`, error.message);
 
-                return {
-                    error: true,
-                    status: error.response.status,
-                    message: error.response.data?.message || '登录请求失败'
-                };
+                if (proxyService.enabled) {
+                    const currentProxy = proxyService.pickOne();
+                    if (currentProxy) {
+                        await proxyService.markDead(currentProxy.url);
+                    }
+                }
+
+                if (attempt < 2) await new Promise(r => setTimeout(r, 1000));
             }
-
-            return { error: true, message: error.message || '网络请求失败' };
         }
+
+        if (lastError && lastError.response) {
+            return {
+                error: true,
+                status: lastError.response.status,
+                message: lastError.response.data?.message || '登录请求失败'
+            };
+        }
+
+        return { error: true, message: lastError?.message || '网络请求失败' };
     },
 
     /**
