@@ -94,8 +94,8 @@
           </el-radio-group>
         </el-form-item>
         <el-form-item label="内容" prop="content">
-          <!-- 修复: 替换编辑/预览分屏为分屏编辑器 -->
-          <MarkdownEditor v-model="postForm.content" placeholder="写下你的想法吧...支持 Markdown 格式" />
+          <!-- 修复: 替换分屏编辑器为 WYSIWYG Word 式编辑器 -->
+          <WysiwygEditor v-model="postForm.content" ref="wysiwygRef" />
         </el-form-item>
         <el-form-item label="封面" prop="cover">
           <el-input v-model="postForm.cover" placeholder="封面图片URL（可选）" />
@@ -126,7 +126,7 @@ import DOMPurify from 'dompurify'
 import hljs from 'highlight.js'
 import 'highlight.js/styles/github.css'
 import AppImage from '@/components/AppImage.vue'
-import MarkdownEditor from '@/components/MarkdownEditor.vue'
+import WysiwygEditor from '@/components/WysiwygEditor.vue'
 
 // 配置 marked
 marked.setOptions({
@@ -153,6 +153,7 @@ const postFormRef = ref(null)
 const postContentRef = ref(null)
 const geetestDialogRef = ref(null)
 const geetestConfig = ref(null)
+const wysiwygRef = ref(null)
 
 const renderedPostContent = computed(() => {
   if (!postForm.content) return ''
@@ -265,9 +266,16 @@ const createPost = async () => {
   
   postLoading.value = true
   try {
-    // 修复: tags 从逗号分隔字符串转为数组,后端要求 Array.isArray
+    // 修复: WYSIWYG 编辑器输出 HTML,存储时直接保存;tags 从逗号分隔转为数组
+    const html = wysiwygRef.value?.getSanitizedHtml() || ''
+    if (!html.replace(/<[^>]+>/g, '').trim()) {
+      ElMessage.error('请输入内容')
+      postLoading.value = false
+      return
+    }
     const payload = {
       ...postForm,
+      content: html,
       tags: postForm.tags
         ? postForm.tags.split(',').map(t => t.trim()).filter(Boolean)
         : []

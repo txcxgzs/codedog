@@ -29,7 +29,7 @@
                 </el-radio-group>
               </el-form-item>
               <el-form-item label="内容">
-                <MarkdownEditor v-model="editContent" />
+                <WysiwygEditor v-model="editContent" ref="wysiwygRef" />
               </el-form-item>
               <el-form-item label="标签">
                 <el-input v-model="editTags" placeholder="标签,用逗号分隔" />
@@ -207,9 +207,7 @@ import DOMPurify from 'dompurify'
 import hljs from 'highlight.js'
 import 'highlight.js/styles/github.css'
 import AppImage from '@/components/AppImage.vue'
-import MarkdownEditor from '@/components/MarkdownEditor.vue'
-
-// 引入图标
+import WysiwygEditor from '@/components/WysiwygEditor.vue'
 import { EditPen } from '@element-plus/icons-vue'
 
 // 配置 marked
@@ -230,13 +228,14 @@ const userStore = useUserStore()
 const loading = ref(false)
 const commentLoading = ref(false)
 const post = ref(null)
-// 修复: 帖子编辑状态
+// 帖子编辑状态(WYSIWYG Word 式编辑器)
 const isEditing = ref(false)
 const editLoading = ref(false)
 const editTitle = ref('')
 const editCategory = ref('')
 const editContent = ref('')
 const editTags = ref('')
+const wysiwygRef = ref(null)
 const comments = ref([])
 const relatedPosts = ref([])
 const liked = ref(false)
@@ -250,7 +249,12 @@ const geetestConfig = ref(null)
 
 const renderedContent = computed(() => {
   if (!post.value?.content) return ''
-  return DOMPurify.sanitize(marked(post.value.content), {
+  const content = post.value.content
+  // 修复: 区分 HTML(WYSIWYG 编辑器产出)和旧 markdown 内容
+  // 如果内容包含 HTML 标签,直接渲染;如果是纯 markdown 语法,用 marked 转换
+  const hasHtmlTags = /<[a-z][\s\S]*>/i.test(content)
+  const html = hasHtmlTags ? content : marked(content)
+  return DOMPurify.sanitize(html, {
     FORBID_TAGS: ['style', 'form', 'input', 'iframe', 'object', 'embed', 'script'],
     FORBID_ATTR: ['onerror', 'onload', 'onclick', 'onmouseover', 'style', 'formaction']
   })
@@ -348,9 +352,13 @@ const checkFollowingStatus = async () => {
 const startEdit = () => {
   editTitle.value = post.value.title
   editCategory.value = post.value.category || 'discussion'
+  // 修复: 内容直接放入 WYSIWYG 编辑器(后端存储的可能是 HTML 或 markdown,都直接显示)
   editContent.value = post.value.content || ''
   editTags.value = Array.isArray(post.value.tags) ? post.value.tags.join(', ') : (post.value.tags || '')
   isEditing.value = true
+  nextTick(() => {
+    wysiwygRef.value?.setContent(editContent.value)
+  })
 }
 
 // 帖子编辑:取消
@@ -360,23 +368,16 @@ const cancelEdit = () => {
 
 // 帖子编辑:保存
 const saveEdit = async () => {
-  if (!editTitle.value.trim()) {
-    ElMessage.error('请输入标题')
-    return
-  }
-  if (!editContent.value.trim()) {
-    ElMessage.error('请输入内容')
-    return
-  }
+  if (!editTitle.value.trim()) { ElMessage.error('请输入标题'); return }
+  const html = wysiwygRef.value?.getSanitizedHtml() || ''
+  if (!html.replace(/<[^>]+>/g, '').trim()) { ElMessage.error('请输入内容'); return }
   editLoading.value = true
   try {
-    const tags = editTags.value
-      ? editTags.value.split(',').map(t => t.trim()).filter(Boolean)
-      : []
+    const tags = editTags.value ? editTags.value.split(',').map(t => t.trim()).filter(Boolean) : []
     const res = await postApi.updatePost(post.value.id, {
       title: editTitle.value.trim(),
       category: editCategory.value,
-      content: editContent.value,
+      content: html,
       tags
     })
     if (res.code === 200) {

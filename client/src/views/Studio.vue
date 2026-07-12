@@ -30,7 +30,11 @@
       <div class="r-studio--content" v-loading="loading">
         <div class="r-studio--grid" v-if="studios.length > 0">
           <div v-for="studio in studios" :key="studio.id" class="r-studio--card" @click="$router.push(`/studio/${studio.id}`)">
-            <div class="r-studio--card_cover" :style="{ backgroundImage: `url(${studio.cover || defaultCover})` }">
+            <!-- 修复: 默认封面用工作室名称首字艺术字,而非 emoji -->
+            <div class="r-studio--card_cover" :style="{ backgroundImage: studio.cover ? `url(${studio.cover})` : '' }">
+              <div v-if="!studio.cover" class="r-studio--cover_placeholder">
+                <span class="r-studio--cover_initial">{{ (studio.name || '?').charAt(0).toUpperCase() }}</span>
+              </div>
               <div class="r-studio--card_level">Lv.{{ studio.level || 1 }}</div>
               <div class="r-studio--card_badge" v-if="studio.memberRole">{{ roleText(studio.memberRole) }}</div>
             </div>
@@ -110,11 +114,10 @@ const createDialogVisible = ref(false)
 const createFormRef = ref(null)
 const geetestDialog = ref(null)
 const searchKeyword = ref('')
+
 const { geetestEnabled } = useGeetestConfig()
 
-// 修复: 替换"图片加载失败"文字为中性占位符,避免用户误以为是报错
-const defaultCover = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMDAgMTUwIj48cmVjdCB3aWR0aD0iMzAwIiBoZWlnaHQ9IjE1MCIgZmlsbD0iI2Y1ZjVmNSIvPjx0ZXh0IHg9IjE1MCIgeT0iNzUiIGZvbnQtZmFtaWx5PSJhcmlhbCIgZm9udC1zaXplPSIzNiIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZmlsbD0iI2NjYyI+8J+MujwvdGV4dD48L3N2Zz4='
-
+// 默认封面已改为模板中动态渲染首字艺术字
 const createForm = reactive({
   name: '',
   description: '',
@@ -360,6 +363,25 @@ $border-color: #eee;
     background-size: cover;
     background-position: center;
     position: relative;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); /* 默认渐变底色 */
+
+    /* 工作室首字艺术字占位符 */
+    .r-studio--cover_placeholder {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+
+      .r-studio--cover_initial {
+        font-size: 48px;
+        font-weight: 700;
+        color: rgba(255,255,255,0.9);
+        text-shadow: 0 2px 8px rgba(0,0,0,0.2);
+        font-family: 'Georgia', 'Times New Roman', serif;
+        user-select: none;
+      }
+    }
     
     .r-studio--card_level {
       position: absolute;

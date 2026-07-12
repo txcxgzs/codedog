@@ -2,7 +2,12 @@
   <div class="r-studio-detail--page">
     <div class="r-studio-detail--container" v-loading="loading">
       <div class="r-studio-detail--header" v-if="studio">
-        <div class="r-studio-detail--cover" :style="{ backgroundImage: `url(${studio.cover || defaultCover})` }"></div>
+        <!-- 修复: 默认封面用工作室名称首字艺术字,而非 emoji -->
+        <div class="r-studio-detail--cover" :style="{ backgroundImage: studio.cover ? `url(${studio.cover})` : '' }">
+          <div v-if="!studio.cover" class="r-studio-detail--cover_placeholder">
+            <span class="r-studio-detail--cover_initial">{{ (studio.name || '?').charAt(0).toUpperCase() }}</span>
+          </div>
+        </div>
         <div class="r-studio-detail--info">
           <div class="r-studio-detail--title_row">
             <h1 class="r-studio-detail--name">{{ studio.name }}</h1>
@@ -294,8 +299,7 @@ const myWorksLoading = ref(false)
 const geetestDialog = ref(null)
 const { geetestEnabled, fetchGeetestConfig } = useGeetestConfig()
 
-// 修复: 替换"图片加载失败"文字为中性占位符,避免用户误以为是报错
-const defaultCover = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMDAgMTUwIj48cmVjdCB3aWR0aD0iMzAwIiBoZWlnaHQ9IjE1MCIgZmlsbD0iI2Y1ZjVmNSIvPjx0ZXh0IHg9IjE1MCIgeT0iNzUiIGZvbnQtZmFtaWx5PSJhcmlhbCIgZm9udC1zaXplPSIzNiIgdGV4dC1hbmNob3I9Im1pZGRlZSIgZmlsbD0iI2NjYyI+8J+MujwvdGV4dD48L3N2Zz4='
+// 默认封面已改为模板中动态渲染首字艺术字
 const defaultAvatar = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHBhdGggZmlsbD0iIzk5OSIgZD0iTTEyIDJDNi40OCAyIDIgNi40OCAyIDEyczQuNDggMTAgMTAgMTAgMTAtNC40OCAxMC0xMFMxNy41MiAyIDEyIDJ6bTAgM2MxLjY2IDAgMyAxLjM0IDMgM3MtMS4zNCAzLTMgMy0zLTEuMzQtMy0zIDEuMzQtMyAzLTN6bTAgMTQuMmMtMi41IDAtNC43MS0xLjI4LTYtMy4yMi4wMy0xLjk5IDQtMy4wOCA2LTMuMDggMS45OSAwIDUuOTcgMS4wOSA2IDMuMDgtMS4yOSAxLjk0LTMuNSAzLjIyLTYgMy4yMnoiLz48L3N2Zz4='
 const defaultWorkCover = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHBhdGggZmlsbD0iI2NjYyIgZD0iTTE5IDNINWMtMS4xIDAtMiAuOS0yIDJ2MTRjMCAxLjEuOSAyIDIgMmgxNGMxLjEgMCAyLS45IDItMlY1YzAtMS4xLS45LTItMi0yem0wIDE2SDVWNWgxNHYxNHptLTctMmgydi00aDR2LTJoLTRWN2gtMnY0SDd2Mmg0djR6Ii8+PC9zdmc+'
 
@@ -686,8 +690,27 @@ $border-color: #eee;
     border-radius: 6px;
     background-size: cover;
     background-position: center;
-    background-color: #f0f0f0;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     flex-shrink: 0;
+    position: relative;
+    overflow: hidden;
+
+    .r-studio-detail--cover_placeholder {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+
+      .r-studio-detail--cover_initial {
+        font-size: 42px;
+        font-weight: 700;
+        color: rgba(255,255,255,0.9);
+        text-shadow: 0 2px 8px rgba(0,0,0,0.2);
+        font-family: 'Georgia', 'Times New Roman', serif;
+        user-select: none;
+      }
+    }
   }
   
   .r-studio-detail--info {
