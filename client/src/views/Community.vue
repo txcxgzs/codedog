@@ -313,7 +313,14 @@ const createPost = async () => {
   
   postLoading.value = true
   try {
-    const res = await postApi.createPost({ ...postForm, ...geetestData })
+    // 修复: tags 从逗号分隔字符串转为数组,后端要求 Array.isArray
+    const payload = {
+      ...postForm,
+      tags: postForm.tags
+        ? postForm.tags.split(',').map(t => t.trim()).filter(Boolean)
+        : []
+    }
+    const res = await postApi.createPost({ ...payload, ...geetestData })
     if (res.code === 200) {
       ElMessage.success('发布成功')
       postDialogVisible.value = false
