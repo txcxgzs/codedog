@@ -794,6 +794,8 @@
                   <span v-else-if="row.type === 'post'">{{ row.target.title }}</span>
                   <span v-else-if="row.type === 'user'">{{ row.target.nickname || row.target.username }}</span>
                 </div>
+                <!-- 修复:目标已被删除时显示占位符 -->
+                <span v-else style="color: #c0c4cc; font-size: 12px;">{{ row.type === 'user' ? '用户不存在' : '内容已删除' }}</span>
               </template>
             </el-table-column>
             <el-table-column label="举报人" width="120">
