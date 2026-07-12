@@ -764,6 +764,10 @@ class DatabaseMigration {
      * @param {object} targetConfig - 目标数据库配置
      * @param {boolean} clearExisting - 是否清空目标数据库
      */
+    /**
+     * 执行数据库迁移
+     * 修复: 只允许迁移到空目标库,防止外键错链污染数据
+     */
     async migrate(sourceType, sourceConfig, targetType, targetConfig, clearExisting = false) {
         console.log(`\n🚀 开始数据库迁移: ${sourceType} -> ${targetType}`);
         console.log('=====================================');
@@ -773,6 +777,28 @@ class DatabaseMigration {
             const msg = '源数据库和目标数据库不能是同一个物理库,请检查迁移配置';
             console.error(`❌ ${msg}`);
             return { success: false, message: msg };
+        }
+
+        // 修复: 非 clearExisting 时,检查目标库是否为空,防止外键错链污染数据
+        if (!clearExisting) {
+            try {
+                const { connection } = await this.getConnection(targetType, targetConfig);
+                const sqlModels = this.getSqlModels(connection);
+                const tables = ['User', 'Work', 'Post', 'Comment', 'Report', 'Studio', 'Notification'];
+                for (const name of tables) {
+                    const count = await sqlModels[name].count();
+                    if (count > 0) {
+                        await connection.close();
+                        const msg = `目标库 ${name} 表已有 ${count} 条数据,迁移只允许到空目标库(clearExisting=true),防止外键错链`;
+                        console.error(`❌ ${msg}`);
+                        return { success: false, message: msg };
+                    }
+                }
+                await connection.close();
+            } catch (checkErr) {
+                // 表不存在等情况忽略,sync 会创建
+                console.warn('[迁移] 目标库预检跳过:', checkErr.message);
+            }
         }
 
         try {

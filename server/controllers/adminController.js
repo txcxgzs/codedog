@@ -3142,112 +3142,77 @@ async function batchUpdateConfigs(req, res) {
             'db_type', 'db_path', 'db_host', 'db_port', 'db_name', 'db_user', 'db_password',
             'mysql_host', 'mysql_port', 'mysql_database', 'mysql_username', 'mysql_password'
         ];
-
         const maskedValues = ['******', '***'];
         const sensitiveKeys = ['ai_api_key', 'hcaptcha_secret_key', 'geetest_key', 'sensitive_api_key', 'mysql_password', 'db_password'];
         const filteredConfigs = {};
         for (const [key, value] of Object.entries(configs)) {
             if (!ALLOWED_CONFIG_KEYS.includes(key)) continue;
-            if (sensitiveKeys.includes(key) && maskedValues.includes(String(value))) {
-                continue;
-            }
+            if (sensitiveKeys.includes(key) && maskedValues.includes(String(value))) continue;
             filteredConfigs[key] = value;
         }
 
-        const hasDbConfig = Object.keys(filteredConfigs).some(key => 
+        const hasDbConfig = Object.keys(filteredConfigs).some(key =>
             key.startsWith('db_') || key.startsWith('mysql_')
         );
-        
+
         if (hasDbConfig) {
-            // 修复 Bug: 换行符检查只对 db_/mysql_ 项生效,不应波及 ai_prompt 等多行文本字段
             for (const [key, value] of Object.entries(filteredConfigs)) {
                 if (!(key.startsWith('db_') || key.startsWith('mysql_'))) continue;
                 if (/[\r\n\0]/.test(String(value ?? ''))) {
                     return errorResponse(res, `${key} 包含非法换行字符`, 400);
                 }
             }
-
-            const fs = require('fs');
-            const path = require('path');
-            const envPath = path.join(__dirname, '../.env');
-            
-            let envContent = '';
-            if (fs.existsSync(envPath)) {
-                envContent = fs.readFileSync(envPath, 'utf8');
-            }
-            
-            if (filteredConfigs.db_type) {
-                envContent = updateEnvVariable(envContent, 'DB_TYPE', filteredConfigs.db_type);
-            }
-            if (filteredConfigs.mysql_host) {
-                envContent = updateEnvVariable(envContent, 'DB_HOST', filteredConfigs.mysql_host);
-            }
-            if (filteredConfigs.mysql_port) {
-                envContent = updateEnvVariable(envContent, 'DB_PORT', filteredConfigs.mysql_port);
-            }
-            if (filteredConfigs.mysql_database) {
-                envContent = updateEnvVariable(envContent, 'DB_NAME', filteredConfigs.mysql_database);
-            }
-            if (filteredConfigs.mysql_username) {
-                envContent = updateEnvVariable(envContent, 'DB_USER', filteredConfigs.mysql_username);
-            }
-            if (filteredConfigs.mysql_password) {
-                envContent = updateEnvVariable(envContent, 'DB_PASSWORD', filteredConfigs.mysql_password);
-            }
-            
-            fs.writeFileSync(envPath, envContent);
         }
-        
-        for (const [key, value] of Object.entries(filteredConfigs)) {
-            const existing = await DbAdapter.findOne(SystemConfig, { where: { config_key: key } });
-            if (existing) {
-                await DbAdapter.update(SystemConfig, { config_value: value }, { where: { config_key: key } });
-            } else {
-                await DbAdapter.create(SystemConfig, { config_key: key, config_value: value });
+
+        // 修复 P2-9: DB 配置更新放入事务,失败时回滚
+        await sequelize.transaction(async (t) => {
+            for (const [key, value] of Object.entries(filteredConfigs)) {
+                const existing = await DbAdapter.findOne(SystemConfig, { where: { config_key: key }, transaction: t });
+                if (existing) {
+                    await DbAdapter.update(SystemConfig, { config_value: value }, { where: { config_key: key }, transaction: t });
+                } else {
+                    await DbAdapter.create(SystemConfig, { config_key: key, config_value: value }, { transaction: t });
+                }
+            }
+        });
+
+        // DB 更新成功后再写 .env
+        if (hasDbConfig) {
+            try {
+                const fs = require('fs');
+                const path = require('path');
+                const envPath = path.join(__dirname, '../.env');
+                let envContent = '';
+                if (fs.existsSync(envPath)) envContent = fs.readFileSync(envPath, 'utf8');
+
+                const envKeyMap = {
+                    db_type: 'DB_TYPE', db_path: 'DB_PATH', db_host: 'DB_HOST', db_port: 'DB_PORT',
+                    db_name: 'DB_NAME', db_user: 'DB_USER', db_password: 'DB_PASSWORD',
+                    mysql_host: 'DB_HOST', mysql_port: 'DB_PORT', mysql_database: 'DB_NAME',
+                    mysql_username: 'DB_USER', mysql_password: 'DB_PASSWORD'
+                };
+                for (const [cfgKey, envKey] of Object.entries(envKeyMap)) {
+                    if (filteredConfigs[cfgKey] !== undefined) {
+                        envContent = updateEnvVariable(envContent, envKey, filteredConfigs[cfgKey]);
+                    }
+                }
+                fs.writeFileSync(envPath, envContent);
+            } catch (envErr) {
+                console.warn('[config] .env 写入失败(配置已入库):', envErr.message);
             }
         }
 
         logOperation(req, 'batch_update_config', 'system_config', null, redactConfigDetails(filteredConfigs));
-        
-        if (hasDbConfig) {
-            return successResponse(res, null, '数据库配置更新成功，请重启服务器以应用新配置');
-        } else {
-            return successResponse(res, null, '更新成功');
-        }
+        return successResponse(res, null, '更新成功');
     } catch (error) {
         console.error('批量更新系统设置错误:', error);
         return errorResponse(res, '更新失败', 500);
     }
 }
 
-// 辅助函数：更新env文件中的环境变量
-function updateEnvVariable(content, key, value) {
-    const safeValue = String(value ?? '');
-    if (/[\r\n\0]/.test(safeValue)) {
-        const error = new Error(`${key} 包含非法换行字符`);
-        error.statusCode = 400;
-        throw error;
-    }
-    // 修复: 转义特殊字符(#:注释, 空格, 引号等),用双引号包裹值
-    const escapedValue = safeValue.replace(/(["\\])/g, '\\$1');
-    const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const regex = new RegExp(`^${escapedKey}=.*$`, 'gm');
-    if (regex.test(content)) {
-        return content.replace(regex, `${key}="${escapedValue}"`);
-    } else {
-        return content + `\n${key}="${escapedValue}"`;
-    }
-}
-
-function redactConfigDetails(configs = {}) {
-    const redacted = {};
-    for (const [key, value] of Object.entries(configs)) {
-        redacted[key] = /password|secret|token|api[_-]?key|key/i.test(key) ? '***' : value;
-    }
-    return redacted;
-}
-
 // ==================== 操作日志 ====================
+
+
 
 async function getOperationLogs(req, res) {
     try {
