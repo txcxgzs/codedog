@@ -86,8 +86,8 @@ async function unfollowUser(req, res) {
         const { codemaoUserId } = req.params;
         
         // 通过编程猫用户ID找到目标用户
-        // 修复: 不对已禁用账户执行取关操作,避免禁用用户的关注状态被篡改
-        const targetUser = await DbAdapter.findOne(User, { where: { codemao_user_id: codemaoUserId, status: 'active' } });
+        // 修复: 允许取关已禁用用户(关注关系应可随时清理),但新增关注仍只许关注 active 用户
+        const targetUser = await DbAdapter.findOne(User, { where: { codemao_user_id: codemaoUserId } });
         if (!targetUser) {
             return errorResponse(res, '用户不存在', 404);
         }

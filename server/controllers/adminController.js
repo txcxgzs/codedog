@@ -3740,12 +3740,30 @@ async function aiAutoHandleReports(req, res) {
                         }
                     }
                     await DbAdapter.update(Report, { status: 'resolved', handler_id: DbAdapter.getId(req.user), handle_note: 'AI自动处理-删除' }, { where: { id: DbAdapter.getId(report) }, transaction: t });
+
+                    // 修复: 删除内容后重算作者 work_count
+                    if (report.type === 'work') {
+                        const deletedWork = await DbAdapter.findByPk(Work, report.target_id, { attributes: ['user_id'], transaction: t });
+                        if (deletedWork?.user_id) {
+                            const authorWorkCount = await DbAdapter.count(Work, { where: { user_id: deletedWork.user_id, status: 'published' }, transaction: t });
+                            await DbAdapter.update(User, { work_count: authorWorkCount }, { where: { id: deletedWork.user_id }, transaction: t });
+                        }
+                    }
                 });
                 results.deleted++;
             } else {
                 // 通过
                 await DbAdapter.update(Report, { status: 'rejected', handler_id: DbAdapter.getId(req.user), handle_note: 'AI自动处理-通过' }, { where: { id: DbAdapter.getId(report) } });
                 results.passed++;
+            }
+
+            // 修复: AI 删除内容后,清理同目标的其他 pending 举报(避免悬空)
+            if (riskLevel === 'high' && canAutoDelete) {
+                await DbAdapter.update(Report, {
+                    status: 'resolved',
+                    handler_id: DbAdapter.getId(req.user),
+                    handle_note: `AI自动处理-目标已删除(同目标清理)`
+                }, { where: { type: report.type, target_id: report.target_id, id: { [Op.ne]: DbAdapter.getId(report) }, status: 'pending' } });
             }
 
             results.handled++;
