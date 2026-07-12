@@ -77,36 +77,87 @@ function error(tag, message) {
     console.error(`[${tag}]`, message);
 }
 
-// 高效尾部读取: 从文件末尾倒序读取 N 行(大文件友好,异步 Promise)
+// 高效尾部读取: 从文件末尾读取(大文件友好,异步 Promise)
 function getRecentLogs(limit = 200) {
     return new Promise((resolve) => {
         try {
             ensureLogDir();
-            if (!fs.existsSync(LOG_FILE)) {
-                resolve([]);
-                return;
-            }
+            if (!fs.existsSync(LOG_FILE)) { resolve([]); return; }
 
-            // 修复: 用 readline 流式读取,避免全文件读入内存
+            // 获取文件大小,从末尾往前读取足够的数据
+            const stat = fs.statSync(LOG_FILE);
+            const chunkSize = Math.min(limit * 200, stat.size);
+            const startPos = Math.max(0, stat.size - chunkSize);
+
+            const stream = createReadStream(LOG_FILE, { encoding: 'utf8', start: startPos });
+            let remainder = '';
             const lines = [];
-            const stream = createReadStream(LOG_FILE, { encoding: 'utf8' });
-            const rl = readline.createInterface({ input: stream, crlfDelay: Infinity });
 
-            rl.on('line', (line) => {
-                if (line.trim()) lines.push(line);
+            stream.on('data', (chunk) => {
+                const data = remainder + chunk;
+                const parts = data.split('\n');
+                remainder = parts.shift();
+                for (const line of parts) {
+                    if (line.trim()) lines.push(line);
+                }
             });
 
-            rl.on('close', () => {
+            stream.on('end', () => {
+                if (remainder.trim()) lines.push(remainder);
                 resolve(lines.slice(-limit));
             });
 
-            rl.on('error', () => {
-                resolve([]);
-            });
+            stream.on('error', () => resolve([]));
         } catch (e) {
             resolve([]);
         }
     });
+}
+
+// 同步版本的 getRecentLogs(兼容旧代码)
+function getRecentLogsSync(limit = 200) {
+    try {
+        ensureLogDir();
+        if (!fs.existsSync(LOG_FILE)) return [];
+        const stat = fs.statSync(LOG_FILE);
+        const chunkSize = Math.min(limit * 200, stat.size);
+        const startPos = Math.max(0, stat.size - chunkSize);
+        const buf = Buffer.alloc(chunkSize);
+        const fd = fs.openSync(LOG_FILE, 'r');
+        fs.readSync(fd, buf, 0, chunkSize, startPos);
+        fs.closeSync(fd);
+        const data = buf.toString('utf8');
+        const lines = data.split('\n').filter(l => l.trim());
+        return lines.slice(-limit);
+    } catch (e) {
+        return [];
+    }
+}
+
+// P3-2: 时间戳轮转(避免固定 .bak 覆盖)
+function rotateLogIfNeeded() {
+    try {
+        if (!fs.existsSync(LOG_FILE)) return;
+        const stat = fs.statSync(LOG_FILE);
+        if (stat.size <= MAX_LOG_SIZE) return;
+
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const rotatedName = `${LOG_FILE}.${timestamp}.bak`;
+
+        // 删除旧的时间戳备份(只保留最近 3 个)
+        const dir = path.dirname(LOG_FILE);
+        const oldBackups = fs.readdirSync(dir)
+            .filter(f => f.startsWith('app.log.') && f.endsWith('.bak'))
+            .sort()
+            .reverse();
+        oldBackups.slice(3).forEach(f => {
+            try { fs.unlinkSync(path.join(dir, f)); } catch (e) {}
+        });
+
+        fs.renameSync(LOG_FILE, rotatedName);
+    } catch (e) {
+        // 轮转失败不影响业务
+    }
 }
 
 module.exports = { log, warn, error, getRecentLogs, writeLog: enqueueWrite };

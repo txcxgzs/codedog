@@ -88,7 +88,9 @@ async function validateAvatarUpload(req, res, next) {
                 req.file.filename = req.file.filename.replace(/\.(jpg|jpeg|png|webp|gif)$/i, '.jpg');
             }
         } catch (err) {
-            console.error('[Avatar] sharp 重编码失败，保留原图:', err.message);
+            // 修复: sharp 重编码失败时拒绝上传(而非保留原图),防止恶意文件入库
+            fs.unlink(req.file.path, () => {});
+            return errorResponse(res, '头像处理失败,文件可能已损坏或不是有效的图片,请重新上传', 400);
         }
 
         next();
