@@ -1,7 +1,6 @@
 const { GeetestLib } = require('./geetest');
 const { SystemConfig, CaptchaStats } = require('../models');
 const DbAdapter = require('../utils/dbAdapter');
-const { Op } = require('sequelize');
 
 const GEETEST_ID = process.env.GEETEST_ID || '';
 const GEETEST_KEY = process.env.GEETEST_KEY || '';

@@ -40,6 +40,8 @@ async function hcaptchaGuard(req, res, next) {
     const excludePaths = [
         '/api/users/login',
         '/api/users/register',
+        '/api/users/logout',
+        '/api/users/restore-from-impersonate',
         '/api/health',
         '/api/hcaptcha',
         '/api/geetest',
