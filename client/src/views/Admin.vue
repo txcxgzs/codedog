@@ -1747,6 +1747,11 @@
           <div class="r-admin--header">
             <h2 class="r-admin--title">实时日志</h2>
             <div class="r-admin--header_actions">
+              <!-- 修复: 日志来源切换,file 包含 Docker/应用全部输出 -->
+              <el-radio-group v-model="logSource" size="small" @change="fetchRealtimeLogs">
+                <el-radio-button label="memory">应用日志</el-radio-button>
+                <el-radio-button label="file">文件日志</el-radio-button>
+              </el-radio-group>
               <el-switch v-model="autoRefreshLogs" active-text="自动刷新" @change="toggleAutoRefresh" />
               <el-button @click="fetchRealtimeLogs" :loading="loadingRealtimeLogs">刷新</el-button>
               <el-button @click="clearRealtimeLogs" type="danger">清空</el-button>
@@ -1757,9 +1762,10 @@
               暂无日志
             </div>
             <div v-for="(log, index) in realtimeLogs" :key="index" 
-                 :class="['r-admin--realtime_log_item', 'r-admin--realtime_log_' + log.level]">
+                 :class="['r-admin--realtime_log_item', 'r-admin--realtime_log_' + (log.level || 'info')]">
               <span class="r-admin--realtime_log_time">{{ formatLogTime(log.time) }}</span>
-              <span class="r-admin--realtime_log_level">{{ log.level.toUpperCase() }}</span>
+              <span class="r-admin--realtime_log_level">{{ (log.level || 'info').toUpperCase() }}</span>
+              <span class="r-admin--realtime_log_tag" v-if="log.tag">{{ log.tag }}</span>
               <span class="r-admin--realtime_log_msg">{{ log.message }}</span>
             </div>
           </div>
@@ -2948,6 +2954,7 @@ const realtimeLogs = ref([])
 const realtimeLogsRef = ref(null)
 const loadingRealtimeLogs = ref(false)
 const autoRefreshLogs = ref(false)
+const logSource = ref('memory') // 修复: 支持切换日志来源 memory/file
 let logRefreshInterval = null
 // 爬取热榜日志轮询定时器提升为组件级 ref，便于 onBeforeUnmount 统一清理
 const crawlLogInterval = ref(null)
@@ -2957,16 +2964,21 @@ const fetchRealtimeLogs = async () => {
   try {
     const lastLog = realtimeLogs.value[realtimeLogs.value.length - 1]
     const lastTime = lastLog?.time || null
-    const res = await adminApi.getRealtimeLogs(lastTime, 200)
+    // 修复: 根据日志来源传不同参数
+    const res = await adminApi.getRealtimeLogs(lastTime, 200, logSource.value)
     if (res.code === 200) {
-      if (res.data?.logs?.length > 0) {
+      if (logSource.value === 'file' && res.data?.fileLogs) {
+        realtimeLogs.value = res.data.fileLogs.slice(-500)
+      } else if (res.data?.logs?.length > 0) {
         realtimeLogs.value = [...realtimeLogs.value, ...res.data.logs].slice(-500)
-        nextTick(() => {
-          if (realtimeLogsRef.value) {
-            realtimeLogsRef.value.scrollTop = realtimeLogsRef.value.scrollHeight
-          }
-        })
+      } else if (res.data?.memoryLogs?.length > 0) {
+        realtimeLogs.value = res.data.memoryLogs.slice(-500)
       }
+      nextTick(() => {
+        if (realtimeLogsRef.value) {
+          realtimeLogsRef.value.scrollTop = realtimeLogsRef.value.scrollHeight
+        }
+      })
     }
   } catch (e) {
     console.error('获取实时日志失败:', e)

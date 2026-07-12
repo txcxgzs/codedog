@@ -297,6 +297,18 @@ export const adminApi = {
     return request.post(`/admin/ai/review/${reportId}`)
   },
 
+  /**
+   * 获取实时日志
+   * @param {string} lastTime - 上次最后一条日志时间(ISO)
+   * @param {number} limit - 返回条数上限
+   * @param {string} source - 日志来源: memory(应用日志) | file(文件日志,含Docker输出)
+   */
+  getRealtimeLogs(lastTime, limit = 100, source = 'memory') {
+    const params = { limit, source }
+    if (lastTime) params.lastTime = lastTime
+    return request.get('/admin/logs/realtime', { params })
+  },
+
   aiBatchReviewReports(reportIds) {
     return request.post('/admin/ai/batch-review', { reportIds })
   },

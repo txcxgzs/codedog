@@ -12,7 +12,8 @@ import { ElMessage } from 'element-plus'
 const request = axios.create({
   // 优先使用 Vite 环境变量，便于不同部署环境（Docker/宝塔）灵活配置后端地址
   baseURL: import.meta.env.VITE_API_BASE_URL || '/api',
-  timeout: 15000,
+  // 修复: 从 15s 提高到 120s,AI审核等外部 API 调用可能耗时 30s+
+  timeout: 120000,
   withCredentials: true
 })
 

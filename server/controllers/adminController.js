@@ -98,6 +98,14 @@ function addRealtimeLog(level, ...args) {
         message: message.substring(0, MAX_REALTIME_LOG_STRING_LENGTH)
     });
 
+    // 修复: 同步写入文件日志,保证重启/Docker环境仍可查历史
+    try {
+        const { writeLog } = require('../utils/logger');
+        writeLog(level, 'admin', message.substring(0, MAX_REALTIME_LOG_STRING_LENGTH));
+    } catch (e) {
+        // 日志写入失败不影响业务
+    }
+
     if (realtimeLogs.length > MAX_REALTIME_LOGS) {
         realtimeLogs.shift();
     }
@@ -1492,23 +1500,56 @@ async function getCrawlLogsApi(req, res) {
 
 /**
  * 获取实时日志
+ * 修复: 双来源 -- 应用内存日志 + 文件日志(包含 Docker stdout/stderr)
+ * 文件日志通过 logger.js 写入 data/logs/app.log,记录所有 console输出
  */
 async function getRealtimeLogs(req, res) {
     try {
-        const { lastTime, limit = 100 } = req.query;
-        let logs = realtimeLogs;
-        
-        if (lastTime) {
-            const lastTimeDate = new Date(lastTime);
-            logs = logs.filter(log => new Date(log.time) > lastTimeDate);
+        const { lastTime, limit = 100, source = 'all' } = req.query;
+        const logLimit = Math.min(parseInt(limit) || 100, 500);
+
+        let result = {};
+
+        // 来源1: 内存中的应用日志(realtimeLogs)
+        if (source === 'all' || source === 'memory') {
+            let logs = realtimeLogs;
+            if (lastTime) {
+                const lastTimeDate = new Date(lastTime);
+                logs = logs.filter(log => new Date(log.time) > lastTimeDate);
+            }
+            result.memoryLogs = logs.slice(-logLimit);
         }
-        
-        if (limit) {
-            logs = logs.slice(-parseInt(limit));
+
+        // 来源2: 文件日志(记录所有 logger 输出)
+        if (source === 'all' || source === 'file') {
+            const { getRecentLogs } = require('../utils/logger');
+            const rawLines = getRecentLogs(logimit);
+            const fileLogs = rawLines.map(line => {
+                // 解析格式: [2024-01-01T00:00:00.000Z] [LEVEL] [tag] message
+                const match = line.match(/^\[([^\]]+)\]\s+\[([^\]]+)\]\s+\[([^\]]+)\]\s+(.*)$/);
+                if (match) {
+                    return { time: match[1], level: match[2], tag: match[3], message: match[4] };
+                }
+                return { time: '', level: 'INFO', tag: 'raw', message: line };
+            });
+            if (lastTime) {
+                const lastTimeDate = new Date(lastTime);
+                result.fileLogs = fileLogs.filter(log => log.time && new Date(log.time) > lastTimeDate);
+            } else {
+                result.fileLogs = fileLogs.slice(-logLimit);
+            }
         }
-        
-        return successResponse(res, { 
-            logs,
+
+        // 兼容旧版前端: 如果没有 source 参数,返回内存日志(保持兼容)
+        if (!source) {
+            return successResponse(res, {
+                logs: result.memoryLogs || [],
+                total: realtimeLogs.length
+            });
+        }
+
+        return successResponse(res, {
+            ...result,
             total: realtimeLogs.length
         });
     } catch (error) {
