@@ -244,9 +244,12 @@
             <div class="r-studio-detail--my_work_name">{{ work.name }}</div>
           </div>
         </template>
-        <el-empty v-else description="您还没有发布作品">
-          <el-button type="primary" @click="$router.push('/publish')">去发布作品</el-button>
-        </el-empty>
+        <!-- 修复: empty 状态居中显示(不被 grid 挤到左边) -->
+        <div v-else class="r-studio-detail--empty_wrap">
+          <el-empty description="您还没有发布作品">
+            <el-button type="primary" @click="$router.push('/publish')">去发布作品</el-button>
+          </el-empty>
+        </div>
       </div>
     </el-dialog>
     
@@ -943,6 +946,16 @@ $border-color: #eee;
   gap: 12px;
   max-height: 400px;
   overflow-y: auto;
+  min-height: 200px;
+}
+
+// 投稿作品弹窗:empty 状态居中
+.r-studio-detail--empty_wrap {
+  grid-column: 1 / -1;  // 占满所有列
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
 }
 
 .r-studio-detail--my_work_item {

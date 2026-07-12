@@ -4310,8 +4310,25 @@ async function getStudioDetail(req, res) {
         return successResponse(res, {
             studio,
             owner: studio.owner,
-            members,
-            pendingMembers,
+            // 修复: 显式结构化成员数据,确保 user_id 不被 user.id 覆盖
+            members: members.filter(m => m.user).map(m => ({
+                id: m.id,
+                studio_id: m.studio_id,
+                user_id: m.user_id,
+                role: m.role,
+                status: m.status,
+                joined_at: m.joined_at,
+                user: m.user.toJSON()
+            })),
+            pendingMembers: pendingMembers.filter(m => m.user).map(m => ({
+                id: m.id,
+                studio_id: m.studio_id,
+                user_id: m.user_id,
+                role: m.role,
+                status: m.status,
+                joined_at: m.joined_at,
+                user: m.user.toJSON()
+            })),
             works: studioWorks.map(sw => sw.work).filter(w => w)
         });
     } catch (error) {

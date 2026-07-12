@@ -6,23 +6,15 @@
       </el-input>
       <el-button type="primary" @click="fetchPosts">刷新</el-button>
     </div>
-    
+
     <el-table :data="posts" v-loading="loading" stripe>
       <el-table-column prop="id" label="ID" width="80" />
-      <el-table-column prop="title" label="标题" min-width="200" />
+      <el-table-column prop="title" label="标题" min-width="200" show-overflow-tooltip />
       <el-table-column label="作者" width="120">
         <template #default="{ row }">{{ row.author?.nickname || row.author?.username }}</template>
       </el-table-column>
-      <el-table-column label="分类" width="120">
-        <template #default="{ row }">
-          <el-select v-model="row.category" size="small" @focus="oldCategoryMap.set(row.id, row.category)" @change="updateCategory(row)">
-            <el-option label="讨论" value="discussion" />
-            <el-option label="问答" value="question" />
-            <el-option label="分享" value="share" />
-            <el-option label="教程" value="tutorial" />
-            <el-option label="公告" value="news" />
-          </el-select>
-        </template>
+      <el-table-column prop="category" label="分类" width="100">
+        <template #default="{ row }">{{ categoryMap[row.category] || row.category }}</template>
       </el-table-column>
       <el-table-column prop="view_count" label="浏览" width="80" />
       <el-table-column prop="like_count" label="点赞" width="80" />
@@ -32,43 +24,86 @@
           <el-tag :type="row.status === 'active' ? 'success' : 'info'">{{ row.status === 'active' ? '正常' : '隐藏' }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="精选" width="80">
+      <el-table-column label="操作" width="100" fixed="right">
         <template #default="{ row }">
-          <el-switch v-model="row.is_essence" @change="toggleEssence(row)" />
-        </template>
-      </el-table-column>
-      <el-table-column label="置顶" width="80">
-        <template #default="{ row }">
-          <el-switch v-model="row.is_top" @change="toggleTop(row)" />
-        </template>
-      </el-table-column>
-      <el-table-column label="操作" width="160" fixed="right">
-        <template #default="{ row }">
-          <el-button size="small" type="primary" @click="$router.push(`/post/${row.id}`)">查看</el-button>
-          <el-button size="small" type="danger" @click="deletePost(row)">删除</el-button>
+          <el-button size="small" type="primary" @click="openDetail(row)">详情</el-button>
         </template>
       </el-table-column>
     </el-table>
-    
+
     <div class="r-admin-posts--pagination">
       <el-pagination v-model:current-page="currentPage" :page-size="pageSize" :total="total" layout="total, prev, pager, next" @current-change="fetchPosts" />
     </div>
+
+    <!-- 帖子详情弹窗(编辑+操作) -->
+    <el-dialog v-model="detailVisible" title="帖子详情" width="600px" destroy-on-close>
+      <div v-if="editingPost">
+        <el-descriptions :column="2" border size="small" style="margin-bottom: 16px;">
+          <el-descriptions-item label="ID">{{ editingPost.id }}</el-descriptions-item>
+          <el-descriptions-item label="作者">{{ editingPost.author?.nickname || editingPost.author?.username }}</el-descriptions-item>
+          <el-descriptions-item label="浏览">{{ editingPost.view_count }}</el-descriptions-item>
+          <el-descriptions-item label="点赞">{{ editingPost.like_count }}</el-descriptions-item>
+          <el-descriptions-item label="评论">{{ editingPost.comment_count }}</el-descriptions-item>
+          <el-descriptions-item label="状态">
+            <el-tag :type="editingPost.status === 'active' ? 'success' : 'info'">{{ editingPost.status === 'active' ? '正常' : '隐藏' }}</el-tag>
+          </el-descriptions-item>
+          <el-descriptions-item label="创建时间">{{ formatDate(editingPost.created_at) }}</el-descriptions-item>
+          <el-descriptions-item label="更新时间">{{ formatDate(editingPost.updated_at) }}</el-descriptions-item>
+        </el-descriptions>
+
+        <el-form label-width="80px">
+          <el-form-item label="标题">
+            <el-input v-model="editForm.title" />
+          </el-form-item>
+          <el-form-item label="分类">
+            <el-select v-model="editForm.category" style="width: 100%">
+              <el-option label="讨论" value="discussion" />
+              <el-option label="问答" value="question" />
+              <el-option label="分享" value="share" />
+              <el-option label="教程" value="tutorial" />
+              <el-option label="公告" value="news" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="精选">
+            <el-switch v-model="editForm.is_essence" />
+          </el-form-item>
+          <el-form-item label="置顶">
+            <el-switch v-model="editForm.is_top" />
+          </el-form-item>
+        </el-form>
+
+        <div style="display: flex; justify-content: space-between; gap: 8px; margin-top: 16px;">
+          <el-button type="danger" @click="handleDeletePost">删除帖子</el-button>
+          <div style="display: flex; gap: 8px;">
+            <el-button @click="detailVisible = false">取消</el-button>
+            <el-button type="primary" @click="handleSavePost">保存修改</el-button>
+          </div>
+        </div>
+      </div>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, reactive } from 'vue'
+import { useRouter } from 'vue-router'
 import { adminApi } from '@/api/admin'
 import { ElMessage, ElMessageBox } from 'element-plus'
 
+const router = useRouter()
 const loading = ref(false)
 const posts = ref([])
 const currentPage = ref(1)
 const pageSize = ref(10)
 const total = ref(0)
 const searchKeyword = ref('')
-// 用 Map 暂存分类原始值，避免污染响应式行数据（替代 _oldCategory 方案）
-const oldCategoryMap = new Map()
+
+// 帖子详情弹窗
+const detailVisible = ref(false)
+const editingPost = ref(null)
+const editForm = reactive({ title: '', category: '', is_essence: false, is_top: false })
+
+const categoryMap = { discussion: '讨论', question: '问答', share: '分享', tutorial: '教程', news: '公告' }
 
 const fetchPosts = async () => {
   loading.value = true
@@ -80,62 +115,49 @@ const fetchPosts = async () => {
 
 const handleSearch = () => { currentPage.value = 1; fetchPosts() }
 
-const updateCategory = async (post) => {
-  // 从 Map 取出 focus 时暂存的原始分类，用于失败回滚
-  const oldCategory = oldCategoryMap.get(post.id)
-  try {
-    const res = await adminApi.updatePost(post.id, { category: post.category })
-    if (res.code === 200) {
-      ElMessage.success('分类已更新')
-    } else {
-      post.category = oldCategory
-      ElMessage.error(res.msg || '操作失败')
-    }
-  } catch (e) {
-    post.category = oldCategory
-    ElMessage.error('操作失败')
-  }
+const openDetail = (post) => {
+  editingPost.value = post
+  editForm.title = post.title || ''
+  editForm.category = post.category || 'discussion'
+  editForm.is_essence = !!post.is_essence
+  editForm.is_top = !!post.is_top
+  detailVisible.value = true
 }
 
-const toggleEssence = async (post) => {
+const handleSavePost = async () => {
   try {
-    const res = await adminApi.setPostEssence(post.id, post.is_essence)
+    const res = await adminApi.updatePost(editingPost.value.id, {
+      title: editForm.title.trim(),
+      category: editForm.category,
+      is_essence: editForm.is_essence,
+      is_top: editForm.is_top
+    })
     if (res.code === 200) {
-      ElMessage.success(post.is_essence ? '已设为精华' : '已取消精华')
+      ElMessage.success('保存成功')
+      detailVisible.value = false
+      fetchPosts()
     } else {
-      post.is_essence = !post.is_essence
-      ElMessage.error(res.msg || '操作失败')
+      ElMessage.error(res.msg || '保存失败')
     }
-  } catch (e) {
-    post.is_essence = !post.is_essence
-    ElMessage.error('操作失败')
-  }
+  } catch (e) { ElMessage.error('保存失败') }
 }
 
-const toggleTop = async (post) => {
+const handleDeletePost = async () => {
   try {
-    const res = await adminApi.setPostTop(post.id, post.is_top)
+    await ElMessageBox.confirm('确定删除该帖子？此操作不可恢复。', '确认删除', { type: 'warning' })
+    const res = await adminApi.deletePost(editingPost.value.id)
     if (res.code === 200) {
-      ElMessage.success(post.is_top ? '已置顶' : '已取消置顶')
-    } else {
-      post.is_top = !post.is_top
-      ElMessage.error(res.msg || '操作失败')
-    }
-  } catch (e) {
-    post.is_top = !post.is_top
-    ElMessage.error('操作失败')
-  }
+      ElMessage.success('删除成功')
+      detailVisible.value = false
+      fetchPosts()
+    } else { ElMessage.error(res.msg || '删除失败') }
+  } catch (e) { if (e !== 'cancel') ElMessage.error('删除失败') }
 }
 
-const deletePost = async (post) => {
-  try {
-    await ElMessageBox.confirm('确定删除该帖子？', '提示', { type: 'warning' })
-    const res = await adminApi.deletePost(post.id)
-    if (res.code === 200) { ElMessage.success('删除成功'); fetchPosts() }
-    else { ElMessage.error(res.msg || '删除失败') }
-  } catch (e) {
-    if (e !== 'cancel') ElMessage.error('删除失败')
-  }
+const formatDate = (t) => {
+  if (!t) return ''
+  const d = new Date(t)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
 
 onMounted(fetchPosts)
