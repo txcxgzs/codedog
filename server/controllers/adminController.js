@@ -2704,10 +2704,15 @@ async function mergeReports(req, res) {
             }, { where: { id: primary.id }, transaction: t });
 
             // 将其他报告标记为已合并(仅更新仍为 pending 的,避免误改已处理的)
-            await DbAdapter.update(Report, {
+            const [affectedCount] = await DbAdapter.update(Report, {
                 status: 'merged',
                 handle_note: `已合并到举报 #${primary.id}`
             }, { where: { id: { [Op.in]: others.map(r => r.id) }, status: 'pending' }, transaction: t });
+
+            // 修复: 验证受影响行数,若不一致说明有举报已被其他管理员处理,回滚事务
+            if (affectedCount !== others.length) {
+                throw new Error(`合并冲突: 预期合并 ${others.length} 条,实际更新 ${affectedCount} 条(部分举报可能已被其他管理员处理)`);
+            }
         });
 
         logOperation(req, 'merge_reports', 'report', primary.id, {

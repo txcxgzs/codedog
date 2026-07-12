@@ -335,7 +335,7 @@ async function startServer() {
 
             // 修复: Report 表新增 merged_from_ids + status 加 merged
             await ensureColumn('reports', 'merged_from_ids', { sqlite: 'TEXT', mysql: 'TEXT NULL' });
-            // MySQL: 修改 status ENUM 支持 merged
+            // MySQL: 修改 status ENUM 支持 merged + reason 改 TEXT
             if (dialect === 'mysql') {
                 try {
                     const cols = await sequelize.query(`SHOW COLUMNS FROM reports LIKE 'status'`, { type: sequelize.QueryTypes.SELECT });
@@ -343,8 +343,14 @@ async function startServer() {
                         console.log('[迁移] reports.status 加 merged...');
                         await sequelize.query("ALTER TABLE reports MODIFY COLUMN status ENUM('pending','processing','resolved','rejected','merged') NOT NULL DEFAULT 'pending'");
                     }
+                    // 修复: reason 从 VARCHAR(200) 改 TEXT,防止合并多条原因时截断
+                    const reasonCol = await sequelize.query(`SHOW COLUMNS FROM reports LIKE 'reason'`, { type: sequelize.QueryTypes.SELECT });
+                    if (reasonCol.length > 0 && reasonCol[0].Type.includes('varchar')) {
+                        console.log('[迁移] reports.reason 改 TEXT...');
+                        await sequelize.query("ALTER TABLE reports MODIFY COLUMN reason TEXT NOT NULL");
+                    }
                 } catch (e) {
-                    console.warn('[迁移] reports.status ENUM 修改跳过:', e.message);
+                    console.warn('[迁移] reports 列修改跳过:', e.message);
                 }
             }
 

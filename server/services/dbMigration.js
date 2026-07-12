@@ -293,10 +293,12 @@ class DatabaseMigration {
             reporter_id: { type: DataTypes.INTEGER, allowNull: false },
             reason: { type: DataTypes.TEXT },
             description: DataTypes.TEXT,
-            status: { type: DataTypes.STRING(20), defaultValue: 'pending', validate: { isIn: [['pending', 'processing', 'resolved', 'rejected']] } },
+            // 修复: 加 merged 状态 + merged_from_ids,与主模型保持一致
+            status: { type: DataTypes.STRING(20), defaultValue: 'pending', validate: { isIn: [['pending', 'processing', 'resolved', 'rejected', 'merged']] } },
             handler_id: DataTypes.INTEGER,
             handle_note: DataTypes.TEXT,
-            ai_result: DataTypes.TEXT
+            ai_result: DataTypes.TEXT,
+            merged_from_ids: DataTypes.TEXT
         }, {
             tableName: 'reports',
             timestamps: true,
@@ -324,7 +326,9 @@ class DatabaseMigration {
             level: { type: DataTypes.INTEGER, defaultValue: 1 },
             is_public: { type: DataTypes.BOOLEAN, defaultValue: true },
             join_type: { type: DataTypes.STRING(20), defaultValue: 'public' },
-            status: { type: DataTypes.STRING(20), defaultValue: 'active', validate: { isIn: [['active', 'pending', 'dissolved', 'banned']] } }
+            status: { type: DataTypes.STRING(20), defaultValue: 'active', validate: { isIn: [['active', 'pending', 'dissolved', 'banned']] } },
+            // 修复: 补 owner_claim,与主模型一致
+            owner_claim: DataTypes.INTEGER
         }, {
             tableName: 'studios',
             timestamps: true,
