@@ -3437,23 +3437,32 @@ async function aiReviewReport(req, res) {
             return errorResponse(res, '举报不存在', 404);
         }
         
+        // 修复:将举报原因(reason)纳入 AI 审核上下文,让 AI 看到举报人为何举报
+        // 同时补全被举报目标的信息(用户类举报应看用户资料而非仅 description)
         let content = '';
         let type = '作品';
         if (report.type === 'work') {
-            content = `作品名称: ${report.work?.name || ''}\n作品描述: ${report.work?.description || ''}`;
+            content = `## 被举报内容\n作品名称: ${report.work?.name || ''}\n作品描述: ${report.work?.description || ''}`;
             type = '作品';
         } else if (report.type === 'post') {
-            content = `帖子标题: ${report.post?.title || ''}\n帖子内容: ${report.post?.content || ''}`;
+            content = `## 被举报内容\n帖子标题: ${report.post?.title || ''}\n帖子内容: ${report.post?.content || ''}`;
             type = '帖子';
         } else if (report.type === 'comment') {
-            content = report.comment?.content || '';
+            content = `## 被举报内容\n${report.comment?.content || ''}`;
             type = '评论';
         } else if (report.type === 'user') {
-            content = report.description || '';
+            // 修复:用户类举报应展示被举报用户资料,而非仅举报说明
+            const targetUser = await DbAdapter.findByPk(User, report.target_id, { attributes: ['nickname', 'bio', 'doing'] });
+            content = `## 被举报内容\n用户昵称: ${targetUser?.nickname || ''}\n简介: ${targetUser?.bio || ''}\n正在做: ${targetUser?.doing || ''}`;
             type = '用户';
         }
-        
-        const result = await aiReview.reviewContent(type, content);
+
+        // 将举报原因/补充说明作为上下文注入(与待审内容分区标注,防 prompt injection)
+        const reasonCtx = report.reason ? `\n\n## 举报原因\n${report.reason}` : '';
+        const descCtx = report.description ? `\n\n## 举报补充说明\n${report.description}` : '';
+        const fullContent = `${content}${reasonCtx}${descCtx}`;
+
+        const result = await aiReview.reviewContent(type, fullContent);
 
         logOperation(req, 'ai_review', 'report', reportId, {
             type,
@@ -3598,38 +3607,37 @@ async function aiAutoHandleReports(req, res) {
 
             // AI审核
             let riskLevel = 'low';
-            const reportDescription = report.description || '';
-            // 中-1: 不能只扫描举报理由(report.description),还需加载被举报对象的实际内容做匹配
-            // 否则被举报内容违规但举报理由很"干净"的报告会被判为 low → 误判为通过
+            // 修复:将举报原因(reason)纳入 AI 审核上下文
             let actualContent = '';
             try {
                 if (report.type === 'work') {
                     const work = await DbAdapter.findByPk(Work, report.target_id, { attributes: ['name', 'description', 'status'] });
-                    // 修复: hidden 作品已由管理员处理过,跳过 AI 审核避免重复处理
                     if (work && work.status !== 'deleted' && work.status !== 'hidden') {
-                        actualContent = `${work.name || ''} ${work.description || ''}`;
+                        actualContent = `## 被举报内容\n作品名称: ${work.name || ''}\n作品描述: ${work.description || ''}`;
                     }
                 } else if (report.type === 'comment') {
                     const comment = await DbAdapter.findByPk(Comment, report.target_id, { attributes: ['content', 'status'] });
                     if (comment && comment.status !== 'deleted') {
-                        actualContent = comment.content || '';
+                        actualContent = `## 被举报内容\n${comment.content || ''}`;
                     }
                 } else if (report.type === 'post') {
                     const post = await DbAdapter.findByPk(Post, report.target_id, { attributes: ['title', 'content', 'status'] });
                     if (post && post.status !== 'deleted') {
-                        actualContent = `${post.title || ''} ${post.content || ''}`;
+                        actualContent = `## 被举报内容\n帖子标题: ${post.title || ''}\n帖子内容: ${post.content || ''}`;
                     }
                 } else if (report.type === 'user') {
                     const targetUser = await DbAdapter.findByPk(User, report.target_id, { attributes: ['nickname', 'bio', 'status'] });
                     if (targetUser && targetUser.status !== 'disabled') {
-                        actualContent = `${targetUser.nickname || ''} ${targetUser.bio || ''}`;
+                        actualContent = `## 被举报内容\n用户昵称: ${targetUser.nickname || ''}\n简介: ${targetUser.bio || ''}`;
                     }
                 }
             } catch (loadErr) {
                 console.error('加载被举报内容失败:', loadErr.message);
             }
-            // 目标已删除/不可访问时退化为仅扫描举报理由
-            const content = `${reportDescription} ${actualContent}`.trim();
+            // 将举报原因/补充说明作为上下文注入(与待审内容分区标注,防 prompt injection)
+            const reasonCtx = report.reason ? `\n\n## 举报原因\n${report.reason}` : '';
+            const descCtx = report.description ? `\n\n## 举报补充说明\n${report.description}` : '';
+            const content = `${actualContent}${reasonCtx}${descCtx}`.trim();
 
             for (const sw of sensitiveWords) {
                 if (content.includes(sw.word)) {
