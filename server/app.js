@@ -300,15 +300,17 @@ async function startServer() {
                     const cols = await sequelize.query(`PRAGMA table_info(${tableName})`, { type: sequelize.QueryTypes.SELECT });
                     if (!cols.some(c => c.name === columnName)) {
                         console.log(`[迁移] 给 ${tableName} 表添加 ${columnName} 列...`);
-                        await sequelize.query(`ALTER TABLE ${tableName} ADD COLUMN ${columnDef.sqlite}`);
+                        // 修复: SQL 必须包含列名,否则 ALTER TABLE 报语法错误/列名丢失
+                        await sequelize.query(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${columnDef.sqlite}`);
                         return true;
                     }
                 } else if (dialect === 'mysql') {
                     const cols = await sequelize.query(`SHOW COLUMNS FROM ${tableName} LIKE '${columnName}'`, { type: sequelize.QueryTypes.SELECT });
                     if (cols.length === 0) {
                         console.log(`[迁移] 给 ${tableName} 表添加 ${columnName} 列...`);
-                        await sequelize.query(`ALTER TABLE ${tableName} ADD COLUMN ${columnDef.mysql}`);
-                        return true;
+                        // 修复: SQL 必须包含列名
+                        await sequelize.query(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${columnDef.mysql}`);
+                        return true
                     }
                 }
                 return false;
