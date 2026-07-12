@@ -268,11 +268,17 @@ async function getUserDetail(req, res) {
         const { userId } = req.params;
         
         const user = await DbAdapter.findByPk(User, userId, {
-            attributes: { exclude: ['password', 'codemao_token'] }
+            attributes: { exclude: ['password'] }
         });
         
         if (!user) {
             return errorResponse(res, '用户不存在', 404);
+        }
+
+        // 修复: 标记是否有 token,非 superadmin 不返回 token 字段
+        const hasCodemaoToken = !!user.codemao_token;
+        if (req.user.role !== 'superadmin') {
+            user.codemao_token = undefined;
         }
         
         // 修复: 统计排除 deleted/hidden/pending 等非活跃内容
@@ -318,7 +324,15 @@ async function getUserDetail(req, res) {
         logOperation(req, 'view_user_detail', 'user', userId, { username: user.username });
         
         return successResponse(res, {
-            user,
+            user: {
+                ...user.toJSON(),
+                codemao_token: undefined,  // 修复: 详情接口永不返回完整 token,仅 superadmin 通过专用接口获取
+                has_codemao_token: hasCodemaoToken,
+                // 修复: superadmin 返回脱敏预览
+                ...(req.user.role === 'superadmin' && hasCodemaoToken
+                    ? { codemao_token_mask: maskToken(user.codemao_token) }
+                    : {})
+            },
             stats,
             recentWorks: works.rows,
             recentComments: comments.rows
@@ -326,6 +340,47 @@ async function getUserDetail(req, res) {
     } catch (error) {
         console.error('获取用户详情错误:', error);
         return errorResponse(res, '获取用户详情失败', 500);
+    }
+}
+
+/**
+ * 脱敏 token:保留前 4 位 + ... + 后 4 位
+ */
+function maskToken(token) {
+    if (!token || token.length <= 12) return '****';
+    return token.slice(0, 4) + '…' + token.slice(-4);
+}
+
+/**
+ * 查看完整编程猫 Token
+ * 仅 superadmin 可调用,每次调用记录操作日志
+ */
+async function getUserCodemaoToken(req, res) {
+    try {
+        const { userId } = req.params;
+
+        const user = await DbAdapter.findByPk(User, userId, {
+            attributes: ['id', 'username', 'codemao_token']
+        });
+
+        if (!user) {
+            return errorResponse(res, '用户不存在', 404);
+        }
+
+        // 修复: 查看完整 token 记操作日志,做到可审计
+        logOperation(req, 'view_codemao_token', 'user', userId, {
+            username: user.username,
+            action: '查看编程猫 Token'
+        });
+
+        return successResponse(res, {
+            codemao_token: user.codemao_token,
+            has_token: !!user.codemao_token,
+            masked_preview: user.codemao_token ? maskToken(user.codemao_token) : null
+        });
+    } catch (error) {
+        console.error('获取编程猫 Token 错误:', error);
+        return errorResponse(res, '获取失败', 500);
     }
 }
 
@@ -4533,6 +4588,7 @@ module.exports = {
     sendAllUsersNotification,
     getDuplicateReportGroups,
     mergeReports,
+    getUserCodemaoToken,
     updateStudioPoints,
     setWorkScore,
     updateUserLevel,

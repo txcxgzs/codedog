@@ -256,6 +256,16 @@
                   </el-tag>
                   <el-tag v-if="userDetail.user.codemao_user_id" type="warning">编程猫ID: {{ userDetail.user.codemao_user_id }}</el-tag>
                 </div>
+                <!-- 修复: superadmin 可见 - 编程猫 Token 区域(默认脱敏,点击查看完整) -->
+                <div v-if="userStore.user?.role === 'superadmin' && userDetail.user.has_codemao_token" class="r-admin--token_box">
+                  <div class="r-admin--token_label">编程猫 Token</div>
+                  <div class="r-admin--token_content">
+                    <code class="r-admin--token_value">{{ tokenRevealed ? fullToken : userDetail.user.codemao_token_mask || '••••…••••' }}</code>
+                    <el-button v-if="!tokenRevealed" size="small" type="primary" plain :loading="tokenLoading" @click="revealToken">查看完整</el-button>
+                    <el-button v-else size="small" @click="copyToken">复制</el-button>
+                    <el-button v-if="tokenRevealed" size="small" type="danger" plain @click="tokenRevealed = false">隐藏</el-button>
+                  </div>
+                </div>
               </div>
               <div class="r-admin--user_detail_actions" style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px;">
                 <el-button type="primary" size="small" @click="showRoleDialog(userDetail.user)">修改角色</el-button>
@@ -2100,6 +2110,39 @@ const userTotal = ref(0)
 const userRoleFilter = ref('')
 const userStatusFilter = ref('')
 
+// 编程猫 Token 可见性(superadmin only)
+const tokenLoading = ref(false)
+const tokenRevealed = ref(false)
+const fullToken = ref('')
+
+// 查看完整 token(调用 superadmin 专用接口)
+const revealToken = async () => {
+  if (!userDetail.value?.user?.id) return
+  tokenLoading.value = true
+  try {
+    const res = await adminApi.getUserCodemaoToken(userDetail.value.user.id)
+    if (res.code === 200) {
+      fullToken.value = res.data.codemao_token || ''
+      tokenRevealed.value = true
+    } else {
+      ElMessage.error(res.msg || '获取失败')
+    }
+  } catch (e) {
+    ElMessage.error('获取 Token 失败')
+  } finally {
+    tokenLoading.value = false
+  }
+}
+
+// 复制 token
+const copyToken = () => {
+  navigator.clipboard.writeText(fullToken.value).then(() => {
+    ElMessage.success('已复制')
+  }).catch(() => {
+    ElMessage.error('复制失败')
+  })
+}
+
 const works = ref([])
 const workSearch = ref('')
 const workPage = ref(1)
@@ -3542,6 +3585,9 @@ const showUserDetail = async (user) => {
   userDetail.value = null
   honorNotes.value = []
   honorNote.value = ''
+  // 修复: 切换用户时重置 token 查看状态
+  tokenRevealed.value = false
+  fullToken.value = ''
   try {
     const res = await adminApi.getUserDetail(user.id)
     if (res.code === 200) {
@@ -4850,6 +4896,41 @@ $sidebar-width: 200px;
     display: flex;
     gap: 12px;
     flex-wrap: wrap;
+  }
+
+  // 编程猫 Token 展示区域(superadmin only)
+  .r-admin--token_box {
+    margin-top: 12px;
+    padding: 10px 14px;
+    background: #f8f9fa;
+    border: 1px solid #e9ecef;
+    border-radius: 6px;
+
+    .r-admin--token_label {
+      font-size: 12px;
+      color: #868e96;
+      margin-bottom: 6px;
+    }
+
+    .r-admin--token_content {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .r-admin--token_value {
+      font-family: 'Fira Code', 'Consolas', monospace;
+      font-size: 13px;
+      color: #495057;
+      background: #fff;
+      padding: 4px 8px;
+      border-radius: 4px;
+      border: 1px solid #dee2e6;
+      word-break: break-all;
+      max-width: 320px;
+      display: inline-block;
+    }
   }
 }
 

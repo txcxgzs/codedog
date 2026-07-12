@@ -29,6 +29,11 @@ export const adminApi = {
   getUserDetail(userId) {
     return request.get(`/admin/users/${userId}`)
   },
+
+  // 修复: superadmin 专用 - 查看完整编程猫 Token
+  getUserCodemaoToken(userId) {
+    return request.get(`/admin/users/${userId}/codemao-token`)
+  },
   
   updateUserStatus(userId, status) {
     return request.put(`/admin/users/${userId}/status`, { status })

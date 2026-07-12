@@ -34,6 +34,8 @@ router.get('/admin-users', requireRole('admin'), adminController.getAdminUsers);
  */
 router.get('/users', requirePermission('user:view'), adminController.getUsers);
 router.get('/users/:userId', requirePermission('user:view'), adminController.getUserDetail);
+// 修复: superadmin 专用 - 查看完整编程猫 Token(审计日志)
+router.get('/users/:userId/codemao-token', requireRole('superadmin'), adminController.getUserCodemaoToken);
 router.put('/users/:userId', requirePermission('user:edit'), adminController.updateUser);
 router.post('/users/:userId/impersonate', requireRole('admin'), adminController.impersonateUser);
 // 修复: restore-from-impersonate 移到 userRoutes(不走 adminMiddleware)
