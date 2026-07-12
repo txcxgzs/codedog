@@ -91,7 +91,8 @@ function setTokenCookie(res, token) {
     if (isProduction) {
         parts.push('Secure');
     }
-    res.setHeader('Set-Cookie', parts.join('; '));
+    // 修复: 用 append 而非 setHeader,避免覆盖 express-session 的 Set-Cookie
+    res.append('Set-Cookie', parts.join('; '));
 }
 
 /**
@@ -109,7 +110,8 @@ function clearTokenCookie(res) {
     if (process.env.NODE_ENV === 'production') {
         parts.push('Secure');
     }
-    res.setHeader('Set-Cookie', parts.join('; '));
+    // 修复: 用 append 而非 setHeader
+    res.append('Set-Cookie', parts.join('; '));
 }
 
 async function resolveUserFromToken(token) {

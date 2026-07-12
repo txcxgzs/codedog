@@ -44,6 +44,8 @@ export const useUserStore = defineStore('user', () => {
         token.value = SESSION_FLAG
         // 兼容: 清掉旧版残留的 sessionStorage token, 强制走 cookie 路径
         sessionStorage.removeItem('token')
+        // 修复: 清掉 impersonate 残留的 admin_token 标志,避免手动登录后"恢复管理员"按钮仍显示
+        sessionStorage.removeItem('admin_token')
       }
       return res
     } catch (error) {
@@ -66,6 +68,7 @@ export const useUserStore = defineStore('user', () => {
     token.value = ''
     user.value = null
     sessionStorage.removeItem('token')
+    sessionStorage.removeItem('admin_token')
   }
 
   /**
@@ -94,6 +97,7 @@ export const useUserStore = defineStore('user', () => {
         token.value = ''
         user.value = null
         sessionStorage.removeItem('token')
+        sessionStorage.removeItem('admin_token')
         return null
       }
       // 非认证错误（如网络异常）向上抛出，便于路由守卫感知失败并阻止导航
