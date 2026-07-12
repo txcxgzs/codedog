@@ -25,7 +25,7 @@ services:
       - JWT_EXPIRES_IN=${JWT_EXPIRES_IN:-7d}
       - SESSION_SECRET=${SESSION_SECRET}
       - CORS_ORIGIN=${CORS_ORIGIN:-}
-      - TRUST_PROXY=${TRUST_PROXY:-false}
+      - TRUST_PROXY=${TRUST_PROXY:-}
     restart: unless-stopped
     mem_limit: 512m
     cpus: '1.0'

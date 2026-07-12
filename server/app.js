@@ -35,10 +35,14 @@ const app = express();
 app.disable('x-powered-by');
 
 // 信任代理：Docker/Nginx 部署时必需,否则 req.ip 返回 Docker 网关 IP 而非真实客户端 IP
-// 修复:默认信任 loopback + 私有网络,生产环境通过 TRUST_PROXY 环境变量细粒度控制
-const trustProxySetting = process.env.TRUST_PROXY
-    ? (process.env.TRUST_PROXY === 'true' ? true : process.env.TRUST_PROXY)
-    : 'loopback, 172.16.0.0/12, 192.168.0.0/16, 10.0.0.0/8';
+// 修复:显式把字符串 "false" 识别为关闭,避免 Express 把 "false" 当 IP 解析导致崩溃
+const rawTrustProxy = process.env.TRUST_PROXY;
+const trustProxySetting =
+  rawTrustProxy === 'true'
+    ? true
+    : rawTrustProxy && rawTrustProxy !== 'false'
+      ? rawTrustProxy
+      : 'loopback, 172.16.0.0/12, 192.168.0.0/16, 10.0.0.0/8';
 app.set('trust proxy', trustProxySetting);
 
 const isProduction = process.env.NODE_ENV === 'production';
