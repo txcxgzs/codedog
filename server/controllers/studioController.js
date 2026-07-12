@@ -222,6 +222,7 @@ async function getStudioDetail(req, res) {
         //               完整成员列表应由专用接口分页获取。
         //               返回 totalMemberCount/hasMoreMembers 告知前端是否需要加载更多。
         // 修复: 加 try/catch 防御 CASE 表达式在某些 SQLite 版本或异常数据下失败
+        const memberWhere = { studio_id: id, status: 'active' };
         let memberResult = [];
         let totalMemberCount = 0;
         try {

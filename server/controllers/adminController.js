@@ -1578,7 +1578,7 @@ async function getRealtimeLogs(req, res) {
         // 来源2: 文件日志(记录所有 logger 输出)
         if (source === 'all' || source === 'file') {
             const { getRecentLogs } = require('../utils/logger');
-            const rawLines = getRecentLogs(logimit);
+            const rawLines = getRecentLogs(logLimit);
             const fileLogs = rawLines.map(line => {
                 // 解析格式: [2024-01-01T00:00:00.000Z] [LEVEL] [tag] message
                 const match = line.match(/^\[([^\]]+)\]\s+\[([^\]]+)\]\s+\[([^\]]+)\]\s+(.*)$/);

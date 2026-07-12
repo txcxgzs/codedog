@@ -211,9 +211,14 @@ export const adminApi = {
   
   /**
    * 实时日志
+   * @param {string} lastTime - 上次最后一条日志时间(ISO)
+   * @param {number} limit - 返回条数上限
+   * @param {string} source - 日志来源: memory(应用日志) | file(文件日志,含Docker输出) | all(全部)
    */
-  getRealtimeLogs(lastTime, limit = 100) {
-    return request.get('/admin/logs/realtime', { params: { lastTime, limit } })
+  getRealtimeLogs(lastTime, limit = 100, source = 'all') {
+    const params = { limit, source };
+    if (lastTime) params.lastTime = lastTime;
+    return request.get('/admin/logs/realtime', { params })
   },
   
   clearRealtimeLogs() {
@@ -299,7 +304,8 @@ export const adminApi = {
    * AI审核
    */
   aiReviewReport(reportId) {
-    return request.post(`/admin/ai/review/${reportId}`)
+    // 修复: AI 审核调用外部 API 可能耗时 30s+,单独覆盖超时
+    return request.post(`/admin/ai/review/${reportId}`, {}, { timeout: 120000 })
   },
 
   /**
@@ -326,11 +332,6 @@ export const adminApi = {
    * @param {number} limit - 返回条数上限
    * @param {string} source - 日志来源: memory(应用日志) | file(文件日志,含Docker输出)
    */
-  getRealtimeLogs(lastTime, limit = 100, source = 'memory') {
-    const params = { limit, source }
-    if (lastTime) params.lastTime = lastTime
-    return request.get('/admin/logs/realtime', { params })
-  },
 
   aiBatchReviewReports(reportIds) {
     return request.post('/admin/ai/batch-review', { reportIds })
