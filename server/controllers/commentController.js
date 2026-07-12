@@ -61,6 +61,9 @@ async function createComment(req, res) {
 
         const localWorkId = work ? DbAdapter.getId(work) : null;
         const localPostId = post ? DbAdapter.getId(post) : null;
+        // 修复 P1-12: 通知 related_id 用 codemao ID(前端路由用)
+        const codemaoWorkId = work?.codemao_work_id || localWorkId;
+        const codemaoPostId = post?.id || localPostId;
         // 修复: 不从 req.body 取 reply_to_user_id,防止前端任意传参伪造通知接收者
         // 统一从 parent comment 的 user_id 推导
         let replyToUserId = null;
@@ -133,7 +136,7 @@ async function createComment(req, res) {
                         type: 'comment',
                         title: '评论了你的作品',
                         content: String(content).substring(0, 100),
-                        related_id: localWorkId,
+                        related_id: codemaoWorkId,
                         related_type: 'work',
                         sender_id: DbAdapter.getId(req.user)
                     }));
@@ -145,7 +148,7 @@ async function createComment(req, res) {
                         type: 'comment',
                         title: '评论了你的帖子',
                         content: String(content).substring(0, 100),
-                        related_id: localPostId,
+                        related_id: codemaoPostId,
                         related_type: 'post',
                         sender_id: DbAdapter.getId(req.user)
                     }));
@@ -157,8 +160,8 @@ async function createComment(req, res) {
                         type: 'reply',
                         title: '回复了你的评论',
                         content: String(content).substring(0, 100),
-                        related_id: localWorkId || localPostId,
-                        related_type: localWorkId ? 'work' : 'post',
+                        related_id: codemaoWorkId || codemaoPostId,
+                        related_type: codemaoWorkId ? 'work' : 'post',
                         sender_id: DbAdapter.getId(req.user)
                     }));
                 }

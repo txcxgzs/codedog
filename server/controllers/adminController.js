@@ -1227,6 +1227,9 @@ async function crawlWork(req, res) {
             return errorResponse(res, '作品ID格式无效', 400);
         }
 
+        logOperation(req, 'crawl_work', 'work', null, { codemaoWorkId: workId });
+        }
+
         const workDetail = await codemaoApi.getWorkDetail(workId);
         if (!workDetail || !workDetail.id) {
             return errorResponse(res, '获取作品信息失败，请检查作品ID', 400);
@@ -1334,6 +1337,7 @@ async function crawlWork(req, res) {
 async function crawlHotWorks(req, res) {
     const taskId = Date.now().toString();
     try {
+        logOperation(req, 'crawl_hot_works', 'work', null, { taskId });
         const { count = 20 } = req.body;
         const requestedCount = parseInt(count, 10);
         const targetCount = Math.min(Math.max(Number.isFinite(requestedCount) ? requestedCount : 20, 1), 100);
@@ -1637,7 +1641,9 @@ async function getRealtimeLogs(req, res) {
  */
 async function clearRealtimeLogs(req, res) {
     try {
+        const count = realtimeLogs.length;
         realtimeLogs.length = 0;
+        logOperation(req, 'clear_realtime_logs', 'system', null, { clearedCount: count });
         return successResponse(res, { message: '日志已清空' });
     } catch (error) {
         return errorResponse(res, '清空日志失败', 500);
@@ -1650,10 +1656,12 @@ async function clearRealtimeLogs(req, res) {
 async function crawlUserWorks(req, res) {
     try {
         const { userId, limit = 100 } = req.body;
-        
+
         if (!userId) {
             return errorResponse(res, '请提供用户ID', 400);
         }
+
+        logOperation(req, 'crawl_user_works', 'user', userId, { limit });
         
         console.log(`开始爬取用户 ${userId} 的作品...`);
         
@@ -1799,8 +1807,8 @@ async function crawlUserWorks(req, res) {
 async function crawlPostWorks(req, res) {
     try {
         const { keyword, limit = 20 } = req.body;
-        
-        console.log(`开始从帖子搜索 "${keyword}" 爬取作品...`);
+
+        logOperation(req, 'crawl_post_works', "post", null, { keyword, limit });
         
         const postsData = await codemaoApi.searchPosts(keyword, 1, 50);
         
@@ -3510,6 +3518,8 @@ async function aiBatchReviewReports(req, res) {
             return errorResponse(res, '单次最多审核20条举报', 400);
         }
 
+        logOperation(req, 'ai_batch_review', 'report', null, { count: reportIds.length });
+
         // 修复: 校验 reportIds 元素类型,与 aiAutoHandleReports 保持一致
         const validReportIds = reportIds.filter(id => Number.isInteger(Number(id))).map(Number);
         if (validReportIds.length === 0) {
@@ -3781,6 +3791,20 @@ async function aiAutoHandleReports(req, res) {
             }
 
             results.handled++;
+
+            // 修复 P2-3: AI 自动处理后通知举报人处理结果
+            try {
+                const targetName = report.target?.name || report.target?.title || report.target?.content?.substring(0, 20) || '';
+                const actionText = riskLevel === 'high' && canAutoDelete ? '删除' : '通过';
+                await DbAdapter.create(Notification, {
+                    user_id: report.reporter_id,
+                    type: 'system',
+                    title: `举报已处理`,
+                    content: `您举报的${typeNames[report.type]||report.type}「${targetName}」已${actionText}`,
+                    related_id: report.target_id,
+                    related_type: report.type
+                });
+            } catch (e) { console.error('AI处理通知失败:', e.message); }
         }
 
         logOperation(req, 'ai_auto_handle_reports', 'report', null, results);

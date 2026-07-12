@@ -22,7 +22,7 @@
           </div>
           <div class="r-studio-detail--actions">
             <template v-if="userStore.isLoggedIn">
-              <template v-if="userRole">
+              <template v-if="userRole && userMemberStatus === 'active'">
                 <el-dropdown trigger="click" @command="handleCommand">
                   <el-button type="primary">工作室操作 ▾</el-button>
                   <template #dropdown>

@@ -60,15 +60,25 @@ async function followUser(req, res) {
         }
         
         try {
-            // L3: 补全通知的 related_id / related_type，便于前端跳转和后端去重统计
-            await DbAdapter.create(Notification, {
-                user_id: targetUser.id,
-                type: 'follow',
-                title: '关注了你',
-                related_id: DbAdapter.getId(req.user),
-                related_type: 'user',
-                sender_id: DbAdapter.getId(req.user)
+            // 修复 P2-12: 互关通知去重——同一对用户的重复关注只保留一条通知
+            const existingNotif = await DbAdapter.findOne(Notification, {
+                where: {
+                    user_id: targetUser.id,
+                    type: 'follow',
+                    sender_id: DbAdapter.getId(req.user)
+                }
             });
+            if (!existingNotif) {
+                await DbAdapter.create(Notification, {
+                    user_id: targetUser.id,
+                    type: 'follow',
+                    title: '关注了你',
+                    // 修复 P1-12: 通知 related_id 使用 codemao_user_id(前端路由用)
+                    related_id: req.user.codemao_user_id || DbAdapter.getId(req.user),
+                    related_type: 'user',
+                    sender_id: DbAdapter.getId(req.user)
+                });
+            }
         } catch (e) { console.error('创建关注通知失败:', e.message); }
         
         return successResponse(res, null, '关注成功');
