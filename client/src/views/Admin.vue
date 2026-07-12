@@ -3530,7 +3530,7 @@ const showSendNotificationDialog = () => {
   notificationDialogVisible.value = true
 }
 
-// 一键登录：从用户详情弹窗内触发，不需要走 admin/Users.vue
+// 一键登录：从用户详情弹窗内触发
 const impersonateUserDetail = async () => {
   const user = userDetail.value.user
   if (user.id === userStore.user?.id) return
@@ -3538,7 +3538,11 @@ const impersonateUserDetail = async () => {
     await ElMessageBox.confirm(`确定要以 ${user.nickname || user.username} 的身份登录吗？`, '一键登录', { type: 'warning' })
     const res = await adminApi.impersonateUser(user.id)
     if (res.code === 200) {
+      // 修复: 设 token 标志位让 isLoggedIn=true, fetchCurrentUser 才会调 /users/me 验证 cookie
+      userStore.token = 'cookie-session'
+      userStore.user = res.data.user
       sessionStorage.setItem('admin_token', '1')
+      sessionStorage.setItem('token', 'cookie-session')
       ElMessage.success(`正在以 ${user.nickname || user.username} 身份登录...`)
       setTimeout(() => { window.location.href = '/' }, 500)
     }
