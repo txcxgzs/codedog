@@ -2983,11 +2983,12 @@ async function createAnnouncement(req, res) {
             return errorResponse(res, '内容不能超过10000字', 400);
         }
 
+        // 修复: 尊重前端传入的 is_active(默认 true),不再硬编码
         const announcement = await DbAdapter.create(Announcement, {
             title: trimmedTitle,
             content: trimmedContent,
             type: type || 'notice',
-            is_active: true
+            is_active: is_active !== undefined ? is_active !== false && is_active !== 'false' : true
         });
 
         logOperation(req, 'create_announcement', 'announcement', DbAdapter.getId(announcement), { title });

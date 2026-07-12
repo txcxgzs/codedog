@@ -826,11 +826,11 @@
             <el-table-column prop="created_at" label="时间" width="110">
               <template #default="{ row }">{{ formatDate(row.created_at) }}</template>
             </el-table-column>
-            <el-table-column label="操作" width="160" fixed="right">
+            <el-table-column label="操作" width="180" fixed="right">
               <template #default="{ row }">
-                <el-button size="small" type="primary" @click="showReportDialog(row)" :disabled="row.status === 'resolved' || row.status === 'rejected'">处理</el-button>
-                <el-dropdown trigger="click" :disabled="row.status === 'resolved' || row.status === 'rejected'" @command="(cmd) => quickHandle(row, cmd)">
-                  <el-button size="small" link type="info" :disabled="row.status === 'resolved' || row.status === 'rejected'">更多</el-button>
+                <el-button size="small" type="primary" @click="showReportDialog(row)">处理</el-button>
+                <el-dropdown trigger="click" @command="(cmd) => quickHandle(row, cmd)">
+                  <el-button size="small" link type="info">更多</el-button>
                   <template #dropdown>
                     <el-dropdown-menu>
                       <el-dropdown-item command="delete">删除内容</el-dropdown-item>
@@ -1974,14 +1974,15 @@
         </el-form-item>
         <el-form-item label="类型">
           <el-radio-group v-model="announcementForm.type">
-            <el-radio label="normal">普通</el-radio>
-            <el-radio label="important">重要</el-radio>
+            <el-radio label="notice">普通</el-radio>
+            <el-radio label="update">更新</el-radio>
+            <el-radio label="warning">警告</el-radio>
           </el-radio-group>
         </el-form-item>
         <el-form-item label="状态">
-          <el-radio-group v-model="announcementForm.status">
-            <el-radio label="active">显示</el-radio>
-            <el-radio label="inactive">隐藏</el-radio>
+          <el-radio-group v-model="announcementForm.is_active">
+            <el-radio :label="true">显示</el-radio>
+            <el-radio :label="false">隐藏</el-radio>
           </el-radio-group>
         </el-form-item>
       </el-form>
@@ -2486,7 +2487,8 @@ const announcements = ref([])
 const loadingAnnouncements = ref(false)
 const announcementDialogVisible = ref(false)
 const editingAnnouncement = ref(null)
-const announcementForm = ref({ title: '', content: '', type: 'normal', status: 'active' })
+// 修复: 模型使用 type: ENUM('notice','update','warning') + is_active: Boolean,非 status
+const announcementForm = ref({ title: '', content: '', type: 'notice', is_active: true })
 
 const fetchAnnouncements = async () => {
   loadingAnnouncements.value = true
@@ -2500,9 +2502,16 @@ const fetchAnnouncements = async () => {
 const showAnnouncementDialog = (announcement = null) => {
   editingAnnouncement.value = announcement
   if (announcement) {
-    announcementForm.value = { ...announcement }
+    // 修复: 后端返回 type + is_active,映射到表单字段
+    announcementForm.value = {
+      id: announcement.id,
+      title: announcement.title,
+      content: announcement.content,
+      type: announcement.type || 'notice',
+      is_active: announcement.is_active !== undefined ? announcement.is_active : true
+    }
   } else {
-    announcementForm.value = { title: '', content: '', type: 'normal', status: 'active' }
+    announcementForm.value = { title: '', content: '', type: 'notice', is_active: true }
   }
   announcementDialogVisible.value = true
 }
