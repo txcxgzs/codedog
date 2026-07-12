@@ -91,7 +91,7 @@ class ProxyService {
             return this._cache;
         }
 
-        const res = await axios.get(this.poolUrl, { timeout: 15000 });
+        const res = await axios.get(this.poolUrl, { timeout: 15000, responseType: 'text' });
         let data = res.data;
 
         if (typeof data === 'string') {

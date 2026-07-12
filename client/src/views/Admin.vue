@@ -1426,7 +1426,7 @@
               <el-form label-width="100px" class="r-admin--config_form">
                 <el-form-item label="代理池API">
                   <el-input v-model="proxyConfig.poolUrl" placeholder="https://proxy-pool.example.com/api/get?count=10" clearable />
-                  <div style="font-size: 12px; color: #909399; margin-top: 4px; line-height: 1.4;">代理池返回JSON, 支持数组、<code style="background:#f5f7fa;padding:0 4px;border-radius:3px;">data</code>、<code style="background:#f5f7fa;padding:0 4px;border-radius:3px;">proxies</code> 字段, 每项为 <code style="background:#f5f7fa;padding:0 4px;border-radius:3px;">ip:port</code> 或完整代理URL</div>
+                  <div style="font-size: 12px; color: #909399; margin-top: 4px; line-height: 1.4;">代理池返回JSON, 支持数组、<code style="background:#f5f7fa;padding:0 4px;border-radius:3px;">data</code>、<code style="background:#f5f7fa;padding:0 4px;border-radius:3px;">proxies</code> 字段, 每项为 <code style="background:#f5f7fa;padding:0 4px;border-radius:3px;">ip:port</code> 或完整代理URL。也支持纯文本(每行一个代理)。<b style="color:#e6a23c;">填完后先点「保存配置」再抓取!</b></div>
                 </el-form-item>
                 <div style="display: flex; gap: 8px; margin-bottom: 16px;">
                   <el-button type="primary" @click="refreshProxy" :loading="proxyLoading">🔄 抓取并测试代理</el-button>
