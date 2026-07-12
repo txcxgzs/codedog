@@ -3208,8 +3208,13 @@ const formatDate = (date) => {
 
 const handleMenuSelect = (key) => {
   activeMenu.value = key
+  // 修复: 用户管理点击后跳转新挂载的 /admin/users(admin/Users.vue, 含"一键登录"功能)
+  // 其他 tab 仍在 Admin.vue 内部展示(暂未迁移)
+  if (key === 'users') {
+    window.location.href = '/admin/users'
+    return
+  }
   if (key === 'dashboard') { fetchStats(); fetchTrends() }
-  if (key === 'users') fetchUsers()
   if (key === 'works') fetchWorks()
   if (key === 'comments') fetchComments()
   if (key === 'posts') { /* Posts component handles its own data fetching */ }

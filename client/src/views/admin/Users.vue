@@ -1,5 +1,13 @@
 <template>
   <div class="r-admin-users--page">
+    <!-- 顶部导航(因为此页未挂 admin/Layout 嵌套, 单独提供返回链接) -->
+    <div class="r-admin-users--back">
+      <el-button text @click="$router.push('/admin')">
+        <el-icon><ArrowLeft /></el-icon>
+        返回后台
+      </el-button>
+    </div>
+
     <!-- 搜索栏 -->
     <div class="r-admin-users--toolbar">
       <el-input 
@@ -285,6 +293,10 @@ onMounted(fetchUsers)
   background: #fff;
   border-radius: 12px;
   padding: 24px;
+}
+
+.r-admin-users--back {
+  margin-bottom: 12px;
 }
 
 .r-admin-users--toolbar {
