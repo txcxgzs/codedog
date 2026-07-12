@@ -1228,7 +1228,6 @@ async function crawlWork(req, res) {
         }
 
         logOperation(req, 'crawl_work', 'work', null, { codemaoWorkId: workId });
-        }
 
         const workDetail = await codemaoApi.getWorkDetail(workId);
         if (!workDetail || !workDetail.id) {
