@@ -77,8 +77,8 @@
               <el-table-column label="成员" min-width="150">
                 <template #default="{ row }">
                   <div style="display: flex; align-items: center; gap: 8px;">
-                    <img :src="row.avatar || defaultAvatar" style="width: 32px; height: 32px; border-radius: 50%;" referrerpolicy="no-referrer" />
-                    <span>{{ row.nickname || row.username }}</span>
+                    <img :src="row.user?.avatar || defaultAvatar" style="width: 32px; height: 32px; border-radius: 50%;" referrerpolicy="no-referrer" />
+                    <span>{{ row.user?.nickname || row.user?.username }}</span>
                   </div>
                 </template>
               </el-table-column>
@@ -90,7 +90,7 @@
                 </template>
               </el-table-column>
               <el-table-column label="加入时间" width="160">
-                <template #default="{ row }">{{ formatDate(row.joinedAt) }}</template>
+                <template #default="{ row }">{{ formatDate(row.joined_at) }}</template>
               </el-table-column>
             </el-table>
           </el-tab-pane>
@@ -213,7 +213,7 @@
         </el-form-item>
         <el-form-item label="副市长">
           <el-select v-model="editForm.vice_owner_id" clearable placeholder="选择副市长" filterable>
-            <el-option v-for="m in studioMembers.filter(m => m.memberRole !== 'owner')" :key="m.id" :label="m.nickname || m.username" :value="m.id" />
+            <el-option v-for="m in studioMembers.filter(m => m.memberRole !== 'owner')" :key="m.id" :label="m.user?.nickname || m.user?.username" :value="m.user_id" />
           </el-select>
         </el-form-item>
       </el-form>
