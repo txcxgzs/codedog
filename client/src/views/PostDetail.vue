@@ -13,7 +13,37 @@
           </div>
         </div>
         
-        <div class="r-post--content markdown-body" v-html="renderedContent"></div>
+        <!-- 修复: 编辑模式 vs 查看模式 -->
+        <template v-if="isEditing">
+          <div class="r-post--edit_form">
+            <el-form label-position="top">
+              <el-form-item label="标题">
+                <el-input v-model="editTitle" placeholder="帖子标题" maxlength="100" show-word-limit />
+              </el-form-item>
+              <el-form-item label="分类">
+                <el-radio-group v-model="editCategory">
+                  <el-radio label="discussion">讨论</el-radio>
+                  <el-radio label="question">问答</el-radio>
+                  <el-radio label="share">分享</el-radio>
+                  <el-radio label="tutorial">教程</el-radio>
+                </el-radio-group>
+              </el-form-item>
+              <el-form-item label="内容">
+                <MarkdownEditor v-model="editContent" />
+              </el-form-item>
+              <el-form-item label="标签">
+                <el-input v-model="editTags" placeholder="标签,用逗号分隔" />
+              </el-form-item>
+            </el-form>
+            <div class="r-post--edit_actions">
+              <el-button @click="cancelEdit">取消</el-button>
+              <el-button type="primary" :loading="editLoading" @click="saveEdit">保存</el-button>
+            </div>
+          </div>
+        </template>
+        <template v-else>
+          <div class="r-post--content markdown-body" v-html="renderedContent"></div>
+        </template>
         
         <div class="r-post--tags" v-if="post.tags && post.tags.length > 0">
           <el-tag v-for="tag in (Array.isArray(post.tags) ? post.tags : post.tags.split(','))" :key="tag" size="small">{{ tag }}</el-tag>
@@ -35,6 +65,10 @@
           <el-button :type="isFavorited ? 'warning' : 'default'" :loading="favoriteLoading" @click="toggleFavorite">
             <span class="r-post--action_icon r-post--action_icon_favorite"></span>
             {{ isFavorited ? '已收藏' : '收藏' }} {{ post.collection_count || 0 }}
+          </el-button>
+          <!-- 修复: 帖子作者显示编辑按钮 -->
+          <el-button v-if="userStore.user?.id === post.author?.id && !isEditing" type="primary" plain @click="startEdit">
+            <el-icon><EditPen /></el-icon>编辑
           </el-button>
           <el-dropdown @command="handleMoreAction" class="r-post--more">
             <el-button>
@@ -173,6 +207,10 @@ import DOMPurify from 'dompurify'
 import hljs from 'highlight.js'
 import 'highlight.js/styles/github.css'
 import AppImage from '@/components/AppImage.vue'
+import MarkdownEditor from '@/components/MarkdownEditor.vue'
+
+// 引入图标
+import { EditPen } from '@element-plus/icons-vue'
 
 // 配置 marked
 marked.setOptions({
@@ -192,6 +230,13 @@ const userStore = useUserStore()
 const loading = ref(false)
 const commentLoading = ref(false)
 const post = ref(null)
+// 修复: 帖子编辑状态
+const isEditing = ref(false)
+const editLoading = ref(false)
+const editTitle = ref('')
+const editCategory = ref('')
+const editContent = ref('')
+const editTags = ref('')
 const comments = ref([])
 const relatedPosts = ref([])
 const liked = ref(false)
@@ -296,6 +341,55 @@ const checkFollowingStatus = async () => {
   } catch (e) {
     // 静默失败,默认保持未关注状态
     console.error('检查关注状态失败:', e)
+  }
+}
+
+// 帖子编辑:进入编辑模式
+const startEdit = () => {
+  editTitle.value = post.value.title
+  editCategory.value = post.value.category || 'discussion'
+  editContent.value = post.value.content || ''
+  editTags.value = Array.isArray(post.value.tags) ? post.value.tags.join(', ') : (post.value.tags || '')
+  isEditing.value = true
+}
+
+// 帖子编辑:取消
+const cancelEdit = () => {
+  isEditing.value = false
+}
+
+// 帖子编辑:保存
+const saveEdit = async () => {
+  if (!editTitle.value.trim()) {
+    ElMessage.error('请输入标题')
+    return
+  }
+  if (!editContent.value.trim()) {
+    ElMessage.error('请输入内容')
+    return
+  }
+  editLoading.value = true
+  try {
+    const tags = editTags.value
+      ? editTags.value.split(',').map(t => t.trim()).filter(Boolean)
+      : []
+    const res = await postApi.updatePost(post.value.id, {
+      title: editTitle.value.trim(),
+      category: editCategory.value,
+      content: editContent.value,
+      tags
+    })
+    if (res.code === 200) {
+      ElMessage.success('保存成功')
+      isEditing.value = false
+      fetchPost()
+    } else {
+      ElMessage.error(res.msg || '保存失败')
+    }
+  } catch (e) {
+    ElMessage.error('保存失败')
+  } finally {
+    editLoading.value = false
   }
 }
 
@@ -749,7 +843,7 @@ $border-color: #eee;
   color: $text-color;
   margin-bottom: 32px;
   word-wrap: break-word;
-  
+
   &.markdown-body {
     :deep(h1), :deep(h2), :deep(h3), :deep(h4), :deep(h5), :deep(h6) {
       margin-top: 24px;
@@ -1231,6 +1325,18 @@ $border-color: #eee;
       background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%2312B7F5'%3E%3Cpath d='M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z'/%3E%3C/svg%3E") no-repeat center;
       background-size: contain;
     }
+  }
+}
+
+// 帖子编辑表单
+.r-post--edit_form {
+  margin-bottom: 32px;
+
+  .r-post--edit_actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 16px;
   }
 }
 </style>

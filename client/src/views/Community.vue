@@ -94,31 +94,8 @@
           </el-radio-group>
         </el-form-item>
         <el-form-item label="内容" prop="content">
-          <el-tabs type="border-card" class="r-community--editor_tabs">
-            <el-tab-pane label="编辑">
-              <div class="r-community--rich_editor_toolbar">
-                <el-button-group>
-                  <el-button size="small" @click="insertText('**', '**')" title="加粗"><b>B</b></el-button>
-                  <el-button size="small" @click="insertText('*', '*')" title="斜体"><i>I</i></el-button>
-                  <el-button size="small" @click="insertText('`', '`')" title="代码块"><code>Code</code></el-button>
-                  <el-button size="small" @click="insertText('![图片描述](', ')')" title="插入图片">🖼️ 图片</el-button>
-                  <el-button size="small" @click="insertText('<span style=\'color:red\'>', '</span>')" title="标红">🔴 红字</el-button>
-                </el-button-group>
-              </div>
-              <el-input
-                v-model="postForm.content"
-                type="textarea"
-                :rows="10"
-                placeholder="写下你的想法吧...支持Markdown和HTML红字"
-                maxlength="10000"
-                show-word-limit
-                ref="postContentRef"
-              />
-            </el-tab-pane>
-            <el-tab-pane label="预览">
-              <div class="r-community--preview_box markdown-body" v-html="renderedPostContent"></div>
-            </el-tab-pane>
-          </el-tabs>
+          <!-- 修复: 替换编辑/预览分屏为分屏编辑器 -->
+          <MarkdownEditor v-model="postForm.content" placeholder="写下你的想法吧...支持 Markdown 格式" />
         </el-form-item>
         <el-form-item label="封面" prop="cover">
           <el-input v-model="postForm.cover" placeholder="封面图片URL（可选）" />
@@ -149,6 +126,7 @@ import DOMPurify from 'dompurify'
 import hljs from 'highlight.js'
 import 'highlight.js/styles/github.css'
 import AppImage from '@/components/AppImage.vue'
+import MarkdownEditor from '@/components/MarkdownEditor.vue'
 
 // 配置 marked
 marked.setOptions({
@@ -193,32 +171,6 @@ const postForm = reactive({
   cover: '',
   tags: ''
 })
-
-const insertText = (prefix, suffix = '') => {
-  const textarea = postContentRef.value?.$el?.querySelector('textarea')
-  if (!textarea) {
-    postForm.content += prefix + suffix
-    return
-  }
-  
-  const start = textarea.selectionStart
-  const end = textarea.selectionEnd
-  const selectedText = postForm.content.substring(start, end)
-  const replacement = prefix + (selectedText || '') + suffix
-  
-  postForm.content = postForm.content.substring(0, start) + replacement + postForm.content.substring(end)
-  
-  // 恢复焦点并移动光标
-  setTimeout(() => {
-    textarea.focus()
-    if (selectedText) {
-      textarea.selectionStart = start
-      textarea.selectionEnd = start + replacement.length
-    } else {
-      textarea.selectionStart = textarea.selectionEnd = start + prefix.length
-    }
-  }, 0)
-}
 
 const postRules = {
   title: [{ required: true, message: '请输入标题', trigger: 'blur' }],
