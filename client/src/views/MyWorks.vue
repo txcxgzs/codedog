@@ -8,21 +8,24 @@
           发布新作品
         </el-button>
       </div>
-      
+
       <div class="r-myworks--content" v-loading="loading">
         <div class="r-myworks--grid" v-if="works.length > 0">
           <div v-for="work in works" :key="work.id" class="r-myworks--card">
-            <div class="r-myworks--card_cover" :style="{ backgroundImage: `url(${work.preview})` }">
-              <!-- 隐藏状态遮罩:管理员隐藏的作品,作者本人不可查看详情,但可删除 -->
-              <div v-if="work.status === 'hidden'" class="r-myworks--hidden_mask">
+            <!-- 点击封面跳转详情页 -->
+            <div class="r-myworks--card_cover" :style="{ backgroundImage: `url(${work.preview})` }"
+                 @click="goToDetail(work)">
+              <!-- 隐藏状态遮罩 -->
+              <div v-if="work.status === 'hidden'" class="r-myworks--hidden_mask" @click.stop>
                 <el-tag type="warning" size="small">已被管理员隐藏</el-tag>
                 <p class="r-myworks--hidden_hint">如有疑问请联系管理员</p>
-                <el-button type="danger" size="small" @click="deleteWork(work)">删除</el-button>
               </div>
               <div class="r-myworks--card_overlay" v-else>
-                <el-button type="primary" size="small" @click="$router.push(`/work/${work.codemao_work_id}`)">查看</el-button>
-                <el-button type="danger" size="small" @click="deleteWork(work)">删除</el-button>
+                <el-button type="primary" size="small" @click.stop="goToDetail(work)">查看详情</el-button>
               </div>
+              <!-- 删除按钮:右上角图标,防止误触 -->
+              <el-button type="danger" size="small" circle class="r-myworks--delete_btn"
+                         :icon="Delete" @click.stop="deleteWork(work)" />
             </div>
             <div class="r-myworks--card_body">
               <h4 class="r-myworks--card_title">{{ work.name }}</h4>
@@ -34,11 +37,11 @@
             </div>
           </div>
         </div>
-        
+
         <el-empty v-else description="暂无作品，快去发布吧！">
           <el-button type="primary" @click="$router.push('/publish')">发布作品</el-button>
         </el-empty>
-        
+
         <div class="r-myworks--pagination" v-if="total > pageSize">
           <el-pagination
             v-model:current-page="currentPage"
@@ -55,9 +58,12 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { workApi } from '@/api/work'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { Delete } from '@element-plus/icons-vue'
 
+const router = useRouter()
 const loading = ref(false)
 const works = ref([])
 const currentPage = ref(1)
@@ -70,6 +76,10 @@ const formatTime = (time) => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
+const goToDetail = (work) => {
+  router.push(`/work/${work.codemao_work_id}`)
+}
+
 const fetchWorks = async () => {
   loading.value = true
   try {
@@ -79,7 +89,6 @@ const fetchWorks = async () => {
     })
     if (res.code === 200) {
       works.value = res.data.list
-      // 兼容后端两种分页返回格式：data.total 或 data.pagination.total
       total.value = res.data.total || res.data.pagination?.total || 0
     }
   } catch (error) {
@@ -114,7 +123,6 @@ onMounted(fetchWorks)
 <style lang="scss" scoped>
 $primary-color: #FEC433;
 $primary-hover: #FFD700;
-$primary-light: #FFF9E6;
 $text-color: #333;
 $text-secondary: #666;
 $text-muted: #999;
@@ -136,14 +144,14 @@ $border-color: #eee;
   justify-content: space-between;
   align-items: center;
   margin-bottom: 24px;
-  
+
   .r-myworks--title {
     font-size: 24px;
     font-weight: 600;
     color: $text-color;
     margin: 0;
   }
-  
+
   .r-myworks--publish_btn {
     background: $primary-color;
     border-color: $primary-color;
@@ -152,12 +160,12 @@ $border-color: #eee;
     display: flex;
     align-items: center;
     gap: 6px;
-    
+
     &:hover {
       background: $primary-hover;
       border-color: $primary-hover;
     }
-    
+
     .r-myworks--publish_icon {
       width: 14px;
       height: 14px;
@@ -178,7 +186,7 @@ $border-color: #eee;
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 20px;
-  
+
   @media (max-width: 992px) { grid-template-columns: repeat(3, 1fr); }
   @media (max-width: 768px) { grid-template-columns: repeat(2, 1fr); }
   @media (max-width: 576px) { grid-template-columns: 1fr; }
@@ -190,21 +198,22 @@ $border-color: #eee;
   overflow: hidden;
   border: 1px solid $border-color;
   transition: all 0.3s;
-  
+
   &:hover {
     box-shadow: 0 8px 20px rgba(0,0,0,0.1);
     border-color: transparent;
-    
+
     .r-myworks--card_overlay {
       opacity: 1;
     }
   }
-  
+
   .r-myworks--card_cover {
     padding-top: 100%;
     background-size: cover;
     background-position: center;
     position: relative;
+    cursor: pointer;
 
     .r-myworks--card_overlay {
       position: absolute;
@@ -213,7 +222,6 @@ $border-color: #eee;
       display: flex;
       align-items: center;
       justify-content: center;
-      gap: 12px;
       opacity: 0;
       transition: opacity 0.3s;
     }
@@ -236,11 +244,24 @@ $border-color: #eee;
         opacity: 0.85;
       }
     }
+
+    // 删除按钮: 右上角,防止误触
+    .r-myworks--delete_btn {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      opacity: 0.7;
+      transition: opacity 0.2s;
+
+      &:hover {
+        opacity: 1;
+      }
+    }
   }
-  
+
   .r-myworks--card_body {
     padding: 12px;
-    
+
     .r-myworks--card_title {
       font-size: 14px;
       font-weight: 500;
@@ -250,17 +271,17 @@ $border-color: #eee;
       text-overflow: ellipsis;
       white-space: nowrap;
     }
-    
+
     .r-myworks--card_time {
       font-size: 12px;
       color: $text-muted;
       margin: 0 0 8px;
     }
-    
+
     .r-myworks--card_stats {
       display: flex;
       gap: 16px;
-      
+
       span {
         display: flex;
         align-items: center;
@@ -268,16 +289,16 @@ $border-color: #eee;
         font-size: 12px;
         color: $text-muted;
       }
-      
+
       .r-myworks--stat_icon {
         width: 14px;
         height: 14px;
-        
+
         &.r-myworks--stat_icon_view {
           background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23999'%3E%3Cpath d='M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z'/%3E%3C/svg%3E") no-repeat center;
           background-size: contain;
         }
-        
+
         &.r-myworks--stat_icon_like {
           background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23999'%3E%3Cpath d='M1 21h4V9H1v12zm22-11c0-1.1-.9-2-2-2h-6.31l.95-4.57.03-.32c0-.41-.17-.79-.44-1.06L14.17 1 7.59 7.59C7.22 7.95 7 8.45 7 9v10c0 1.1.9 2 2 2h9c.83 0 1.54-.5 1.84-1.22l3.02-7.05c.09-.23.14-.47.14-.73v-2z'/%3E%3C/svg%3E") no-repeat center;
           background-size: contain;
