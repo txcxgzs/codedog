@@ -94,21 +94,33 @@ function saveSelection() {
 
 function restoreSelection(saved) {
   if (!saved || !editorRef.value) return
-  // 修复: 安全地将光标放到末尾(净化后 DOM 节点重建,旧 Range 已失效)
   try {
+    // 修复: 使用 saved.offset 精确定位光标(而非简单放到末尾)
     const node = editorRef.value
-    // 找到最后一个文本节点
     const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT)
-    let lastNode = null
-    let totalLen = 0
+    let currentOffset = 0
+    let targetNode = null
+    let targetOffset = 0
     while (walker.nextNode()) {
-      lastNode = walker.currentNode
-      totalLen += walker.currentNode.textContent.length
+      const len = walker.currentNode.textContent.length
+      if (currentOffset + len >= saved.offset) {
+        targetNode = walker.currentNode
+        targetOffset = saved.offset - currentOffset
+        break
+      }
+      currentOffset += len
     }
-    if (lastNode) {
+    if (!targetNode) {
+      // 超出范围,放到末尾
+      let lastNode = null
+      const w2 = document.createTreeWalker(node, NodeFilter.SHOW_TEXT)
+      while (w2.nextNode()) { lastNode = w2.currentNode }
+      if (lastNode) { targetNode = lastNode; targetOffset = lastNode.textContent.length }
+    }
+    if (targetNode) {
       const sel = window.getSelection()
       const range = document.createRange()
-      range.setStart(lastNode, lastNode.textContent.length)
+      range.setStart(targetNode, Math.min(targetOffset, targetNode.textContent.length))
       range.collapse(true)
       sel.removeAllRanges()
       sel.addRange(range)

@@ -2332,6 +2332,15 @@ async function handleReport(req, res) {
             return errorResponse(res, '举报不存在', 404);
         }
 
+        // 修复: takeAction 时按举报类型校验细粒度权限,防止 reviewer 借举报接口绕过删除/禁用权限
+        if (req.body.takeAction && status === 'resolved') {
+            const { hasPermission } = require('../config/permissions');
+            const permMap = { work: 'work:delete', comment: 'comment:delete', post: 'post:delete', user: 'user:disable' };
+            if (permMap[report.type] && !hasPermission(req.user.role, permMap[report.type])) {
+                return errorResponse(res, `无权执行此操作,需要 ${permMap[report.type]} 权限`, 403);
+            }
+        }
+
         // 修复: 在删除其他举报之前,先从 merged_from_ids 收集所有需要通知的举报人
         // 否则 takeAction 删除同目标举报后,merged_from_ids 指向的记录已不存在,合并来源举报人收不到通知
         const mergedReporterIds = new Set();
@@ -3030,10 +3039,11 @@ async function deleteAnnouncement(req, res) {
 async function getSystemConfigs(req, res) {
     try {
         const configs = await DbAdapter.findAll(SystemConfig, {});
-        const sensitiveKeys = ['ai_api_key', 'hcaptcha_secret_key', 'geetest_key', 'sensitive_api_key', 'SESSION_SECRET', 'JWT_SECRET', 'DATABASE_PASSWORD'];
+        // 修复: 统一小写 + 正则匹配,覆盖所有 password/secret/token/key 类配置
+        const isSensitive = (key) => /password|secret|token|api[_-]?key|auth/i.test(key);
         const result = {};
         configs.forEach(c => {
-            if (sensitiveKeys.includes(c.config_key)) {
+            if (isSensitive(c.config_key)) {
                 result[c.config_key] = c.config_value ? '******' : '';
             } else {
                 result[c.config_key] = c.config_value;
@@ -3080,7 +3090,12 @@ async function updateSystemConfig(req, res) {
 
         const updatedConfig = await DbAdapter.findOne(SystemConfig, { where: { config_key: key } });
         logOperation(req, 'update_config', 'system_config', null, redactConfigDetails({ [key]: value }));
-        return successResponse(res, updatedConfig, '更新成功');
+        // 修复: 敏感配置不返回明文,统一掩码
+        const isSensitive = (k) => /password|secret|token|api[_-]?key|auth/i.test(k);
+        return successResponse(res, {
+            config_key: updatedConfig.config_key,
+            config_value: isSensitive(key) ? '******' : updatedConfig.config_value
+        }, '更新成功');
     } catch (error) {
         console.error('更新系统设置错误:', error);
         return errorResponse(res, '更新失败', 500);
@@ -3267,14 +3282,22 @@ async function getSensitiveWords(req, res) {
 async function addSensitiveWord(req, res) {
     try {
         const { word, category, level, replacement } = req.body;
-        
-        const existing = await DbAdapter.findOne(SensitiveWord, { where: { word } });
+
+        // 修复: 校验敏感词非空(空字符串会导致 content.includes('') 永远为 true,所有内容判高风险)
+        if (!word || typeof word !== 'string' || !word.trim()) {
+            return errorResponse(res, '敏感词不能为空', 400);
+        }
+        if (word.trim().length > 100) {
+            return errorResponse(res, '敏感词长度不能超过 100 字符', 400);
+        }
+
+        const existing = await DbAdapter.findOne(SensitiveWord, { where: { word: word.trim() } });
         if (existing) {
             return errorResponse(res, '该敏感词已存在', 400);
         }
-        
+
         const sensitiveWord = await DbAdapter.create(SensitiveWord, {
-            word,
+            word: word.trim(),
             category: category || 'other',
             level: level || 1,
             replacement
@@ -3613,9 +3636,9 @@ async function aiAutoHandleReports(req, res) {
                 // user 分支已在事务内做 canManageUser 校验，这里不再重复
 
                 if (!canAutoDelete) {
-                    // 无权处理该内容所有者，仅标记举报已处理，跳过删除动作
-                    await DbAdapter.update(Report, { status: 'resolved', handler_id: DbAdapter.getId(req.user), handle_note: 'AI自动处理-权限不足跳过删除' }, { where: { id: DbAdapter.getId(report) } });
-                    results.handled++;
+                    // 修复: 权限不足时保持 pending(而非 resolved),让有权限的管理员后续处理
+                    await DbAdapter.update(Report, { status: 'pending', handler_id: null, handle_note: 'AI自动处理-权限不足,需人工处理' }, { where: { id: DbAdapter.getId(report) } });
+                    results.skipped = (results.skipped || 0) + 1;
                     continue;
                 }
 

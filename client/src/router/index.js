@@ -138,21 +138,29 @@ router.beforeEach(async (to, from, next) => {
   // 修复: httpOnly cookie 模式下,token 初始为空,必须先调 /users/me 验证 cookie 是否有效
   // 没有用户信息且未检查过时尝试获取(后端 cookie 自动携带)
   if (!userStore.user && !authChecked) {
-    authChecked = true
     try {
       const user = await userStore.fetchCurrentUser()
-      // fetchCurrentUser 返回 null 表示认证失败(401),需跳登录页
-      if (!user && (to.meta.requiresAuth || to.meta.requiresAdmin)) {
-        next({ name: 'Login', query: { redirect: to.fullPath } })
-        return
-      }
-      // 修复: 恢复登录态后若当前是登录页,跳转首页(避免 cookie 用户看到登录表单)
-      if (user && to.name === 'Login') {
-        next('/')
-        return
+      // fetchCurrentUser 返回 null 表示认证失败(401),确认为游客
+      if (!user) {
+        authChecked = true  // 只有 401 才标记已检查(网络错误不标记,下次路由重试)
+        if (to.meta.requiresAuth || to.meta.requiresAdmin) {
+          next({ name: 'Login', query: { redirect: to.fullPath } })
+          return
+        }
+      } else {
+        authChecked = true
+        // 修复: 恢复登录态后若当前是登录页,跳转首页(避免 cookie 用户看到登录表单)
+        if (to.name === 'Login') {
+          next('/')
+          return
+        }
       }
     } catch (error) {
       console.error('Failed to fetch user info:', error)
+      // 修复: 网络错误不标记 authChecked,下次路由会重试;仅 401 确认为游客
+      if (error?.response?.status === 401) {
+        authChecked = true
+      }
       // 网络错误时:若目标页不需要登录态则放行,否则跳登录页
       if (!to.meta.requiresAuth && !to.meta.requiresAdmin) {
         next()

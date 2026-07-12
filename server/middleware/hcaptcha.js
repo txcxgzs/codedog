@@ -41,6 +41,7 @@ async function hcaptchaGuard(req, res, next) {
         '/api/users/login',
         '/api/users/register',
         '/api/users/logout',
+        '/api/users/me',  // 修复: /users/me 用于 cookie 登录恢复,不能被 hCaptcha 拦截(否则已登录用户刷新后会永远显示未登录)
         '/api/users/restore-from-impersonate',
         '/api/health',
         '/api/hcaptcha',
