@@ -3228,12 +3228,14 @@ function updateEnvVariable(content, key, value) {
         error.statusCode = 400;
         throw error;
     }
+    // 修复: 转义特殊字符(#:注释, 空格, 引号等),用双引号包裹值
+    const escapedValue = safeValue.replace(/(["\\])/g, '\\$1');
     const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const regex = new RegExp(`^${escapedKey}=.*$`, 'gm');
     if (regex.test(content)) {
-        return content.replace(regex, `${key}=${safeValue}`);
+        return content.replace(regex, `${key}="${escapedValue}"`);
     } else {
-        return content + `\n${key}=${safeValue}`;
+        return content + `\n${key}="${escapedValue}"`;
     }
 }
 
