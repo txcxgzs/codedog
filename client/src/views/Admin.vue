@@ -434,6 +434,11 @@
             <el-form-item label="内容">
               <el-input v-model="notificationForm.content" type="textarea" :rows="4" placeholder="请输入内容" maxlength="500" show-word-limit />
             </el-form-item>
+            <!-- 修复:管理员可选项——是否使用管理员头像/显示管理员名称 -->
+            <el-form-item label="发送身份">
+              <el-checkbox v-model="notificationForm.useAdminAvatar">使用我的头像</el-checkbox>
+              <el-checkbox v-model="notificationForm.showAdminName">显示我的名称</el-checkbox>
+            </el-form-item>
           </el-form>
           <template #footer>
             <el-button @click="notificationDialogVisible = false">取消</el-button>
@@ -786,13 +791,30 @@
                 <div v-if="row.target">
                   <span v-if="row.type === 'work'">{{ row.target.name }}</span>
                   <span v-else-if="row.type === 'comment'">{{ row.target.content?.substring(0, 30) }}...</span>
-                  <span v-else>{{ row.target.nickname || row.target.username }}</span>
+                  <span v-else-if="row.type === 'post'">{{ row.target.title }}</span>
+                  <span v-else-if="row.type === 'user'">{{ row.target.nickname || row.target.username }}</span>
                 </div>
               </template>
             </el-table-column>
             <el-table-column label="举报人" width="120">
               <template #default="{ row }">
-                <span v-if="row.reporter">{{ row.reporter.nickname || row.reporter.username }}</span>
+                <span v-if="row.reporter" class="r-admin--clickable_name" @click="goToUser(row.reporter)">
+                  {{ row.reporter.nickname || row.reporter.username }}
+                </span>
+              </template>
+            </el-table-column>
+            <el-table-column label="被举报人" width="120">
+              <template #default="{ row }">
+                <span v-if="row.type === 'user' && row.target" class="r-admin--clickable_name" @click="goToUser(row.target)">
+                  {{ row.target.nickname || row.target.username }}
+                </span>
+                <span v-else-if="row.type === 'work' && row.target" class="r-admin--clickable_name" @click="goToUserById(row.target.user_id)">
+                  {{ row.target.author?.nickname || row.target.author?.username || '-' }}
+                </span>
+                <span v-else-if="row.type === 'comment' && row.target" class="r-admin--clickable_name" @click="goToUserById(row.target.user_id)">
+                  {{ row.target.author?.nickname || row.target.author?.username || '-' }}
+                </span>
+                <span v-else>-</span>
               </template>
             </el-table-column>
             <el-table-column prop="reason" label="原因" min-width="120" />
@@ -2192,6 +2214,30 @@ const autoHandleLoading = ref(false)
 
 const handleReportSelection = (selection) => {
   selectedReports.value = selection
+}
+
+// 跳转到用户详情页(使用 codemao_user_id)
+const goToUser = (user) => {
+  if (user?.codemao_user_id) {
+    router.push(`/user/${user.codemao_user_id}`)
+  } else if (user?.id) {
+    router.push(`/user/local/${user.id}`)
+  }
+}
+
+// 通过本地 ID 查找用户并跳转(用于 work/comment 类举报)
+const goToUserById = async (userId) => {
+  if (!userId) return
+  try {
+    const res = await adminApi.getUserDetail(userId)
+    if (res.code === 200 && res.data?.user?.codemao_user_id) {
+      router.push(`/user/${res.data.user.codemao_user_id}`)
+    } else {
+      ElMessage.warning('无法获取用户信息')
+    }
+  } catch (e) {
+    ElMessage.warning('跳转失败')
+  }
 }
 
 const quickAIReview = async (row) => {
@@ -3699,7 +3745,11 @@ const handleUpdatePassword = async () => {
 }
 
 const showSendNotificationDialog = () => {
-  notificationForm.value = { title: '', content: '', targetUser: userDetail.value.user, targetUsers: null, isAll: false }
+  notificationForm.value = {
+    title: '', content: '', targetUser: userDetail.value.user, targetUsers: null, isAll: false,
+    // 修复: 管理员可选项——是否使用管理员头像/显示管理员名称(默认都勾选)
+    useAdminAvatar: true, showAdminName: true
+  }
   notificationDialogVisible.value = true
 }
 

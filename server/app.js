@@ -34,10 +34,12 @@ const { createSequelizeSessionStore } = require('./services/sessionStore');
 const app = express();
 app.disable('x-powered-by');
 
-// 信任代理：默认关闭。仅当明确设置 TRUST_PROXY=true 且前端有可信反向代理(Nginx/Cloudflare)时开启，
-// 否则 X-Forwarded-For 可被客户端伪造，导致限流、IP 白名单失效。
-const trustProxyEnabled = process.env.TRUST_PROXY === 'true';
-app.set('trust proxy', trustProxyEnabled ? 1 : false);
+// 信任代理：Docker/Nginx 部署时必需,否则 req.ip 返回 Docker 网关 IP 而非真实客户端 IP
+// 修复:默认信任 loopback + 私有网络,生产环境通过 TRUST_PROXY 环境变量细粒度控制
+const trustProxySetting = process.env.TRUST_PROXY
+    ? (process.env.TRUST_PROXY === 'true' ? true : process.env.TRUST_PROXY)
+    : 'loopback, 172.16.0.0/12, 192.168.0.0/16, 10.0.0.0/8';
+app.set('trust proxy', trustProxySetting);
 
 const isProduction = process.env.NODE_ENV === 'production';
 const isDevelopment = process.env.NODE_ENV === 'development' || !isProduction;
@@ -335,6 +337,8 @@ async function startServer() {
 
             // 修复: Report 表新增 merged_from_ids + status 加 merged
             await ensureColumn('reports', 'merged_from_ids', { sqlite: 'TEXT', mysql: 'TEXT NULL' });
+            // 修复: Notification 表加 meta 字段(站内信管理员选项)
+            await ensureColumn('notifications', 'meta', { sqlite: 'TEXT', mysql: 'TEXT NULL' });
             // MySQL: 修改 status ENUM 支持 merged + reason 改 TEXT
             if (dialect === 'mysql') {
                 try {

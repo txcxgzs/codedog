@@ -2299,7 +2299,7 @@ async function getReports(req, res) {
                 {
                     model: User,
                     as: 'reporter',
-                    attributes: ['id', 'username', 'nickname', 'avatar']
+                    attributes: ['id', 'username', 'nickname', 'avatar', 'codemao_user_id']
                 },
                 {
                     model: User,
@@ -2324,13 +2324,13 @@ async function getReports(req, res) {
             const targetIds = reports.map(r => r.target_id);
             let targets = [];
             if (type === 'work') {
-                targets = await DbAdapter.findAll(Work, { where: { id: { [Op.in]: targetIds } }, attributes: ['id', 'name', 'preview'] });
+                targets = await DbAdapter.findAll(Work, { where: { id: { [Op.in]: targetIds } }, attributes: ['id', 'name', 'preview', 'user_id'] });
             } else if (type === 'comment') {
                 targets = await DbAdapter.findAll(Comment, { where: { id: { [Op.in]: targetIds } }, attributes: ['id', 'content', 'user_id'] });
             } else if (type === 'post') {
                 targets = await DbAdapter.findAll(Post, { where: { id: { [Op.in]: targetIds } }, attributes: ['id', 'title', 'content'] });
             } else if (type === 'user') {
-                targets = await DbAdapter.findAll(User, { where: { id: { [Op.in]: targetIds } }, attributes: ['id', 'username', 'nickname', 'avatar'] });
+                targets = await DbAdapter.findAll(User, { where: { id: { [Op.in]: targetIds } }, attributes: ['id', 'username', 'nickname', 'avatar', 'codemao_user_id'] });
             }
             const targetMap = new Map(targets.map(t => [DbAdapter.getId(t), t]));
             reports.forEach(r => { r.dataValues.target = targetMap.get(r.target_id) || null; });
@@ -4467,25 +4467,36 @@ async function removeStudioWork(req, res) {
 async function sendUserNotification(req, res) {
     try {
         const { userId } = req.params;
-        const { title, content } = req.body;
-        
+        const { title, content, useAdminAvatar, showAdminName } = req.body;
+
         if (!title || !content) {
             return errorResponse(res, '标题和内容不能为空', 400);
         }
-        
+
         const user = await DbAdapter.findByPk(User, userId);
         if (!user) {
             return errorResponse(res, '用户不存在', 404);
         }
-        
+
+        // 修复:站内信格式优化――明确标注站内信,管理员名称与标题间加空格
+        const adminName = req.user.nickname || req.user.username;
+        let notificationTitle = title;
+
+        if (showAdminName) {
+            notificationTitle = `【站内信】${adminName}：${title}`;
+        } else {
+            notificationTitle = `【站内信】${title}`;
+        }
+
         await DbAdapter.create(Notification, {
             user_id: userId,
             type: 'system',
-            title,
+            title: notificationTitle,
             content,
-            sender_id: DbAdapter.getId(req.user)
+            sender_id: DbAdapter.getId(req.user),
+            meta: JSON.stringify({ useAdminAvatar: !!useAdminAvatar, showAdminName: !!showAdminName })
         });
-        
+
         logOperation(req, 'send_notification', 'user', userId, { title });
         return successResponse(res, null, '站内信发送成功');
     } catch (error) {

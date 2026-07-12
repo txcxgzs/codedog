@@ -318,7 +318,9 @@ const Notification = sequelize.define('Notification', {
     related_id: { type: DataTypes.INTEGER },
     related_type: { type: DataTypes.STRING(50) },
     sender_id: { type: DataTypes.INTEGER },
-    is_read: { type: DataTypes.BOOLEAN, defaultValue: false }
+    is_read: { type: DataTypes.BOOLEAN, defaultValue: false },
+    // 修复: 站内信管理员选项(是否使用头像/显示名称)JSON 存储
+    meta: { type: DataTypes.TEXT, allowNull: true, defaultValue: null }
 }, Object.assign({
     tableName: 'notifications',
     // M21: 通知按 user_id/is_read 高频查询
