@@ -1263,12 +1263,14 @@
             <el-table-column prop="title" label="标题" min-width="200" />
             <el-table-column prop="type" label="类型" width="100">
               <template #default="{ row }">
-                <el-tag :type="row.type === 'important' ? 'danger' : 'info'">{{ row.type === 'important' ? '重要' : '普通' }}</el-tag>
+                <el-tag :type="row.type === 'warning' ? 'danger' : row.type === 'update' ? 'warning' : 'info'">
+                  {{ row.type === 'warning' ? '警告' : row.type === 'update' ? '更新' : '普通' }}
+                </el-tag>
               </template>
             </el-table-column>
-            <el-table-column prop="status" label="状态" width="80">
+            <el-table-column label="状态" width="80">
               <template #default="{ row }">
-                <el-tag :type="row.status === 'active' ? 'success' : 'info'">{{ row.status === 'active' ? '显示' : '隐藏' }}</el-tag>
+                <el-tag :type="row.is_active ? 'success' : 'info'">{{ row.is_active ? '显示' : '隐藏' }}</el-tag>
               </template>
             </el-table-column>
             <el-table-column prop="author" label="发布者" width="120">
