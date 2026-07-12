@@ -1,6 +1,7 @@
 const { GeetestLib } = require('./geetest');
 const { SystemConfig, CaptchaStats } = require('../models');
 const DbAdapter = require('../utils/dbAdapter');
+const { Op } = require('sequelize');
 
 const GEETEST_ID = process.env.GEETEST_ID || '';
 const GEETEST_KEY = process.env.GEETEST_KEY || '';
@@ -22,13 +23,29 @@ class GeetestService {
         };
     }
 
+    // 修复: 读取 per-scene 开关。配置 key 为 geetest_<scene> ('true'/'false')。
+    // 未配置时默认为 false(不强制验证),只在整体启用 + scene 启用时才需要验证
+    static async isSceneEnabled(scene) {
+        if (!scene) return false;
+        const sceneConfig = await DbAdapter.findOne(SystemConfig, { where: { config_key: `geetest_${scene}` } });
+        return sceneConfig && sceneConfig.config_value === 'true';
+    }
+
     static async verify(scene, challenge, validate, seccode, req) {
         try {
             const config = await this.getConfig();
 
             if (!config.enabled) {
-                // 验证码未启用，按设计放行，但记录告警日志便于运维排查
+                // 验证码整体未启用，按设计放行，但记录告警日志便于运维排查
                 console.warn('[Geetest] 验证码未启用，所有验证放行');
+                return { success: true };
+            }
+
+            // 修复: 即使整体启用,per-scene 未启用也放行
+            // 这解决"极验整体配置了但发帖没打开验证,用户却被强制要求验证码"的 bug
+            const sceneEnabled = await this.isSceneEnabled(scene);
+            if (!sceneEnabled) {
+                console.log(`[Geetest] scene=${scene} 未开启验证,放行`);
                 return { success: true };
             }
 

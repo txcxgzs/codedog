@@ -5,6 +5,7 @@ const path = require('path');
 const sharp = require('sharp');
 const router = express.Router();
 const userController = require('../controllers/userController');
+const adminController = require('../controllers/adminController'); // restoreFromImpersonate 需要
 const { authMiddleware } = require('../middleware/auth');
 const { errorResponse } = require('../middleware/response');
 const { createRateLimiter } = require('../middleware/rateLimit');
@@ -148,6 +149,10 @@ function avatarUpload(req, res, next) {
 router.post('/login', loginRateLimit, userController.login);
 router.post('/logout', authMiddleware, userController.logout);
 router.get('/me', authMiddleware, userController.getCurrentUser);
+// 修复: restore-from-impersonate 放在 userRoutes(不走 adminMiddleware)
+// 原因: impersonate 后当前用户是被模拟的普通用户,通不过 adminMiddleware(reviewer+)
+// 内部通过 JWT.impersonatedBy 字段校验,只有 admin impersonate 生成的 token 才有此字段
+router.post('/restore-from-impersonate', authMiddleware, adminController.restoreFromImpersonate);
 router.put('/profile', authMiddleware, avatarUpload, validateAvatarUpload, userController.updateProfile);
 router.get('/:codemaoId', userController.getUserById);
 

@@ -102,17 +102,6 @@ const routes = [
     component: () => import('@/views/admin/Init.vue'),
     meta: { title: '初始化说明', requiresAuth: true, requiresAdmin: true }
   },
-  // 修复: 挂载 admin/Users.vue 之前是死代码(没注册到路由)
-  // 因为 /admin 已被 Admin.vue 注册, 不能直接用 path: '/admin/users' + admin/Layout.vue 嵌套(同 path 多路由只第一个生效)
-  // 解法: 把 admin/Layout.vue 作为顶级 wrapper, path 直接是 '/admin/users', 不嵌套
-  // 副作用: 访问这个页面会看到 admin/Layout 的侧边栏 + admin/Users 内容, 与 Admin.vue 的"用户管理"区视觉不一致
-  // 但能访问到"一键登录"功能, 是当前最简方案
-  {
-    path: '/admin/users',
-    name: 'AdminUsers',
-    component: () => import('@/views/admin/Users.vue'),
-    meta: { title: '用户管理', requiresAuth: true, requiresAdmin: true }
-  },
   {
     path: '/notifications',
     name: 'Notifications',

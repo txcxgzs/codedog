@@ -264,6 +264,7 @@
                 <el-button :type="userDetail.user.status === 'active' ? 'danger' : 'success'" size="small" @click="toggleUserStatus(userDetail.user)">
                   {{ userDetail.user.status === 'active' ? '禁用账户' : '启用账户' }}
                 </el-button>
+                <el-button v-if="userDetail.user.id !== userStore.user?.id" size="small" type="primary" plain @click="impersonateUserDetail">一键登录</el-button>
               </div>
             </div>
             
@@ -3208,13 +3209,8 @@ const formatDate = (date) => {
 
 const handleMenuSelect = (key) => {
   activeMenu.value = key
-  // 修复: 用户管理点击后跳转新挂载的 /admin/users(admin/Users.vue, 含"一键登录"功能)
-  // 其他 tab 仍在 Admin.vue 内部展示(暂未迁移)
-  if (key === 'users') {
-    window.location.href = '/admin/users'
-    return
-  }
   if (key === 'dashboard') { fetchStats(); fetchTrends() }
+  if (key === 'users') fetchUsers()
   if (key === 'works') fetchWorks()
   if (key === 'comments') fetchComments()
   if (key === 'posts') { /* Posts component handles its own data fetching */ }
@@ -3532,6 +3528,23 @@ const handleUpdatePassword = async () => {
 const showSendNotificationDialog = () => {
   notificationForm.value = { title: '', content: '', targetUser: userDetail.value.user, targetUsers: null, isAll: false }
   notificationDialogVisible.value = true
+}
+
+// 一键登录：从用户详情弹窗内触发，不需要走 admin/Users.vue
+const impersonateUserDetail = async () => {
+  const user = userDetail.value.user
+  if (user.id === userStore.user?.id) return
+  try {
+    await ElMessageBox.confirm(`确定要以 ${user.nickname || user.username} 的身份登录吗？`, '一键登录', { type: 'warning' })
+    const res = await adminApi.impersonateUser(user.id)
+    if (res.code === 200) {
+      sessionStorage.setItem('admin_token', '1')
+      ElMessage.success(`正在以 ${user.nickname || user.username} 身份登录...`)
+      setTimeout(() => { window.location.href = '/' }, 500)
+    }
+  } catch (e) {
+    if (e !== 'cancel') ElMessage.error(e?.response?.data?.msg || '一键登录失败')
+  }
 }
 
 const showBatchNotificationDialog = () => {

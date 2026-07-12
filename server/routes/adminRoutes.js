@@ -36,8 +36,8 @@ router.get('/users', requirePermission('user:view'), adminController.getUsers);
 router.get('/users/:userId', requirePermission('user:view'), adminController.getUserDetail);
 router.put('/users/:userId', requirePermission('user:edit'), adminController.updateUser);
 router.post('/users/:userId/impersonate', requireRole('admin'), adminController.impersonateUser);
-// 修复: 恢复管理员身份接口, 不需要角色校验(被模拟用户任何角色都可调用), 内部通过 JWT.impersonatedBy 校验
-router.post('/users/restore-from-impersonate', authMiddleware, adminController.restoreFromImpersonate);
+// 修复: restore-from-impersonate 移到 userRoutes(不走 adminMiddleware)
+// 原因: impersonate 后当前用户是被模拟的普通用户,通不过 adminMiddleware(reviewer+)
 router.put('/users/:userId/password', requireRole('admin'), adminController.updateUserPassword);
 router.put('/users/:userId/status', requirePermission('user:disable'), adminController.updateUserStatus);
 router.put('/users/:userId/role', requireRole('admin'), adminController.updateUserRole);
