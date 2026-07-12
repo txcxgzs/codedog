@@ -14,18 +14,68 @@ class ProxyService {
         this._deadProxies = new Set();
         this._failCount = 0;
         this._maxFailBeforeSwitch = 3;
+        this._refreshTimer = null;
+        this._refreshInterval = 5 * 60 * 1000;
+        this._autoRefreshEnabled = false;
+    }
+
+    startAutoRefresh(intervalMs) {
+        this.stopAutoRefresh();
+        if (!this.poolUrl || !this.enabled) return;
+        this._autoRefreshEnabled = true;
+        this._refreshInterval = intervalMs || (5 * 60 * 1000);
+        this._refreshTimer = setInterval(async () => {
+            try {
+                console.log(`[代理] 定时刷新(每${Math.round(this._refreshInterval / 60000)}分钟)...`);
+                const fresh = await this.fetchFromPool();
+                let found = false;
+                for (const proxy of fresh) {
+                    if (this._deadProxies.has(proxy.url)) continue;
+                    const result = await this.testProxy(proxy.url);
+                    if (result.ok) {
+                        await this.saveCurrentProxy(proxy);
+                        console.log(`[代理] 定时刷新获取新代理: ${proxy.host}:${proxy.port}`);
+                        found = true;
+                        break;
+                    } else {
+                        this._deadProxies.add(proxy.url);
+                    }
+                }
+                if (!found) {
+                    console.warn('[代理] 定时刷新: 代理池全部不可用');
+                    this._deadProxies.clear();
+                }
+            } catch (e) {
+                console.warn('[代理] 定时刷新失败:', e.message);
+            }
+        }, this._refreshInterval);
+        console.log(`[代理] 自动刷新已启动, 间隔${Math.round(this._refreshInterval / 60000)}分钟`);
+    }
+
+    stopAutoRefresh() {
+        if (this._refreshTimer) {
+            clearInterval(this._refreshTimer);
+            this._refreshTimer = null;
+        }
+        this._autoRefreshEnabled = false;
     }
 
     async loadConfig() {
         try {
-            const [enabledCfg, urlCfg, proxyCfg] = await Promise.all([
-                SystemConfig.findOne({ where: { config_key: 'proxy_enabled' } }),
-                SystemConfig.findOne({ where: { config_key: 'proxy_pool_url' } }),
-                SystemConfig.findOne({ where: { config_key: 'proxy_current' } })
-            ]);
-            this.enabled = enabledCfg ? enabledCfg.config_value === 'true' : false;
-            this.poolUrl = urlCfg ? config_value : null;
-            this.currentProxy = proxyCfg ? JSON.parse(proxyCfg.config_value || 'null') : null;
+            const keys = ['proxy_enabled', 'proxy_pool_url', 'proxy_current', 'proxy_protocol', 'proxy_auto_refresh'];
+            const configs = {};
+            await Promise.all(keys.map(async (k) => {
+                const cfg = await SystemConfig.findOne({ where: { config_key: k } });
+                configs[k] = cfg ? cfg.config_value : null;
+            }));
+            this.enabled = configs.proxy_enabled === 'true';
+            this.poolUrl = configs.proxy_pool_url || null;
+            this.currentProxy = configs.proxy_current ? JSON.parse(configs.proxy_current) : null;
+            this._defaultProtocol = configs.proxy_protocol || null;
+            const ar = parseInt(configs.autoRefresh, 10);
+            if (this.enabled && this.poolUrl && ar > 0) {
+                this.startAutoRefresh(ar * 60 * 1000);
+            }
         } catch (e) {
             console.warn('[Proxy] 配置加载失败:', e.message);
         }
@@ -34,6 +84,14 @@ class ProxyService {
     async setEnabled(enabled) {
         this.enabled = enabled;
         await SystemConfig.upsert({ config_key: 'proxy_enabled', config_value: String(enabled) });
+
+        if (enabled && this.poolUrl) {
+            const arCfg = await SystemConfig.findOne({ where: { config_key: 'proxy_auto_refresh' } });
+            const ar = arCfg ? parseInt(arCfg.config_value, 10) : 0;
+            if (ar > 0) this.startAutoRefresh(ar * 60 * 1000);
+        } else {
+            this.stopAutoRefresh();
+        }
     }
 
     async setPoolUrl(url) {
@@ -50,14 +108,15 @@ class ProxyService {
         await SystemConfig.upsert({ config_key: 'proxy_current', config_value: JSON.stringify(proxy) });
     }
 
-    _parseProxyString(str) {
+    _parseProxyString(str, defaultProtocol) {
         if (!str) return null;
         str = str.trim();
         if (!str) return null;
 
         let url = str;
         if (!str.startsWith('http://') && !str.startsWith('https://') && !str.startsWith('socks')) {
-            url = 'http://' + str;
+            const proto = defaultProtocol || 'http';
+            url = proto + '://' + str;
         }
 
         try {
@@ -117,9 +176,9 @@ class ProxyService {
 
         const parsed = [];
         for (const p of proxies) {
-            let str = typeof p === 'string' ? p : (p.proxy || p.url || p.ip + ':' + p.port || null);
+            let str = typeof p === 'string' ? p : (p.proxy || p.url || (p.ip && p.port ? p.ip + ':' + p.port : null));
             if (!str) continue;
-            const info = this._parseProxyString(str);
+            const info = this._parseProxyString(str, this._defaultProtocol);
             if (info) parsed.push(info);
         }
 

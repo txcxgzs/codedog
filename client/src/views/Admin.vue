@@ -1425,9 +1425,32 @@
               </div>
               <el-form label-width="100px" class="r-admin--config_form">
                 <el-form-item label="代理池API">
-                  <el-input v-model="proxyConfig.poolUrl" placeholder="https://proxy-pool.example.com/api/get?count=10" clearable />
-                  <div style="font-size: 12px; color: #909399; margin-top: 4px; line-height: 1.4;">代理池返回JSON, 支持数组、<code style="background:#f5f7fa;padding:0 4px;border-radius:3px;">data</code>、<code style="background:#f5f7fa;padding:0 4px;border-radius:3px;">proxies</code> 字段, 每项为 <code style="background:#f5f7fa;padding:0 4px;border-radius:3px;">ip:port</code> 或完整代理URL。也支持纯文本(每行一个代理)。<b style="color:#e6a23c;">填完后先点「保存配置」再抓取!</b></div>
+                  <el-input v-model="proxyConfig.poolUrl" placeholder="https://proxy.scdn.io/api/get_proxy.php?protocol=socks5&count=10" clearable />
+                  <div style="font-size: 12px; color: #909399; margin-top: 4px; line-height: 1.4;">支持JSON格式(<code style="background:#f5f7fa;padding:0 4px;border-radius:3px;">data.proxies</code>、<code style="background:#f5f7fa;padding:0 4px;border-radius:3px;">data</code>、<code style="background:#f5f7fa;padding:0 4px;border-radius:3px;">proxies</code>、数组)或纯文本(每行一个)。<b style="color:#e6a23c;">填完后先点「保存配置」再抓取!</b></div>
                 </el-form-item>
+                <el-row :gutter="20" style="margin-bottom: 12px;">
+                  <el-col :span="8">
+                    <el-form-item label="代理协议">
+                      <el-select v-model="proxyConfig.protocol" placeholder="自动" clearable>
+                        <el-option label="HTTP" value="http" />
+                        <el-option label="SOCKS5" value="socks5" />
+                        <el-option label="SOCKS4" value="socks4" />
+                      </el-select>
+                      <div style="font-size: 12px; color: #909399; margin-top: 2px;">纯IP:端口格式时使用</div>
+                    </el-form-item>
+                  </el-col>
+                  <el-col :span="8">
+                    <el-form-item label="自动刷新">
+                      <el-select v-model="proxyConfig.autoRefresh" placeholder="关闭" @change="saveProxyAutoRefresh">
+                        <el-option label="关闭" :value="0" />
+                        <el-option label="每1分钟" :value="1" />
+                        <el-option label="每3分钟" :value="3" />
+                        <el-option label="每5分钟" :value="5" />
+                        <el-option label="每10分钟" :value="10" />
+                      </el-select>
+                    </el-form-item>
+                  </el-col>
+                </el-row>
                 <div style="display: flex; gap: 8px; margin-bottom: 16px;">
                   <el-button type="primary" @click="refreshProxy" :loading="proxyLoading">🔄 抓取并测试代理</el-button>
                   <el-button @click="testProxy" :loading="proxyTestLoading">🧪 测试当前代理</el-button>
@@ -2285,7 +2308,7 @@ const auditLogsLoaded = ref(false)
 const selectedReports = ref([])
 const batchAILoading = ref(false)
 const autoHandleLoading = ref(false)
-const proxyConfig = ref({ enabled: false, poolUrl: '', currentProxy: '', cacheCount: 0 })
+const proxyConfig = ref({ enabled: false, poolUrl: '', protocol: '', currentProxy: '', cacheCount: 0, autoRefresh: 0 })
 const proxyLoading = ref(false)
 const proxyTestLoading = ref(false)
 const proxyTestResult = ref(null)
@@ -3650,6 +3673,17 @@ const testProxy = async () => {
     }
   } catch (_) { ElMessage.error('测试失败') }
   finally { proxyTestLoading.value = false }
+}
+const saveProxyAutoRefresh = async (val) => {
+  try {
+    await adminApi.updateProxyConfig({
+      enabled: proxyConfig.value.enabled,
+      poolUrl: proxyConfig.value.poolUrl,
+      protocol: proxyConfig.value.protocol,
+      autoRefresh: val
+    })
+    ElMessage.success(val > 0 ? `已开启代理自动刷新(每${val}分钟)` : '已关闭代理自动刷新')
+  } catch (_) { ElMessage.error('设置失败') }
 }
 const refreshProxy = async () => {
   if (!proxyConfig.value.poolUrl) { ElMessage.warning('请先填写代理池API地址'); return }

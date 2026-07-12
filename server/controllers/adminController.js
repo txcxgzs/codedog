@@ -2811,6 +2811,8 @@ async function getProxyConfig(req, res) {
     return successResponse(res, {
         enabled: proxyService.enabled,
         poolUrl: proxyService.poolUrl,
+        protocol: proxyService._defaultProtocol || '',
+        autoRefresh: proxyService._refreshInterval ? Math.round(proxyService._refreshInterval / 60000) : 0,
         currentProxy: proxyService.currentProxy ? proxyService.currentProxy.url : null,
         cacheCount: proxyService._cache.length
     });
@@ -2821,13 +2823,27 @@ async function getProxyConfig(req, res) {
  */
 async function updateProxyConfig(req, res) {
     try {
-        const { enabled, poolUrl } = req.body;
+        const { enabled, poolUrl, protocol, autoRefresh } = req.body;
         if (enabled !== undefined) await proxyService.setEnabled(!!enabled);
         if (poolUrl !== undefined) await proxyService.setPoolUrl(poolUrl);
+        if (protocol !== undefined && proxyService.enabled) {
+            await SystemConfig.upsert({ config_key: 'proxy_protocol', config_value: protocol || '' });
+        }
+        if (autoRefresh !== undefined && proxyService.enabled) {
+            const ar = parseInt(autoRefresh, 10);
+            if (ar > 0) {
+                proxyService.startAutoRefresh(ar * 60 * 1000);
+            } else {
+                proxyService.stopAutoRefresh();
+            }
+            await SystemConfig.upsert({ config_key: 'proxy_auto_refresh', config_value: String(ar) });
+        }
         await proxyService.loadConfig();
         return successResponse(res, {
             enabled: proxyService.enabled,
-            poolUrl: proxyService.poolUrl
+            poolUrl: proxyService.poolUrl,
+            protocol: protocol || null,
+            autoRefresh: autoRefresh || 0
         }, '代理配置已更新');
     } catch (error) {
         console.error('更新代理配置错误:', error);
@@ -3217,7 +3233,7 @@ async function updateSystemConfig(req, res) {
             'sensitive_api_enabled', 'sensitive_api_url', 'sensitive_api_key',
             'db_type', 'db_path', 'db_host', 'db_port', 'db_name', 'db_user', 'db_password',
             'mysql_host', 'mysql_port', 'mysql_database', 'mysql_username', 'mysql_password',
-            'proxy_enabled', 'proxy_pool_url', 'proxy_current'
+            'proxy_enabled', 'proxy_pool_url', 'proxy_current', 'proxy_protocol', 'proxy_auto_refresh'
         ];
         if (!ALLOWED_CONFIG_KEYS.includes(key)) {
             return errorResponse(res, `不支持的配置项: ${key}`, 400);
@@ -3286,7 +3302,7 @@ async function batchUpdateConfigs(req, res) {
             'sensitive_api_enabled', 'sensitive_api_url', 'sensitive_api_key',
             'db_type', 'db_path', 'db_host', 'db_port', 'db_name', 'db_user', 'db_password',
             'mysql_host', 'mysql_port', 'mysql_database', 'mysql_username', 'mysql_password',
-            'proxy_enabled', 'proxy_pool_url', 'proxy_current'
+            'proxy_enabled', 'proxy_pool_url', 'proxy_current', 'proxy_protocol', 'proxy_auto_refresh'
         ];
         const maskedValues = ['******', '***'];
         const sensitiveKeys = ['ai_api_key', 'hcaptcha_secret_key', 'geetest_key', 'sensitive_api_key', 'mysql_password', 'db_password'];
