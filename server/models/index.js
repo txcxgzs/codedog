@@ -227,8 +227,8 @@ const Report = sequelize.define('Report', {
     handler_id: { type: DataTypes.INTEGER },
     handle_note: { type: DataTypes.TEXT },
     ai_result: { type: DataTypes.TEXT },
-    // 修复: 合并重复举报时记录被合并的举报ID列表,用于通知所有举报人
-    merged_from_ids: { type: DataTypes.STRING(200), allowNull: true, defaultValue: null }
+    // 修复: 合并重复举报时记录被合并的举报 ID 列表(改 TEXT 避免多条 ID 拼接截断)
+    merged_from_ids: { type: DataTypes.TEXT, allowNull: true, defaultValue: null }
 }, Object.assign({
     tableName: 'reports',
     // M21: 举报按 status/reporter_id 高频查询

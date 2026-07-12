@@ -1578,7 +1578,8 @@ async function getRealtimeLogs(req, res) {
         // 来源2: 文件日志(记录所有 logger 输出)
         if (source === 'all' || source === 'file') {
             const { getRecentLogs } = require('../utils/logger');
-            const rawLines = getRecentLogs(logLimit);
+            // 修复: getRecentLogs 改为异步,需要用 await
+            const rawLines = await getRecentLogs(logLimit);
             const fileLogs = rawLines.map(line => {
                 // 解析格式: [2024-01-01T00:00:00.000Z] [LEVEL] [tag] message
                 const match = line.match(/^\[([^\]]+)\]\s+\[([^\]]+)\]\s+\[([^\]]+)\]\s+(.*)$/);
@@ -2540,10 +2541,10 @@ async function handleReport(req, res) {
         // 发送举报处理结果通知给举报者
         const { Notification } = require('../models');
         const statusText = status === 'resolved' ? '已处理' : (status === 'rejected' ? '已驳回' : '处理中');
-        // 修复: 收集所有需要通知的举报人(本人 + 合并来的 + 重复举报同一目标的)
+        // 修复: 仅通知主举报人 + 合并来源的举报人;不通知同目标其他独立 pending 举报人(避免状态不一致)
         const notifyReporterIds = new Set([report.reporter_id]);
 
-        // 1. 合并来的举报人(merged_from_ids)
+        // 合并来的举报人(merged_from_ids)
         if (report.merged_from_ids) {
             const mergedIds = report.merged_from_ids.split(',').filter(Boolean);
             const mergedReports = await DbAdapter.findAll(Report, {
@@ -2553,19 +2554,7 @@ async function handleReport(req, res) {
             mergedReports.forEach(r => notifyReporterIds.add(r.reporter_id));
         }
 
-        // 2. 查找同一目标的其他举报人(重复举报)
-        const duplicateReports = await DbAdapter.findAll(Report, {
-            where: {
-                type: report.type,
-                target_id: report.target_id,
-                id: { [Op.ne]: report.id },
-                status: { [Op.ne]: 'merged' }
-            },
-            attributes: ['reporter_id']
-        });
-        duplicateReports.forEach(r => notifyReporterIds.add(r.reporter_id));
-
-        // 3. 通知所有举报人
+        // 通知所有需通知的举报人(主举报人 + 合并来源)
         for (const reporterId of notifyReporterIds) {
             try {
                 await DbAdapter.create(Notification, {

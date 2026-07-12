@@ -34,8 +34,19 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, nextTick } from 'vue'
+import { ref, computed, onMounted, nextTick, watch } from 'vue'
 import DOMPurify from 'dompurify'
+
+// DOMPurify 配置:编辑路径和展示路径一致,禁止 iframe/script/style 等危险标签
+const PURIFY_CONFIG = {
+  FORBID_TAGS: ['style', 'form', 'input', 'iframe', 'object', 'embed', 'script', 'link', 'meta', 'base'],
+  FORBID_ATTR: ['onerror', 'onload', 'onclick', 'onmouseover', 'onfocus', 'onblur', 'style', 'formaction']
+}
+
+// 净化 innerHTML(写入 contentEditable 前先净化,防止恶意标签注入)
+function sanitize(html) {
+  return DOMPurify.sanitize(html || '', PURIFY_CONFIG)
+}
 
 const props = defineProps({
   modelValue: { type: String, default: '' },
@@ -55,8 +66,32 @@ const wordCount = computed(() => {
 
 const handleInput = () => {
   if (!editorRef.value) return
-  const html = editorRef.value.innerHTML
-  emit('update:modelValue', html)
+  // 修复: 输入时立即净化,防止恶意内容残留在 DOM 中
+  const rawHtml = editorRef.value.innerHTML
+  const clean = sanitize(rawHtml)
+  if (clean !== rawHtml) {
+    // 有内容被净化,同步回写 DOM(保持光标位置)
+    const sel = saveSelection()
+    editorRef.value.innerHTML = clean
+    restoreSelection(sel)
+  }
+  emit('update:modelValue', clean)
+}
+
+// 保存/恢复选区(净化后保持光标)
+function saveSelection() {
+  const sel = window.getSelection()
+  if (sel.rangeCount > 0) {
+    return sel.getRangeAt(0).cloneRange()
+  }
+  return null
+}
+
+function restoreSelection(range) {
+  if (!range) return
+  const sel = window.getSelection()
+  sel.removeAllRanges()
+  sel.addRange(range)
 }
 
 function exec(command, value = null) {
@@ -88,26 +123,30 @@ function updateActiveState() {
   activeCommands.value = newActive
 }
 
-// 初始化内容（供父组件调用）
+// 初始化内容(供父组件调用,写入前先净化)
 function setContent(html) {
   if (editorRef.value) {
-    editorRef.value.innerHTML = html || ''
-    handleInput()
+    editorRef.value.innerHTML = sanitize(html || '')
+    emit('update:modelValue', editorRef.value.innerHTML)
   }
 }
 
-// 获取净化后的 HTML
+// 获取净化后的 HTML(保存时调用)
 function getSanitizedHtml() {
   if (!editorRef.value) return ''
-  return DOMPurify.sanitize(editorRef.value.innerHTML, {
-    ADD_TAGS: ['iframe'],
-    ADD_ATTR: ['target']
-  })
+  return sanitize(editorRef.value.innerHTML)
 }
+
+// 修复: 外部改变 modelValue 时同步到编辑器
+watch(() => props.modelValue, (val) => {
+  if (editorRef.value && val !== editorRef.value.innerHTML) {
+    editorRef.value.innerHTML = sanitize(val || '')
+  }
+})
 
 onMounted(() => {
   if (props.modelValue && editorRef.value) {
-    editorRef.value.innerHTML = props.modelValue
+    editorRef.value.innerHTML = sanitize(props.modelValue)
   }
 })
 

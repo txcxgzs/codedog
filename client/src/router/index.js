@@ -132,28 +132,23 @@ router.beforeEach(async (to, from, next) => {
     return
   }
 
-  // 如果有 token 但没有用户信息，尝试获取用户信息
-  if (userStore.token && !userStore.user) {
+  // 修复: httpOnly cookie 模式下,token 初始为空,必须先调 /users/me 验证 cookie 是否有效
+  // 没有用户信息时一律尝试获取(后端 cookie 自动携带)
+  if (!userStore.user) {
     try {
       const user = await userStore.fetchCurrentUser()
-      // fetchCurrentUser 返回 null 表示认证失败（store 已清登录态），需跳登录页
-      if (!user) {
+      // fetchCurrentUser 返回 null 表示认证失败(401),需跳登录页
+      if (!user && (to.meta.requiresAuth || to.meta.requiresAdmin)) {
         next({ name: 'Login', query: { redirect: to.fullPath } })
         return
       }
     } catch (error) {
       console.error('Failed to fetch user info:', error)
-      // 仅在 401 时跳转登录页，网络错误时留在当前页面
-      if (error?.response?.status === 401) {
-        next({ name: 'Login', query: { redirect: to.fullPath } })
+      // 网络错误时:若目标页不需要登录态则放行,否则跳登录页
+      if (!to.meta.requiresAuth && !to.meta.requiresAdmin) {
+        next()
       } else {
-        // 修复: 初始导航网络错误时 next(false) 会导致空白页;
-        // 若目标页不需要登录态则放行,否则跳登录页
-        if (!to.meta.requiresAuth && !to.meta.requiresAdmin) {
-          next()
-        } else {
-          next({ name: 'Login', query: { redirect: to.fullPath } })
-        }
+        next({ name: 'Login', query: { redirect: to.fullPath } })
       }
       return
     }

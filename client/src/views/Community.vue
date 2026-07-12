@@ -150,18 +150,9 @@ const pageSize = ref(10)
 const total = ref(0)
 const postDialogVisible = ref(false)
 const postFormRef = ref(null)
-const postContentRef = ref(null)
 const geetestDialogRef = ref(null)
 const geetestConfig = ref(null)
 const wysiwygRef = ref(null)
-
-const renderedPostContent = computed(() => {
-  if (!postForm.content) return ''
-  return DOMPurify.sanitize(marked(postForm.content), {
-    FORBID_TAGS: ['style', 'form', 'input', 'iframe', 'object', 'embed', 'script'],
-    FORBID_ATTR: ['onerror', 'onload', 'onclick', 'onmouseover', 'style', 'formaction']
-  })
-})
 
 const defaultAvatar = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI0ZFQzQzMyIvPjx0ZXh0IHg9IjUwIiB5PSI2MCIgZm9udC1zaXplPSI0MCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZmlsbD0id2hpdGUiPuahijwvdGV4dD48L3N2Zz4='
 
@@ -173,9 +164,9 @@ const postForm = reactive({
   tags: ''
 })
 
+// 修复: WYSIWYG 输出 HTML,不再用 string required 校验;改为 createPost 内二次检查
 const postRules = {
-  title: [{ required: true, message: '请输入标题', trigger: 'blur' }],
-  content: [{ required: true, message: '请输入内容', trigger: 'blur' }]
+  title: [{ required: true, message: '请输入标题', trigger: 'blur' }]
 }
 
 const stripMarkdown = (text) => {
