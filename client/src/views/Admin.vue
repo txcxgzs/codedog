@@ -810,6 +810,9 @@
                 <span v-if="row.type === 'user' && row.target" class="r-admin--clickable_name" @click="goToUser(row.target)">
                   {{ row.target.nickname || row.target.username }}
                 </span>
+                <span v-else-if="row.type === 'post' && row.target" class="r-admin--clickable_name" @click="goToUserById(row.target.user_id)">
+                  {{ row.target.author?.nickname || row.target.author?.username || '-' }}
+                </span>
                 <span v-else-if="row.type === 'work' && row.target" class="r-admin--clickable_name" @click="goToUserById(row.target.user_id)">
                   {{ row.target.author?.nickname || row.target.author?.username || '-' }}
                 </span>
