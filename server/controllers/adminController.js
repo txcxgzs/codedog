@@ -2306,24 +2306,27 @@ async function getReports(req, res) {
             offset
         });
 
-        for (const report of rows) {
-            if (report.type === 'work') {
-                report.dataValues.target = await DbAdapter.findByPk(Work, report.target_id, {
-                    attributes: ['id', 'name', 'preview']
-                });
-            } else if (report.type === 'comment') {
-                report.dataValues.target = await DbAdapter.findByPk(Comment, report.target_id, {
-                    attributes: ['id', 'content', 'user_id', 'created_at']
-                });
-            } else if (report.type === 'user') {
-                report.dataValues.target = await DbAdapter.findByPk(User, report.target_id, {
-                    attributes: ['id', 'username', 'nickname', 'avatar']
-                });
-            } else if (report.type === 'post') {
-                report.dataValues.target = await DbAdapter.findByPk(Post, report.target_id, {
-                    attributes: ['id', 'title', 'content']
-                });
+        // 修复: 批量加载目标,避免 N+1 查询(按类型分组一次查完)
+        const reportsByType = {};
+        rows.forEach(r => {
+            if (!reportsByType[r.type]) reportsByType[r.type] = [];
+            reportsByType[r.type].push(r);
+        });
+
+        for (const [type, reports] of Object.entries(reportsByType)) {
+            const targetIds = reports.map(r => r.target_id);
+            let targets = [];
+            if (type === 'work') {
+                targets = await DbAdapter.findAll(Work, { where: { id: { [Op.in]: targetIds } }, attributes: ['id', 'name', 'preview'] });
+            } else if (type === 'comment') {
+                targets = await DbAdapter.findAll(Comment, { where: { id: { [Op.in]: targetIds } }, attributes: ['id', 'content', 'user_id'] });
+            } else if (type === 'post') {
+                targets = await DbAdapter.findAll(Post, { where: { id: { [Op.in]: targetIds } }, attributes: ['id', 'title', 'content'] });
+            } else if (type === 'user') {
+                targets = await DbAdapter.findAll(User, { where: { id: { [Op.in]: targetIds } }, attributes: ['id', 'username', 'nickname', 'avatar'] });
             }
+            const targetMap = new Map(targets.map(t => [DbAdapter.getId(t), t]));
+            reports.forEach(r => { r.dataValues.target = targetMap.get(r.target_id) || null; });
         }
 
         return paginateResponse(res, rows, count, page, pageSize);

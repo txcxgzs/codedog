@@ -461,6 +461,10 @@ async function syncUserWorks(codemaoUserId, localUserId) {
 async function logout(req, res) {
     try {
         clearTokenCookie(res);
+        // 修复: 登出时递增 token_version,使已签发的 JWT 全部失效(防泄漏Token重用)
+        if (req.user?.id) {
+            await DbAdapter.increment(User, { token_version: 1 }, { where: { id: DbAdapter.getId(req.user) } });
+        }
         return successResponse(res, null, '已登出');
     } catch (error) {
         console.error('登出错误:', error);
