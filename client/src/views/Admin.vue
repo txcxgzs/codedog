@@ -755,6 +755,9 @@
               <el-button type="success" @click="batchAIReview" :loading="batchAILoading" :disabled="selectedReports.length === 0">
                 <el-icon><Cpu /></el-icon> 批量AI审核 ({{ selectedReports.length }})
               </el-button>
+              <el-button type="primary" @click="showDuplicateReports" :loading="loadingDuplicates">
+                <el-icon><CopyDocument /></el-icon> 合并重复举报
+              </el-button>
               <el-button type="warning" @click="autoHandleByAI" :loading="autoHandleLoading" :disabled="reports.filter(r => r.aiResult && r.status === 'pending').length === 0">
                 一键按AI处理
               </el-button>
@@ -1820,7 +1823,6 @@
       </template>
     </el-dialog>
     
-    <!-- 举报处理对话框 -->
     <el-dialog v-model="reportDialogVisible" title="处理举报" width="600px">
       <el-form :model="reportForm" label-width="80px" v-if="editingReport">
         <el-form-item label="举报类型">
@@ -1883,7 +1885,38 @@
         <el-button type="primary" @click="handleProcessReport">提交处理</el-button>
       </template>
     </el-dialog>
-    
+
+    <!-- 重复举报合并对话框 -->
+    <el-dialog v-model="showDuplicateDialog" title="合并重复举报" width="700px">
+      <el-alert type="info" :closable="false" style="margin-bottom: 16px;">
+        以下举报为同一目标被多次举报，合并后将保留所有举报原因，处理时会通知所有举报人。
+      </el-alert>
+      <el-table :data="duplicateGroups" stripe max-height="400">
+        <el-table-column label="类型" width="80">
+          <template #default="{ row }">
+            <el-tag size="small">{{ row.type === 'work' ? '作品' : row.type === 'comment' ? '评论' : '用户' }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="target_id" label="目标ID" width="80" />
+        <el-table-column prop="count" label="举报数" width="80" />
+        <el-table-column label="举报原因" min-width="200">
+          <template #default="{ row }">
+            <div style="max-height: 60px; overflow: auto;">
+              <div v-for="(reason, i) in row.reasons" :key="i" style="font-size: 12px; color: #666;"># {{ reason }}</div>
+            </div>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="100" fixed="right">
+          <template #default="{ row }">
+            <el-button type="primary" size="small" @click="handleMergeDuplicates(row)">合并</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+      <div v-if="duplicateGroups.length === 0" style="text-align: center; padding: 40px; color: #999;">
+        暂无重复举报
+      </div>
+    </el-dialog>
+
     <!-- 角色修改对话框 -->
     <el-dialog v-model="roleDialogVisible" title="修改用户角色" width="400px">
       <el-form label-width="80px" v-if="editingUser">
@@ -2011,7 +2044,7 @@ import { useUserStore } from '@/stores/user'
 import { adminApi } from '@/api/admin'
 import request from '@/api/request'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { DataAnalysis, User, UserFilled, Document, Download, Search, Picture, ChatDotRound, Warning, Lock, Bell, Filter, Setting, List, Key, OfficeBuilding, Loading, Cpu, Postcard, Monitor, Check } from '@element-plus/icons-vue'
+import { DataAnalysis, User, UserFilled, Document, Download, Search, Picture, ChatDotRound, Warning, Lock, Bell, Filter, Setting, List, Key, OfficeBuilding, Loading, Cpu, Postcard, Monitor, Check, CopyDocument, Plus, Delete, View, ArrowLeft, CaretBottom, ArrowDown, Back, EditPen, Star, SwitchButton } from '@element-plus/icons-vue'
 import Posts from './admin/Posts.vue'
 
 const router = useRouter()
@@ -2124,10 +2157,28 @@ const quickAIReview = async (row) => {
 
 const batchAIReview = async () => {
   if (selectedReports.value.length === 0) return
+  // 修复: 统计已处理举报数量,询问是否排除,避免浪费 AI 资源
+  const processedCount = selectedReports.value.filter(r => r.status !== 'pending').length
+  let onlyPending = false
+  if (processedCount > 0) {
+    try {
+      await ElMessageBox.confirm(`已选择 ${selectedReports.value.length} 条举报，其中 ${processedCount} 条已处理。是否排除已处理举报，仅审核待处理？`, '确认', {
+        confirmButtonText: '排除已处理',
+        cancelButtonText: '全部审核',
+        type: 'warning'
+      })
+      onlyPending = true
+    } catch (e) {
+      // 用户选择"全部审核",继续处理所有
+    }
+  }
+  const targets = onlyPending
+    ? selectedReports.value.filter(r => r.status === 'pending')
+    : selectedReports.value
   batchAILoading.value = true
   let success = 0
   let fallbackCount = 0
-  for (const row of selectedReports.value) {
+  for (const row of targets) {
     try {
       const res = await adminApi.aiReviewReport(row.id)
       if (res.code === 200) {
@@ -2143,7 +2194,7 @@ const batchAIReview = async () => {
   if (fallbackCount > 0) {
     ElMessage.warning(`批量审核完成，${fallbackCount}条使用敏感词检测（AI未配置）`)
   } else {
-    ElMessage.success(`批量审核完成，成功 ${success}/${selectedReports.value.length}`)
+    ElMessage.success(`批量审核完成，成功 ${success}/${targets.length}`)
   }
 }
 
@@ -2223,6 +2274,47 @@ const runAIReview = async () => {
 }
 
 const reportStatusMap = { pending: 'warning', processing: 'primary', resolved: 'success', rejected: 'danger' }
+
+// 重复举报
+const duplicateGroups = ref([])
+const showDuplicateDialog = ref(false)
+const loadingDuplicates = ref(false)
+const selectedDuplicateGroup = ref(null)
+
+const showDuplicateReports = async () => {
+  loadingDuplicates.value = true
+  try {
+    const res = await adminApi.getDuplicateReportGroups()
+    if (res.code === 200) {
+      duplicateGroups.value = res.data.groups || []
+      showDuplicateDialog.value = true
+    }
+  } catch (e) {
+    ElMessage.error('获取重复举报失败')
+  } finally {
+    loadingDuplicates.value = false
+  }
+}
+
+const handleMergeDuplicates = async (group) => {
+  try {
+    await ElMessageBox.confirm(
+      `确定合并这 ${group.count} 条举报吗？合并后将保留所有举报原因，处理时会通知所有举报人。`,
+      '确认合并',
+      { type: 'warning' }
+    )
+    const res = await adminApi.mergeReports(group.reportIds)
+    if (res.code === 200) {
+      ElMessage.success(res.msg || '合并成功')
+      showDuplicateDialog.value = false
+      fetchReports()
+    } else {
+      ElMessage.error(res.msg || '合并失败')
+    }
+  } catch (e) {
+    if (e !== 'cancel') ElMessage.error('合并失败')
+  }
+}
 const reportStatusText = { pending: '待处理', processing: '处理中', resolved: '已解决', rejected: '已驳回' }
 
 const crawlWorkId = ref('')

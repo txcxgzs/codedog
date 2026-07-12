@@ -222,11 +222,13 @@ const Report = sequelize.define('Report', {
     reporter_id: { type: DataTypes.INTEGER, allowNull: false },
     reason: { type: DataTypes.STRING(200), allowNull: false },
     description: { type: DataTypes.TEXT },
-    // M7: status 改为 ENUM，覆盖 controller 实际使用的 pending/resolved/rejected，预留 processing
-    status: { type: DataTypes.ENUM('pending', 'processing', 'resolved', 'rejected'), defaultValue: 'pending' },
+    // M7: status 改为 ENUM，覆盖 controller 实际使用的 pending/resolved/rejected，预留 merged
+    status: { type: DataTypes.ENUM('pending', 'processing', 'resolved', 'rejected', 'merged'), defaultValue: 'pending' },
     handler_id: { type: DataTypes.INTEGER },
     handle_note: { type: DataTypes.TEXT },
-    ai_result: { type: DataTypes.TEXT }
+    ai_result: { type: DataTypes.TEXT },
+    // 修复: 合并重复举报时记录被合并的举报ID列表,用于通知所有举报人
+    merged_from_ids: { type: DataTypes.STRING(200), allowNull: true, defaultValue: null }
 }, Object.assign({
     tableName: 'reports',
     // M21: 举报按 status/reporter_id 高频查询

@@ -2206,6 +2206,10 @@ async function getReports(req, res) {
         const where = {};
         if (type) where.type = type;
         if (status) where.status = status;
+        // 修复: 默认排除已合并的举报,避免干扰正常列表
+        if (!status) {
+            where.status = { [Op.ne]: 'merged' };
+        }
 
         const { count, rows } = await DbAdapter.findAndCountAll(Report, {
             where,
@@ -2481,17 +2485,45 @@ async function handleReport(req, res) {
         // 发送举报处理结果通知给举报者
         const { Notification } = require('../models');
         const statusText = status === 'resolved' ? '已处理' : (status === 'rejected' ? '已驳回' : '处理中');
-        try {
-            await DbAdapter.create(Notification, {
-                user_id: report.reporter_id,
-                type: 'system',
-                title: `举报${statusText}`,
-                content: `您举报的${typeNames[report.type]}「${targetName}」${statusText}，${handleNote ? '处理说明：' + handleNote : ''}`,
-                related_id: linkId,
-                related_type: linkType
+        // 修复: 收集所有需要通知的举报人(本人 + 合并来的 + 重复举报同一目标的)
+        const notifyReporterIds = new Set([report.reporter_id]);
+
+        // 1. 合并来的举报人(merged_from_ids)
+        if (report.merged_from_ids) {
+            const mergedIds = report.merged_from_ids.split(',').filter(Boolean);
+            const mergedReports = await DbAdapter.findAll(Report, {
+                where: { id: { [Op.in]: mergedIds } },
+                attributes: ['reporter_id']
             });
-        } catch (notifyErr) {
-            console.error('发送举报处理通知失败:', notifyErr.message);
+            mergedReports.forEach(r => notifyReporterIds.add(r.reporter_id));
+        }
+
+        // 2. 查找同一目标的其他举报人(重复举报)
+        const duplicateReports = await DbAdapter.findAll(Report, {
+            where: {
+                type: report.type,
+                target_id: report.target_id,
+                id: { [Op.ne]: report.id },
+                status: { [Op.ne]: 'merged' }
+            },
+            attributes: ['reporter_id']
+        });
+        duplicateReports.forEach(r => notifyReporterIds.add(r.reporter_id));
+
+        // 3. 通知所有举报人
+        for (const reporterId of notifyReporterIds) {
+            try {
+                await DbAdapter.create(Notification, {
+                    user_id: reporterId,
+                    type: 'system',
+                    title: `举报${statusText}`,
+                    content: `您举报的${typeNames[report.type]}「${targetName}」${statusText}，${handleNote ? '处理说明：' + handleNote : ''}`,
+                    related_id: linkId,
+                    related_type: linkType
+                });
+            } catch (notifyErr) {
+                console.error(`发送举报处理通知给用户 ${reporterId} 失败:`, notifyErr.message);
+            }
         }
 
         // 如果采取了行动，通知被处理的用户
@@ -2514,6 +2546,121 @@ async function handleReport(req, res) {
     } catch (error) {
         console.error('处理举报错误:', error);
         return errorResponse(res, '处理失败', 500);
+    }
+}
+
+/**
+ * 获取重复举报分组
+ * 找出同一目标(type+target_id)被多次举报的待处理举报组
+ * 每组包含合并后的原因、举报人数、所有举报ID
+ */
+async function getDuplicateReportGroups(req, res) {
+    try {
+        const { type } = req.query;
+        const where = { status: 'pending' };
+        if (type) where.type = type;
+
+        const reports = await DbAdapter.findAll(Report, {
+            where,
+            attributes: ['id', 'type', 'target_id', 'reason', 'reporter_id', 'created_at'],
+            order: [['target_id', 'ASC'], ['created_at', 'ASC']]
+        });
+
+        // 按 type + target_id 分组
+        const groups = {};
+        for (const r of reports) {
+            const key = `${r.type}:${r.target_id}`;
+            if (!groups[key]) {
+                groups[key] = {
+                    type: r.type,
+                    target_id: r.target_id,
+                    reportIds: [],
+                    reasons: [],
+                    reporterIds: [],
+                    count: 0,
+                    earliest: r.created_at
+                };
+            }
+            groups[key].reportIds.push(r.id);
+            groups[key].reasons.push(r.reason);
+            groups[key].reporterIds.push(r.reporter_id);
+            groups[key].count++;
+            if (r.created_at < groups[key].earliest) groups[key].earliest = r.created_at;
+        }
+
+        // 只保留 count > 1 的组,按数量降序
+        const duplicates = Object.values(groups)
+            .filter(g => g.count > 1)
+            .sort((a, b) => b.count - a.count);
+
+        return successResponse(res, { groups: duplicates, total: duplicates.length });
+    } catch (error) {
+        console.error('获取重复举报错误:', error);
+        return errorResponse(res, '获取失败', 500);
+    }
+}
+
+/**
+ * 合并重复举报
+ * 将同一目标的多条待处理举报合并为一条,保留所有原因和举报人
+ * 合并后只保留主报告,其余标记为已合并(merged)
+ */
+async function mergeReports(req, res) {
+    try {
+        const { reportIds } = req.body;
+        if (!Array.isArray(reportIds) || reportIds.length < 2) {
+            return errorResponse(res, '至少选择2条举报才能合并', 400);
+        }
+
+        const reports = await DbAdapter.findAll(Report, {
+            where: { id: { [Op.in]: reportIds }, status: 'pending' }
+        });
+
+        if (reports.length < 2) {
+            return errorResponse(res, '所选举报不足2条待处理', 400);
+        }
+
+        // 验证所有报告都是同一目标
+        const firstTarget = `${reports[0].type}:${reports[0].target_id}`;
+        if (!reports.every(r => `${r.type}:${r.target_id}` === firstTarget)) {
+            return errorResponse(res, '只能合并同一目标的举报', 400);
+        }
+
+        // 以最早创建的为主报告
+        const primary = reports.reduce((a, b) => a.created_at < b.created_at ? a : b);
+        const others = reports.filter(r => r.id !== primary.id);
+
+        // 合并所有原因(去重)
+        const allReasons = [...new Set(reports.map(r => r.reason).filter(Boolean))];
+        const mergedReason = allReasons.length > 0
+            ? `[合并${reports.length}条] ${allReasons.join(' | ')}`
+            : primary.reason;
+
+        // 在主报告的 handle_note 中记录合并信息
+        const mergeInfo = `\n[${new Date().toISOString()}] 合并了 ${reports.length} 条举报,举报人: ${[...new Set(reports.map(r => r.reporter_id))].join(',')}`;
+
+        await DbAdapter.update(Report, {
+            reason: mergedReason,
+            handle_note: (primary.handle_note || '') + mergeInfo,
+            // 修复: 用 merged_from_ids 字段记录所有被合并的举报ID,便于后续通知所有举报人
+            merged_from_ids: others.map(r => r.id).join(',')
+        }, { where: { id: primary.id } });
+
+        // 将其他报告标记为已合并
+        await DbAdapter.update(Report, {
+            status: 'merged',
+            handle_note: `已合并到举报 #${primary.id}`
+        }, { where: { id: { [Op.in]: others.map(r => r.id) } } });
+
+        logOperation(req, 'merge_reports', 'report', primary.id, {
+            mergedCount: reports.length,
+            reportIds
+        });
+
+        return successResponse(res, { primaryId: primary.id, mergedCount: reports.length }, `已合并 ${reports.length} 条举报`);
+    } catch (error) {
+        console.error('合并举报错误:', error);
+        return errorResponse(res, '合并失败', 500);
     }
 }
 
@@ -4384,6 +4531,8 @@ module.exports = {
     sendUserNotification,
     sendBatchNotifications,
     sendAllUsersNotification,
+    getDuplicateReportGroups,
+    mergeReports,
     updateStudioPoints,
     setWorkScore,
     updateUserLevel,

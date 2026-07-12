@@ -85,6 +85,9 @@ router.delete('/banners/:bannerId', requirePermission('banner:delete'), adminCon
  */
 router.get('/reports', requirePermission('report:view'), adminController.getReports);
 router.put('/reports/:reportId', requirePermission('report:handle'), adminController.handleReport);
+// 修复: 重复举报检测与合并
+router.get('/reports/duplicates', requirePermission('report:view'), adminController.getDuplicateReportGroups);
+router.post('/reports/merge', requirePermission('report:handle'), adminController.mergeReports);
 
 /**
  * IP封禁管理

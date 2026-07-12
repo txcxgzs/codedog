@@ -298,6 +298,24 @@ export const adminApi = {
   },
 
   /**
+   * 获取重复举报分组
+   * @param {string} type - 类型过滤(可选)
+   */
+  getDuplicateReportGroups(type) {
+    const params = {};
+    if (type) params.type = type;
+    return request.get('/admin/reports/duplicates', { params })
+  },
+
+  /**
+   * 合并重复举报
+   * @param {number[]} reportIds - 要合并的举报ID列表
+   */
+  mergeReports(reportIds) {
+    return request.post('/admin/reports/merge', { reportIds })
+  },
+
+  /**
    * 获取实时日志
    * @param {string} lastTime - 上次最后一条日志时间(ISO)
    * @param {number} limit - 返回条数上限
