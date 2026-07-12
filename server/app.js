@@ -373,6 +373,14 @@ async function startServer() {
         console.log('Database models synchronized.');
 
         try {
+            const proxyService = require('./services/proxyService');
+            await proxyService.loadConfig();
+            console.log(`[代理] 配置已加载, 启用=${proxyService.enabled}, 池=${proxyService.poolUrl || '无'}`);
+        } catch (e) {
+            console.warn('[代理] 配置加载失败:', e.message);
+        }
+
+        try {
             const { Post } = require('./models');
             const [updated] = await Post.update({ status: 'published' }, { where: { status: 'active' } });
             if (updated > 0) console.log(`迁移完成：${updated} 条帖子状态从 active 更新为 published`);

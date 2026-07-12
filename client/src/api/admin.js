@@ -174,6 +174,22 @@ export const adminApi = {
   getReportAuditLogs(reportId) {
     return request.get(`/admin/reports/${reportId}/audit-logs`)
   },
+
+  getProxyConfig() {
+    return request.get('/admin/proxy/config')
+  },
+
+  updateProxyConfig(data) {
+    return request.post('/admin/proxy/config', data)
+  },
+
+  testProxy(proxyUrl) {
+    return request.post('/admin/proxy/test', proxyUrl ? { proxyUrl } : {})
+  },
+
+  refreshProxy() {
+    return request.post('/admin/proxy/refresh')
+  },
   
   /**
    * IP封禁管理

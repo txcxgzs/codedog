@@ -88,6 +88,12 @@ router.delete('/banners/:bannerId', requirePermission('banner:delete'), adminCon
 router.get('/reports', requirePermission('report:view'), adminController.getReports);
 router.put('/reports/:reportId', requirePermission('report:handle'), adminController.handleReport);
 router.get('/reports/:reportId/audit-logs', requirePermission('report:view'), adminController.getReportAuditLogs);
+
+// 代理管理
+router.get('/proxy/config', requireRole('superadmin'), adminController.getProxyConfig);
+router.post('/proxy/config', requireRole('superadmin'), adminController.updateProxyConfig);
+router.post('/proxy/test', requireRole('superadmin'), adminController.testProxy);
+router.post('/proxy/refresh', requireRole('superadmin'), adminController.refreshProxy);
 // 修复: 重复举报检测与合并
 router.get('/reports/duplicates', requirePermission('report:view'), adminController.getDuplicateReportGroups);
 router.post('/reports/merge', requirePermission('report:handle'), adminController.mergeReports);

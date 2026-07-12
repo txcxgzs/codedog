@@ -1416,6 +1416,49 @@
               </el-form>
             </div>
 
+            <!-- 代理管理 -->
+            <div class="r-admin--config_section" id="config-proxy">
+              <div class="r-admin--config_section_title">
+                <span class="r-admin--config_section_icon">🌐</span>
+                <span>代理管理</span>
+                <el-switch v-model="proxyConfig.enabled" active-text="开启" inactive-text="关闭" class="r-admin--config_section_switch" @change="saveProxyConfig" />
+              </div>
+              <el-form label-width="100px" class="r-admin--config_form">
+                <el-form-item label="代理池API">
+                  <el-input v-model="proxyConfig.poolUrl" placeholder="https://proxy-pool.example.com/api/get?count=10" clearable />
+                  <div style="font-size: 12px; color: #909399; margin-top: 4px; line-height: 1.4;">代理池返回JSON, 支持数组、<code style="background:#f5f7fa;padding:0 4px;border-radius:3px;">data</code>、<code style="background:#f5f7fa;padding:0 4px;border-radius:3px;">proxies</code> 字段, 每项为 <code style="background:#f5f7fa;padding:0 4px;border-radius:3px;">ip:port</code> 或完整代理URL</div>
+                </el-form-item>
+                <div style="display: flex; gap: 8px; margin-bottom: 16px;">
+                  <el-button type="primary" @click="refreshProxy" :loading="proxyLoading">🔄 抓取并测试代理</el-button>
+                  <el-button @click="testProxy" :loading="proxyTestLoading">🧪 测试当前代理</el-button>
+                  <el-button @click="saveProxyConfig">💾 保存配置</el-button>
+                </div>
+                <div v-if="proxyTestResult" style="margin-bottom: 8px;">
+                  <el-tag :type="proxyTestResult.ok ? 'success' : 'danger'" style="margin-right: 8px;">
+                    {{ proxyTestResult.ok ? '可用' : '不可用' }}
+                  </el-tag>
+                  <span v-if="proxyTestResult.proxy || proxyTestResult.currentProxy" style="font-size: 13px; color: #606266; margin-right: 12px;">
+                    代理: {{ proxyTestResult.proxy || proxyTestResult.currentProxy }}
+                  </span>
+                  <span v-if="proxyTestResult.latency" style="font-size: 13px; color: #606266;">
+                    延迟: {{ proxyTestResult.latency }}ms
+                  </span>
+                  <span v-if="proxyTestResult.error" style="font-size: 13px; color: #f56c6c; margin-left: 8px;">
+                    {{ proxyTestResult.error }}
+                  </span>
+                </div>
+                <el-descriptions v-if="proxyConfig.enabled || proxyConfig.poolUrl" :column="3" border size="small">
+                  <el-descriptions-item label="状态">
+                    <el-tag :type="proxyConfig.enabled ? 'success' : 'info'" size="small">
+                      {{ proxyConfig.enabled ? '已启用' : '已禁用' }}
+                    </el-tag>
+                  </el-descriptions-item>
+                  <el-descriptions-item label="当前代理">{{ proxyConfig.currentProxy || '未获取' }}</el-descriptions-item>
+                  <el-descriptions-item label="可用数量">{{ proxyConfig.cacheCount || 0 }}</el-descriptions-item>
+                </el-descriptions>
+              </el-form>
+            </div>
+
             <!-- 敏感词检测 -->
             <div class="r-admin--config_section" id="config-sensitive">
               <div class="r-admin--config_section_title">
@@ -2242,6 +2285,10 @@ const auditLogsLoaded = ref(false)
 const selectedReports = ref([])
 const batchAILoading = ref(false)
 const autoHandleLoading = ref(false)
+const proxyConfig = ref({ enabled: false, poolUrl: '', currentProxy: '', cacheCount: 0 })
+const proxyLoading = ref(false)
+const proxyTestLoading = ref(false)
+const proxyTestResult = ref(null)
 
 const handleReportSelection = (selection) => {
   selectedReports.value = selection
@@ -3577,6 +3624,47 @@ const renderChart = (data) => {
 }
 
 const searchUsers = () => { userPage.value = 1; fetchUsers() }
+
+const loadProxyConfig = async () => {
+  try {
+    const res = await adminApi.getProxyConfig()
+    if (res.code === 200) proxyConfig.value = { ...proxyConfig.value, ...res.data }
+  } catch (_) {}
+}
+const saveProxyConfig = async () => {
+  try {
+    await adminApi.updateProxyConfig({ enabled: proxyConfig.value.enabled, poolUrl: proxyConfig.value.poolUrl })
+    ElMessage.success('代理配置已保存')
+    await loadProxyConfig()
+  } catch (_) { ElMessage.error('保存失败') }
+}
+const testProxy = async () => {
+  proxyTestLoading.value = true
+  proxyTestResult.value = null
+  try {
+    const res = await adminApi.testProxy(proxyConfig.value.currentProxy)
+    if (res.code === 200) {
+      proxyTestResult.value = res.data
+      if (res.data.ok) ElMessage.success(`代理可用 ${res.data.latency}ms`)
+      else ElMessage.warning('代理不可用')
+    }
+  } catch (_) { ElMessage.error('测试失败') }
+  finally { proxyTestLoading.value = false }
+}
+const refreshProxy = async () => {
+  if (!proxyConfig.value.poolUrl) { ElMessage.warning('请先填写代理池API地址'); return }
+  proxyLoading.value = true
+  proxyTestResult.value = null
+  try {
+    const res = await adminApi.refreshProxy()
+    if (res.code === 200) {
+      proxyTestResult.value = res.data
+      await loadProxyConfig()
+      ElMessage.success(`已获取代理: ${res.data.host}:${res.data.port}`)
+    } else { ElMessage.error(res.msg || '抓取失败') }
+  } catch (_) { ElMessage.error('抓取失败') }
+  finally { proxyLoading.value = false }
+}
 const fetchUsers = async () => {
   loadingUsers.value = true
   try {
@@ -4451,6 +4539,7 @@ onMounted(() => {
   }
   fetchStats()
   fetchTrends()
+  loadProxyConfig()
   if (userStore.user?.role === 'superadmin') {
     fetchRoles()
     fetchAdminUsers()

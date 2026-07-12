@@ -25,21 +25,27 @@ const DEFAULT_HEADERS = {
 
 /**
  * 获取代理配置
- * 支持环境变量配置: HTTP_PROXY, HTTPS_PROXY, ALL_PROXY
- * 也支持数据库配置: proxy_url
+ * 优先级: proxyService(DB配置) > 环境变量
  */
 function getProxyAgent() {
+    // 优先使用后台代理管理
+    try {
+        const proxyService = require('./proxyService');
+        if (proxyService && proxyService.enabled) {
+            const agent = proxyService.getAxiosConfig({}).httpsAgent;
+            if (agent) return agent;
+        }
+    } catch (_) { /* proxyService 不可用 */ }
+
     const proxyUrl = process.env.HTTPS_PROXY || process.env.HTTP_PROXY || process.env.ALL_PROXY;
-    
+
     if (!proxyUrl) {
         return undefined;
     }
 
-    // 修复：脱敏代理 URL 中的凭据（用户名/密码），避免日志泄露敏感信息
-    // 形如 http://user:pass@host:port → http://user:***@host:port
     const safeProxy = proxyUrl.replace(/\/\/([^:/?#]+):([^@/?#]+)@/, '//$1:***@');
-    console.log('[代理] 使用代理:', safeProxy);
-    
+    console.log('[代理] 使用环境变量代理:', safeProxy);
+
     if (proxyUrl.startsWith('socks4://') || proxyUrl.startsWith('socks5://')) {
         return new SocksProxyAgent(proxyUrl);
     } else {
@@ -174,22 +180,14 @@ const codemaoApi = {
     async login(identity, password) {
         try {
             console.log('[编程猫] 尝试登录');
-            
-            const proxyAgent = getProxyAgent();
-            const config = {
-                timeout: 15000,
-                headers: DEFAULT_HEADERS,
-                ...(proxyAgent && { httpsAgent: proxyAgent, proxy: false })
-            };
-            
+
+            const baseConfig = { timeout: 15000, headers: DEFAULT_HEADERS };
+            const axiosConfig = proxyService.getAxiosConfig(baseConfig);
+
             const response = await axios.post(
                 `${CODEMAO_BASE_URL}/tiger/v3/web/accounts/login`,
-                {
-                    pid: CODEMAO_PID,
-                    identity,
-                    password
-                },
-                config
+                { pid: CODEMAO_PID, identity, password },
+                axiosConfig
             );
             
             console.log('[编程猫] 登录成功');

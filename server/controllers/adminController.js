@@ -16,6 +16,7 @@ const DbAdapter = require('../utils/dbAdapter');
 const { likeContains } = require('../utils/security');
 // H12: 引入内容审核服务，爬虫/管理员落库前对 nickname/bio/作品名+描述 做敏感词检查
 const aiReview = require('../services/aiReview');
+const proxyService = require('../services/proxyService');
 const { safeLog } = require('../utils/safeLog');
 // 修复: token 写 httpOnly cookie 防止 XSS 偷
 const { setTokenCookie } = require('../middleware/auth');
@@ -2803,6 +2804,70 @@ async function getReportAuditLogs(req, res) {
 }
 
 /**
+ * 获取代理配置
+ */
+async function getProxyConfig(req, res) {
+    await proxyService.loadConfig();
+    return successResponse(res, {
+        enabled: proxyService.enabled,
+        poolUrl: proxyService.poolUrl,
+        currentProxy: proxyService.currentProxy ? proxyService.currentProxy.url : null,
+        cacheCount: proxyService._cache.length
+    });
+}
+
+/**
+ * 更新代理配置
+ */
+async function updateProxyConfig(req, res) {
+    try {
+        const { enabled, poolUrl } = req.body;
+        if (enabled !== undefined) await proxyService.setEnabled(!!enabled);
+        if (poolUrl !== undefined) await proxyService.setPoolUrl(poolUrl);
+        await proxyService.loadConfig();
+        return successResponse(res, {
+            enabled: proxyService.enabled,
+            poolUrl: proxyService.poolUrl
+        }, '代理配置已更新');
+    } catch (error) {
+        console.error('更新代理配置错误:', error);
+        return errorResponse(res, '更新失败: ' + error.message, 500);
+    }
+}
+
+/**
+ * 测试代理
+ */
+async function testProxy(req, res) {
+    try {
+        const { proxyUrl } = req.body;
+        if (!proxyUrl) {
+            const result = await proxyService.testCurrentProxy();
+            return successResponse(res, result);
+        }
+        const result = await proxyService.testProxy(proxyUrl);
+        return successResponse(res, { proxyUrl, ...result });
+    } catch (error) {
+        console.error('代理测试错误:', error);
+        return errorResponse(res, '测试失败: ' + error.message, 500);
+    }
+}
+
+/**
+ * 从代理池刷新
+ */
+async function refreshProxy(req, res) {
+    try {
+        const result = await proxyService.refreshFromPool();
+        await proxyService.loadConfig();
+        return successResponse(res, result, `已刷新代理: ${result.host}:${result.port}`);
+    } catch (error) {
+        console.error('代理刷新错误:', error);
+        return errorResponse(res, '刷新失败: ' + error.message, 500);
+    }
+}
+
+/**
  * 获取IP封禁列表
  */
 async function getIpBans(req, res) {
@@ -3151,7 +3216,8 @@ async function updateSystemConfig(req, res) {
             'sensitive_check_mode',
             'sensitive_api_enabled', 'sensitive_api_url', 'sensitive_api_key',
             'db_type', 'db_path', 'db_host', 'db_port', 'db_name', 'db_user', 'db_password',
-            'mysql_host', 'mysql_port', 'mysql_database', 'mysql_username', 'mysql_password'
+            'mysql_host', 'mysql_port', 'mysql_database', 'mysql_username', 'mysql_password',
+            'proxy_enabled', 'proxy_pool_url', 'proxy_current'
         ];
         if (!ALLOWED_CONFIG_KEYS.includes(key)) {
             return errorResponse(res, `不支持的配置项: ${key}`, 400);
@@ -3219,7 +3285,8 @@ async function batchUpdateConfigs(req, res) {
             'sensitive_check_mode',
             'sensitive_api_enabled', 'sensitive_api_url', 'sensitive_api_key',
             'db_type', 'db_path', 'db_host', 'db_port', 'db_name', 'db_user', 'db_password',
-            'mysql_host', 'mysql_port', 'mysql_database', 'mysql_username', 'mysql_password'
+            'mysql_host', 'mysql_port', 'mysql_database', 'mysql_username', 'mysql_password',
+            'proxy_enabled', 'proxy_pool_url', 'proxy_current'
         ];
         const maskedValues = ['******', '***'];
         const sensitiveKeys = ['ai_api_key', 'hcaptcha_secret_key', 'geetest_key', 'sensitive_api_key', 'mysql_password', 'db_password'];
@@ -4730,6 +4797,10 @@ module.exports = {
     getReports,
     handleReport,
     getReportAuditLogs,
+    getProxyConfig,
+    updateProxyConfig,
+    testProxy,
+    refreshProxy,
     getIpBans,
     addIpBan,
     removeIpBan,
