@@ -2321,19 +2321,27 @@ async function getReports(req, res) {
         });
 
         for (const [type, reports] of Object.entries(reportsByType)) {
-            const targetIds = reports.map(r => r.target_id);
+            const targetIds = reports.map(r => Number(r.target_id)).filter(id => !isNaN(id) && id > 0);
+            if (targetIds.length === 0) continue;
             let targets = [];
-            if (type === 'work') {
-                targets = await DbAdapter.findAll(Work, { where: { id: { [Op.in]: targetIds } }, attributes: ['id', 'name', 'preview', 'user_id'] });
-            } else if (type === 'comment') {
-                targets = await DbAdapter.findAll(Comment, { where: { id: { [Op.in]: targetIds } }, attributes: ['id', 'content', 'user_id'] });
-            } else if (type === 'post') {
-                targets = await DbAdapter.findAll(Post, { where: { id: { [Op.in]: targetIds } }, attributes: ['id', 'title', 'content'] });
-            } else if (type === 'user') {
-                targets = await DbAdapter.findAll(User, { where: { id: { [Op.in]: targetIds } }, attributes: ['id', 'username', 'nickname', 'avatar', 'codemao_user_id'] });
+            try {
+                if (type === 'work') {
+                    targets = await DbAdapter.findAll(Work, { where: { id: { [Op.in]: targetIds } }, attributes: ['id', 'name', 'preview', 'user_id'] });
+                } else if (type === 'comment') {
+                    targets = await DbAdapter.findAll(Comment, { where: { id: { [Op.in]: targetIds } }, attributes: ['id', 'content', 'user_id'] });
+                } else if (type === 'post') {
+                    targets = await DbAdapter.findAll(Post, { where: { id: { [Op.in]: targetIds } }, attributes: ['id', 'title', 'content', 'status'] });
+                } else if (type === 'user') {
+                    targets = await DbAdapter.findAll(User, { where: { id: { [Op.in]: targetIds } }, attributes: ['id', 'username', 'nickname', 'avatar', 'codemao_user_id'] });
+                }
+            } catch (loadErr) {
+                console.error(`加载 ${type} 目标失败(load targets):`, loadErr.message);
             }
-            const targetMap = new Map(targets.map(t => [DbAdapter.getId(t), t]));
-            reports.forEach(r => { r.dataValues.target = targetMap.get(r.target_id) || null; });
+            const targetMap = new Map(targets.map(t => [Number(DbAdapter.getId(t)), t]));
+            reports.forEach(r => {
+                const tid = Number(r.target_id);
+                r.dataValues.target = targetMap.get(tid) || null;
+            });
         }
 
         return paginateResponse(res, rows, count, page, pageSize);
@@ -3621,9 +3629,13 @@ async function aiAutoHandleReports(req, res) {
                         actualContent = `## 被举报内容\n${comment.content || ''}`;
                     }
                 } else if (report.type === 'post') {
-                    const post = await DbAdapter.findByPk(Post, report.target_id, { attributes: ['title', 'content', 'status'] });
+                    const post = await DbAdapter.findByPk(Post, Number(report.target_id), { attributes: ['title', 'content', 'status'] });
                     if (post && post.status !== 'deleted') {
-                        actualContent = `## 被举报内容\n帖子标题: ${post.title || ''}\n帖子内容: ${post.content || ''}`;
+                        actualContent = `## 被举报内容\n帖子标题: ${post.title || '(无标题)'}\n帖子内容: ${post.content || '(无内容)'}`;
+                    } else if (post && post.status === 'deleted') {
+                        actualContent = `## 被举报内容\n帖子已被删除`;
+                    } else {
+                        actualContent = `## 被举报内容\n帖子不存在(可能已清理)`;
                     }
                 } else if (report.type === 'user') {
                     const targetUser = await DbAdapter.findByPk(User, report.target_id, { attributes: ['nickname', 'bio', 'status'] });
