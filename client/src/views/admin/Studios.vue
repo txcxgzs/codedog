@@ -84,8 +84,8 @@
               </el-table-column>
               <el-table-column label="角色" width="100">
                 <template #default="{ row }">
-                  <el-tag size="small" :type="row.memberRole === 'owner' ? 'danger' : row.memberRole === 'admin' ? 'warning' : 'info'">
-                    {{ { owner: '创建者', admin: '管理员', member: '成员' }[row.memberRole] }}
+                  <el-tag size="small" :type="row.memberRole === 'owner' ? 'danger' : row.memberRole === 'vice_owner' ? 'success' : row.memberRole === 'admin' ? 'warning' : 'info'">
+                    {{ { owner: '创建者', vice_owner: '副室长', admin: '管理员', member: '成员' }[row.memberRole] || row.memberRole }}
                   </el-tag>
                 </template>
               </el-table-column>
