@@ -3918,9 +3918,10 @@ async function resetRolePermissions(req, res) {
 
 async function getCaptchaStats(req, res) {
     try {
-        const { days = 7 } = req.query;
+        // 修复: days 边界校验,防止无效值或过大值
+        const days = Math.min(Math.max(parseInt(req.query.days) || 7, 1), 90);
         const startDate = new Date();
-        startDate.setDate(startDate.getDate() - parseInt(days));
+        startDate.setDate(startDate.getDate() - days);
         
         const stats = await DbAdapter.findAll(CaptchaStats, {
             where: {
