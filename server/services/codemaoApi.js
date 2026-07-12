@@ -10,6 +10,7 @@ const { SocksProxyAgent } = require('socks-proxy-agent');
 
 const CODEMAO_BASE_URL = 'https://api.codemao.cn';
 const CODEMAO_PID = '65edCTyg';
+const proxyService = require('./proxyService');
 
 /**
  * 默认请求头，模拟正常浏览器请求
@@ -28,14 +29,10 @@ const DEFAULT_HEADERS = {
  * 优先级: proxyService(DB配置) > 环境变量
  */
 function getProxyAgent() {
-    // 优先使用后台代理管理
-    try {
-        const proxyService = require('./proxyService');
-        if (proxyService && proxyService.enabled) {
-            const agent = proxyService.getAxiosConfig({}).httpsAgent;
-            if (agent) return agent;
-        }
-    } catch (_) { /* proxyService 不可用 */ }
+    if (proxyService && proxyService.enabled) {
+        const agent = proxyService.getAxiosConfig({}).httpsAgent;
+        if (agent) return agent;
+    }
 
     const proxyUrl = process.env.HTTPS_PROXY || process.env.HTTP_PROXY || process.env.ALL_PROXY;
 

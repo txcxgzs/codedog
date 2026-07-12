@@ -95,7 +95,12 @@ class ProxyService {
         let data = res.data;
 
         if (typeof data === 'string') {
-            data = JSON.parse(data);
+            try {
+                data = JSON.parse(data);
+            } catch {
+                // JSON解析失败,按行分割解析纯文本格式(每行一个代理)
+                data = data.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('#'));
+            }
         }
 
         let proxies = [];
