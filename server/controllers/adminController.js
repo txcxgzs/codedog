@@ -555,8 +555,8 @@ async function impersonateUser(req, res) {
 
         logOperation(req, 'impersonate_user', 'user', userId);
 
+        // 修复: httpOnly cookie 模式下不再返回 token,前端通过 cookie 恢复身份
         return successResponse(res, {
-            token,
             user: {
                 id: user.id,
                 username: user.username,
@@ -646,8 +646,8 @@ async function restoreFromImpersonate(req, res) {
         setTokenCookie(res, newToken);
         logOperation(req, 'restore_from_impersonate', 'user', DbAdapter.getId(req.user));
 
+        // 修复: httpOnly cookie 模式下不再返回 token
         return successResponse(res, {
-            token: newToken,
             user: {
                 id: adminUser.id,
                 username: adminUser.username,
@@ -2332,6 +2332,18 @@ async function handleReport(req, res) {
             return errorResponse(res, '举报不存在', 404);
         }
 
+        // 修复: 在删除其他举报之前,先从 merged_from_ids 收集所有需要通知的举报人
+        // 否则 takeAction 删除同目标举报后,merged_from_ids 指向的记录已不存在,合并来源举报人收不到通知
+        const mergedReporterIds = new Set();
+        if (report.merged_from_ids) {
+            const mergedIds = report.merged_from_ids.split(',').filter(Boolean);
+            const mergedReports = await DbAdapter.findAll(Report, {
+                where: { id: { [Op.in]: mergedIds } },
+                attributes: ['reporter_id']
+            });
+            mergedReports.forEach(r => mergedReporterIds.add(r.reporter_id));
+        }
+
         // Bug-7: 先执行 takeAction 逻辑（含权限校验），失败/无权时直接返回，不更新举报状态
         // 此前 status update 在最前面执行,若 takeAction 失败或权限被拒会导致举报已标记 resolved 但未实际处理
         let targetOwnerId = null;
@@ -2542,17 +2554,8 @@ async function handleReport(req, res) {
         const { Notification } = require('../models');
         const statusText = status === 'resolved' ? '已处理' : (status === 'rejected' ? '已驳回' : '处理中');
         // 修复: 仅通知主举报人 + 合并来源的举报人;不通知同目标其他独立 pending 举报人(避免状态不一致)
-        const notifyReporterIds = new Set([report.reporter_id]);
-
-        // 合并来的举报人(merged_from_ids)
-        if (report.merged_from_ids) {
-            const mergedIds = report.merged_from_ids.split(',').filter(Boolean);
-            const mergedReports = await DbAdapter.findAll(Report, {
-                where: { id: { [Op.in]: mergedIds } },
-                attributes: ['reporter_id']
-            });
-            mergedReports.forEach(r => notifyReporterIds.add(r.reporter_id));
-        }
+        // mergedReporterIds 已在 takeAction 删除其他举报之前收集,确保通知不丢失
+        const notifyReporterIds = new Set([report.reporter_id, ...mergedReporterIds]);
 
         // 通知所有需通知的举报人(主举报人 + 合并来源)
         for (const reporterId of notifyReporterIds) {
@@ -2683,18 +2686,20 @@ async function mergeReports(req, res) {
         // 在主报告的 handle_note 中记录合并信息
         const mergeInfo = `\n[${new Date().toISOString()}] 合并了 ${reports.length} 条举报,举报人: ${[...new Set(reports.map(r => r.reporter_id))].join(',')}`;
 
-        await DbAdapter.update(Report, {
-            reason: mergedReason,
-            handle_note: (primary.handle_note || '') + mergeInfo,
-            // 修复: 用 merged_from_ids 字段记录所有被合并的举报ID,便于后续通知所有举报人
-            merged_from_ids: others.map(r => r.id).join(',')
-        }, { where: { id: primary.id } });
+        // 修复: 整个合并过程放入事务,避免半合并状态
+        await sequelize.transaction(async (t) => {
+            await DbAdapter.update(Report, {
+                reason: mergedReason,
+                handle_note: (primary.handle_note || '') + mergeInfo,
+                merged_from_ids: others.map(r => r.id).join(',')
+            }, { where: { id: primary.id }, transaction: t });
 
-        // 将其他报告标记为已合并
-        await DbAdapter.update(Report, {
-            status: 'merged',
-            handle_note: `已合并到举报 #${primary.id}`
-        }, { where: { id: { [Op.in]: others.map(r => r.id) } } });
+            // 将其他报告标记为已合并(仅更新仍为 pending 的,避免误改已处理的)
+            await DbAdapter.update(Report, {
+                status: 'merged',
+                handle_note: `已合并到举报 #${primary.id}`
+            }, { where: { id: { [Op.in]: others.map(r => r.id) }, status: 'pending' }, transaction: t });
+        });
 
         logOperation(req, 'merge_reports', 'report', primary.id, {
             mergedCount: reports.length,

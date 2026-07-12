@@ -50,7 +50,10 @@ function doWrite(level, tag, message) {
             }
 
             // 修复: 异步写入,不阻塞事件循环
-            fs.appendFile(LOG_FILE, line, { encoding: 'utf8' }, () => resolve());
+            fs.appendFile(LOG_FILE, line, { encoding: 'utf8' }, (err) => {
+              if (err) console.error('[logger] write error:', err.message)
+              resolve()
+            });
         } catch (e) {
             // 日志写入失败不应影响业务
             resolve();

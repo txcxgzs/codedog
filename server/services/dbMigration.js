@@ -291,7 +291,7 @@ class DatabaseMigration {
             type: { type: DataTypes.STRING(20), allowNull: false },
             target_id: { type: DataTypes.INTEGER, allowNull: false },
             reporter_id: { type: DataTypes.INTEGER, allowNull: false },
-            reason: { type: DataTypes.STRING(200), allowNull: false },
+            reason: { type: DataTypes.TEXT },
             description: DataTypes.TEXT,
             status: { type: DataTypes.STRING(20), defaultValue: 'pending', validate: { isIn: [['pending', 'processing', 'resolved', 'rejected']] } },
             handler_id: DataTypes.INTEGER,

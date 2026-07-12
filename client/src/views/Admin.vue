@@ -3688,11 +3688,9 @@ const impersonateUserDetail = async () => {
     await ElMessageBox.confirm(`确定要以 ${user.nickname || user.username} 的身份登录吗？`, '一键登录', { type: 'warning' })
     const res = await adminApi.impersonateUser(user.id)
     if (res.code === 200) {
-      // 修复: 设 token 标志位让 isLoggedIn=true, fetchCurrentUser 才会调 /users/me 验证 cookie
-      userStore.token = 'cookie-session'
+      // 修复: httpOnly cookie 模式下不再写 sessionStorage token,仅保留 admin_token 标志
       userStore.user = res.data.user
       sessionStorage.setItem('admin_token', '1')
-      sessionStorage.setItem('token', 'cookie-session')
       ElMessage.success(`正在以 ${user.nickname || user.username} 身份登录...`)
       setTimeout(() => { window.location.href = '/' }, 500)
     }

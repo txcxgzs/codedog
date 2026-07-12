@@ -121,6 +121,9 @@ const router = createRouter({
   routes
 })
 
+// 修复: 游客首次检测后即标记已检查,避免每次路由都发 /users/me 产生 401 spam
+let authChecked = false
+
 router.beforeEach(async (to, from, next) => {
   document.title = to.meta.title ? `${to.meta.title} - 编程狗社区` : '编程狗社区'
 
@@ -133,13 +136,19 @@ router.beforeEach(async (to, from, next) => {
   }
 
   // 修复: httpOnly cookie 模式下,token 初始为空,必须先调 /users/me 验证 cookie 是否有效
-  // 没有用户信息时一律尝试获取(后端 cookie 自动携带)
-  if (!userStore.user) {
+  // 没有用户信息且未检查过时尝试获取(后端 cookie 自动携带)
+  if (!userStore.user && !authChecked) {
+    authChecked = true
     try {
       const user = await userStore.fetchCurrentUser()
       // fetchCurrentUser 返回 null 表示认证失败(401),需跳登录页
       if (!user && (to.meta.requiresAuth || to.meta.requiresAdmin)) {
         next({ name: 'Login', query: { redirect: to.fullPath } })
+        return
+      }
+      // 修复: 恢复登录态后若当前是登录页,跳转首页(避免 cookie 用户看到登录表单)
+      if (user && to.name === 'Login') {
+        next('/')
         return
       }
     } catch (error) {

@@ -220,7 +220,7 @@ const Report = sequelize.define('Report', {
     // 删除目标对象时需由 controller 层同步清理 Report（已在 controller 修复）
     target_id: { type: DataTypes.INTEGER, allowNull: false },
     reporter_id: { type: DataTypes.INTEGER, allowNull: false },
-    reason: { type: DataTypes.STRING(200), allowNull: false },
+    reason: { type: DataTypes.TEXT },
     description: { type: DataTypes.TEXT },
     // M7: status 改为 ENUM，覆盖 controller 实际使用的 pending/resolved/rejected，预留 merged
     status: { type: DataTypes.ENUM('pending', 'processing', 'resolved', 'rejected', 'merged'), defaultValue: 'pending' },

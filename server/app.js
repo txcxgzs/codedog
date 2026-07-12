@@ -331,6 +331,21 @@ async function startServer() {
                 console.log('[迁移] owner_claim 已回填 = owner_id');
             }
 
+            // 修复: Report 表新增 merged_from_ids + status 加 merged
+            await ensureColumn('reports', 'merged_from_ids', { sqlite: 'TEXT', mysql: 'TEXT NULL' });
+            // MySQL: 修改 status ENUM 支持 merged
+            if (dialect === 'mysql') {
+                try {
+                    const cols = await sequelize.query(`SHOW COLUMNS FROM reports LIKE 'status'`, { type: sequelize.QueryTypes.SELECT });
+                    if (cols.length > 0 && !cols[0].Type.includes('merged')) {
+                        console.log('[迁移] reports.status 加 merged...');
+                        await sequelize.query("ALTER TABLE reports MODIFY COLUMN status ENUM('pending','processing','resolved','rejected','merged') NOT NULL DEFAULT 'pending'");
+                    }
+                } catch (e) {
+                    console.warn('[迁移] reports.status ENUM 修改跳过:', e.message);
+                }
+            }
+
             console.log('[迁移] 列预检完成');
         } catch (migrationErr) {
             // 表可能尚未创建(首次部署),sync 后会自动带所有列,忽略

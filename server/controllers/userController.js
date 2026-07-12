@@ -298,8 +298,8 @@ async function codemaoLogin(req, res, identity, password) {
             message = '编程猫登录成功，您已被设为初始管理员';
         }
         
+        // 修复: httpOnly cookie 模式下不再返回 token,前端通过 /users/me 验证登录态
         return successResponse(res, {
-            token,
             user: {
                 id: DbAdapter.getId(user),
                 codemao_user_id: user.codemao_user_id,

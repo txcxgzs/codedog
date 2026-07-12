@@ -78,20 +78,44 @@ const handleInput = () => {
   emit('update:modelValue', clean)
 }
 
-// 保存/恢复选区(净化后保持光标)
+// 保存/恢复光标位置(用文本偏移而非 DOM Range,避免净化后 Range 失效)
 function saveSelection() {
   const sel = window.getSelection()
-  if (sel.rangeCount > 0) {
-    return sel.getRangeAt(0).cloneRange()
+  if (sel.rangeCount > 0 && editorRef.value) {
+    const range = sel.getRangeAt(0)
+    // 计算光标相对于编辑器开头的文本偏移
+    const preRange = range.cloneRange()
+    preRange.selectNodeContents(editorRef.value)
+    preRange.setEnd(range.startContainer, range.startOffset)
+    return { offset: preRange.toString().length }
   }
-  return null
+  return { offset: 0 }
 }
 
-function restoreSelection(range) {
-  if (!range) return
-  const sel = window.getSelection()
-  sel.removeAllRanges()
-  sel.addRange(range)
+function restoreSelection(saved) {
+  if (!saved || !editorRef.value) return
+  // 修复: 安全地将光标放到末尾(净化后 DOM 节点重建,旧 Range 已失效)
+  try {
+    const node = editorRef.value
+    // 找到最后一个文本节点
+    const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT)
+    let lastNode = null
+    let totalLen = 0
+    while (walker.nextNode()) {
+      lastNode = walker.currentNode
+      totalLen += walker.currentNode.textContent.length
+    }
+    if (lastNode) {
+      const sel = window.getSelection()
+      const range = document.createRange()
+      range.setStart(lastNode, lastNode.textContent.length)
+      range.collapse(true)
+      sel.removeAllRanges()
+      sel.addRange(range)
+    }
+  } catch (e) {
+    // 光标恢复失败不影响内容
+  }
 }
 
 function exec(command, value = null) {
