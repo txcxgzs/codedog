@@ -221,23 +221,52 @@ async function getStudioDetail(req, res) {
         // (Report4 #24) 限制单次查询返回成员数,防止大型工作室加载全量成员导致 OOM;
         //               完整成员列表应由专用接口分页获取。
         //               返回 totalMemberCount/hasMoreMembers 告知前端是否需要加载更多。
-        const memberWhere = { studio_id: id, status: 'active' };
-        const [memberResult, totalMemberCount] = await Promise.all([
-            DbAdapter.findAll(StudioMember, {
-                where: memberWhere,
-                include: [{
-                    model: User,
-                    as: 'user',
-                    attributes: ['id', 'username', 'nickname', 'avatar', 'codemao_user_id']
-                }],
-                order: [
-                    [sequelize.literal("CASE WHEN role='owner' THEN 0 WHEN role='vice_owner' THEN 1 WHEN role='admin' THEN 2 ELSE 3 END"), 'ASC'],
-                    ['joined_at', 'ASC']
-                ],
-                limit: 20
-            }),
-            DbAdapter.count(StudioMember, { where: memberWhere })
-        ]);
+        // 修复: 加 try/catch 防御 CASE 表达式在某些 SQLite 版本或异常数据下失败
+        let memberResult = [];
+        let totalMemberCount = 0;
+        try {
+            const [mResult, mCount] = await Promise.all([
+                DbAdapter.findAll(StudioMember, {
+                    where: memberWhere,
+                    include: [{
+                        model: User,
+                        as: 'user',
+                        attributes: ['id', 'username', 'nickname', 'avatar', 'codemao_user_id']
+                    }],
+                    order: [
+                        [sequelize.literal("CASE WHEN role='owner' THEN 0 WHEN role='vice_owner' THEN 1 WHEN role='admin' THEN 2 ELSE 3 END"), 'ASC'],
+                        ['joined_at', 'ASC']
+                    ],
+                    limit: 20
+                }),
+                DbAdapter.count(StudioMember, { where: memberWhere })
+            ]);
+            memberResult = mResult;
+            totalMemberCount = mCount;
+        } catch (memberError) {
+            console.error('[getStudioDetail] 成员查询失败,降级为不排序:', memberError.message);
+            // 降级:去掉 CASE 排序,避免整个接口 500
+            try {
+                const [mResult, mCount] = await Promise.all([
+                    DbAdapter.findAll(StudioMember, {
+                        where: memberWhere,
+                        include: [{
+                            model: User,
+                            as: 'user',
+                            attributes: ['id', 'username', 'nickname', 'avatar', 'codemao_user_id']
+                        }],
+                        order: [['joined_at', 'ASC']],
+                        limit: 20
+                    }),
+                    DbAdapter.count(StudioMember, { where: memberWhere })
+                ]);
+                memberResult = mResult;
+                totalMemberCount = mCount;
+            } catch (fallbackError) {
+                console.error('[getStudioDetail] 成员查询降级也失败:', fallbackError.message);
+                // 最终降级:返回空成员列表
+            }
+        }
         const members = memberResult;
         
         const works = await DbAdapter.findAll(StudioWork, {
