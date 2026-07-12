@@ -2564,6 +2564,8 @@ async function handleReport(req, res) {
             handle_note: handleNote,
             handler_id: DbAdapter.getId(req.user)
         }, { where: { id: reportId } });
+        // 写入审计日志
+        await addReportAuditLog(reportId, DbAdapter.getId(req.user), 'human', `处理为${status}`, handleNote || null);
         logOperation(req, 'handle_report', 'report', reportId, { status, handleNote, takeAction });
 
         let targetName = '';
@@ -2756,11 +2758,47 @@ async function mergeReports(req, res) {
             mergedCount: reports.length,
             reportIds
         });
+        // 合并审计日志: 为主报告和每条被合并报告都写入记录
+        await addReportAuditLog(primary.id, DbAdapter.getId(req.user), 'human', '合并举报', `合并了 ${reports.length} 条重复举报`);
+        for (const oId of others) {
+            await addReportAuditLog(oId, DbAdapter.getId(req.user), 'human', '被合并', `合并到主举报 #${primary.id}`);
+        }
 
         return successResponse(res, { primaryId: primary.id, mergedCount: reports.length }, `已合并 ${reports.length} 条举报`);
     } catch (error) {
         console.error('合并举报错误:', error);
         return errorResponse(res, '合并失败', 500);
+    }
+}
+
+/**
+ * 写入举报审计日志
+ */
+async function addReportAuditLog(reportId, handlerId, handlerType, action, note, transaction) {
+    await DbAdapter.create(ReportAuditLog, {
+        report_id: reportId,
+        handler_id: handlerId,
+        handler_type: handlerType,
+        action,
+        note
+    }, transaction ? { transaction } : {});
+}
+
+/**
+ * 获取举报审计日志(处理记录)
+ */
+async function getReportAuditLogs(req, res) {
+    try {
+        const { reportId } = req.params;
+        const logs = await DbAdapter.findAll(ReportAuditLog, {
+            where: { report_id: reportId },
+            include: [{ model: User, as: 'handler', attributes: ['id', 'nickname', 'username', 'avatar'] }],
+            order: [['created_at', 'ASC']]
+        });
+        return successResponse(res, logs);
+    } catch (error) {
+        console.error('获取举报审计日志错误:', error);
+        return errorResponse(res, '获取处理记录失败', 500);
     }
 }
 
@@ -3687,6 +3725,7 @@ async function aiAutoHandleReports(req, res) {
                 if (!canAutoDelete) {
                     // 修复: 权限不足时保持 pending(而非 resolved),让有权限的管理员后续处理
                     await DbAdapter.update(Report, { status: 'pending', handler_id: null, handle_note: 'AI自动处理-权限不足,需人工处理' }, { where: { id: DbAdapter.getId(report) } });
+                    await addReportAuditLog(DbAdapter.getId(report), null, 'ai', '自动处理-权限不足', 'AI权限不足,保持待处理需人工审核');
                     results.skipped = (results.skipped || 0) + 1;
                     continue;
                 }
@@ -3784,6 +3823,7 @@ async function aiAutoHandleReports(req, res) {
                         }
                     }
                     await DbAdapter.update(Report, { status: 'resolved', handler_id: DbAdapter.getId(req.user), handle_note: 'AI自动处理-删除' }, { where: { id: DbAdapter.getId(report) }, transaction: t });
+                    await addReportAuditLog(DbAdapter.getId(report), DbAdapter.getId(req.user), 'ai', '自动处理-删除', 'AI自动删除违规内容');
 
                     // 修复: 删除内容后重算作者 work_count
                     if (report.type === 'work') {
@@ -3798,6 +3838,7 @@ async function aiAutoHandleReports(req, res) {
             } else {
                 // 通过
                 await DbAdapter.update(Report, { status: 'rejected', handler_id: DbAdapter.getId(req.user), handle_note: 'AI自动处理-通过' }, { where: { id: DbAdapter.getId(report) } });
+                await addReportAuditLog(DbAdapter.getId(report), DbAdapter.getId(req.user), 'ai', '自动处理-通过', 'AI判定内容正常,驳回举报');
                 results.passed++;
             }
 
@@ -3808,6 +3849,7 @@ async function aiAutoHandleReports(req, res) {
                     handler_id: DbAdapter.getId(req.user),
                     handle_note: `AI自动处理-目标已删除(同目标清理)`
                 }, { where: { type: report.type, target_id: report.target_id, id: { [Op.ne]: DbAdapter.getId(report) }, status: 'pending' } });
+                await addReportAuditLog(DbAdapter.getId(report), null, 'ai', '自动处理-同目标清理', '同目标重复举报自动解决');
             }
 
             results.handled++;
@@ -4687,6 +4729,7 @@ module.exports = {
     deleteComment,
     getReports,
     handleReport,
+    getReportAuditLogs,
     getIpBans,
     addIpBan,
     removeIpBan,

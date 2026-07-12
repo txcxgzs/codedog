@@ -1915,7 +1915,30 @@
             </el-descriptions-item>
           </el-descriptions>
         </div>
-        
+
+        <!-- 处理记录(审计日志) -->
+        <el-divider>
+          <el-button type="info" size="small" @click="loadAuditLogs" :loading="auditLogsLoading">
+            <el-icon><Document /></el-icon> 处理记录
+          </el-button>
+        </el-divider>
+        <div v-if="auditLogs.length > 0" class="r-admin--audit_logs">
+          <el-timeline>
+            <el-timeline-item v-for="log in auditLogs" :key="log.id" :timestamp="formatDate(log.created_at)" placement="top">
+              <el-card shadow="never" body-style="padding: 8px 12px;">
+                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
+                  <el-tag :type="log.handler_type === 'ai' ? 'warning' : log.handler_type === 'system' ? 'info' : 'primary'" size="small">
+                    {{ log.handler_type === 'ai' ? 'AI' : log.handler_type === 'system' ? '系统' : (log.handler?.nickname || log.handler?.username || '管理员') }}
+                  </el-tag>
+                  <el-tag size="small">{{ log.action }}</el-tag>
+                </div>
+                <div v-if="log.note" style="font-size: 13px; color: #606266;">{{ log.note }}</div>
+              </el-card>
+            </el-timeline-item>
+          </el-timeline>
+        </div>
+        <el-empty v-else-if="auditLogsLoaded" description="暂无处理记录" />
+
         <el-divider>人工处理</el-divider>
         <el-form-item label="处理结果">
           <el-select v-model="reportForm.status" style="width: 100%">
@@ -2213,6 +2236,9 @@ const reportDialogVisible = ref(false)
 const reportForm = ref({ status: 'processing', handleNote: '', takeAction: false })
 const aiReviewLoading = ref(false)
 const aiReviewResult = ref(null)
+const auditLogs = ref([])
+const auditLogsLoading = ref(false)
+const auditLogsLoaded = ref(false)
 const selectedReports = ref([])
 const batchAILoading = ref(false)
 const autoHandleLoading = ref(false)
@@ -3996,7 +4022,25 @@ const showReportDialog = (report) => {
   editingReport.value = report
   reportForm.value = { status: 'processing', handleNote: '', takeAction: false }
   aiReviewResult.value = null
+  auditLogs.value = []
+  auditLogsLoaded.value = false
   reportDialogVisible.value = true
+}
+
+const loadAuditLogs = async () => {
+  if (!editingReport.value) return
+  auditLogsLoading.value = true
+  auditLogsLoaded.value = true
+  try {
+    const res = await adminApi.getReportAuditLogs(editingReport.value.id)
+    if (res.code === 200) {
+      auditLogs.value = res.data || []
+    }
+  } catch (e) {
+    ElMessage.error('加载处理记录失败')
+  } finally {
+    auditLogsLoading.value = false
+  }
 }
 
 const handleProcessReport = async () => {

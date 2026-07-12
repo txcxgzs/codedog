@@ -170,6 +170,10 @@ export const adminApi = {
   handleReport(reportId, data) {
     return request.put(`/admin/reports/${reportId}`, data)
   },
+
+  getReportAuditLogs(reportId) {
+    return request.get(`/admin/reports/${reportId}/audit-logs`)
+  },
   
   /**
    * IP封禁管理

@@ -238,6 +238,22 @@ const Report = sequelize.define('Report', {
     ]
 }, TIMESTAMP_OPTS));
 
+const ReportAuditLog = sequelize.define('ReportAuditLog', {
+    id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+    report_id: { type: DataTypes.INTEGER, allowNull: false },
+    handler_id: { type: DataTypes.INTEGER, allowNull: true },
+    handler_type: { type: DataTypes.ENUM('human', 'ai', 'system'), allowNull: false, defaultValue: 'human' },
+    action: { type: DataTypes.STRING(50), allowNull: false },
+    note: { type: DataTypes.TEXT, allowNull: true }
+}, Object.assign({
+    tableName: 'report_audit_logs',
+    indexes: [
+        { fields: ['report_id'] },
+        { fields: ['handler_id'] },
+        { fields: ['handler_type'] }
+    ]
+}, TIMESTAMP_OPTS));
+
 const Like = sequelize.define('Like', {
     id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
     user_id: { type: DataTypes.INTEGER, allowNull: false },
@@ -471,6 +487,9 @@ StudioWork.belongsTo(Work, { foreignKey: 'work_id', as: 'work' });
 StudioWork.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
 Report.belongsTo(User, { foreignKey: 'reporter_id', as: 'reporter' });
 Report.belongsTo(User, { foreignKey: 'handler_id', as: 'handler' });
+Report.hasMany(ReportAuditLog, { foreignKey: 'report_id', as: 'audit_logs' });
+ReportAuditLog.belongsTo(Report, { foreignKey: 'report_id', as: 'report' });
+ReportAuditLog.belongsTo(User, { foreignKey: 'handler_id', as: 'handler' });
 // M9: 以下四条为多态关联，target_id 可指向不同表，故 constraints:false 不建 FK
 // 删除目标对象时需 controller 层同步清理 Report
 Report.belongsTo(Work, { foreignKey: 'target_id', as: 'work', constraints: false });
@@ -514,6 +533,6 @@ Comment.belongsTo(Comment, { foreignKey: 'parent_id', as: 'parent' });
 module.exports = {
     sequelize,
     User, Work, Comment, Post, Studio, StudioMember, StudioWork,
-    Report, Like, Favorite, Follow, Notification, Announcement, Banner, IpBan, CaptchaStats,
+    Report, ReportAuditLog, Like, Favorite, Follow, Notification, Announcement, Banner, IpBan, CaptchaStats,
     SystemConfig, OperationLog, RolePermission, Statistics, SensitiveWord
 };
