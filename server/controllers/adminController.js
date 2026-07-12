@@ -4285,9 +4285,16 @@ async function getStudioDetail(req, res) {
         }
         
         const members = await DbAdapter.findAll(StudioMember, {
-            where: { studio_id: id },
+            where: { studio_id: id, status: 'active' },
             include: [{ model: User, as: 'user', attributes: ['id', 'username', 'nickname', 'avatar'] }],
             order: [['role', 'ASC']]
+        });
+
+        // 修复: 单独查询待审核成员,不混入正式成员列表
+        const pendingMembers = await DbAdapter.findAll(StudioMember, {
+            where: { studio_id: id, status: 'pending' },
+            include: [{ model: User, as: 'user', attributes: ['id', 'username', 'nickname', 'avatar'] }],
+            order: [['joined_at', 'ASC']]
         });
         
         const studioWorks = await DbAdapter.findAll(StudioWork, {
@@ -4303,6 +4310,7 @@ async function getStudioDetail(req, res) {
             studio,
             owner: studio.owner,
             members,
+            pendingMembers,
             works: studioWorks.map(sw => sw.work).filter(w => w)
         });
     } catch (error) {

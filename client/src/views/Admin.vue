@@ -1114,7 +1114,7 @@
             </div>
             
             <el-tabs>
-              <el-tab-pane label="成员管理">
+              <el-tab-pane label="正式成员">
                 <el-table :data="studioDetail.members" size="small" max-height="400">
                   <el-table-column prop="user.id" label="用户ID" width="80" />
                   <el-table-column prop="user.nickname" label="昵称" width="120">
@@ -1125,13 +1125,6 @@
                     <template #default="{ row }">
                       <el-tag :type="row.role === 'owner' ? 'danger' : row.role === 'admin' ? 'warning' : 'info'">
                         {{ row.role === 'owner' ? '室长' : row.role === 'admin' ? '管理员' : '成员' }}
-                      </el-tag>
-                    </template>
-                  </el-table-column>
-                  <el-table-column prop="status" label="状态" width="80">
-                    <template #default="{ row }">
-                      <el-tag :type="row.status === 'active' ? 'success' : 'warning'" size="small">
-                        {{ row.status === 'active' ? '正常' : '待审核' }}
                       </el-tag>
                     </template>
                   </el-table-column>
@@ -1146,6 +1139,25 @@
                   </el-table-column>
                 </el-table>
                 <el-empty v-if="!studioDetail.members?.length" description="暂无成员" />
+              </el-tab-pane>
+              <el-tab-pane :label="`待审核申请(${studioDetail.pendingMembers?.length || 0})`">
+                <el-table :data="studioDetail.pendingMembers" size="small" max-height="400">
+                  <el-table-column prop="user.id" label="用户ID" width="80" />
+                  <el-table-column prop="user.nickname" label="昵称" width="120">
+                    <template #default="{ row }">{{ row.user?.nickname || row.user?.username }}</template>
+                  </el-table-column>
+                  <el-table-column prop="user.username" label="用户名" width="120" />
+                  <el-table-column prop="joined_at" label="申请时间" width="110">
+                    <template #default="{ row }">{{ formatDate(row.joined_at) }}</template>
+                  </el-table-column>
+                  <el-table-column label="操作" width="150" fixed="right">
+                    <template #default="{ row }">
+                      <el-button size="small" type="primary" @click="handleApproveMember(row)">通过</el-button>
+                      <el-button size="small" type="danger" @click="handleRejectMember(row)">拒绝</el-button>
+                    </template>
+                  </el-table-column>
+                </el-table>
+                <el-empty v-if="!studioDetail.pendingMembers?.length" description="暂无待审核申请" />
               </el-tab-pane>
               <el-tab-pane label="工作室作品">
                 <el-table :data="studioDetail.works" size="small" max-height="400">
@@ -4238,7 +4250,7 @@ const changeMemberRole = async (member) => {
 const removeMember = async (member) => {
   try {
     await ElMessageBox.confirm(`确定将 ${member.user?.nickname} 移出工作室吗？`, '确认', { type: 'warning' })
-    
+
     const res = await adminApi.removeStudioMember(member.studio_id, member.user_id)
     if (res.code === 200) {
       ElMessage.success('成员已移除')
@@ -4250,6 +4262,38 @@ const removeMember = async (member) => {
     if (e !== 'cancel') {
       ElMessage.error('移除失败')
     }
+  }
+}
+
+// 通过工作室成员申请
+const handleApproveMember = async (member) => {
+  try {
+    await ElMessageBox.confirm(`确定通过 ${member.user?.nickname || member.user?.username} 的加入申请吗？`, '确认', { type: 'warning' })
+    const res = await adminApi.reviewMember(member.studio_id, member.user_id, 'approve')
+    if (res.code === 200) {
+      ElMessage.success('已通过申请')
+      showStudioDetail({ id: member.studio_id })
+    } else {
+      ElMessage.error(res.msg || '操作失败')
+    }
+  } catch (e) {
+    if (e !== 'cancel') ElMessage.error('操作失败')
+  }
+}
+
+// 拒绝工作室成员申请
+const handleRejectMember = async (member) => {
+  try {
+    await ElMessageBox.confirm(`确定拒绝 ${member.user?.nickname || member.user?.username} 的加入申请吗？`, '确认', { type: 'warning' })
+    const res = await adminApi.reviewMember(member.studio_id, member.user_id, 'reject')
+    if (res.code === 200) {
+      ElMessage.success('已拒绝申请')
+      showStudioDetail({ id: member.studio_id })
+    } else {
+      ElMessage.error(res.msg || '操作失败')
+    }
+  } catch (e) {
+    if (e !== 'cancel') ElMessage.error('操作失败')
   }
 }
 

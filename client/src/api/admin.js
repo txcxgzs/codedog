@@ -426,6 +426,10 @@ export const adminApi = {
   reviewStudioMember(studioId, memberId, action) {
     return request.put(`/admin/studios/${studioId}/members/${memberId}/review`, { action })
   },
+  // 别名(与模板中的 handleApproveMember/handleRejectMember 对应)
+  reviewMember(studioId, memberId, action) {
+    return this.reviewStudioMember(studioId, memberId, action)
+  },
 
   reviewStudioWork(studioId, workId, action) {
     return request.put(`/admin/studios/${studioId}/works/${workId}/review`, { action })
