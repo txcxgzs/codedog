@@ -2326,11 +2326,11 @@ async function getReports(req, res) {
             let targets = [];
             try {
                 if (type === 'work') {
-                    targets = await DbAdapter.findAll(Work, { where: { id: { [Op.in]: targetIds } }, attributes: ['id', 'name', 'preview', 'user_id'] });
+                    targets = await DbAdapter.findAll(Work, { where: { id: { [Op.in]: targetIds } }, attributes: ['id', 'name', 'preview', 'user_id'], include: [{ model: User, as: 'author', attributes: ['id', 'username', 'nickname', 'codemao_user_id'] }] });
                 } else if (type === 'comment') {
-                    targets = await DbAdapter.findAll(Comment, { where: { id: { [Op.in]: targetIds } }, attributes: ['id', 'content', 'user_id'] });
+                    targets = await DbAdapter.findAll(Comment, { where: { id: { [Op.in]: targetIds } }, attributes: ['id', 'content', 'user_id'], include: [{ model: User, as: 'user', attributes: ['id', 'username', 'nickname', 'codemao_user_id'] }] });
                 } else if (type === 'post') {
-                    targets = await DbAdapter.findAll(Post, { where: { id: { [Op.in]: targetIds } }, attributes: ['id', 'title', 'content', 'status'] });
+                    targets = await DbAdapter.findAll(Post, { where: { id: { [Op.in]: targetIds } }, attributes: ['id', 'title', 'content', 'status', 'user_id'], include: [{ model: User, as: 'author', attributes: ['id', 'username', 'nickname', 'codemao_user_id'] }] });
                 } else if (type === 'user') {
                     targets = await DbAdapter.findAll(User, { where: { id: { [Op.in]: targetIds } }, attributes: ['id', 'username', 'nickname', 'avatar', 'codemao_user_id'] });
                 }

@@ -100,9 +100,9 @@
           <div class="r-studio-detail--members">
             <div class="r-studio-detail--member_list">
               <div v-for="member in members" :key="member.id" class="r-studio-detail--member_item">
-                <AppImage :src="member.avatar || defaultAvatar" :fallback="defaultAvatar" class="r-studio-detail--member_avatar" />
+                <AppImage :src="member.user?.avatar || defaultAvatar" :fallback="defaultAvatar" class="r-studio-detail--member_avatar" />
                 <div class="r-studio-detail--member_info">
-                  <span class="r-studio-detail--member_name">{{ member.nickname || member.username }}</span>
+                  <span class="r-studio-detail--member_name">{{ member.user?.nickname || member.user?.username }}</span>
                   <el-tag size="small" :type="member.memberRole === 'owner' ? 'danger' : member.memberRole === 'vice_owner' ? 'success' : member.memberRole === 'admin' ? 'warning' : 'info'">
                     {{ roleText(member.memberRole) }}
                   </el-tag>
@@ -143,7 +143,7 @@
       <el-form :model="viceOwnerForm" label-width="80px">
         <el-form-item label="副室长">
           <el-select v-model="viceOwnerForm.user_id" clearable placeholder="选择副室长（可清空）" filterable style="width: 100%;">
-            <el-option v-for="m in members.filter(m => m.memberRole !== 'owner')" :key="m.id" :label="m.nickname || m.username" :value="m.id" />
+            <el-option v-for="m in members.filter(m => m.memberRole !== 'owner')" :key="m.id" :label="m.user?.nickname || m.user?.username" :value="m.user_id" />
           </el-select>
         </el-form-item>
       </el-form>

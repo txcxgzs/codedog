@@ -302,9 +302,11 @@ async function getStudioDetail(req, res) {
         return successResponse(res, {
             studio,
             members: members.filter(m => m.user).map(m => ({
-                ...m.user.toJSON(),
+                id: m.id,
+                user_id: m.user_id,
                 memberRole: m.role,
-                joinedAt: m.joined_at
+                joinedAt: m.joined_at,
+                user: m.user.toJSON()
             })),
             totalMemberCount,
             hasMoreMembers: totalMemberCount > 20,
