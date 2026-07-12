@@ -3110,19 +3110,44 @@ async function updateSystemConfig(req, res) {
             config = await DbAdapter.create(SystemConfig, { config_key: key, config_value: value });
         }
 
-        // 敏感配置项修改后，同步清理 hCaptcha 中间件缓存，避免 60s 内仍用旧值
+        // 敏感配置修改后，同步清理 hCaptcha 中间件缓存，避免 60s 内仍用旧值
         if (key === 'hcaptcha_enabled') {
             try { require('../middleware/hcaptcha').invalidateHcaptchaCache(); } catch (e) {}
+        }
+
+        // 修复 P2-10: 数据库相关配置同时写 .env,与批量更新保持一致
+        const dbEnvKeyMap = {
+            db_type: 'DB_TYPE', db_path: 'DB_PATH', db_host: 'DB_HOST', db_port: 'DB_PORT',
+            db_name: 'DB_NAME', db_user: 'DB_USER', db_password: 'DB_PASSWORD',
+            mysql_host: 'DB_HOST', mysql_port: 'DB_PORT', mysql_database: 'DB_NAME',
+            mysql_username: 'DB_USER', mysql_password: 'DB_PASSWORD'
+        };
+        if (dbEnvKeyMap[key]) {
+            try {
+                const fs = require('fs');
+                const path = require('path');
+                const envPath = path.join(__dirname, '../.env');
+                let envContent = '';
+                if (fs.existsSync(envPath)) envContent = fs.readFileSync(envPath, 'utf8');
+                envContent = updateEnvVariable(envContent, dbEnvKeyMap[key], value);
+                fs.writeFileSync(envPath, envContent);
+            } catch (envErr) {
+                console.warn('[config] .env 写入失败(配置已入库):', envErr.message);
+            }
         }
 
         const updatedConfig = await DbAdapter.findOne(SystemConfig, { where: { config_key: key } });
         logOperation(req, 'update_config', 'system_config', null, redactConfigDetails({ [key]: value }));
         // 修复: 敏感配置不返回明文,统一掩码
+        // 修复 P1-8: 敏感配置不返回明文,统一掩码
         const isSensitive = (k) => /password|secret|token|api[_-]?key|auth/i.test(k);
-        return successResponse(res, {
-            config_key: updatedConfig.config_key,
-            config_value: isSensitive(key) ? '******' : updatedConfig.config_value
-        }, '更新成功');
+        if (isSensitive(key)) {
+            return successResponse(res, {
+                config_key: updatedConfig.config_key,
+                config_value: updatedConfig.config_value ? '******' : ''
+            }, '更新成功');
+        }
+        return successResponse(res, updatedConfig, '更新成功');
     } catch (error) {
         console.error('更新系统设置错误:', error);
         return errorResponse(res, '更新失败', 500);
