@@ -21,7 +21,9 @@
       <el-table-column prop="comment_count" label="评论" width="80" />
       <el-table-column label="状态" width="80">
         <template #default="{ row }">
-          <el-tag :type="row.status === 'active' ? 'success' : 'info'">{{ row.status === 'active' ? '正常' : '隐藏' }}</el-tag>
+          <el-tag :type="row.status === 'published' ? 'success' : row.status === 'hidden' ? 'warning' : 'info'">
+            {{ row.status === 'published' ? '正常' : row.status === 'hidden' ? '隐藏' : row.status === 'draft' ? '草稿' : row.status }}
+          </el-tag>
         </template>
       </el-table-column>
       <el-table-column label="操作" width="100" fixed="right">
