@@ -487,7 +487,26 @@ async function updateUser(req, res) {
             const storedNickname = String(trimmedNickname).substring(0, 50); // 存原始,渲染转义
             updateData.nickname = storedNickname;
         }
-        if (email !== undefined) updateData.email = email;
+        if (email !== undefined) {
+            // 修复: 邮箱格式/长度/唯一性预检查
+            const trimmedEmail = String(email).trim().toLowerCase();
+            if (!trimmedEmail) {
+                return errorResponse(res, '邮箱不能为空', 400);
+            }
+            if (trimmedEmail.length > 254) {
+                return errorResponse(res, '邮箱长度不能超过 254 字符', 400);
+            }
+            // 简单邮箱格式校验
+            if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+                return errorResponse(res, '邮箱格式无效', 400);
+            }
+            // 唯一性检查(排除当前用户)
+            const existingEmail = await DbAdapter.findOne(User, { where: { email: trimmedEmail, id: { [Op.ne]: userId } } });
+            if (existingEmail) {
+                return errorResponse(res, '该邮箱已被其他用户使用', 400);
+            }
+            updateData.email = trimmedEmail;
+        }
         if (role !== undefined) updateData.role = role;
         if (status !== undefined) updateData.status = status;
         // 修复: is_active_dalao 强制布尔转换,避免字符串 "false"(Truthy)被当作真值存入
