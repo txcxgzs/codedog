@@ -77,8 +77,8 @@
               <el-table-column label="成员" min-width="150">
                 <template #default="{ row }">
                   <div style="display: flex; align-items: center; gap: 8px;">
-                    <img :src="row.user?.avatar || defaultAvatar" style="width: 32px; height: 32px; border-radius: 50%;" referrerpolicy="no-referrer" />
-                    <span>{{ row.user?.nickname || row.user?.username }}</span>
+                    <img :src="row.avatar || row.user?.avatar || defaultAvatar" style="width: 32px; height: 32px; border-radius: 50%;" referrerpolicy="no-referrer" />
+                    <span>{{ row.nickname || row.user?.nickname || row.username || row.user?.username }}</span>
                   </div>
                 </template>
               </el-table-column>
@@ -134,8 +134,8 @@
               <el-table-column label="用户" min-width="150">
                 <template #default="{ row }">
                   <div style="display: flex; align-items: center; gap: 8px;">
-                    <img :src="row.user?.avatar || defaultAvatar" style="width: 32px; height: 32px; border-radius: 50%;" referrerpolicy="no-referrer" />
-                    <span>{{ row.user?.nickname || row.user?.username }}</span>
+                    <img :src="row.avatar || row.user?.avatar || defaultAvatar" style="width: 32px; height: 32px; border-radius: 50%;" referrerpolicy="no-referrer" />
+                    <span>{{ row.nickname || row.user?.nickname || row.username || row.user?.username }}</span>
                   </div>
                 </template>
               </el-table-column>

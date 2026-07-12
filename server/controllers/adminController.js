@@ -4330,7 +4330,12 @@ async function getStudioDetail(req, res) {
                 role: m.role,
                 status: m.status,
                 joined_at: m.joined_at,
-                user: m.user.toJSON()
+                user: m.user.toJSON(),
+                // 扁平兼容字段(防止旧前端取不到嵌套 user)
+                nickname: m.user.nickname,
+                username: m.user.username,
+                avatar: m.user.avatar,
+                codemao_user_id: m.user.codemao_user_id
             })),
             pendingMembers: pendingMembers.filter(m => m.user).map(m => ({
                 id: m.id,
