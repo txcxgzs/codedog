@@ -306,7 +306,10 @@ async function getStudioDetail(req, res) {
                 user_id: m.user_id,
                 memberRole: m.role,
                 joinedAt: m.joined_at,
-                user: m.user.toJSON()
+                user: m.user.toJSON(),
+                nickname: m.user.nickname,
+                username: m.user.username,
+                avatar: m.user.avatar
             })),
             totalMemberCount,
             hasMoreMembers: totalMemberCount > 20,
