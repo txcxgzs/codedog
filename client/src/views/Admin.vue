@@ -1296,7 +1296,7 @@
         <!-- 作品爬取 -->
                 <div v-if="activeMenu === 'developer-apps'" class="r-admin--section">
           <div class="r-admin--header">
-            <h2 class="r-admin--title">开发者应用审核</h2>
+            <h2 class="r-admin--title">开发者应用管理</h2>
             <div style="display:flex;gap:8px;align-items:center;">
               <el-select v-model="developerAppFilter.status" clearable placeholder="状态" style="width:120px" @change="() => { developerAppFilter.page = 1; fetchDeveloperApps() }">
                 <el-option label="待审核" value="pending" />
@@ -1326,6 +1326,16 @@
             <el-table-column label="权限" min-width="160">
               <template #default="{ row }">
                 <el-tag v-for="s in (row.scopes_requested || [])" :key="s" size="small" style="margin:0 4px 4px 0">{{ s }}</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="管理员备注" prop="review_note" min-width="150" show-overflow-tooltip />
+            <el-table-column label="审核信息" width="180">
+              <template #default="{ row }">
+                <div v-if="row.reviewed_by" style="font-size:12px;line-height:1.5">
+                  <div>{{ row.reviewer?.nickname || row.reviewer?.username || 'ID:' + row.reviewed_by }}</div>
+                  <div style="color:#999">{{ row.reviewed_at ? formatDate(row.reviewed_at) : '' }}</div>
+                </div>
+                <span v-else style="color:#999">未审核</span>
               </template>
             </el-table-column>
             <el-table-column prop="created_at" label="申请时间" width="150">
