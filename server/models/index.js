@@ -513,6 +513,8 @@ Work.hasMany(Favorite, { foreignKey: 'work_id', as: 'favorites' });
 Post.hasMany(Favorite, { foreignKey: 'post_id', as: 'favorites' });
 Notification.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
 Notification.belongsTo(User, { foreignKey: 'sender_id', as: 'sender' });
+IpBan.belongsTo(User, { foreignKey: 'banned_by', as: 'bannedByUser' });
+User.hasMany(IpBan, { foreignKey: 'banned_by', as: 'ipBans' });
 User.hasMany(Notification, { foreignKey: 'user_id', as: 'notifications' });
 OperationLog.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
 User.hasMany(OperationLog, { foreignKey: 'user_id', as: 'operation_logs' });

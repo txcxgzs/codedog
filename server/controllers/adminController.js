@@ -193,7 +193,7 @@ async function getStats(req, res) {
             }
         });
         const pendingReports = await DbAdapter.count(Report, { where: { status: 'pending' } });
-        const activeIpBans = await DbAdapter.count(IpBan, { where: {} });
+        const activeIpBans = await DbAdapter.count(IpBan, { where: { [Op.or]: [{ expires_at: null }, { expires_at: { [Op.gt]: new Date() } }] } });
         const featuredWorks = await DbAdapter.count(Work, { where: { is_featured: true, status: 'published' } });
         const disabledUsers = await DbAdapter.count(User, { where: { status: 'disabled' } });
 
@@ -2896,9 +2896,9 @@ async function getIpBans(req, res) {
             where,
             order: [['created_at', 'DESC']],
             limit: pageSize,
-            offset
+            offset,
+            include: [{ model: User, as: 'bannedByUser', attributes: ['id', 'username', 'nickname'] }]
         });
-
         return paginateResponse(res, rows, count, page, pageSize);
     } catch (error) {
         console.error('获取IP封禁列表错误:', error);

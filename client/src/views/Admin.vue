@@ -1099,11 +1099,12 @@
           </div>
           <el-table :data="ipBans" v-loading="loadingIpBans" stripe>
             <el-table-column prop="id" label="ID" width="60" />
-            <el-table-column prop="ip_address" label="IP地址" width="150" />
+            <el-table-column prop="ip" label="IP地址" width="150" />
             <el-table-column prop="reason" label="封禁原因" min-width="200" />
             <el-table-column label="操作人" width="120">
               <template #default="{ row }">
-                <span v-if="row.banner">{{ row.banner.nickname || row.banner.username }}</span>
+                <span v-if="row.bannedByUser">{{ row.bannedByUser.nickname || row.bannedByUser.username }}</span>
+                <span v-else>-</span>
               </template>
             </el-table-column>
             <el-table-column prop="expires_at" label="过期时间" width="150">
@@ -1111,10 +1112,10 @@
                 {{ row.expires_at ? formatDate(row.expires_at) : '永久' }}
               </template>
             </el-table-column>
-            <el-table-column prop="status" label="状态" width="80">
+            <el-table-column label="状态" width="100">
               <template #default="{ row }">
-                <el-tag :type="row.status === 'active' ? 'danger' : 'success'" size="small">
-                  {{ row.status === 'active' ? '生效中' : '已过期' }}
+                <el-tag :type="isIpBanActive(row) ? 'danger' : 'success'" size="small">
+                  {{ isIpBanActive(row) ? '生效中' : '已过期' }}
                 </el-tag>
               </template>
             </el-table-column>
@@ -1123,7 +1124,7 @@
             </el-table-column>
             <el-table-column label="操作" width="100" fixed="right">
               <template #default="{ row }">
-                <el-button size="small" type="danger" @click="handleRemoveIpBan(row)" :disabled="row.status !== 'active'">解封</el-button>
+                <el-button size="small" type="danger" @click="handleRemoveIpBan(row)" :disabled="!isIpBanActive(row)">解封</el-button>
               </template>
             </el-table-column>
           </el-table>
@@ -3712,6 +3713,12 @@ const formatDateTimeSeconds = (date) => {
   const pad = (n) => String(n).padStart(2, '0')
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
 }
+
+const isIpBanActive = (row) => {
+  if (!row.expires_at) return true
+  return new Date(row.expires_at) > new Date()
+}
+
 
 
 const onDeveloperAppPageChange = (p) => {

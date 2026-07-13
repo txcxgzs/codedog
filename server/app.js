@@ -48,6 +48,14 @@ const trustProxySetting =
       : 'loopback, 172.16.0.0/12, 192.168.0.0/16, 10.0.0.0/8';
 app.set('trust proxy', trustProxySetting);
 
+
+// Maintenance mode: intercept all requests when active
+const { isMaintenanceMode, maintenanceMiddleware } = require('./middleware/maintenance');
+if (isMaintenanceMode()) {
+    app.use(maintenanceMiddleware);
+    console.log('⚠️  维护模式已开启 - Maintenance mode active');
+}
+
 const isProduction = process.env.NODE_ENV === 'production';
 const isDevelopment = process.env.NODE_ENV === 'development' || !isProduction;
 
