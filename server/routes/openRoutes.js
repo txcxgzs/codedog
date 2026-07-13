@@ -1,38 +1,36 @@
-﻿/**
- * Open API v1 (OAuth2 access_token)
- */
 const express = require('express');
 const router = express.Router();
 const developerController = require('../controllers/developerController');
-const { StudioMember, Studio, Follow, Favorite, Like, Work, Post, User } = require('../models');
+const { StudioMember, Studio, Follow, Favorite, Like, Work, Post, User, DeveloperApp } = require('../models');
 const { oauthAuth, requireScopes } = require('../middleware/oauthAuth');
-const { createRateLimiter } = require('../middleware/rateLimit');
-const { logOperation } = require('../middleware/operationLog');
+const { perAppRateLimiter, authFailLimiter, failLogMiddleware } = require('../middleware/developerOpenApi');
 
-const openApiRateLimiter = createRateLimiter({
-    windowMs: 60 * 1000,
-    max: 60,
-    keyPrefix: 'open-api',
-    keyGenerator: (req) => {
-        const appId = req.oauth?.appId || 'unknown';
-        const ip = req.ip || req.socket?.remoteAddress || 'unknown';
-        return `${appId}:${ip}`;
-    }
-});
+const models = { DeveloperApp };
 
+router.use(authFailLimiter);
 router.use(oauthAuth);
-router.use((req, res, next) => {
-    res.on('finish', () => {
-        logOperation(req, 'developer_api_call', 'developer_app', req.oauth?.appId, {
-            method: req.method,
-            path: req.originalUrl.split('?')[0],
-            status: res.statusCode,
-            oauth_user_id: req.oauth?.userId || null
-        }).catch(error => console.error('developer api call log error:', error.message));
+router.use(failLogMiddleware(models));
+router.use(function (req, res, next) {
+    res.on('finish', function () {
+        const logger = require('../services/developerApiLogger').getDeveloperApiLogger(require('../models'));
+        logger.log({
+            user_id: req.oauth && req.oauth.userId || null,
+            action: 'developer_api_call',
+            target_type: 'developer_app',
+            target_id: req.oauth && req.oauth.appId || null,
+            details: JSON.stringify({
+                method: req.method,
+                path: req.originalUrl ? req.originalUrl.split('?')[0] : req.path,
+                status: res.statusCode,
+                oauth_user_id: req.oauth && req.oauth.userId || null
+            }),
+            ip_address: req.ip || req.socket && req.socket.remoteAddress || 'unknown',
+            user_agent: req.headers['user-agent'] || null
+        });
     });
     next();
 });
-router.use(openApiRateLimiter);
+router.use(perAppRateLimiter(models));
 
 router.get('/me', requireScopes('profile:read'), developerController.openMe);
 router.get('/me/works', requireScopes('works:read'), developerController.openMyWorks);

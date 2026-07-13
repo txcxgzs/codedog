@@ -384,6 +384,38 @@ async function startServer() {
             }
 
             console.log('[迁移] 列预检完成');
+
+
+            // 开发者应用审核历史表(记录每次审核/限流/密钥等变更,便于追溯)
+            try {
+                const tables = await sequelize.getQueryInterface().showAllTables();
+                if (!tables.includes('developer_app_audit_logs')) {
+                    const ddl = [
+                        'CREATE TABLE IF NOT EXISTS developer_app_audit_logs (',
+                        'id INTEGER PRIMARY KEY AUTOINCREMENT,',
+                        'app_id INTEGER NOT NULL,',
+                        'actor_user_id INTEGER,',
+                        'action VARCHAR(50) NOT NULL,',
+                        'from_status VARCHAR(20),',
+                        'to_status VARCHAR(20),',
+                        'review_note TEXT,',
+                        'rate_limit_before INTEGER,',
+                        'rate_limit_after INTEGER,',
+                        'meta TEXT,',
+                        'created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,',
+                        'updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP',
+                        ')'
+                    ].join(String.fromCharCode(10));
+                    await sequelize.query(ddl);
+                    await sequelize.query('CREATE INDEX IF NOT EXISTS idx_developer_app_audit_logs_app_id ON developer_app_audit_logs (app_id)');
+                    await sequelize.query('CREATE INDEX IF NOT EXISTS idx_developer_app_audit_logs_created_at ON developer_app_audit_logs (created_at)');
+                    console.log('[迁移] developer_app_audit_logs created');
+                }
+            } catch (auditTableErr) {
+                console.warn('[迁移] developer_app_audit_logs creation skipped:', auditTableErr.message);
+            }
+
+
         } catch (migrationErr) {
             // 表可能尚未创建(首次部署),sync 后会自动带所有列,忽略
             console.warn('[迁移] 列预检跳过:', migrationErr.message);

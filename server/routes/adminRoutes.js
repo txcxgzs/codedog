@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 后台管理路由
  */
 
@@ -193,5 +193,22 @@ router.get('/developer-apps', requirePermission('developer:review'), developerCo
 router.get('/developer-apps/:id', requirePermission('developer:review'), developerController.adminGetApp);
 router.get('/developer-apps/:id/calls', requirePermission('developer:review'), developerController.adminListAppCalls);
 router.post('/developer-apps/:id/review', requirePermission('developer:review'), developerController.adminReviewApp);
+
+
+/**
+ * Developer app management (developer:manage)
+ */
+router.put('/developer-apps/:id/rate-limit', requirePermission('developer:manage'), developerController.adminUpdateAppRateLimit);
+router.post('/developer-apps/:id/revoke-all-tokens', requirePermission('developer:manage'), developerController.adminRevokeAllTokens);
+router.post('/developer-apps/:id/regenerate-secret', requirePermission('developer:manage'), developerController.adminRegenerateSecret);
+router.delete('/developer-apps/:id', requirePermission('developer:manage'), developerController.adminDeleteApp);
+router.get('/developer-apps/:id/audit-logs', requirePermission('developer:review'), developerController.adminListAuditLogs);
+router.get('/developer-apps/:id/stats', requirePermission('developer:review'), developerController.adminCallLogStats);
+router.get('/developer-apps/:id/stats/detail', requirePermission('developer:review'), developerController.adminCallLogStatsDetail);
+
+
+
+
+
 
 module.exports = router;

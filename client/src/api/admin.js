@@ -17,6 +17,27 @@ export const adminApi = {
   reviewDeveloperApp(id, data) {
     return request.post(`/admin/developer-apps/${id}/review`, data)
   },
+  updateDeveloperAppRateLimit(id, rate_limit_per_min) {
+    return request.put(`/admin/developer-apps/${id}/rate-limit`, { rate_limit_per_min })
+  },
+  revokeAllTokens(id) {
+    return request.post(`/admin/developer-apps/${id}/revoke-all-tokens`)
+  },
+  regenerateSecret(id) {
+    return request.post(`/admin/developer-apps/${id}/regenerate-secret`)
+  },
+  deleteDeveloperApp(id) {
+    return request.delete(`/admin/developer-apps/${id}`)
+  },
+  getDeveloperAppAuditLogs(id, params = {}) {
+    return request.get(`/admin/developer-apps/${id}/audit-logs`, { params })
+  },
+  getDeveloperAppStats(id) {
+    return request.get(`/admin/developer-apps/${id}/stats`)
+  },
+  getDeveloperAppStatsDetail(id, params = {}) {
+    return request.get(`/admin/developer-apps/${id}/stats/detail`, { params })
+  },
   /**
    * 统计数据
    */

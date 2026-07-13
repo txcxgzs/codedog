@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="r-admin--page">
     <div class="r-admin--container">
       <!-- 侧边栏 -->
@@ -1372,9 +1372,21 @@
                 <el-descriptions-item label="状态">{{ developerAppStatusText(developerAppDetail.status) }}</el-descriptions-item>
                 <el-descriptions-item label="所有者">{{ developerAppDetail.owner?.nickname || developerAppDetail.owner?.username || developerAppDetail.owner_user_id }}</el-descriptions-item>
                 <el-descriptions-item label="Client ID"><code>{{ developerAppDetail.client_id }}</code></el-descriptions-item>
-                <el-descriptions-item label="主页" :span="2">{{ developerAppDetail.homepage_url || '-' }}</el-descriptions-item>
+                <el-descriptions-item label="主页" :span="2">
+                  <a v-if="developerAppDetail.homepage_url" :href="developerAppDetail.homepage_url" target="_blank" rel="noopener">{{ developerAppDetail.homepage_url }}</a>
+                  <span v-else>-</span>
+                  <el-button v-if="developerAppDetail.homepage_url" link size="small" @click="copyText(developerAppDetail.homepage_url)" title="复制"><el-icon><CopyDocument /></el-icon></el-button>
+                </el-descriptions-item>
                 <el-descriptions-item label="描述" :span="2">{{ developerAppDetail.description || '-' }}</el-descriptions-item>
-                <el-descriptions-item label="回调地址" :span="2">{{ (developerAppDetail.redirect_uris || []).join('\n') || '-' }}</el-descriptions-item>
+                <el-descriptions-item label="回调地址" :span="2">
+                  <div v-if="developerAppDetail.redirect_uris && developerAppDetail.redirect_uris.length" style="display:flex;flex-direction:column;gap:4px">
+                    <div v-for="uri in developerAppDetail.redirect_uris" :key="uri" style="display:flex;align-items:center;gap:6px">
+                      <a :href="uri" target="_blank" rel="noopener" style="word-break:break-all">{{ uri }}</a>
+                      <el-button link size="small" @click="copyText(uri)" title="复制"><el-icon><CopyDocument /></el-icon></el-button>
+                    </div>
+                  </div>
+                  <span v-else>-</span>
+                </el-descriptions-item>
                 <el-descriptions-item label="申请权限" :span="2">{{ (developerAppDetail.scopes_requested || []).join(', ') || '-' }}</el-descriptions-item>
                 <el-descriptions-item label="限流">{{ developerAppDetail.rate_limit_per_min }} 次/分钟</el-descriptions-item>
                 <el-descriptions-item label="创建时间">{{ formatDateTime(developerAppDetail.created_at) }}</el-descriptions-item>
@@ -1388,16 +1400,61 @@
                 <el-col :span="6"><el-statistic title="有效令牌" :value="developerAppDetail.stats?.activeAccessTokenCount || 0" /></el-col>
                 <el-col :span="6"><el-statistic title="API 调用" :value="developerAppDetail.stats?.callCount || 0" /></el-col>
               </el-row>
-              <h3>API 调用记录</h3>
-              <el-table :data="developerAppCalls" v-loading="loadingDeveloperAppCalls" size="small" empty-text="暂无调用记录（部署本版本后开始记录）">
-                <el-table-column prop="created_at" label="时间" width="170"><template #default="{ row }">{{ formatDateTime(row.created_at) }}</template></el-table-column>
-                <el-table-column prop="method" label="方法" width="80" />
-                <el-table-column prop="path" label="接口" min-width="230" show-overflow-tooltip />
-                <el-table-column prop="status" label="状态码" width="90" />
-                <el-table-column prop="oauth_user_id" label="调用用户ID" width="110" />
-                <el-table-column prop="ip_address" label="IP" width="140" />
-              </el-table>
-              <el-pagination v-if="developerAppCallTotal > developerAppCallPageSize" layout="total, prev, pager, next" :total="developerAppCallTotal" :page-size="developerAppCallPageSize" :current-page="developerAppCallPage" @current-change="fetchDeveloperAppCalls" style="margin-top:12px;justify-content:flex-end" />
+              <div style="margin:12px 0;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+                <el-button size="small" @click="editRateLimit(developerAppDetail)" title="修改限流"><el-icon><EditPen /></el-icon> 修改限流</el-button>
+                <el-button size="small" type="warning" @click="confirmRevokeAllTokens(developerAppDetail)" title="强制撤销全部令牌"><el-icon><SwitchButton /></el-icon> 撤销全部令牌</el-button>
+                <el-button size="small" type="primary" @click="confirmRegenerateSecret(developerAppDetail)" title="重新生成密钥"><el-icon><Key /></el-icon> 重新生成密钥</el-button>
+                <el-button size="small" type="danger" @click="confirmDeleteApp(developerAppDetail)" title="删除应用"><el-icon><Delete /></el-icon> 删除应用</el-button>
+              </div>
+              <el-row :gutter="12" style="margin:12px 0">
+                <el-col :span="6"><el-statistic title="总调用" :value="developerAppStats.total ?? 0" /></el-col>
+                <el-col :span="6"><el-statistic title="失败调用" :value="developerAppStats.fails ?? 0" /></el-col>
+                <el-col :span="6"><el-statistic title="近30日调用" :value="developerAppStats.last30d ?? 0" /></el-col>
+                <el-col :span="6"><el-statistic title="审核记录" :value="developerAppDetail.stats?.auditCount ?? 0" /></el-col>
+              </el-row>
+              <div style="margin:8px 0 16px">
+                <span style="font-size:13px;color:#666">每日调用趋势(近14日)</span>
+                <div v-if="developerAppStatsDetail.perDay" style="margin-top:6px;overflow-x:auto">
+                  <svg :viewBox="'0 0 ' + sparklineW + ' ' + sparklineH" preserveAspectRatio="none" style="width:100%;height:60px">
+                    <polyline :points="sparklinePoints" fill="none" stroke="#409eff" stroke-width="2" />
+                  </svg>
+                </div>
+                <span v-else style="font-size:12px;color:#999">暂无数据</span>
+              </div>
+              <el-tabs v-model="developerAppDetailTab">
+                <el-tab-pane label="API 调用记录" name="calls">
+                  <el-table :data="developerAppCalls" v-loading="loadingDeveloperAppCalls" size="small" empty-text="暂无调用记录（部署本版本后开始记录）">
+                    <el-table-column prop="created_at" label="时间" width="170"><template #default="{ row }">{{ formatDateTime(row.created_at) }}</template></el-table-column>
+                    <el-table-column prop="method" label="方法" width="80" />
+                    <el-table-column prop="path" label="接口" min-width="230" show-overflow-tooltip />
+                    <el-table-column prop="status" label="状态码" width="90" />
+                    <el-table-column prop="oauth_user_id" label="调用用户ID" width="110" />
+                    <el-table-column prop="ip_address" label="IP" width="140" />
+                  </el-table>
+                  <el-pagination v-if="developerAppCallTotal > developerAppCallPageSize" layout="total, prev, pager, next" :total="developerAppCallTotal" :page-size="developerAppCallPageSize" :current-page="developerAppCallPage" @current-change="fetchDeveloperAppCalls" style="margin-top:12px;justify-content:flex-end" />
+                </el-tab-pane>
+                <el-tab-pane label="审核历史" name="audit">
+                  <el-table :data="developerAppAuditLogs" v-loading="loadingDeveloperAppAuditLogs" size="small" empty-text="暂无审核记录">
+                    <el-table-column prop="created_at" label="时间" width="170"><template #default="{ row }">{{ formatDateTime(row.created_at) }}</template></el-table-column>
+                    <el-table-column prop="action" label="操作" width="140">
+                      <template #default="{ row }">{{ auditActionText(row.action) }}</template>
+                    </el-table-column>
+                    <el-table-column prop="from_status" label="原状态" width="100">
+                      <template #default="{ row }">{{ statusText(row.from_status) }}</template>
+                    </el-table-column>
+                    <el-table-column prop="to_status" label="新状态" width="100">
+                      <template #default="{ row }">{{ statusText(row.to_status) }}</template>
+                    </el-table-column>
+                    <el-table-column prop="rate_limit_before" label="限流前" width="90" />
+                    <el-table-column prop="rate_limit_after" label="限流后" width="90" />
+                    <el-table-column prop="review_note" label="备注" min-width="160" show-overflow-tooltip />
+                    <el-table-column prop="actor" label="操作人" width="140">
+                      <template #default="{ row }">{{ row.actor?.nickname || row.actor?.username || '-' }}</template>
+                    </el-table-column>
+                  </el-table>
+                  <el-pagination v-if="developerAppAuditLogsTotal > 10" layout="total, prev, pager, next" :total="developerAppAuditLogsTotal" :page-size="10" :current-page="developerAppAuditLogsPage" @current-change="fetchDeveloperAppAuditLogs" style="margin-top:12px;justify-content:flex-end" />
+                </el-tab-pane>
+              </el-tabs>
             </template>
           </div>
         </el-dialog>
@@ -2408,6 +2465,15 @@ const loadingDeveloperAppCalls = ref(false)
 const developerAppCallTotal = ref(0)
 const developerAppCallPage = ref(1)
 const developerAppCallPageSize = 10
+const developerAppDetailTab = ref('calls')
+const developerAppAuditLogs = ref([])
+const loadingDeveloperAppAuditLogs = ref(false)
+const developerAppAuditLogsTotal = ref(0)
+const developerAppAuditLogsPage = ref(1)
+const developerAppStats = ref({})
+const developerAppStatsDetail = ref({})
+const sparklineW = 600
+const sparklineH = 60
 const loadingUsers = ref(false)
 const loadingWorks = ref(false)
 const loadingComments = ref(false)
@@ -3756,6 +3822,120 @@ const getTypeName = (workType) => {
   return typeMap[type] || workType
 }
 
+const copyText = async (text) => {
+  try {
+    await navigator.clipboard.writeText(text)
+    ElMessage.success('已复制')
+  } catch (_) {
+    ElMessage.warning('复制失败，请手动复制')
+  }
+}
+
+const statusText = (s) => ({ pending: '待审核', active: '已通过', rejected: '已拒绝', suspended: '已停用' }[s] || s || '-')
+
+const auditActionText = (a) => ({
+  review_approve: '审核通过', review_reject: '审核拒绝', review_suspend: '停用',
+  rate_limit_change: '修改限流', revoke_all_tokens: '撤销全部令牌', rotate_secret: '重置密钥', delete_app: '删除应用'
+}[a] || a)
+
+const fetchDeveloperAppAuditLogs = async (page = 1) => {
+  if (!developerAppDetail.value?.id) return
+  loadingDeveloperAppAuditLogs.value = true
+  developerAppAuditLogsPage.value = page
+  try {
+    const res = await adminApi.getDeveloperAppAuditLogs(developerAppDetail.value.id, { page, pageSize: 10 })
+    if (res.code === 200) {
+      developerAppAuditLogs.value = res.data?.list || []
+      developerAppAuditLogsTotal.value = res.data?.total ?? res.data?.pagination?.total ?? 0
+    }
+  } catch (e) {
+    ElMessage.error(e.response?.data?.msg || '加载审核历史失败')
+  } finally {
+    loadingDeveloperAppAuditLogs.value = false
+  }
+}
+
+const fetchDeveloperAppStats = async () => {
+  if (!developerAppDetail.value?.id) return
+  try {
+    const [stats, detail] = await Promise.all([
+      adminApi.getDeveloperAppStats(developerAppDetail.value.id),
+      adminApi.getDeveloperAppStatsDetail(developerAppDetail.value.id, { days: 14 })
+    ])
+    if (stats.code === 200) developerAppStats.value = stats.data || {}
+    if (detail.code === 200) developerAppStatsDetail.value = detail.data || {}
+  } catch (e) {
+    // stats are non-critical
+  }
+}
+
+const editRateLimit = async (app) => {
+  try {
+    const { value } = await ElMessageBox.prompt(
+      '当前限流: ' + (app.rate_limit_per_min) + ' 次/分钟',
+      '修改限流',
+      { inputValue: String(app.rate_limit_per_min || 60), inputValidator: v => { const n = parseInt(v,10); return n >= 1 && n <= 10000 ? true : '请输入 1-10000 的整数' } }
+    )
+    const res = await adminApi.updateDeveloperAppRateLimit(app.id, parseInt(value, 10))
+    if (res.code === 200) {
+      ElMessage.success('限流已更新')
+      openDeveloperAppDetail({ id: app.id })
+      fetchDeveloperApps()
+    } else { ElMessage.error(res.msg || '更新失败') }
+  } catch (e) {
+    if (e === 'cancel' || e === 'close') return
+    ElMessage.error(e.response?.data?.msg || '更新失败')
+  }
+}
+
+const confirmRevokeAllTokens = async (app) => {
+  try {
+    await ElMessageBox.confirm('确认强制撤销该应用的全部令牌？已授权用户需重新授权。', '撤销全部令牌', { type: 'warning' })
+    const res = await adminApi.revokeAllTokens(app.id)
+    if (res.code === 200) {
+      ElMessage.success('已撤销 ' + (res.data?.accessCount || 0) + ' 个访问令牌, ' + (res.data?.refreshCount || 0) + ' 个刷新令牌')
+      openDeveloperAppDetail({ id: app.id })
+    } else { ElMessage.error(res.msg || '操作失败') }
+  } catch (e) {
+    if (e === 'cancel' || e === 'close') return
+    ElMessage.error(e.response?.data?.msg || '操作失败')
+  }
+}
+
+const confirmRegenerateSecret = async (app) => {
+  try {
+    await ElMessageBox.confirm('确认重新生成密钥？旧密钥立即失效，全部令牌将被撤销。', '重新生成密钥', { type: 'warning' })
+    const res = await adminApi.regenerateSecret(app.id)
+    if (res.code === 200) {
+      ElMessage({ message: res.msg || '密钥已重置', type: 'success', duration: 8000 })
+      ElMessageBox.alert(
+        'Client ID: ' + (res.data?.client_id) + '\nClient Secret: ' + (res.data?.client_secret) + '\n\n请立即保存，关闭后无法再次查看明文。',
+        '新密钥（请保存）',
+        { confirmButtonText: '我已保存', dangerouslyUseHTMLString: false }
+      )
+      openDeveloperAppDetail({ id: app.id })
+    } else { ElMessage.error(res.msg || '操作失败') }
+  } catch (e) {
+    if (e === 'cancel' || e === 'close') return
+    ElMessage.error(e.response?.data?.msg || '操作失败')
+  }
+}
+
+const confirmDeleteApp = async (app) => {
+  try {
+    await ElMessageBox.confirm('确认永久删除应用「' + app.name + '」？相关令牌、授权、审核记录将一并删除，不可恢复。', '删除应用', { type: 'warning', confirmButtonText: '确认删除' })
+    const res = await adminApi.deleteDeveloperApp(app.id)
+    if (res.code === 200) {
+      ElMessage.success('应用已删除')
+      developerAppDetailVisible.value = false
+      fetchDeveloperApps()
+    } else { ElMessage.error(res.msg || '删除失败') }
+  } catch (e) {
+    if (e === 'cancel' || e === 'close') return
+    ElMessage.error(e.response?.data?.msg || '删除失败')
+  }
+}
+
 const formatDateTime = (date) => {
   if (!date) return ''
   const d = new Date(date)
@@ -3811,6 +3991,16 @@ const fetchDeveloperApps = async () => {
   }
 }
 
+const sparklinePoints = computed(() => {
+  const dayMap = developerAppStatsDetail.value.perDay || {}
+  const days = Object.keys(dayMap).sort()
+  if (!days.length) return ''
+  const vals = days.map(d => dayMap[d])
+  const max = Math.max(...vals, 1)
+  const step = sparklineW / Math.max(days.length - 1, 1)
+  return vals.map((v, i) => (i * step).toFixed(1) + ',' + (sparklineH - (v / max) * (sparklineH - 4) - 2).toFixed(1)).join(' ')
+})
+
 const developerAppStatusText = (status) => ({
   pending: '待审核', active: '已通过', rejected: '已拒绝', suspended: '已停用'
 }[status] || status || '-')
@@ -3841,7 +4031,7 @@ const openDeveloperAppDetail = async (row) => {
     const res = await adminApi.getDeveloperApp(row.id)
     if (res.code === 200) {
       developerAppDetail.value = res.data
-      await fetchDeveloperAppCalls(1)
+      await Promise.all([fetchDeveloperAppCalls(1), fetchDeveloperAppAuditLogs(1), fetchDeveloperAppStats()])
     } else {
       ElMessage.error(res.msg || '加载应用详情失败')
     }

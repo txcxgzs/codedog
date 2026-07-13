@@ -564,6 +564,26 @@ const DeveloperApp = sequelize.define('DeveloperApp', {
     ]
 }, TIMESTAMP_OPTS));
 
+
+const DeveloperAppAuditLog = sequelize.define('DeveloperAppAuditLog', {
+    id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+    app_id: { type: DataTypes.INTEGER, allowNull: false },
+    actor_user_id: { type: DataTypes.INTEGER, allowNull: true },
+    action: { type: DataTypes.STRING(50), allowNull: false },
+    from_status: { type: DataTypes.STRING(20), allowNull: true },
+    to_status: { type: DataTypes.STRING(20), allowNull: true },
+    review_note: { type: DataTypes.TEXT, allowNull: true },
+    rate_limit_before: { type: DataTypes.INTEGER, allowNull: true },
+    rate_limit_after: { type: DataTypes.INTEGER, allowNull: true },
+    meta: { type: DataTypes.TEXT, allowNull: true }
+}, Object.assign({
+    tableName: 'developer_app_audit_logs',
+    indexes: [
+        { fields: ['app_id'] },
+        { fields: ['created_at'] }
+    ]
+}, TIMESTAMP_OPTS));
+
 const OAuthAuthCode = sequelize.define('OAuthAuthCode', {
     id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
     code: { type: DataTypes.STRING(128), allowNull: false, unique: true },
@@ -645,6 +665,10 @@ OAuthRefreshToken.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
 UserAppAuthorization.belongsTo(DeveloperApp, { foreignKey: 'app_id', as: 'app' });
 UserAppAuthorization.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
 DeveloperApp.hasMany(UserAppAuthorization, { foreignKey: 'app_id', as: 'authorizations' });
+DeveloperApp.hasMany(DeveloperAppAuditLog, { foreignKey: 'app_id', as: 'audit_logs', onDelete: 'CASCADE' });
+DeveloperAppAuditLog.belongsTo(DeveloperApp, { foreignKey: 'app_id', as: 'app' });
+DeveloperAppAuditLog.belongsTo(User, { foreignKey: 'actor_user_id', as: 'actor', constraints: false });
+
 
 Comment.hasMany(Comment, { foreignKey: 'parent_id', as: 'replies', onDelete: 'SET NULL' });
 Comment.belongsTo(Comment, { foreignKey: 'parent_id', as: 'parent' });
@@ -652,6 +676,6 @@ Comment.belongsTo(Comment, { foreignKey: 'parent_id', as: 'parent' });
 module.exports = {
     sequelize,
     User, Work, Comment, Post, Studio, StudioMember, StudioWork,
-    Report, ReportAuditLog, DeveloperApp, OAuthAuthCode, OAuthAccessToken, OAuthRefreshToken, UserAppAuthorization, Like, Favorite, Follow, Notification, Announcement, Banner, IpBan, CaptchaStats,
+    Report, ReportAuditLog, DeveloperApp, DeveloperAppAuditLog, OAuthAuthCode, OAuthAccessToken, OAuthRefreshToken, UserAppAuthorization, Like, Favorite, Follow, Notification, Announcement, Banner, IpBan, CaptchaStats,
     SystemConfig, OperationLog, RolePermission, Statistics, SensitiveWord
 };
