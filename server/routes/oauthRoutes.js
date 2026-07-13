@@ -6,6 +6,7 @@ const router = express.Router();
 const developerController = require('../controllers/developerController');
 const { authMiddleware, optionalAuth } = require('../middleware/auth');
 const { oauthAuth, requireScopes } = require('../middleware/oauthAuth');
+const { authFailLimiter } = require('../middleware/developerOpenApi');
 
 // Public: authorize info (login optional for preview; approve needs auth)
 router.get('/authorize-info', optionalAuth, developerController.getAuthorizeInfo);
@@ -14,7 +15,7 @@ router.get('/authorize-info', optionalAuth, developerController.getAuthorizeInfo
 router.post('/authorize', authMiddleware, developerController.approveAuthorize);
 
 // Token endpoints (client credentials)
-router.post('/token', developerController.tokenEndpoint);
+router.post('/token', authFailLimiter, developerController.tokenEndpoint);
 router.post('/revoke', developerController.revokeToken);
 
 // Optional OIDC-style userinfo using access_token

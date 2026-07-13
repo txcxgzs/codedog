@@ -3,11 +3,10 @@ const router = express.Router();
 const developerController = require('../controllers/developerController');
 const { StudioMember, Studio, Follow, Favorite, Like, Work, Post, User, DeveloperApp } = require('../models');
 const { oauthAuth, requireScopes } = require('../middleware/oauthAuth');
-const { perAppRateLimiter, authFailLimiter, failLogMiddleware } = require('../middleware/developerOpenApi');
+const { perAppRateLimiter, failLogMiddleware } = require('../middleware/developerOpenApi');
 
 const models = { DeveloperApp };
 
-router.use(authFailLimiter);
 router.use(failLogMiddleware(models));
 router.use(oauthAuth);
 router.use(function (req, res, next) {
