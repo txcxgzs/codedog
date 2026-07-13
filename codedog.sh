@@ -524,7 +524,20 @@ do_update() {
         if ! ss -tln 2>/dev/null | grep -q ':3001 '; then break; fi
         sleep 1
     done
-    $COMPOSE_CMD up -d
+    if ! $COMPOSE_CMD up -d; then
+        echo "[!!] 新容器启动失败，正在恢复维护页..."
+        $COMPOSE_CMD down --remove-orphans 2>/dev/null || true
+        for i in $(seq 1 15); do
+            if ! ss -tln 2>/dev/null | grep -q ':3001 '; then break; fi
+            sleep 1
+        done
+        if [ -f "$SCRIPT_DIR/scripts/maintenance-server.sh" ]; then
+            bash "$SCRIPT_DIR/scripts/maintenance-server.sh" start || true
+        fi
+        diagnose_startup_failure
+        wait_enter
+        return 1
+    fi
 
     # ========== 步骤7: 等待启动 + 智能诊断 ==========
     echo ""
@@ -546,6 +559,15 @@ do_update() {
         echo ""
         echo "[!] 服务未在 120 秒内响应,进入诊断模式..."
         diagnose_startup_failure
+        echo "[!] 正在停止异常容器并恢复维护页..."
+        $COMPOSE_CMD down --remove-orphans 2>/dev/null || true
+        for i in $(seq 1 15); do
+            if ! ss -tln 2>/dev/null | grep -q ':3001 '; then break; fi
+            sleep 1
+        done
+        if [ -f "$SCRIPT_DIR/scripts/maintenance-server.sh" ]; then
+            bash "$SCRIPT_DIR/scripts/maintenance-server.sh" start || true
+        fi
         wait_enter
         return 1
     fi
