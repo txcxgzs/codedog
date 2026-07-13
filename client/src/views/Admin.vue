@@ -1441,7 +1441,7 @@
               <template #default="{ row }">{{ row.author?.nickname || row.author?.username }}</template>
             </el-table-column>
             <el-table-column prop="created_at" label="发布时间" width="150">
-              <template #default="{ row }">{{ formatDate(row.created_at) }}</template>
+              <template #default="{ row }">{{ formatDateTimeSeconds(row.created_at) }}</template>
             </el-table-column>
             <el-table-column label="操作" width="160" fixed="right">
               <template #default="{ row }">

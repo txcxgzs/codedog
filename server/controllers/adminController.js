@@ -3071,6 +3071,7 @@ async function getAnnouncements(req, res) {
         
         const { count, rows } = await DbAdapter.findAndCountAll(Announcement, {
             order: [['created_at', 'DESC']],
+            include: [{ model: User, as: 'author', attributes: ['id', 'username', 'nickname'] }],
             limit: pageSize,
             offset
         });
@@ -3120,10 +3121,11 @@ async function createAnnouncement(req, res) {
             show_top_bar: toBool(show_top_bar, true),
             show_popup: toBool(show_popup, false),
             show_community: toBool(show_community, true),
-            is_active: toBool(is_active, true)
+            is_active: toBool(is_active, true),
+            author_id: req.user?.id || null
         });
 
-        logOperation(req, 'create_announcement', 'announcement', DbAdapter.getId(announcement), { title: trimmedTitle });
+        logOperation(req, 'create_announcement', 'announcement', DbAdapter.getId(announcement), { title: trimmedTitle, type: finalType, color: finalColor, content: trimmedContent?.slice(0, 100) });
         return successResponse(res, announcement, '创建成功');
     } catch (error) {
         console.error('创建公告错误:', error);

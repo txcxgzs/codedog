@@ -56,7 +56,7 @@
         <el-table-column label="操作" width="280" fixed="right">
           <template #default="{ row }">
             <el-button size="small" @click="openEdit(row)">编辑</el-button>
-            <el-button size="small" type="warning" :disabled="row.status !== `"active`'" @click="handleRotate(row)">重置密钥</el-button>
+            <el-button size="small" type="warning" :disabled="row.status !== 'active'" @click="handleRotate(row)">重置密钥</el-button>
             <el-button size="small" type="primary" link @click="showDetail(row)">详情</el-button>
           </template>
         </el-table-column>

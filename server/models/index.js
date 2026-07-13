@@ -357,7 +357,8 @@ const Announcement = sequelize.define('Announcement', {
     show_top_bar: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },
     show_popup: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
     show_community: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },
-    is_active: { type: DataTypes.BOOLEAN, defaultValue: true }
+    is_active: { type: DataTypes.BOOLEAN, defaultValue: true },
+    author_id: { type: DataTypes.INTEGER, allowNull: true }
 }, Object.assign({ tableName: 'announcements' }, TIMESTAMP_OPTS));
 
 const Banner = sequelize.define('Banner', {
@@ -518,6 +519,7 @@ User.hasMany(IpBan, { foreignKey: 'banned_by', as: 'ipBans' });
 User.hasMany(Notification, { foreignKey: 'user_id', as: 'notifications' });
 OperationLog.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
 User.hasMany(OperationLog, { foreignKey: 'user_id', as: 'operation_logs' });
+Announcement.belongsTo(User, { foreignKey: 'author_id', as: 'author' });
 
 Like.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
 Like.belongsTo(Work, { foreignKey: 'work_id', as: 'work' });
