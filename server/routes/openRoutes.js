@@ -8,8 +8,8 @@ const { perAppRateLimiter, authFailLimiter, failLogMiddleware } = require('../mi
 const models = { DeveloperApp };
 
 router.use(authFailLimiter);
-router.use(oauthAuth);
 router.use(failLogMiddleware(models));
+router.use(oauthAuth);
 router.use(function (req, res, next) {
     res.on('finish', function () {
         // Skip failed-auth responses (401/403); those are logged separately as developer_api_fail by failLogMiddleware
