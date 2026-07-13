@@ -2260,7 +2260,7 @@
       </el-form>
       <template #footer>
         <el-button @click="announcementDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="handleSaveAnnouncement">保存</el-button>
+        <el-button type="primary" :loading="savingAnnouncement" :disabled="savingAnnouncement" @click="handleSaveAnnouncement">保存</el-button>
       </template>
     </el-dialog>
     
@@ -2796,6 +2796,7 @@ const announcements = ref([])
 const loadingAnnouncements = ref(false)
 const announcementDialogVisible = ref(false)
 const editingAnnouncement = ref(null)
+const savingAnnouncement = ref(false)
 // 修复: 模型使用 type: ENUM('notice','update','warning') + is_active: Boolean,非 status
 const announcementColorOptions = [
   { value: 'blue', label: '蓝色', hex: '#409EFF' },
@@ -2840,6 +2841,7 @@ const showAnnouncementDialog = (announcement = null) => {
 }
 
 const handleSaveAnnouncement = async () => {
+  if (savingAnnouncement.value) return;
   try {
     if (!announcementForm.value.title?.trim() || !announcementForm.value.content?.trim()) {
       ElMessage.warning('请填写标题和内容')
@@ -2849,6 +2851,7 @@ const handleSaveAnnouncement = async () => {
       ElMessage.warning('请至少选择一个展示位置')
       return
     }
+    savingAnnouncement.value = true
     let res
     if (editingAnnouncement.value) {
       res = await adminApi.updateAnnouncement(editingAnnouncement.value.id, announcementForm.value)
@@ -2864,6 +2867,8 @@ const handleSaveAnnouncement = async () => {
     }
   } catch (e) {
     ElMessage.error('保存失败')
+  } finally {
+    savingAnnouncement.value = false
   }
 }
 
