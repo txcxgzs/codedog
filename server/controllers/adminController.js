@@ -573,7 +573,7 @@ async function impersonateUser(req, res) {
         // 修复: 写 httpOnly cookie
         setTokenCookie(res, token);
 
-        logOperation(req, 'impersonate_user', 'user', userId);
+        logOperation(req, 'impersonate_user', 'user', userId, { target_username: user.username, target_nickname: user.nickname, target_role: user.role, operator_id: DbAdapter.getId(req.user) });
 
         // 修复: httpOnly cookie 模式下不再返回 token,前端通过 cookie 恢复身份
         return successResponse(res, {
@@ -664,7 +664,7 @@ async function restoreFromImpersonate(req, res) {
         );
 
         setTokenCookie(res, newToken);
-        logOperation(req, 'restore_from_impersonate', 'user', DbAdapter.getId(req.user));
+        logOperation(req, 'restore_from_impersonate', 'user', DbAdapter.getId(adminUser), { admin_id: DbAdapter.getId(adminUser), admin_username: adminUser.username, was_impersonating_user_id: DbAdapter.getId(req.user) });
 
         // 修复: httpOnly cookie 模式下不再返回 token
         return successResponse(res, {
@@ -3204,7 +3204,7 @@ async function deleteAnnouncement(req, res) {
         }
         
         await DbAdapter.destroy(Announcement, { where: { id: DbAdapter.getId(announcement) } });
-        logOperation(req, 'delete_announcement', 'announcement', announcementId);
+        logOperation(req, 'delete_announcement', 'announcement', announcementId, { title: announcement?.title });
         
         return successResponse(res, null, '删除成功');
     } catch (error) {
