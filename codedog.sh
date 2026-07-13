@@ -399,17 +399,22 @@ do_update() {
 
     # ========== 步骤1: 停服务 + 备份 ==========
     echo ""
-    # 清理上次可能残留的维护页容器
-    $COMPOSE_CMD --profile maintenance down 2>/dev/null || true
+    # 清理上次可能残留的宿主机维护页服务器
+    if [ -f "$SCRIPT_DIR/scripts/maintenance-server.sh" ]; then
+        bash "$SCRIPT_DIR/scripts/maintenance-server.sh" stop 2>/dev/null || true
+    fi
 
     echo "[1/8] 停止服务并备份..."
     $COMPOSE_CMD down
-    # 等待端口释放,避免 maintenance 启动冲突
+    # 等待端口释放
     for i in $(seq 1 10); do
         if ! curl -fs http://localhost:3001/api/health >/dev/null 2>&1; then break; fi
         sleep 1
     done
-    $COMPOSE_CMD --profile maintenance up -d --no-deps maintenance 2>&1 || true
+    # 启动宿主机维护页服务器(非 Docker,直接绑定 3001)
+    if [ -f "$SCRIPT_DIR/scripts/maintenance-server.sh" ]; then
+        bash "$SCRIPT_DIR/scripts/maintenance-server.sh" start
+    fi
     echo "  [OK] 维护页已启动 (port 3001)"
 
     BACKUP="backup_$(date +%Y%m%d_%H%M%S)"
@@ -499,9 +504,10 @@ do_update() {
     # ========== 步骤6: 重新构建 + 启动 ==========
     echo ""
     echo "[6/8] 重新构建并启动..."
-    # 停止维护页,释放 3001 端口给 codedog
-    $COMPOSE_CMD --profile maintenance stop maintenance 2>/dev/null || true
-    $COMPOSE_CMD rm -f codedog-maintenance 2>/dev/null || true
+    # 停止宿主机维护页,释放 3001 端口给 codedog
+    if [ -f "$SCRIPT_DIR/scripts/maintenance-server.sh" ]; then
+        bash "$SCRIPT_DIR/scripts/maintenance-server.sh" stop
+    fi
     sleep 2  # 等待端口释放
     $COMPOSE_CMD build --no-cache
     $COMPOSE_CMD up -d
