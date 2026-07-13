@@ -10,6 +10,12 @@ MAINTENANCE_DIR="$(cd "$(dirname "$0")/../maintenance" && pwd)"
 LOG_FILE="/tmp/codedog-maintenance.log"
 
 _start() {
+    # Check python3 available
+    if ! command -v python3 >/dev/null 2>&1; then
+        echo "[!] python3 not found, cannot start maintenance server"
+        return 1
+    fi
+
     # Already running?
     if [ -f "$PID_FILE" ] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null; then
         echo "[OK] Maintenance server already running (PID $(cat "$PID_FILE"))"
