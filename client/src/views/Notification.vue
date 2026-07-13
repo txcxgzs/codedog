@@ -4,7 +4,7 @@
       <div class="r-notification--header">
         <h2>消息通知</h2>
         <div class="r-notification--actions">
-          <el-button text @click="markAllAsRead" :disabled="unreadCount === 0">
+          <el-button text @click="markAllAsRead" :disabled="!notifications.some(n => !n.is_read)">
             全部已读
           </el-button>
           <el-button text @click="clearAll" :disabled="notifications.length === 0">
