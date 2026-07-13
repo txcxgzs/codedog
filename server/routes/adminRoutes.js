@@ -176,6 +176,7 @@ router.put('/studios/:id', requireRole('admin'), adminController.updateStudio);
 router.put('/studios/:id/status', requireRole('admin'), adminController.updateStudioStatus);
 router.put('/studios/:id/points', requireRole('admin'), adminController.updateStudioPoints);
 router.put('/studios/:studioId/members/:userId', requireRole('admin'), adminController.updateStudioMember);
+router.put('/studios/:studioId/members/:userId/review', requireRole('admin'), adminController.reviewStudioMember);
 router.delete('/studios/:studioId/members/:userId', requireRole('admin'), adminController.removeStudioMember);
 router.delete('/studios/:studioId/works/:workId', requireRole('admin'), adminController.removeStudioWork);
 router.delete('/studios/:id', requireRole('admin'), adminController.deleteStudio);

@@ -4,7 +4,8 @@
 const { Op } = require('sequelize');
 const {
     User, Work, Comment, Post, DeveloperApp, OAuthAuthCode, OAuthAccessToken,
-    OAuthRefreshToken, UserAppAuthorization, sequelize
+    OAuthRefreshToken, UserAppAuthorization, sequelize,
+    StudioMember, Studio, Follow, Favorite, Like
 } = require('../models');
 const DbAdapter = require('../utils/dbAdapter');
 const { successResponse, errorResponse, paginateResponse } = require('../middleware/response');
@@ -916,5 +917,13 @@ module.exports = {
     openMyPosts,
     openMyPostDetail,
     listMyAuthorizations,
-    revokeMyAuthorization
+    revokeMyAuthorization,
+    openMyStudios,
+    openMyStudioDetail,
+    openMyFollowers,
+    openMyFollowing,
+    openMyFavorites,
+    openMyLikes,
+    openStudiosPendingReview,
+    openReviewStudio
 };

@@ -4553,6 +4553,38 @@ async function updateStudioMember(req, res) {
     }
 }
 
+async function reviewStudioMember(req, res) {
+    try {
+        const { studioId, userId } = req.params;
+        const { action } = req.body;
+
+        if (!['approve', 'reject'].includes(action)) {
+            return errorResponse(res, '无效的操作', 400);
+        }
+
+        const member = await DbAdapter.findOne(StudioMember, {
+            where: { studio_id: studioId, user_id: userId }
+        });
+        if (!member) {
+            return errorResponse(res, '成员不存在', 404);
+        }
+
+        if (member.status !== 'pending') {
+            return errorResponse(res, '该申请已处理', 400);
+        }
+
+        const newStatus = action === 'approve' ? 'active' : 'rejected';
+        await DbAdapter.update(StudioMember, { status: newStatus }, { where: { id: DbAdapter.getId(member) } });
+
+        logOperation(req, 'review_studio_member', 'studio_member', DbAdapter.getId(member), { action, status: newStatus });
+
+        return successResponse(res, null, action === 'approve' ? '已通过申请' : '已拒绝申请');
+    } catch (error) {
+        console.error('审核工作室成员错误:', error);
+        return errorResponse(res, '审核失败', 500);
+    }
+}
+
 async function removeStudioMember(req, res) {
     try {
         const { studioId, userId } = req.params;
@@ -4866,6 +4898,7 @@ module.exports = {
     updateStudioStatus,
     updateStudioMember,
     removeStudioMember,
+    reviewStudioMember,
     removeStudioWork,
     deleteStudio,
     sendUserNotification,

@@ -160,19 +160,45 @@ function pass(name, cond, detail) {
   }
 
 
-  // ---- New scopes smoke ----
-  const studios = await req('GET', '/api/open/v1/me/studios', { headers: { Authorization: 'Bearer ' + access } });
+  // ---- New scopes smoke (re-auth with new app+scopes after revoke) ----
+  const create2 = await req('POST', '/api/developer/apps', {
+    token,
+    body: {
+      name: 'Smoke App2 ' + Date.now(),
+      description: 'smoke new scopes',
+      redirect_uris: ['http://localhost:9999/callback'],
+      scopes: ['profile:read','studios:read','follows:read','favorites:read']
+    }
+  });
+  if (!pass('create app2', create2.status === 200 && create2.data?.data?.client_id, '')) failed++;
+  const app2 = create2.data?.data || {};
+  const cid2 = app2.client_id;
+  const csec2 = app2.client_secret;
+  await req('POST', '/api/admin/developer-apps/' + app2.id + '/review', { token, body: { action: 'approve' } });
+  const approve2 = await req('POST', '/api/oauth/authorize', {
+    token,
+    body: { client_id: cid2, redirect_uri: 'http://localhost:9999/callback', scope: 'profile:read studios:read follows:read favorites:read', state: 's2', approved: true }
+  });
+  let code2 = '';
+  try { code2 = new URL(approve2.data?.data?.redirect_to).searchParams.get('code') || ''; } catch {}
+  const token2 = await req('POST', '/api/oauth/token', {
+    body: { grant_type: 'authorization_code', code: code2, redirect_uri: 'http://localhost:9999/callback', client_id: cid2, client_secret: csec2 }
+  });
+  const access2 = token2.data?.data?.access_token;
+  if (!pass('app2 token exchange', !!access2, JSON.stringify(token2.data))) failed++;
+  const studios = await req('GET', '/api/open/v1/me/studios', { headers: { Authorization: 'Bearer ' + access2 } });
   if (!pass('open /studios', studios.status === 200, JSON.stringify(studios.data).slice(0, 200))) failed++;
-  const followers = await req('GET', '/api/open/v1/me/followers', { headers: { Authorization: 'Bearer ' + access } });
+  const followers = await req('GET', '/api/open/v1/me/followers', { headers: { Authorization: 'Bearer ' + access2 } });
   if (!pass('open /followers', followers.status === 200, JSON.stringify(followers.data).slice(0, 200))) failed++;
-  const following = await req('GET', '/api/open/v1/me/following', { headers: { Authorization: 'Bearer ' + access } });
+  const following = await req('GET', '/api/open/v1/me/following', { headers: { Authorization: 'Bearer ' + access2 } });
   if (!pass('open /following', following.status === 200, JSON.stringify(following.data).slice(0, 200))) failed++;
-  const favorites = await req('GET', '/api/open/v1/me/favorites', { headers: { Authorization: 'Bearer ' + access } });
+  const favorites = await req('GET', '/api/open/v1/me/favorites', { headers: { Authorization: 'Bearer ' + access2 } });
   if (!pass('open /favorites', favorites.status === 200, JSON.stringify(favorites.data).slice(0, 200))) failed++;
-  const likes = await req('GET', '/api/open/v1/me/likes', { headers: { Authorization: 'Bearer ' + access } });
+  const likes = await req('GET', '/api/open/v1/me/likes', { headers: { Authorization: 'Bearer ' + access2 } });
   if (!pass('open /likes', likes.status === 200, JSON.stringify(likes.data).slice(0, 200))) failed++;
-  const reviewNo = await req('GET', '/api/open/v1/studios/pending-review', { headers: { Authorization: 'Bearer ' + access } });
+  const reviewNo = await req('GET', '/api/open/v1/studios/pending-review', { headers: { Authorization: 'Bearer ' + access2 } });
   if (!pass('review without scope 403', reviewNo.status === 403, JSON.stringify(reviewNo.data))) failed++;
+  try { await user.destroy(); } catch {}
   try { await user.destroy(); } catch {}
   console.log('\nDONE failed=', failed);
   process.exit(failed ? 1 : 0);
