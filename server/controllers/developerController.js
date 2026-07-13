@@ -5,7 +5,7 @@ const { Op } = require('sequelize');
 const {
     User, Work, Comment, Post, DeveloperApp, OAuthAuthCode, OAuthAccessToken,
     OAuthRefreshToken, UserAppAuthorization, sequelize,
-    StudioMember, Studio, Follow, Favorite, Like
+    StudioMember, Studio, Follow, Favorite, Like, OperationLog
 } = require('../models');
 const DbAdapter = require('../utils/dbAdapter');
 const { successResponse, errorResponse, paginateResponse } = require('../middleware/response');
@@ -220,6 +220,63 @@ async function adminListApps(req, res) {
     } catch (e) {
         console.error('adminListApps', e);
         return errorResponse(res, '获取开发者应用失败', 500);
+    }
+}
+
+async function adminGetApp(req, res) {
+    try {
+        const app = await DeveloperApp.findByPk(req.params.id, {
+            include: [
+                { model: User, as: 'owner', attributes: ['id', 'username', 'nickname', 'avatar'] },
+                { model: User, as: 'reviewer', attributes: ['id', 'username', 'nickname'], required: false }
+            ]
+        });
+        if (!app) return errorResponse(res, '应用不存在', 404);
+        const appId = DbAdapter.getId(app);
+        const now = new Date();
+        const [authorizationCount, activeAuthorizationCount, accessTokenCount, activeAccessTokenCount, callCount] = await Promise.all([
+            DbAdapter.count(UserAppAuthorization, { where: { app_id: appId } }),
+            DbAdapter.count(UserAppAuthorization, { where: { app_id: appId, revoked_at: null } }),
+            DbAdapter.count(OAuthAccessToken, { where: { app_id: appId } }),
+            DbAdapter.count(OAuthAccessToken, { where: { app_id: appId, revoked_at: null, expires_at: { [Op.gt]: now } } }),
+            DbAdapter.count(OperationLog, { where: { action: 'developer_api_call', target_type: 'developer_app', target_id: appId } })
+        ]);
+        const json = app.toJSON();
+        return successResponse(res, {
+            ...serializeApp(json),
+            owner: json.owner || null,
+            reviewer: json.reviewer || null,
+            reviewed_by: json.reviewed_by,
+            owner_user_id: json.owner_user_id,
+            stats: { authorizationCount, activeAuthorizationCount, accessTokenCount, activeAccessTokenCount, callCount }
+        });
+    } catch (e) {
+        console.error('adminGetApp', e);
+        return errorResponse(res, '获取开发者应用详情失败', 500);
+    }
+}
+
+async function adminListAppCalls(req, res) {
+    try {
+        const app = await DbAdapter.findByPk(DeveloperApp, req.params.id);
+        if (!app) return errorResponse(res, '应用不存在', 404);
+        const { page, pageSize, offset } = DbAdapter.parsePagination(req.query);
+        const { count, rows } = await DbAdapter.findAndCountAll(OperationLog, {
+            where: { action: 'developer_api_call', target_type: 'developer_app', target_id: DbAdapter.getId(app) },
+            order: [['created_at', 'DESC']],
+            limit: pageSize,
+            offset
+        });
+        const list = rows.map(row => {
+            const json = row.toJSON ? row.toJSON() : row;
+            let details = {};
+            try { details = json.details ? JSON.parse(json.details) : {}; } catch (_) { details = {}; }
+            return { id: json.id, ...details, ip_address: json.ip_address, user_agent: json.user_agent, created_at: json.created_at };
+        });
+        return paginateResponse(res, list, count, page, pageSize);
+    } catch (e) {
+        console.error('adminListAppCalls', e);
+        return errorResponse(res, '获取应用调用记录失败', 500);
     }
 }
 
@@ -905,6 +962,8 @@ module.exports = {
     rotateSecret,
     getScopeDocs,
     adminListApps,
+    adminGetApp,
+    adminListAppCalls,
     adminReviewApp,
     getAuthorizeInfo,
     approveAuthorize,

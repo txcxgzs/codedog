@@ -1344,6 +1344,7 @@
             <el-table-column label="操作" width="260" fixed="right">
               <template #default="{ row }">
                 <div class="r-admin--ops">
+                  <el-button size="small" @click="openDeveloperAppDetail(row)">详情</el-button>
                   <el-button size="small" type="success" :disabled="row.status==='active'" @click="reviewDeveloperApp(row,'approve')">通过</el-button>
                   <el-button size="small" type="danger" :disabled="row.status==='rejected'" @click="reviewDeveloperApp(row,'reject')">拒绝</el-button>
                   <el-button size="small" type="warning" :disabled="row.status==='suspended'" @click="reviewDeveloperApp(row,'suspend')">停用</el-button>
@@ -1362,6 +1363,44 @@
             />
           </div>
         </div>
+
+        <el-dialog v-model="developerAppDetailVisible" title="开发者应用详情" width="820px" destroy-on-close>
+          <div v-loading="loadingDeveloperAppDetail">
+            <template v-if="developerAppDetail">
+              <el-descriptions :column="2" border>
+                <el-descriptions-item label="应用名称">{{ developerAppDetail.name }}</el-descriptions-item>
+                <el-descriptions-item label="状态">{{ developerAppStatusText(developerAppDetail.status) }}</el-descriptions-item>
+                <el-descriptions-item label="所有者">{{ developerAppDetail.owner?.nickname || developerAppDetail.owner?.username || developerAppDetail.owner_user_id }}</el-descriptions-item>
+                <el-descriptions-item label="Client ID"><code>{{ developerAppDetail.client_id }}</code></el-descriptions-item>
+                <el-descriptions-item label="主页" :span="2">{{ developerAppDetail.homepage_url || '-' }}</el-descriptions-item>
+                <el-descriptions-item label="描述" :span="2">{{ developerAppDetail.description || '-' }}</el-descriptions-item>
+                <el-descriptions-item label="回调地址" :span="2">{{ (developerAppDetail.redirect_uris || []).join('\n') || '-' }}</el-descriptions-item>
+                <el-descriptions-item label="申请权限" :span="2">{{ (developerAppDetail.scopes_requested || []).join(', ') || '-' }}</el-descriptions-item>
+                <el-descriptions-item label="限流">{{ developerAppDetail.rate_limit_per_min }} 次/分钟</el-descriptions-item>
+                <el-descriptions-item label="创建时间">{{ formatDateTime(developerAppDetail.created_at) }}</el-descriptions-item>
+                <el-descriptions-item label="审核管理员">{{ developerAppDetail.reviewer?.nickname || developerAppDetail.reviewer?.username || (developerAppDetail.reviewed_by ? 'ID:' + developerAppDetail.reviewed_by : '未审核') }}</el-descriptions-item>
+                <el-descriptions-item label="审核时间">{{ developerAppDetail.reviewed_at ? formatDateTime(developerAppDetail.reviewed_at) : '-' }}</el-descriptions-item>
+                <el-descriptions-item label="审核备注" :span="2">{{ developerAppDetail.review_note || '-' }}</el-descriptions-item>
+              </el-descriptions>
+              <el-row :gutter="12" style="margin:16px 0">
+                <el-col :span="6"><el-statistic title="累计授权" :value="developerAppDetail.stats?.authorizationCount || 0" /></el-col>
+                <el-col :span="6"><el-statistic title="有效授权" :value="developerAppDetail.stats?.activeAuthorizationCount || 0" /></el-col>
+                <el-col :span="6"><el-statistic title="有效令牌" :value="developerAppDetail.stats?.activeAccessTokenCount || 0" /></el-col>
+                <el-col :span="6"><el-statistic title="API 调用" :value="developerAppDetail.stats?.callCount || 0" /></el-col>
+              </el-row>
+              <h3>API 调用记录</h3>
+              <el-table :data="developerAppCalls" v-loading="loadingDeveloperAppCalls" size="small" empty-text="暂无调用记录（部署本版本后开始记录）">
+                <el-table-column prop="created_at" label="时间" width="170"><template #default="{ row }">{{ formatDateTime(row.created_at) }}</template></el-table-column>
+                <el-table-column prop="method" label="方法" width="80" />
+                <el-table-column prop="path" label="接口" min-width="230" show-overflow-tooltip />
+                <el-table-column prop="status" label="状态码" width="90" />
+                <el-table-column prop="oauth_user_id" label="调用用户ID" width="110" />
+                <el-table-column prop="ip_address" label="IP" width="140" />
+              </el-table>
+              <el-pagination v-if="developerAppCallTotal > developerAppCallPageSize" layout="total, prev, pager, next" :total="developerAppCallTotal" :page-size="developerAppCallPageSize" :current-page="developerAppCallPage" @current-change="fetchDeveloperAppCalls" style="margin-top:12px;justify-content:flex-end" />
+            </template>
+          </div>
+        </el-dialog>
 
         <div v-if="activeMenu === 'crawl'" class="r-admin--section">
           <h2 class="r-admin--title">作品爬取</h2>
@@ -2360,7 +2399,15 @@ const loadingStats = ref(false)
 const loadingDeveloperApps = ref(false)
 const developerApps = ref([])
 const developerAppTotal = ref(0)
-const developerAppFilter = ref({ status: 'pending', keyword: '', page: 1, pageSize: 20 })
+const developerAppFilter = ref({ status: '', keyword: '', page: 1, pageSize: 20 })
+const developerAppDetailVisible = ref(false)
+const loadingDeveloperAppDetail = ref(false)
+const developerAppDetail = ref(null)
+const developerAppCalls = ref([])
+const loadingDeveloperAppCalls = ref(false)
+const developerAppCallTotal = ref(0)
+const developerAppCallPage = ref(1)
+const developerAppCallPageSize = 10
 const loadingUsers = ref(false)
 const loadingWorks = ref(false)
 const loadingComments = ref(false)
@@ -3761,6 +3808,47 @@ const fetchDeveloperApps = async () => {
     ElMessage.error(e.response?.data?.msg || '加载失败')
   } finally {
     loadingDeveloperApps.value = false
+  }
+}
+
+const developerAppStatusText = (status) => ({
+  pending: '待审核', active: '已通过', rejected: '已拒绝', suspended: '已停用'
+}[status] || status || '-')
+
+const fetchDeveloperAppCalls = async (page = 1) => {
+  if (!developerAppDetail.value?.id) return
+  loadingDeveloperAppCalls.value = true
+  developerAppCallPage.value = page
+  try {
+    const res = await adminApi.getDeveloperAppCalls(developerAppDetail.value.id, { page, pageSize: developerAppCallPageSize })
+    if (res.code === 200) {
+      developerAppCalls.value = res.data?.list || []
+      developerAppCallTotal.value = res.data?.total ?? res.data?.pagination?.total ?? 0
+    }
+  } catch (e) {
+    ElMessage.error(e.response?.data?.msg || '加载调用记录失败')
+  } finally {
+    loadingDeveloperAppCalls.value = false
+  }
+}
+
+const openDeveloperAppDetail = async (row) => {
+  developerAppDetailVisible.value = true
+  loadingDeveloperAppDetail.value = true
+  developerAppDetail.value = null
+  developerAppCalls.value = []
+  try {
+    const res = await adminApi.getDeveloperApp(row.id)
+    if (res.code === 200) {
+      developerAppDetail.value = res.data
+      await fetchDeveloperAppCalls(1)
+    } else {
+      ElMessage.error(res.msg || '加载应用详情失败')
+    }
+  } catch (e) {
+    ElMessage.error(e.response?.data?.msg || '加载应用详情失败')
+  } finally {
+    loadingDeveloperAppDetail.value = false
   }
 }
 

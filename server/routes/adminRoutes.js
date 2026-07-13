@@ -190,6 +190,8 @@ router.put('/studio-works/:id/score', requireRole('admin'), adminController.setW
  * Developer app review
  */
 router.get('/developer-apps', requirePermission('developer:review'), developerController.adminListApps);
+router.get('/developer-apps/:id', requirePermission('developer:review'), developerController.adminGetApp);
+router.get('/developer-apps/:id/calls', requirePermission('developer:review'), developerController.adminListAppCalls);
 router.post('/developer-apps/:id/review', requirePermission('developer:review'), developerController.adminReviewApp);
 
 module.exports = router;

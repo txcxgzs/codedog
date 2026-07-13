@@ -7,6 +7,7 @@ const developerController = require('../controllers/developerController');
 const { StudioMember, Studio, Follow, Favorite, Like, Work, Post, User } = require('../models');
 const { oauthAuth, requireScopes } = require('../middleware/oauthAuth');
 const { createRateLimiter } = require('../middleware/rateLimit');
+const { logOperation } = require('../middleware/operationLog');
 
 const openApiRateLimiter = createRateLimiter({
     windowMs: 60 * 1000,
@@ -20,6 +21,17 @@ const openApiRateLimiter = createRateLimiter({
 });
 
 router.use(oauthAuth);
+router.use((req, res, next) => {
+    res.on('finish', () => {
+        logOperation(req, 'developer_api_call', 'developer_app', req.oauth?.appId, {
+            method: req.method,
+            path: req.originalUrl.split('?')[0],
+            status: res.statusCode,
+            oauth_user_id: req.oauth?.userId || null
+        }).catch(error => console.error('developer api call log error:', error.message));
+    });
+    next();
+});
 router.use(openApiRateLimiter);
 
 router.get('/me', requireScopes('profile:read'), developerController.openMe);

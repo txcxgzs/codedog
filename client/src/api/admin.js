@@ -8,6 +8,12 @@ export const adminApi = {
   getDeveloperApps(params = {}) {
     return request.get('/admin/developer-apps', { params })
   },
+  getDeveloperApp(id) {
+    return request.get(`/admin/developer-apps/${id}`)
+  },
+  getDeveloperAppCalls(id, params = {}) {
+    return request.get(`/admin/developer-apps/${id}/calls`, { params })
+  },
   reviewDeveloperApp(id, data) {
     return request.post(`/admin/developer-apps/${id}/review`, data)
   },
