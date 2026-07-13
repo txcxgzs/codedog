@@ -351,6 +351,12 @@ const Announcement = sequelize.define('Announcement', {
     title: { type: DataTypes.STRING(200), allowNull: false },
     content: { type: DataTypes.TEXT, allowNull: false },
     type: { type: DataTypes.ENUM('notice', 'update', 'warning'), defaultValue: 'notice' },
+    // 展示颜色预设: blue/green/orange/red/purple/yellow
+    color: { type: DataTypes.STRING(20), allowNull: false, defaultValue: 'blue' },
+    // 展示位置: 可多选
+    show_top_bar: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },
+    show_popup: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
+    show_community: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },
     is_active: { type: DataTypes.BOOLEAN, defaultValue: true }
 }, Object.assign({ tableName: 'announcements' }, TIMESTAMP_OPTS));
 

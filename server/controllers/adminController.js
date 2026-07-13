@@ -2,7 +2,7 @@
  * 后台管理控制器
  */
 
-const { User, Work, Comment, Post, Favorite, Follow, Banner, Report, IpBan, Notification, Announcement, SystemConfig, OperationLog, SensitiveWord, RolePermission, CaptchaStats, Studio, StudioMember, StudioWork, Like, sequelize } = require('../models');
+const { User, Work, Comment, Post, Favorite, Follow, Banner, Report, ReportAuditLog, IpBan, Notification, Announcement, SystemConfig, OperationLog, SensitiveWord, RolePermission, CaptchaStats, Studio, StudioMember, StudioWork, Like, sequelize } = require('../models');
 const { successResponse, errorResponse, paginateResponse } = require('../middleware/response');
 const { getAllRoles, canManageUser, getRole, hasPermission, getAllPermissions, refreshRoleCache, DEFAULT_ROLES } = require('../config/permissions');
 const { logOperation } = require('../middleware/operationLog');
@@ -1288,7 +1288,8 @@ async function crawlWork(req, res) {
         }
 
         // 识别作品类型 (主类型
-        const workType = workDetail.type || 'KITTEN';
+        let workType = workDetail.type || workDetail.ide_type || 'KITTEN';
+                if (/^neko$/i.test(String(workType))) workType = 'NEMO';
 
         // 修复: create Work + 重算 work_count 用事务包裹,与 workController.publishWork 保持一致
         const work = await sequelize.transaction(async (t) => {
@@ -1740,7 +1741,8 @@ async function crawlUserWorks(req, res) {
                     type: workDetail.type
                 });
                 
-                const workType = workDetail.type || 'KITTEN';
+                let workType = workDetail.type || workDetail.ide_type || 'KITTEN';
+                if (/^neko$/i.test(String(workType))) workType = 'NEMO';
 
                 // (报告1 #1) 爬虫落库前对作品名+描述做内容审核，与 workController.publishWork 一致：
                 // delete→跳过，review→status:'pending'，pass→status:'published'
@@ -2120,7 +2122,19 @@ async function getComments(req, res) {
                 {
                     model: Work,
                     as: 'work',
-                    attributes: ['id', 'name', 'preview'],
+                    attributes: ['id', 'name', 'preview', 'codemao_work_id', 'status'],
+                    required: false
+                },
+                {
+                    model: Post,
+                    as: 'post',
+                    attributes: ['id', 'title', 'status'],
+                    required: false
+                },
+                {
+                    model: User,
+                    as: 'reply_to_user',
+                    attributes: ['id', 'username', 'nickname'],
                     required: false
                 }
             ],
@@ -2808,14 +2822,7 @@ async function getReportAuditLogs(req, res) {
  */
 async function getProxyConfig(req, res) {
     await proxyService.loadConfig();
-    return successResponse(res, {
-        enabled: proxyService.enabled,
-        poolUrl: proxyService.poolUrl,
-        protocol: proxyService._defaultProtocol || '',
-        autoRefresh: proxyService._refreshInterval ? Math.round(proxyService._refreshInterval / 60000) : 0,
-        currentProxy: proxyService.currentProxy ? proxyService.currentProxy.url : null,
-        cacheCount: proxyService._cache.length
-    });
+    return successResponse(res, proxyService.getStatus());
 }
 
 /**
@@ -2824,27 +2831,12 @@ async function getProxyConfig(req, res) {
 async function updateProxyConfig(req, res) {
     try {
         const { enabled, poolUrl, protocol, autoRefresh } = req.body;
-        if (enabled !== undefined) await proxyService.setEnabled(!!enabled);
+        // 顺序: URL/协议/自动刷新先写入，最后处理 enabled，以便 setEnabled 能读到最新配置
         if (poolUrl !== undefined) await proxyService.setPoolUrl(poolUrl);
-        if (protocol !== undefined && proxyService.enabled) {
-            await SystemConfig.upsert({ config_key: 'proxy_protocol', config_value: protocol || '' });
-        }
-        if (autoRefresh !== undefined && proxyService.enabled) {
-            const ar = parseInt(autoRefresh, 10);
-            if (ar > 0) {
-                proxyService.startAutoRefresh(ar * 60 * 1000);
-            } else {
-                proxyService.stopAutoRefresh();
-            }
-            await SystemConfig.upsert({ config_key: 'proxy_auto_refresh', config_value: String(ar) });
-        }
-        await proxyService.loadConfig();
-        return successResponse(res, {
-            enabled: proxyService.enabled,
-            poolUrl: proxyService.poolUrl,
-            protocol: protocol || null,
-            autoRefresh: autoRefresh || 0
-        }, '代理配置已更新');
+        if (protocol !== undefined) await proxyService.setProtocol(protocol || '');
+        if (autoRefresh !== undefined) await proxyService.setAutoRefresh(autoRefresh);
+        if (enabled !== undefined) await proxyService.setEnabled(!!enabled);
+        return successResponse(res, proxyService.getStatus(), '代理配置已更新');
     } catch (error) {
         console.error('更新代理配置错误:', error);
         return errorResponse(res, '更新失败: ' + error.message, 500);
@@ -3092,7 +3084,7 @@ async function getAnnouncements(req, res) {
 
 async function createAnnouncement(req, res) {
     try {
-        const { title, content, type } = req.body;
+        const { title, content, type, is_active, color, show_top_bar, show_popup, show_community } = req.body;
 
         // (报告1 #13) 先 trim 再校验非空/长度，避免纯空白标题/内容绕过校验，并落库规范化文本
         const trimmedTitle = title != null ? String(title).trim() : '';
@@ -3110,15 +3102,28 @@ async function createAnnouncement(req, res) {
             return errorResponse(res, '内容不能超过10000字', 400);
         }
 
-        // 修复: 尊重前端传入的 is_active(默认 true),不再硬编码
+        const allowedTypes = ['notice', 'update', 'warning'];
+        const allowedColors = ['blue', 'green', 'orange', 'red', 'purple', 'yellow'];
+        const finalType = allowedTypes.includes(type) ? type : 'notice';
+        const finalColor = allowedColors.includes(color) ? color : 'blue';
+        const toBool = (v, defaultValue) => {
+            if (v === undefined || v === null || v === '') return defaultValue;
+            if (v === false || v === 0 || v === '0' || v === 'false' || v === 'off') return false;
+            return true;
+        };
+
         const announcement = await DbAdapter.create(Announcement, {
             title: trimmedTitle,
             content: trimmedContent,
-            type: type || 'notice',
-            is_active: is_active !== undefined ? is_active !== false && is_active !== 'false' : true
+            type: finalType,
+            color: finalColor,
+            show_top_bar: toBool(show_top_bar, true),
+            show_popup: toBool(show_popup, false),
+            show_community: toBool(show_community, true),
+            is_active: toBool(is_active, true)
         });
 
-        logOperation(req, 'create_announcement', 'announcement', DbAdapter.getId(announcement), { title });
+        logOperation(req, 'create_announcement', 'announcement', DbAdapter.getId(announcement), { title: trimmedTitle });
         return successResponse(res, announcement, '创建成功');
     } catch (error) {
         console.error('创建公告错误:', error);
@@ -3129,13 +3134,20 @@ async function createAnnouncement(req, res) {
 async function updateAnnouncement(req, res) {
     try {
         const { announcementId } = req.params;
-        const { title, content, type, is_active } = req.body;
-        
+        const { title, content, type, is_active, color, show_top_bar, show_popup, show_community } = req.body;
+
         const announcement = await DbAdapter.findByPk(Announcement, announcementId);
         if (!announcement) {
             return errorResponse(res, '公告不存在', 404);
         }
-        
+
+        const allowedTypes = ['notice', 'update', 'warning'];
+        const allowedColors = ['blue', 'green', 'orange', 'red', 'purple', 'yellow'];
+        const toBool = (v) => {
+            if (v === false || v === 0 || v === '0' || v === 'false' || v === 'off') return false;
+            return true;
+        };
+
         const updateData = {};
         if (title !== undefined) {
             const t = String(title).trim();
@@ -3150,25 +3162,28 @@ async function updateAnnouncement(req, res) {
             updateData.content = c;
         }
         if (type !== undefined) {
-            if (!['notice', 'update', 'warning'].includes(type)) {
+            if (!allowedTypes.includes(type)) {
                 return errorResponse(res, '无效的公告类型', 400);
             }
             updateData.type = type;
         }
-        if (is_active !== undefined) updateData.is_active = is_active;
-        
-        await DbAdapter.update(Announcement, updateData, { where: { id: announcementId } });
-        logOperation(req, 'update_announcement', 'announcement', announcementId, { 
-            title,
-            changes: updateData,
-            old_values: {
-                title: announcement.title,
-                content: announcement.content,
-                type: announcement.type,
-                is_active: announcement.is_active
+        if (color !== undefined) {
+            if (!allowedColors.includes(color)) {
+                return errorResponse(res, '无效的公告颜色', 400);
             }
+            updateData.color = color;
+        }
+        if (show_top_bar !== undefined) updateData.show_top_bar = toBool(show_top_bar);
+        if (show_popup !== undefined) updateData.show_popup = toBool(show_popup);
+        if (show_community !== undefined) updateData.show_community = toBool(show_community);
+        if (is_active !== undefined) updateData.is_active = toBool(is_active);
+
+        await DbAdapter.update(Announcement, updateData, { where: { id: announcementId } });
+        logOperation(req, 'update_announcement', 'announcement', announcementId, {
+            title: updateData.title || announcement.title,
+            changes: updateData
         });
-        
+
         const updatedAnnouncement = await DbAdapter.findByPk(Announcement, announcementId);
         return successResponse(res, updatedAnnouncement, '更新成功');
     } catch (error) {

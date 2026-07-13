@@ -316,9 +316,21 @@ async function getWorks(req, res) {
 async function getWorkDetail(req, res) {
     try {
         const codemaoId = req.params.codemaoId;
+        const idText = String(codemaoId || '').trim();
+        // 兼容管理后台跳转: 路由参数可能是 codemao_work_id 或本地 works.id
+        let where = { codemao_work_id: idText };
+        if (/^\d{1,20}$/.test(idText)) {
+            where = {
+                [Op.or]: [
+                    { codemao_work_id: idText },
+                    { id: Number(idText) }
+                ]
+            };
+        }
+
 
         const work = await DbAdapter.findOne(Work, {
-            where: { codemao_work_id: String(codemaoId) },
+            where,
             include: [{
                 model: User,
                 as: 'author',
@@ -645,9 +657,10 @@ async function fetchOrCreateWork(workId) {
 
     const user = await ensureCodemaoUser(workDetail.user_info);
     
-    const type = workDetail.work_label_list && workDetail.work_label_list[0] 
-        ? workDetail.work_label_list[0].label_name 
-        : '其他';
+    // 与后台 crawlWork 保持一致: 使用 IDE 类型，而非 work_label_list 中文标签
+    let type = workDetail.type || workDetail.ide_type || 'KITTEN';
+    // 编程猫 Nemo 部分接口可能返回 Neko/NEKO，统一规范为 NEMO
+    if (/^neko$/i.test(String(type))) type = 'NEMO';
     
     const workInfo = {
         codemaoWorkId: workDetail.id,
@@ -655,7 +668,7 @@ async function fetchOrCreateWork(workId) {
         description: workDetail.description || '',
         preview: workDetail.preview || '',
         type: type,
-        ideType: workDetail.ide_type || 'KITTEN',
+        ideType: (/^neko$/i.test(String(workDetail.ide_type || type)) ? 'NEMO' : (workDetail.ide_type || type || 'KITTEN')),
         playerUrl: workDetail.player_url || '',
         codemaoAuthorId: workDetail.user_info?.id,
         codemaoAuthorName: workDetail.user_info?.nickname || '未知作者',

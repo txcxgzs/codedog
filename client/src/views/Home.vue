@@ -246,6 +246,7 @@ const getTypeName = (workType) => {
   const type = workType.toUpperCase()
   const typeMap = {
     'KITTEN': 'Kitten',
+    'KITTEN4': 'KITTEN4',
     'NEMO': 'Nemo',
     'COCO': 'Coco',
     'WOOD': 'Wood',
@@ -254,7 +255,7 @@ const getTypeName = (workType) => {
     'CODE_BLOCK': '代码岛',
     'PYTHON': 'Python',
     'SCRATCH': 'Scratch',
-    'NEKO': 'Neko'
+    'NEKO': 'Nemo'
   }
   return typeMap[type] || workType
 }

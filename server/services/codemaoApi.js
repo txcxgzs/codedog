@@ -54,14 +54,22 @@ function getProxyAgent() {
  * 获取axios请求配置
  */
 function getAxiosConfig(customConfig = {}) {
-    const proxyAgent = getProxyAgent();
-
-    return {
+    const base = {
         timeout: 15000,
         headers: DEFAULT_HEADERS,
-        ...(proxyAgent && { httpsAgent: proxyAgent, proxy: false }),
         ...customConfig
     };
+
+    // 优先使用代理池(DB配置)，并保留 __proxyUrl 供失败时 markDead
+    if (proxyService && proxyService.enabled) {
+        return proxyService.getAxiosConfig(base);
+    }
+
+    const proxyAgent = getProxyAgent();
+    if (proxyAgent) {
+        return { ...base, httpsAgent: proxyAgent, httpAgent: proxyAgent, proxy: false };
+    }
+    return base;
 }
 
 async function requestWithRetry(requestFn, retries = 2, delay = 1000) {
@@ -69,6 +77,15 @@ async function requestWithRetry(requestFn, retries = 2, delay = 1000) {
         try {
             return await requestFn();
         } catch (error) {
+            // 仅网络错误时切换代理; 有 HTTP 响应说明链路通, 不杀代理
+            if (proxyService.enabled && !error.response) {
+                const usedProxyUrl = (error.config && error.config.__proxyUrl)
+                    || (proxyService.currentProxy && proxyService.currentProxy.url)
+                    || null;
+                if (usedProxyUrl) {
+                    try { await proxyService.markDead(usedProxyUrl); } catch (_) { /* ignore */ }
+                }
+            }
             if (i === retries) throw error;
             await new Promise(r => setTimeout(r, delay * (i + 1)));
         }
@@ -195,12 +212,19 @@ const codemaoApi = {
                 lastError = error;
                 console.error(`[编程猫] 登录失败 (第${attempt + 1}次):`, error.message);
 
-                if (proxyService.enabled) {
-                    const currentProxy = proxyService.pickOne();
-                    if (currentProxy) {
-                        await proxyService.markDead(currentProxy.url);
+                // 仅网络/代理故障时标记死亡; 业务错误(403密码错误等有 response)不杀代理
+                const isNetworkError = !error.response;
+                if (proxyService.enabled && isNetworkError) {
+                    const usedProxyUrl = (error.config && error.config.__proxyUrl)
+                        || (proxyService.currentProxy && proxyService.currentProxy.url)
+                        || null;
+                    if (usedProxyUrl) {
+                        await proxyService.markDead(usedProxyUrl);
                     }
                 }
+
+                // 有 HTTP 响应的业务错误无需切换代理重试
+                if (error.response) break;
 
                 if (attempt < 2) await new Promise(r => setTimeout(r, 1000));
             }
@@ -216,7 +240,6 @@ const codemaoApi = {
 
         return { error: true, message: lastError?.message || '网络请求失败' };
     },
-
     /**
      * 获取用户信息
      */

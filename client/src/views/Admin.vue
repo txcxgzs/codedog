@@ -701,10 +701,17 @@
                 <div class="r-admin--comment_content">{{ row.content }}</div>
               </template>
             </el-table-column>
-            <el-table-column label="所属作品" width="150">
+            <el-table-column label="所属位置" min-width="200">
               <template #default="{ row }">
-                <span v-if="row.work">{{ row.work.name }}</span>
-                <span v-else>-</span>
+                <template v-if="row.work">
+                  <el-tag size="small" type="warning" style="margin-right:6px;">作品</el-tag>
+                  <el-link type="primary" :underline="false" :href="getCommentWorkPath(row)" target="_blank" @click.prevent="openCommentTarget(row)">{{ row.work.name }}</el-link>
+                </template>
+                <template v-else-if="row.post || row.post_id">
+                  <el-tag size="small" type="success" style="margin-right:6px;">帖子</el-tag>
+                  <el-link type="primary" :underline="false" :href="getCommentPostPath(row)" target="_blank" @click.prevent="openCommentTarget(row)">{{ row.post?.title || ('帖子 #' + row.post_id) }}</el-link>
+                </template>
+                <span v-else style="color:#999;">-</span>
               </template>
             </el-table-column>
             <el-table-column prop="like_count" label="点赞" width="70" />
@@ -715,15 +722,12 @@
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column prop="created_at" label="时间" width="110">
-              <template #default="{ row }">{{ formatDate(row.created_at) }}</template>
+            <el-table-column prop="created_at" label="时间" width="160">
+              <template #default="{ row }">{{ formatDateTimeSeconds(row.created_at) }}</template>
             </el-table-column>
-            <el-table-column label="操作" width="120" fixed="right">
+            <el-table-column label="操作" width="100" fixed="right">
               <template #default="{ row }">
-                <el-button size="small" :type="row.status === 'active' ? 'warning' : 'success'" @click="toggleCommentStatus(row)">
-                  {{ row.status === 'active' ? '隐藏' : '显示' }}
-                </el-button>
-                <el-button size="small" type="danger" @click="handleDeleteComment(row)">删除</el-button>
+                <el-button size="small" type="primary" @click="showCommentDetail(row)">详情</el-button>
               </template>
             </el-table-column>
           </el-table>
@@ -740,6 +744,76 @@
           </div>
         </div>
         
+        <!-- 评论详情弹窗 -->
+        <el-dialog v-model="commentDetailVisible" title="评论详情" width="720px" destroy-on-close>
+          <div v-if="commentDetail" class="r-admin--comment_detail">
+            <div class="r-admin--comment_detail_header">
+              <div class="r-admin--comment_detail_user" v-if="commentDetail.user">
+                <img :src="commentDetail.user.avatar || defaultAvatar" class="r-admin--comment_detail_avatar" referrerpolicy="no-referrer" />
+                <div>
+                  <div class="r-admin--comment_detail_name">{{ commentDetail.user.nickname || commentDetail.user.username }}</div>
+                  <div class="r-admin--comment_detail_uid">用户ID: {{ commentDetail.user.id }}</div>
+                </div>
+              </div>
+              <el-tag :type="commentDetail.status === 'active' ? 'success' : commentDetail.status === 'hidden' ? 'warning' : 'danger'">
+                {{ commentDetail.status === 'active' ? '正常' : commentDetail.status === 'hidden' ? '隐藏' : '已删除' }}
+              </el-tag>
+            </div>
+
+            <el-descriptions :column="2" border size="small" style="margin-top: 16px;">
+              <el-descriptions-item label="评论ID">{{ commentDetail.id }}</el-descriptions-item>
+              <el-descriptions-item label="点赞数">{{ commentDetail.like_count || 0 }}</el-descriptions-item>
+              <el-descriptions-item label="发布时间" :span="2">{{ formatDateTimeSeconds(commentDetail.created_at) }}</el-descriptions-item>
+              <el-descriptions-item label="更新时间" :span="2">{{ formatDateTimeSeconds(commentDetail.updated_at) || '-' }}</el-descriptions-item>
+              <el-descriptions-item label="评论位置" :span="2">
+                <template v-if="commentDetail.work">
+                  <el-tag size="small" type="warning" style="margin-right:6px;">作品</el-tag>
+                  <el-link type="primary" :href="getCommentWorkPath(commentDetail)" target="_blank" @click.prevent="openCommentTarget(commentDetail)">{{ commentDetail.work.name }}</el-link>
+                  <span style="color:#999;margin-left:8px;">(ID: {{ commentDetail.work.id }}
+                    <template v-if="commentDetail.work.codemao_work_id"> / 编程猫: {{ commentDetail.work.codemao_work_id }}</template>)
+                  </span>
+                </template>
+                <template v-else-if="commentDetail.post || commentDetail.post_id">
+                  <el-tag size="small" type="success" style="margin-right:6px;">帖子</el-tag>
+                  <el-link type="primary" :href="getCommentPostPath(commentDetail)" target="_blank" @click.prevent="openCommentTarget(commentDetail)">{{ commentDetail.post?.title || ('帖子 #' + commentDetail.post_id) }}</el-link>
+                  <span style="color:#999;margin-left:8px;">(ID: {{ commentDetail.post?.id || commentDetail.post_id }})</span>
+                </template>
+                <span v-else>未知位置</span>
+              </el-descriptions-item>
+              <el-descriptions-item label="父评论ID">{{ commentDetail.parent_id || '无（顶层评论）' }}</el-descriptions-item>
+              <el-descriptions-item label="回复对象">
+                <template v-if="commentDetail.reply_to_user">
+                  {{ commentDetail.reply_to_user.nickname || commentDetail.reply_to_user.username }}
+                  (ID: {{ commentDetail.reply_to_user.id }})
+                </template>
+                <span v-else>-</span>
+              </el-descriptions-item>
+              <el-descriptions-item label="评论内容" :span="2">
+                <div class="r-admin--comment_detail_content">{{ commentDetail.content }}</div>
+              </el-descriptions-item>
+            </el-descriptions>
+
+            <div class="r-admin--comment_detail_actions">
+              <el-button
+                v-if="commentDetail.status !== 'deleted'"
+                :type="commentDetail.status === 'active' ? 'warning' : 'success'"
+                @click="toggleCommentStatus(commentDetail)"
+              >
+                {{ commentDetail.status === 'active' ? '隐藏评论' : '显示评论' }}
+              </el-button>
+              <el-button
+                v-if="commentDetail.status !== 'deleted'"
+                type="danger"
+                @click="handleDeleteComment(commentDetail)"
+              >删除评论</el-button>
+              <el-button type="primary" plain @click="openCommentTarget(commentDetail)" :disabled="!commentDetail.work && !commentDetail.post && !commentDetail.post_id">
+                打开所在页面
+              </el-button>
+              <el-button @click="commentDetailVisible = false">关闭</el-button>
+            </div>
+          </div>
+        </el-dialog>
+
         <!-- 帖子管理 -->
         <div v-if="activeMenu === 'posts'" class="r-admin--section">
           <div class="r-admin--header">
@@ -1002,10 +1076,12 @@
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="120" fixed="right">
+            <el-table-column label="操作" width="160" fixed="right">
               <template #default="{ row }">
-                <el-button size="small" type="primary" @click="showBannerDialog(row)">编辑</el-button>
-                <el-button size="small" type="danger" @click="handleDeleteBanner(row)">删除</el-button>
+                <div class="r-admin--ops">
+                  <el-button size="small" type="primary" @click="showBannerDialog(row)">编辑</el-button>
+                  <el-button size="small" type="danger" @click="handleDeleteBanner(row)">删除</el-button>
+                </div>
               </template>
             </el-table-column>
           </el-table>
@@ -1087,18 +1163,9 @@
                 {{ new Date(row.created_at).toLocaleString() }}
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="160" fixed="right">
+            <el-table-column label="操作" width="100" fixed="right">
               <template #default="{ row }">
                 <el-button size="small" type="primary" @click="showStudioDetail(row)">详情</el-button>
-                <el-button
-                  size="small"
-                  :type="row.status === 'active' ? 'warning' : 'success'"
-                  link
-                  @click="handleStudioStatus(row)"
-                >
-                  {{ row.status === 'active' ? '禁用' : '启用' }}
-                </el-button>
-                <el-button size="small" type="danger" @click="handleDeleteStudio(row)">删除</el-button>
               </template>
             </el-table-column>
           </el-table>
@@ -1295,6 +1362,12 @@
                 </el-tag>
               </template>
             </el-table-column>
+            <el-table-column label="颜色" width="90">
+              <template #default="{ row }">
+                <span class="r-admin--ann_color_dot" :style="{ background: announcementColorMap[row.color || 'blue'] }"></span>
+                {{ announcementColorLabels[row.color || 'blue'] || '蓝色' }}
+              </template>
+            </el-table-column>
             <el-table-column label="状态" width="80">
               <template #default="{ row }">
                 <el-tag :type="row.is_active ? 'success' : 'info'">{{ row.is_active ? '显示' : '隐藏' }}</el-tag>
@@ -1306,10 +1379,12 @@
             <el-table-column prop="created_at" label="发布时间" width="150">
               <template #default="{ row }">{{ formatDate(row.created_at) }}</template>
             </el-table-column>
-            <el-table-column label="操作" width="120">
+            <el-table-column label="操作" width="160" fixed="right">
               <template #default="{ row }">
-                <el-button size="small" type="primary" @click="showAnnouncementDialog(row)">编辑</el-button>
-                <el-button size="small" type="danger" @click="handleDeleteAnnouncement(row)">删除</el-button>
+                <div class="r-admin--ops">
+                  <el-button size="small" type="primary" @click="showAnnouncementDialog(row)">编辑</el-button>
+                  <el-button size="small" type="danger" @click="handleDeleteAnnouncement(row)">删除</el-button>
+                </div>
               </template>
             </el-table-column>
           </el-table>
@@ -2082,13 +2157,13 @@
     </el-dialog>
     
     <!-- 公告编辑对话框 -->
-    <el-dialog v-model="announcementDialogVisible" :title="editingAnnouncement ? '编辑公告' : '发布公告'" width="600px">
-      <el-form :model="announcementForm" label-width="80px">
+    <el-dialog v-model="announcementDialogVisible" :title="editingAnnouncement ? '编辑公告' : '发布公告'" width="640px">
+      <el-form :model="announcementForm" label-width="110px">
         <el-form-item label="标题">
-          <el-input v-model="announcementForm.title" placeholder="公告标题" />
+          <el-input v-model="announcementForm.title" placeholder="公告标题" maxlength="200" show-word-limit />
         </el-form-item>
         <el-form-item label="内容">
-          <el-input v-model="announcementForm.content" type="textarea" :rows="5" placeholder="公告内容" />
+          <el-input v-model="announcementForm.content" type="textarea" :rows="5" placeholder="公告内容" maxlength="10000" show-word-limit />
         </el-form-item>
         <el-form-item label="类型">
           <el-radio-group v-model="announcementForm.type">
@@ -2096,6 +2171,21 @@
             <el-radio label="update">更新</el-radio>
             <el-radio label="warning">警告</el-radio>
           </el-radio-group>
+        </el-form-item>
+        <el-form-item label="颜色">
+          <el-radio-group v-model="announcementForm.color" class="r-admin--ann_color_group">
+            <el-radio-button v-for="opt in announcementColorOptions" :key="opt.value" :label="opt.value">
+              <span class="r-admin--ann_color_dot" :style="{ background: opt.hex }"></span>{{ opt.label }}
+            </el-radio-button>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item label="展示位置">
+          <div style="display:flex;flex-direction:column;gap:6px;">
+            <el-checkbox v-model="announcementForm.show_top_bar">顶部通知条</el-checkbox>
+            <el-checkbox v-model="announcementForm.show_popup">弹出弹窗</el-checkbox>
+            <el-checkbox v-model="announcementForm.show_community">社区页右侧公告卡片</el-checkbox>
+            <div style="color:#999;font-size:12px;">可多选；至少选择一个展示位置</div>
+          </div>
         </el-form-item>
         <el-form-item label="状态">
           <el-radio-group v-model="announcementForm.is_active">
@@ -2290,6 +2380,8 @@ const commentTotal = ref(0)
 const commentStatusFilter = ref('')
 const commentUserId = ref('')
 const commentWorkId = ref('')
+const commentDetailVisible = ref(false)
+const commentDetail = ref(null)
 
 const reports = ref([])
 const reportPage = ref(1)
@@ -2637,7 +2729,18 @@ const loadingAnnouncements = ref(false)
 const announcementDialogVisible = ref(false)
 const editingAnnouncement = ref(null)
 // 修复: 模型使用 type: ENUM('notice','update','warning') + is_active: Boolean,非 status
-const announcementForm = ref({ title: '', content: '', type: 'notice', is_active: true })
+const announcementColorOptions = [
+  { value: 'blue', label: '蓝色', hex: '#409EFF' },
+  { value: 'green', label: '绿色', hex: '#67C23A' },
+  { value: 'orange', label: '橙色', hex: '#E6A23C' },
+  { value: 'red', label: '红色', hex: '#F56C6C' },
+  { value: 'purple', label: '紫色', hex: '#9B59B6' },
+  { value: 'yellow', label: '黄色', hex: '#FEC433' }
+]
+const announcementColorMap = Object.fromEntries(announcementColorOptions.map(o => [o.value, o.hex]))
+const announcementColorLabels = Object.fromEntries(announcementColorOptions.map(o => [o.value, o.label]))
+
+const announcementForm = ref({ title: '', content: '', type: 'notice', color: 'blue', show_top_bar: true, show_popup: false, show_community: true, is_active: true })
 
 const fetchAnnouncements = async () => {
   loadingAnnouncements.value = true
@@ -2651,22 +2754,33 @@ const fetchAnnouncements = async () => {
 const showAnnouncementDialog = (announcement = null) => {
   editingAnnouncement.value = announcement
   if (announcement) {
-    // 修复: 后端返回 type + is_active,映射到表单字段
     announcementForm.value = {
       id: announcement.id,
       title: announcement.title,
       content: announcement.content,
       type: announcement.type || 'notice',
+      color: announcement.color || 'blue',
+      show_top_bar: announcement.show_top_bar !== false,
+      show_popup: !!announcement.show_popup,
+      show_community: announcement.show_community !== false,
       is_active: announcement.is_active !== undefined ? announcement.is_active : true
     }
   } else {
-    announcementForm.value = { title: '', content: '', type: 'notice', is_active: true }
+    announcementForm.value = { title: '', content: '', type: 'notice', color: 'blue', show_top_bar: true, show_popup: false, show_community: true, is_active: true }
   }
   announcementDialogVisible.value = true
 }
 
 const handleSaveAnnouncement = async () => {
   try {
+    if (!announcementForm.value.title?.trim() || !announcementForm.value.content?.trim()) {
+      ElMessage.warning('请填写标题和内容')
+      return
+    }
+    if (!announcementForm.value.show_top_bar && !announcementForm.value.show_popup && !announcementForm.value.show_community) {
+      ElMessage.warning('请至少选择一个展示位置')
+      return
+    }
     let res
     if (editingAnnouncement.value) {
       res = await adminApi.updateAnnouncement(editingAnnouncement.value.id, announcementForm.value)
@@ -3507,7 +3621,7 @@ const getTypeName = (workType) => {
     'CODE_BLOCK': '代码岛',
     'PYTHON': 'Python',
     'SCRATCH': 'Scratch',
-    'NEKO': 'Neko'
+    'NEKO': 'Nemo'
   }
   return typeMap[type] || workType
 }
@@ -3523,6 +3637,15 @@ const formatDate = (date) => {
   const d = new Date(date)
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
+
+const formatDateTimeSeconds = (date) => {
+  if (!date) return ''
+  const d = new Date(date)
+  if (Number.isNaN(d.getTime())) return ''
+  const pad = (n) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
+}
+
 
 const handleMenuSelect = (key) => {
   activeMenu.value = key
@@ -3656,7 +3779,12 @@ const loadProxyConfig = async () => {
 }
 const saveProxyConfig = async () => {
   try {
-    await adminApi.updateProxyConfig({ enabled: proxyConfig.value.enabled, poolUrl: proxyConfig.value.poolUrl })
+    await adminApi.updateProxyConfig({
+      enabled: proxyConfig.value.enabled,
+      poolUrl: proxyConfig.value.poolUrl,
+      protocol: proxyConfig.value.protocol || '',
+      autoRefresh: proxyConfig.value.autoRefresh || 0
+    })
     ElMessage.success('代理配置已保存')
     await loadProxyConfig()
   } catch (_) { ElMessage.error('保存失败') }
@@ -4108,11 +4236,52 @@ const fetchComments = async () => {
   loadingComments.value = false
 }
 
+const showCommentDetail = (comment) => {
+  commentDetail.value = comment
+  commentDetailVisible.value = true
+}
+
+const getCommentWorkPath = (comment) => {
+  const work = comment?.work
+  if (!work) return ''
+  const workId = work.codemao_work_id || work.id
+  if (workId === undefined || workId === null || workId === '') return ''
+  return router.resolve({ name: 'WorkDetail', params: { codemaoId: String(workId) } }).href
+}
+
+const getCommentPostPath = (comment) => {
+  const postId = comment?.post?.id || comment?.post_id
+  if (!postId) return ''
+  return router.resolve({ name: 'PostDetail', params: { id: String(postId) } }).href
+}
+
+const openCommentTarget = (comment) => {
+  if (!comment) return
+  const workPath = getCommentWorkPath(comment)
+  if (workPath) {
+    window.open(workPath, '_blank')
+    return
+  }
+  const postPath = getCommentPostPath(comment)
+  if (postPath) {
+    window.open(postPath, '_blank')
+    return
+  }
+  ElMessage.warning('未找到评论所属作品或帖子')
+}
+
 const toggleCommentStatus = async (comment) => {
   const newStatus = comment.status === 'active' ? 'hidden' : 'active'
   try {
     const res = await adminApi.updateCommentStatus(comment.id, newStatus)
-    if (res.code === 200) { comment.status = newStatus; ElMessage.success('更新成功') }
+    if (res.code === 200) {
+      comment.status = newStatus
+      const listItem = comments.value.find(c => c.id === comment.id)
+      if (listItem) listItem.status = newStatus
+      ElMessage.success('更新成功')
+    } else {
+      ElMessage.error(res.msg || '更新失败')
+    }
   } catch (e) { ElMessage.error('更新失败') }
 }
 
@@ -4120,8 +4289,18 @@ const handleDeleteComment = async (comment) => {
   try {
     await ElMessageBox.confirm('确定删除该评论？', '提示', { type: 'warning' })
     const res = await adminApi.deleteComment(comment.id)
-    if (res.code === 200) { fetchComments(); ElMessage.success('删除成功') }
-  } catch (e) {}
+    if (res.code === 200) {
+      comment.status = 'deleted'
+      const listItem = comments.value.find(c => c.id === comment.id)
+      if (listItem) listItem.status = 'deleted'
+      fetchComments()
+      ElMessage.success('删除成功')
+    } else {
+      ElMessage.error(res.msg || '删除失败')
+    }
+  } catch (e) {
+    if (e !== 'cancel') ElMessage.error('删除失败')
+  }
 }
 
 const searchReports = () => { reportPage.value = 1; fetchReports() }
@@ -4844,6 +5023,47 @@ $sidebar-width: 200px;
   white-space: nowrap;
 }
 
+.r-admin--comment_detail {
+  .r-admin--comment_detail_header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .r-admin--comment_detail_user {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .r-admin--comment_detail_avatar {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    object-fit: cover;
+    background: #f0f0f0;
+  }
+  .r-admin--comment_detail_name {
+    font-weight: 600;
+    font-size: 16px;
+  }
+  .r-admin--comment_detail_uid {
+    color: #999;
+    font-size: 13px;
+    margin-top: 2px;
+  }
+  .r-admin--comment_detail_content {
+    white-space: pre-wrap;
+    word-break: break-word;
+    line-height: 1.6;
+  }
+  .r-admin--comment_detail_actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 20px;
+    justify-content: flex-end;
+  }
+}
+
 .r-admin--pagination {
   margin-top: 16px;
   display: flex;
@@ -5249,5 +5469,30 @@ $sidebar-width: 200px;
   .el-button + .el-button {
     margin-left: 8px;
   }
+}
+
+.r-admin--ann_color_dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+.r-admin--ann_color_group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.r-admin--ops {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 8px;
+  white-space: nowrap;
+}
+.r-admin--ops .el-button + .el-button {
+  margin-left: 0;
 }
 </style>

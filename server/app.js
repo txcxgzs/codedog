@@ -332,6 +332,12 @@ async function startServer() {
             // Banner 表新增字段
             await ensureColumn('banners', 'source', { sqlite: 'VARCHAR(20)', mysql: 'VARCHAR(20) NULL' });
 
+            // 公告展示配置: 颜色 + 展示位置
+            await ensureColumn('announcements', 'color', { sqlite: "VARCHAR(20) DEFAULT 'blue'", mysql: "VARCHAR(20) NOT NULL DEFAULT 'blue'" });
+            await ensureColumn('announcements', 'show_top_bar', { sqlite: 'INTEGER DEFAULT 1', mysql: 'TINYINT(1) NOT NULL DEFAULT 1' });
+            await ensureColumn('announcements', 'show_popup', { sqlite: 'INTEGER DEFAULT 0', mysql: 'TINYINT(1) NOT NULL DEFAULT 0' });
+            await ensureColumn('announcements', 'show_community', { sqlite: 'INTEGER DEFAULT 1', mysql: 'TINYINT(1) NOT NULL DEFAULT 1' });
+
             // Studio 表新增字段 + 回填 owner_claim
             const addedOwnerClaim = await ensureColumn('studios', 'owner_claim', { sqlite: 'INTEGER', mysql: 'INT NULL' });
             if (addedOwnerClaim) {

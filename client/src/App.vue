@@ -31,6 +31,10 @@
           <el-input
             v-model="searchKeyword"
             class="c-navigator--search_input"
+            type="search"
+            name="site-search"
+            autocomplete="off"
+            role="searchbox"
             placeholder="搜索作品、用户"
             :prefix-icon="Search"
             @keyup.enter="handleSearch"
@@ -86,6 +90,22 @@
       </div>
     </div>
     
+    <!-- 全局公告顶部通知条 -->
+    <div v-if="topBarAnnouncements.length" class="r-ann--top_stack">
+      <div
+        v-for="item in topBarAnnouncements"
+        :key="'bar-' + item.id"
+        class="r-ann--top_bar"
+        :style="announcementThemeStyle(item)"
+      >
+        <div class="r-ann--top_bar_inner">
+          <strong class="r-ann--top_title">{{ item.title }}</strong>
+          <span class="r-ann--top_content">{{ item.content }}</span>
+          <button class="r-ann--top_close" type="button" @click="dismissTopBar(item.id)" aria-label="关闭">×</button>
+        </div>
+      </div>
+    </div>
+
     <!-- 主内容区域 -->
     <div class="r-index--main_content">
       <router-view v-slot="{ Component }">
@@ -111,6 +131,26 @@
       </div>
     </div>
     
+    <!-- 全局公告弹窗 -->
+    <el-dialog
+      v-model="popupDialogVisible"
+      :title="currentPopupAnnouncement?.title || '公告'"
+      width="480px"
+      :close-on-click-modal="false"
+      @closed="onPopupClosed"
+    >
+      <div
+        v-if="currentPopupAnnouncement"
+        class="r-ann--popup_body"
+        :style="announcementThemeStyle(currentPopupAnnouncement)"
+      >
+        <div class="r-ann--popup_content">{{ currentPopupAnnouncement.content }}</div>
+      </div>
+      <template #footer>
+        <el-button type="primary" @click="closeCurrentPopup">我知道了</el-button>
+      </template>
+    </el-dialog>
+
     <HCaptchaDialog ref="hcaptchaDialogRef" />
   </div>
   </el-config-provider>
@@ -126,6 +166,7 @@ import zhCn from 'element-plus/dist/locale/zh-cn.mjs'
 import { storeToRefs } from 'pinia'
 import HCaptchaDialog from '@/components/HCaptchaDialog.vue'
 import { hcaptchaApi } from '@/api/hcaptcha'
+import { publicApi } from '@/api/public'
 import { Search, EditPen, Bell, CaretBottom, User, Monitor, Star, Setting, SwitchButton } from '@element-plus/icons-vue'
 
 const router = useRouter()
@@ -135,6 +176,101 @@ const { unreadCount } = storeToRefs(notificationStore)
 const searchKeyword = ref('')
 const hcaptchaDialogRef = ref(null)
 const hcaptchaVerified = ref(false)
+
+const announcements = ref([])
+const dismissedTopBarIds = ref(loadDismissedIds('ann_topbar_dismissed'))
+const dismissedPopupIds = ref(loadDismissedIds('ann_popup_dismissed'))
+const popupQueue = ref([])
+const popupDialogVisible = ref(false)
+const currentPopupAnnouncement = ref(null)
+
+const announcementColorMap = {
+  blue: { bg: '#ecf5ff', border: '#409EFF', text: '#1f2d3d' },
+  green: { bg: '#f0f9eb', border: '#67C23A', text: '#1f2d3d' },
+  orange: { bg: '#fdf6ec', border: '#E6A23C', text: '#1f2d3d' },
+  red: { bg: '#fef0f0', border: '#F56C6C', text: '#1f2d3d' },
+  purple: { bg: '#f5eef8', border: '#9B59B6', text: '#1f2d3d' },
+  yellow: { bg: '#fff9e6', border: '#FEC433', text: '#1f2d3d' }
+}
+
+function loadDismissedIds(key) {
+  try {
+    const raw = localStorage.getItem(key)
+    const arr = raw ? JSON.parse(raw) : []
+    return Array.isArray(arr) ? arr.map(String) : []
+  } catch (e) {
+    return []
+  }
+}
+
+function saveDismissedIds(key, ids) {
+  try { localStorage.setItem(key, JSON.stringify(ids.slice(-50))) } catch (e) {}
+}
+
+const announcementThemeStyle = (item) => {
+  const theme = announcementColorMap[item?.color] || announcementColorMap.blue
+  return {
+    background: theme.bg,
+    borderColor: theme.border,
+    color: theme.text
+  }
+}
+
+const topBarAnnouncements = computed(() =>
+  announcements.value.filter(a => a.show_top_bar !== false && !dismissedTopBarIds.value.includes(String(a.id)))
+)
+
+const dismissTopBar = (id) => {
+  const sid = String(id)
+  if (!dismissedTopBarIds.value.includes(sid)) {
+    dismissedTopBarIds.value = [...dismissedTopBarIds.value, sid]
+    saveDismissedIds('ann_topbar_dismissed', dismissedTopBarIds.value)
+  }
+}
+
+const queuePopupQueue = () => {
+  popupQueue.value = announcements.value.filter(a => !!a.show_popup && !dismissedPopupIds.value.includes(String(a.id)))
+  if (!popupDialogVisible.value) showNextPopup()
+}
+
+const showNextPopup = () => {
+  if (!popupQueue.value.length) {
+    currentPopupAnnouncement.value = null
+    popupDialogVisible.value = false
+    return
+  }
+  currentPopupAnnouncement.value = popupQueue.value[0]
+  popupDialogVisible.value = true
+}
+
+const closeCurrentPopup = () => {
+  const current = currentPopupAnnouncement.value
+  if (current) {
+    const sid = String(current.id)
+    if (!dismissedPopupIds.value.includes(sid)) {
+      dismissedPopupIds.value = [...dismissedPopupIds.value, sid]
+      saveDismissedIds('ann_popup_dismissed', dismissedPopupIds.value)
+    }
+    popupQueue.value = popupQueue.value.filter(a => String(a.id) !== sid)
+  }
+  popupDialogVisible.value = false
+}
+
+const onPopupClosed = () => {
+  // 关闭动画结束后再展示下一条
+  setTimeout(() => showNextPopup(), 120)
+}
+
+const loadAnnouncements = async () => {
+  try {
+    const res = await publicApi.getAnnouncements()
+    if (res.code === 200) {
+      announcements.value = Array.isArray(res.data) ? res.data : []
+      queuePopupQueue()
+    }
+  } catch (e) {}
+}
+
 
 const defaultAvatar = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI0ZFQzQzMyIvPjx0ZXh0IHg9IjUwIiB5PSI2MCIgZm9udC1zaXplPSI0MCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZmlsbD0id2hpdGUiPuahijwvdGV4dD48L3N2Zz4='
 
@@ -195,6 +331,7 @@ const startHCaptchaCheck = () => {
 }
 
 onMounted(async () => {
+  loadAnnouncements()
   if (userStore.token && !userStore.user) {
     await userStore.fetchCurrentUser()
   }
@@ -519,5 +656,51 @@ $shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
   .c-navigator--logo_text {
     display: none;
   }
+}
+
+.r-ann--top_stack {
+  width: 100%;
+}
+.r-ann--top_bar {
+  border-bottom: 2px solid;
+  font-size: 13px;
+}
+.r-ann--top_bar_inner {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 8px 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.r-ann--top_title {
+  flex-shrink: 0;
+}
+.r-ann--top_content {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  opacity: 0.9;
+}
+.r-ann--top_close {
+  border: none;
+  background: transparent;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  color: inherit;
+  opacity: 0.7;
+}
+.r-ann--top_close:hover { opacity: 1; }
+.r-ann--popup_body {
+  border-left: 4px solid;
+  border-radius: 8px;
+  padding: 14px 16px;
+}
+.r-ann--popup_content {
+  white-space: pre-wrap;
+  line-height: 1.7;
+  word-break: break-word;
 }
 </style>

@@ -473,7 +473,7 @@ const getTypeName = (workType) => {
     'CODE_BLOCK': '代码岛',
     'PYTHON': 'Python',
     'SCRATCH': 'Scratch',
-    'NEKO': 'Neko'
+    'NEKO': 'Nemo'
   }
   return typeMap[type] || workType
 }

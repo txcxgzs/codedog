@@ -63,7 +63,18 @@
         <aside class="r-community--sidebar">
           <div class="r-community--side_card">
             <h4 class="r-community--card_title">社区公告</h4>
-            <p>欢迎来到编程狗社区！请遵守社区规范，文明交流。</p>
+            <div v-if="communityAnnouncements.length" class="r-community--ann_list">
+              <div
+                v-for="item in communityAnnouncements"
+                :key="item.id"
+                class="r-community--ann_item"
+                :style="communityAnnStyle(item)"
+              >
+                <div class="r-community--ann_title">{{ item.title }}</div>
+                <div class="r-community--ann_content">{{ item.content }}</div>
+              </div>
+            </div>
+            <p v-else>欢迎来到编程狗社区！请遵守社区规范，文明交流。</p>
           </div>
           
           <div class="r-community--side_card">
@@ -118,6 +129,7 @@
 import { ref, reactive, onMounted, computed } from 'vue'
 import { useUserStore } from '@/stores/user'
 import { postApi } from '@/api/post'
+import { publicApi } from '@/api/public'
 import { geetestApi } from '@/api/geetest'
 import { ElMessage } from 'element-plus'
 import GeetestDialog from '@/components/GeetestDialog.vue'
@@ -143,6 +155,29 @@ marked.setOptions({
 const userStore = useUserStore()
 const loading = ref(false)
 const postLoading = ref(false)
+const communityAnnouncements = ref([])
+const communityColorMap = {
+  blue: { bg: '#ecf5ff', border: '#409EFF' },
+  green: { bg: '#f0f9eb', border: '#67C23A' },
+  orange: { bg: '#fdf6ec', border: '#E6A23C' },
+  red: { bg: '#fef0f0', border: '#F56C6C' },
+  purple: { bg: '#f5eef8', border: '#9B59B6' },
+  yellow: { bg: '#fff9e6', border: '#FEC433' }
+}
+const communityAnnStyle = (item) => {
+  const theme = communityColorMap[item?.color] || communityColorMap.blue
+  return { background: theme.bg, borderLeft: `3px solid ${theme.border}` }
+}
+const loadCommunityAnnouncements = async () => {
+  try {
+    const res = await publicApi.getAnnouncements()
+    if (res.code === 200) {
+      const list = Array.isArray(res.data) ? res.data : []
+      communityAnnouncements.value = list.filter(a => a.show_community !== false)
+    }
+  } catch (e) {}
+}
+
 const activeCategory = ref('')
 const posts = ref([])
 const currentPage = ref(1)
@@ -288,6 +323,7 @@ const createPost = async () => {
 }
 
 onMounted(() => {
+  loadCommunityAnnouncements()
   fetchPosts()
   fetchGeetestConfig()
 })

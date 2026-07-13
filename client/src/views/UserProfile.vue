@@ -368,12 +368,16 @@ $border-color: #eee;
 .r-user--container {
   max-width: 1000px;
   margin: 0 auto;
+  padding: 0 20px 24px;
+  box-sizing: border-box;
 }
 
 .r-user--profile_card {
   background: $white;
   border-radius: 0 0 16px 16px;
   overflow: hidden;
+  width: 100%;
+  box-sizing: border-box;
   
   .r-user--cover {
     height: 120px;
@@ -509,8 +513,10 @@ $border-color: #eee;
 .r-user--tabs {
   background: $white;
   border-radius: 16px;
-  margin: 20px;
+  margin: 20px 0 0;
   padding: 20px;
+  width: 100%;
+  box-sizing: border-box;
   
   :deep(.el-tabs__item) {
     font-size: 15px;

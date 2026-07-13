@@ -8,6 +8,7 @@ class ProxyService {
         this.currentProxy = null;
         this.enabled = false;
         this.poolUrl = null;
+        this._defaultProtocol = null;
         this._cache = [];
         this._cacheTime = 0;
         this._cacheTTL = 5 * 60 * 1000;
@@ -17,16 +18,20 @@ class ProxyService {
         this._refreshTimer = null;
         this._refreshInterval = 5 * 60 * 1000;
         this._autoRefreshEnabled = false;
+        this._autoRefreshMinutes = 0;
     }
 
     startAutoRefresh(intervalMs) {
         this.stopAutoRefresh();
         if (!this.poolUrl || !this.enabled) return;
+        const ms = intervalMs || (5 * 60 * 1000);
         this._autoRefreshEnabled = true;
-        this._refreshInterval = intervalMs || (5 * 60 * 1000);
+        this._refreshInterval = ms;
+        this._autoRefreshMinutes = Math.max(1, Math.round(ms / 60000));
         this._refreshTimer = setInterval(async () => {
             try {
-                console.log(`[代理] 定时刷新(每${Math.round(this._refreshInterval / 60000)}分钟)...`);
+                console.log(`[代理] 定时刷新(每${this._autoRefreshMinutes}分钟)...`);
+                this._cacheTime = 0;
                 const fresh = await this.fetchFromPool();
                 let found = false;
                 for (const proxy of fresh) {
@@ -49,7 +54,7 @@ class ProxyService {
                 console.warn('[代理] 定时刷新失败:', e.message);
             }
         }, this._refreshInterval);
-        console.log(`[代理] 自动刷新已启动, 间隔${Math.round(this._refreshInterval / 60000)}分钟`);
+        console.log(`[代理] 自动刷新已启动, 间隔${this._autoRefreshMinutes}分钟`);
     }
 
     stopAutoRefresh() {
@@ -70,11 +75,19 @@ class ProxyService {
             }));
             this.enabled = configs.proxy_enabled === 'true';
             this.poolUrl = configs.proxy_pool_url || null;
-            this.currentProxy = configs.proxy_current ? JSON.parse(configs.proxy_current) : null;
+            try {
+                const parsed = configs.proxy_current ? JSON.parse(configs.proxy_current) : null;
+                this.currentProxy = parsed && typeof parsed === 'object' ? parsed : null;
+            } catch {
+                this.currentProxy = null;
+            }
             this._defaultProtocol = configs.proxy_protocol || null;
-            const ar = parseInt(configs.autoRefresh, 10);
-            if (this.enabled && this.poolUrl && ar > 0) {
-                this.startAutoRefresh(ar * 60 * 1000);
+            const ar = parseInt(configs.proxy_auto_refresh, 10);
+            this._autoRefreshMinutes = Number.isFinite(ar) && ar > 0 ? ar : 0;
+            if (this.enabled && this.poolUrl && this._autoRefreshMinutes > 0) {
+                this.startAutoRefresh(this._autoRefreshMinutes * 60 * 1000);
+            } else {
+                this.stopAutoRefresh();
             }
         } catch (e) {
             console.warn('[Proxy] 配置加载失败:', e.message);
@@ -88,7 +101,12 @@ class ProxyService {
         if (enabled && this.poolUrl) {
             const arCfg = await SystemConfig.findOne({ where: { config_key: 'proxy_auto_refresh' } });
             const ar = arCfg ? parseInt(arCfg.config_value, 10) : 0;
-            if (ar > 0) this.startAutoRefresh(ar * 60 * 1000);
+            if (Number.isFinite(ar) && ar > 0) {
+                this._autoRefreshMinutes = ar;
+                this.startAutoRefresh(ar * 60 * 1000);
+            } else {
+                this.stopAutoRefresh();
+            }
         } else {
             this.stopAutoRefresh();
         }
@@ -96,6 +114,7 @@ class ProxyService {
 
     async setPoolUrl(url) {
         this.poolUrl = url || null;
+        this._cacheTime = 0;
         if (url) {
             await SystemConfig.upsert({ config_key: 'proxy_pool_url', config_value: url });
         } else {
@@ -103,9 +122,38 @@ class ProxyService {
         }
     }
 
+    async setProtocol(protocol) {
+        this._defaultProtocol = protocol || null;
+        if (protocol) {
+            await SystemConfig.upsert({ config_key: 'proxy_protocol', config_value: protocol });
+        } else {
+            await SystemConfig.destroy({ where: { config_key: 'proxy_protocol' } });
+        }
+        this._cache = [];
+        this._cacheTime = 0;
+    }
+
+    async setAutoRefresh(minutes) {
+        const ar = parseInt(minutes, 10);
+        this._autoRefreshMinutes = Number.isFinite(ar) && ar > 0 ? ar : 0;
+        await SystemConfig.upsert({
+            config_key: 'proxy_auto_refresh',
+            config_value: String(this._autoRefreshMinutes)
+        });
+        if (this.enabled && this.poolUrl && this._autoRefreshMinutes > 0) {
+            this.startAutoRefresh(this._autoRefreshMinutes * 60 * 1000);
+        } else {
+            this.stopAutoRefresh();
+        }
+    }
+
     async saveCurrentProxy(proxy) {
-        this.currentProxy = proxy;
-        await SystemConfig.upsert({ config_key: 'proxy_current', config_value: JSON.stringify(proxy) });
+        this.currentProxy = proxy || null;
+        if (proxy) {
+            await SystemConfig.upsert({ config_key: 'proxy_current', config_value: JSON.stringify(proxy) });
+        } else {
+            await SystemConfig.destroy({ where: { config_key: 'proxy_current' } });
+        }
     }
 
     _parseProxyString(str, defaultProtocol) {
@@ -145,11 +193,24 @@ class ProxyService {
         }
     }
 
-    async fetchFromPool() {
+    _extractProxyList(data) {
+        if (!data) return [];
+        if (Array.isArray(data)) return data;
+        if (typeof data !== 'object') return [];
+
+        if (data.data && Array.isArray(data.data.proxies)) return data.data.proxies;
+        if (data.data && Array.isArray(data.data)) return data.data;
+        if (Array.isArray(data.proxies)) return data.proxies;
+        if (Array.isArray(data.list)) return data.list;
+        if (Array.isArray(data.result)) return data.result;
+        return [];
+    }
+
+    async fetchFromPool(force = false) {
         if (!this.poolUrl) throw new Error('未配置代理池地址');
 
         const now = Date.now();
-        if (this._cache.length > 0 && (now - this._cacheTime) < this._cacheTTL) {
+        if (!force && this._cache.length > 0 && (now - this._cacheTime) < this._cacheTTL) {
             return this._cache;
         }
 
@@ -160,23 +221,16 @@ class ProxyService {
             try {
                 data = JSON.parse(data);
             } catch {
-                // JSON解析失败,按行分割解析纯文本格式(每行一个代理)
                 data = data.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('#'));
             }
         }
 
-        let proxies = [];
-        if (Array.isArray(data)) {
-            proxies = data;
-        } else if (data.data && Array.isArray(data.data)) {
-            proxies = data.data;
-        } else if (data.proxies && Array.isArray(data.proxies)) {
-            proxies = data.proxies;
-        }
-
+        const proxies = this._extractProxyList(data);
         const parsed = [];
         for (const p of proxies) {
-            let str = typeof p === 'string' ? p : (p.proxy || p.url || (p.ip && p.port ? p.ip + ':' + p.port : null));
+            let str = typeof p === 'string'
+                ? p
+                : (p.proxy || p.url || (p.ip && p.port ? `${p.ip}:${p.port}` : null));
             if (!str) continue;
             const info = this._parseProxyString(str, this._defaultProtocol);
             if (info) parsed.push(info);
@@ -191,12 +245,16 @@ class ProxyService {
     }
 
     pickOne() {
+        if (this.currentProxy && !this._deadProxies.has(this.currentProxy.url)) {
+            return this.currentProxy;
+        }
         const alive = this._cache.filter(p => !this._deadProxies.has(p.url));
         if (alive.length > 0) {
             const idx = Math.floor(Math.random() * alive.length);
-            return alive[idx];
+            const chosen = alive[idx];
+            this.currentProxy = chosen;
+            return chosen;
         }
-        if (this.currentProxy && !this._deadProxies.has(this.currentProxy.url)) return this.currentProxy;
         return null;
     }
 
@@ -206,12 +264,12 @@ class ProxyService {
         this._failCount++;
         console.warn(`[代理] 标记死亡: ${proxyUrl}, 死亡数: ${this._deadProxies.size}`);
         if (this.currentProxy && this.currentProxy.url === proxyUrl) {
+            this.currentProxy = null;
             const next = this.pickOne();
             if (next) {
                 await this.saveCurrentProxy(next);
                 console.log(`[代理] 自动切换至: ${next.url}`);
             } else {
-                this.currentProxy = null;
                 await this.saveCurrentProxy(null);
                 console.warn('[代理] 代理池全部死亡, 已清空当前代理');
             }
@@ -219,12 +277,11 @@ class ProxyService {
     }
 
     getAxiosConfigWithRetry(config = {}, maxRetries = 2) {
-        const self = this;
         return {
-            ...self.getAxiosConfig(config),
+            ...this.getAxiosConfig(config),
             __proxyRetry: true,
             __maxRetries: maxRetries,
-            __proxyService: self
+            __proxyService: this
         };
     }
 
@@ -235,6 +292,7 @@ class ProxyService {
             const res = await axios.get('https://api.codemao.cn/tiger/v3/web/accounts/login', {
                 timeout: 10000,
                 httpsAgent: agent,
+                httpAgent: agent,
                 proxy: false,
                 validateStatus: () => true
             });
@@ -246,7 +304,9 @@ class ProxyService {
     }
 
     async testCurrentProxy() {
-        const proxy = this.pickOne();
+        const proxy = this.currentProxy && !this._deadProxies.has(this.currentProxy.url)
+            ? this.currentProxy
+            : this.pickOne();
         if (!proxy) throw new Error('无可用代理');
         return { proxy: proxy.url, ...(await this.testProxy(proxy.url)) };
     }
@@ -257,21 +317,42 @@ class ProxyService {
         if (!proxy) return config;
         const agent = this._getAgent(proxy.url);
         if (!agent) return config;
-        return { ...config, httpsAgent: agent, proxy: false };
+        return {
+            ...config,
+            httpsAgent: agent,
+            httpAgent: agent,
+            proxy: false,
+            __proxyUrl: proxy.url
+        };
     }
 
     async refreshFromPool() {
-        const proxies = await this.fetchFromPool();
+        const proxies = await this.fetchFromPool(true);
         if (proxies.length === 0) throw new Error('代理池返回为空');
 
         for (const proxy of proxies.slice(0, 5)) {
+            if (this._deadProxies.has(proxy.url)) continue;
             const result = await this.testProxy(proxy.url);
             if (result.ok) {
                 await this.saveCurrentProxy(proxy);
                 return { ...proxy, ...result };
             }
+            this._deadProxies.add(proxy.url);
         }
         throw new Error('代理池中无可用代理');
+    }
+
+    getStatus() {
+        return {
+            enabled: this.enabled,
+            poolUrl: this.poolUrl,
+            protocol: this._defaultProtocol || '',
+            autoRefresh: this._autoRefreshMinutes || 0,
+            autoRefreshRunning: this._autoRefreshEnabled,
+            currentProxy: this.currentProxy ? this.currentProxy.url : null,
+            cacheCount: this._cache.length,
+            deadCount: this._deadProxies.size
+        };
     }
 }
 

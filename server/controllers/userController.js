@@ -372,9 +372,13 @@ async function syncUserWorks(codemaoUserId, localUserId) {
                 const workDetail = await codemaoApi.getWorkDetail(item.id);
                 if (!workDetail || !workDetail.id) continue;
                 
-                const type = workDetail.work_label_list && workDetail.work_label_list[0] 
-                    ? workDetail.work_label_list[0].label_name 
-                    : '其他';
+                // 与后台 crawlWork 保持一致: type/ide_type 使用编程猫 IDE 类型(KITTEN/Nemo/KITTEN4 等)
+                // 不要用 work_label_list 的中文标签(游戏/其他...)，否则首页角标会显示成「其他」
+                let type = workDetail.type || workDetail.ide_type || 'KITTEN';
+                let ideType = workDetail.ide_type || workDetail.type || 'KITTEN';
+                // 编程猫 Nemo 部分接口可能返回 Neko/NEKO，统一规范为 NEMO
+                if (/^neko$/i.test(String(type))) type = 'NEMO';
+                if (/^neko$/i.test(String(ideType))) ideType = 'NEMO';
                 
                 // (报告1 #2, Bug-20) 落库前对作品名称+描述做内容审核，参照 publishWork
                 // 违规/疑似违规内容设为 pending 待人工复核，避免登录同步直接 published 绕过本地审核
@@ -398,7 +402,7 @@ async function syncUserWorks(codemaoUserId, localUserId) {
                     description: workDetail.description,
                     preview: workDetail.preview,
                     type: type,
-                    ide_type: workDetail.ide_type,
+                    ide_type: ideType,
                     work_url: workDetail.player_url || `https://player.codemao.cn/new/${workDetail.id}`,
                     user_id: localUserId,
                     codemao_author_id: codemaoUserId,
@@ -420,14 +424,26 @@ async function syncUserWorks(codemaoUserId, localUserId) {
                 } else if (record && record.status === 'hidden') {
                     // 修复: 管理员已隐藏的作品,不被 sync 流程覆盖状态(hidden 是管理员主动设置)
                     console.log(`[syncUserWorks] 作品 ${workDetail.id} 已被管理员隐藏,跳过状态同步`);
-                } else if (record && record.status === 'published' && workStatus === 'pending') {
-                    // 已存在作品重新审核:编程猫若将作品改为违规内容,本地同步为 pending
-                    await DbAdapter.update(Work, { status: 'pending' }, { where: { id: record.id } });
-                    console.warn(`[syncUserWorks] 作品 ${workDetail.id} 重新审核不通过,更新为 pending`);
-                } else if (record && record.status === 'pending' && workStatus === 'published') {
-                    // 已存在 pending 作品后续审核通过,恢复为 published
-                    await DbAdapter.update(Work, { status: 'published' }, { where: { id: record.id } });
-                    console.log(`[syncUserWorks] 作品 ${workDetail.id} 审核通过,恢复为 published`);
+                } else if (record) {
+                    // 修复: 已存在作品同步刷新类型/封面等元数据，修正登录同步早期错误写入的 type=「其他」
+                    const metaUpdate = {
+                        name: workDetail.work_name || record.name,
+                        description: workDetail.description != null ? workDetail.description : record.description,
+                        preview: workDetail.preview || record.preview,
+                        type: type,
+                        ide_type: ideType,
+                        work_url: workDetail.player_url || record.work_url || `https://player.codemao.cn/new/${workDetail.id}`,
+                        codemao_author_name: workDetail.user_info?.nickname || record.codemao_author_name,
+                        view_times: workDetail.view_times || record.view_times || 0
+                    };
+                    if (record.status === 'published' && workStatus === 'pending') {
+                        metaUpdate.status = 'pending';
+                        console.warn(`[syncUserWorks] 作品 ${workDetail.id} 重新审核不通过,更新为 pending`);
+                    } else if (record.status === 'pending' && workStatus === 'published') {
+                        metaUpdate.status = 'published';
+                        console.log(`[syncUserWorks] 作品 ${workDetail.id} 审核通过,恢复为 published`);
+                    }
+                    await DbAdapter.update(Work, metaUpdate, { where: { id: record.id } });
                 }
 
 
