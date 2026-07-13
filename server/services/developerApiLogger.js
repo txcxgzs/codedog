@@ -54,7 +54,7 @@ class DeveloperApiLogger {
   async cleanup() {
     const cutoff = new Date(Date.now() - RETENTION_DAYS * 24 * 60 * 60 * 1000);
     const deleted = await this.models.OperationLog.destroy({
-      where: { action: "developer_api_call", created_at: { [Op.lt]: cutoff } }
+      where: { action: { [Op.in]: ["developer_api_call", "developer_api_fail"] }, created_at: { [Op.lt]: cutoff } }
     });
     if (deleted > 0) {
       console.log("[developerApiLogger] cleaned " + deleted + " entries older than " + RETENTION_DAYS + " days");

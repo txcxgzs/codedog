@@ -17,35 +17,42 @@ const authFailLimiter = createRateLimiter({
 });
 
 function perAppRateLimiter(models) {
-  const cache = new Map();
+  const cache = new Map();      // appId -> { max, expiresAt }
+  const limiters = new Map();   // appId -> { limiter, max }
   const ttlMs = 60 * 1000;
   return async (req, res, next) => {
     try {
       const appId = req.oauth && req.oauth.appId;
       if (!appId) return next();
-      let limit = cache.get(appId);
-      if (!limit || limit.expiresAt < Date.now()) {
+      let entry = cache.get(appId);
+      if (!entry || entry.expiresAt < Date.now()) {
         const app = await models.DeveloperApp.findByPk(appId, { attributes: ["rate_limit_per_min"] });
-        limit = { max: (app && app.rate_limit_per_min) || DEFAULT_RATE_LIMIT_PER_MIN, expiresAt: Date.now() + ttlMs };
-        cache.set(appId, limit);
+        entry = { max: (app && app.rate_limit_per_min) || DEFAULT_RATE_LIMIT_PER_MIN, expiresAt: Date.now() + ttlMs };
+        cache.set(appId, entry);
       }
-      const limiter = createRateLimiter({
-        windowMs: 60 * 1000,
-        max: limit.max,
-        keyPrefix: "open-api-app",
-        keyGenerator: (r) => {
-          const id = r.oauth && r.oauth.appId;
-          const ip = r.ip || r.socket && r.socket.remoteAddress || "unknown";
-          return id + ":" + ip;
-        }
-      });
-      return limiter(req, res, next);
+      let slot = limiters.get(appId);
+      if (!slot || slot.max !== entry.max) {
+        slot = {
+          max: entry.max,
+          limiter: createRateLimiter({
+            windowMs: 60 * 1000,
+            max: entry.max,
+            keyPrefix: "open-api-app",
+            keyGenerator: (r) => {
+              const id = r.oauth && r.oauth.appId;
+              const ip = r.ip || r.socket && r.socket.remoteAddress || "unknown";
+              return id + ":" + ip;
+            }
+          })
+        };
+        limiters.set(appId, slot);
+      }
+      return slot.limiter(req, res, next);
     } catch (err) {
       return next();
     }
   };
 }
-
 function failLogMiddleware(models) {
   const logger = getDeveloperApiLogger(models);
   return (req, res, next) => {

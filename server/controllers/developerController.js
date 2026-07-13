@@ -236,12 +236,13 @@ async function adminGetApp(req, res) {
         if (!app) return errorResponse(res, '应用不存在', 404);
         const appId = DbAdapter.getId(app);
         const now = new Date();
-        const [authorizationCount, activeAuthorizationCount, accessTokenCount, activeAccessTokenCount, callCount] = await Promise.all([
+        const [authorizationCount, activeAuthorizationCount, accessTokenCount, activeAccessTokenCount, callCount, auditCount] = await Promise.all([
             DbAdapter.count(UserAppAuthorization, { where: { app_id: appId } }),
             DbAdapter.count(UserAppAuthorization, { where: { app_id: appId, revoked_at: null } }),
             DbAdapter.count(OAuthAccessToken, { where: { app_id: appId } }),
             DbAdapter.count(OAuthAccessToken, { where: { app_id: appId, revoked_at: null, expires_at: { [Op.gt]: now } } }),
-            DbAdapter.count(OperationLog, { where: { action: 'developer_api_call', target_type: 'developer_app', target_id: appId } })
+            DbAdapter.count(OperationLog, { where: { action: 'developer_api_call', target_type: 'developer_app', target_id: appId } }),
+            DbAdapter.count(DeveloperAppAuditLog, { where: { app_id: appId } })
         ]);
         const json = app.toJSON();
         return successResponse(res, {
@@ -250,7 +251,7 @@ async function adminGetApp(req, res) {
             reviewer: json.reviewer || null,
             reviewed_by: json.reviewed_by,
             owner_user_id: json.owner_user_id,
-            stats: { authorizationCount, activeAuthorizationCount, accessTokenCount, activeAccessTokenCount, callCount, auditCount: 0 }
+            stats: { authorizationCount, activeAuthorizationCount, accessTokenCount, activeAccessTokenCount, callCount, auditCount }
         });
     } catch (e) {
         console.error('adminGetApp', e);
