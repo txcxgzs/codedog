@@ -4730,7 +4730,7 @@ const fetchStudios = async () => {
 }
 
 const handleStudioStatus = async (row) => {
-  const newStatus = row.status === 'active' ? 'inactive' : 'active'
+  const newStatus = row.status === 'active' ? 'banned' : 'active'
   try {
     const res = await adminApi.updateStudioStatus(row.id, newStatus)
     if (res.code === 200) {

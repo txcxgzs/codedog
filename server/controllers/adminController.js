@@ -4187,7 +4187,7 @@ async function updateStudioStatus(req, res) {
         const { id } = req.params;
         const { status } = req.body;
 
-        const VALID_STUDIO_STATUSES = ['active', 'banned', 'pending'];
+        const VALID_STUDIO_STATUSES = ['active', 'banned', 'pending', 'dissolved'];
         if (!VALID_STUDIO_STATUSES.includes(status)) {
             return errorResponse(res, '无效的状态值', 400);
         }
@@ -4218,7 +4218,7 @@ async function updateStudio(req, res) {
         let { name, description, cover, is_public, join_type, status, vice_owner_id } = req.body;
 
         const VALID_JOIN_TYPES = ['public', 'apply', 'invite'];
-        const VALID_STUDIO_STATUSES = ['active', 'banned', 'pending'];
+        const VALID_STUDIO_STATUSES = ['active', 'banned', 'pending', 'dissolved'];
 
         if (join_type !== undefined && !VALID_JOIN_TYPES.includes(join_type)) {
             return errorResponse(res, '无效的加入方式', 400);
