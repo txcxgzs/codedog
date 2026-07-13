@@ -405,7 +405,7 @@ do_update() {
     fi
 
     echo "[1/8] 停止服务并备份..."
-    $COMPOSE_CMD down
+    $COMPOSE_CMD down --remove-orphans
     # 等待端口释放
     for i in $(seq 1 10); do
         if ! curl -fs http://localhost:3001/api/health >/dev/null 2>&1; then break; fi
@@ -508,7 +508,11 @@ do_update() {
     if [ -f "$SCRIPT_DIR/scripts/maintenance-server.sh" ]; then
         bash "$SCRIPT_DIR/scripts/maintenance-server.sh" stop
     fi
-    sleep 2  # 等待端口释放
+    # 主动等待端口释放(而非固定 sleep),最多等 15 秒
+    for i in $(seq 1 15); do
+        if ! ss -tlnp 2>/dev/null | grep -q ':3001 '; then break; fi
+        sleep 1
+    done
     if ! $COMPOSE_CMD build --no-cache; then
         echo "[!!] 构建失败,停止维护页并退出"
         if [ -f "$SCRIPT_DIR/scripts/maintenance-server.sh" ]; then
