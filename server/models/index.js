@@ -533,12 +533,121 @@ User.hasMany(Follow, { foreignKey: 'following_id', as: 'follower_list' });
 
 // M10: 自引用关联加 onDelete:'SET NULL'，父评论删除时子评论 parent_id 置空（保留子评论）
 // 注意：SQLite 需开启外键支持（PRAGMA foreign_keys=ON），由 database.js 配置
+
+// ==================== 开发者平台 / OAuth2 ====================
+const DeveloperApp = sequelize.define('DeveloperApp', {
+    id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+    owner_user_id: { type: DataTypes.INTEGER, allowNull: false },
+    name: { type: DataTypes.STRING(100), allowNull: false },
+    description: { type: DataTypes.TEXT, allowNull: true },
+    homepage_url: { type: DataTypes.STRING(500), allowNull: true },
+    logo_url: { type: DataTypes.STRING(500), allowNull: true },
+    client_id: { type: DataTypes.STRING(64), allowNull: false, unique: true },
+    client_secret_hash: { type: DataTypes.STRING(255), allowNull: false },
+    redirect_uris: { type: DataTypes.TEXT, allowNull: false, defaultValue: '[]' },
+    scopes_requested: { type: DataTypes.TEXT, allowNull: false, defaultValue: '[]' },
+    status: { type: DataTypes.ENUM('pending', 'active', 'rejected', 'suspended'), allowNull: false, defaultValue: 'pending' },
+    review_note: { type: DataTypes.TEXT, allowNull: true },
+    reviewed_by: { type: DataTypes.INTEGER, allowNull: true },
+    reviewed_at: { type: DataTypes.DATE, allowNull: true },
+    rate_limit_per_min: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 60 }
+}, Object.assign({
+    tableName: 'developer_apps',
+    indexes: [
+        { fields: ['owner_user_id'] },
+        { fields: ['client_id'], unique: true },
+        { fields: ['status'] }
+    ]
+}, TIMESTAMP_OPTS));
+
+const OAuthAuthCode = sequelize.define('OAuthAuthCode', {
+    id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+    code: { type: DataTypes.STRING(128), allowNull: false, unique: true },
+    app_id: { type: DataTypes.INTEGER, allowNull: false },
+    user_id: { type: DataTypes.INTEGER, allowNull: false },
+    redirect_uri: { type: DataTypes.STRING(500), allowNull: false },
+    scopes: { type: DataTypes.TEXT, allowNull: false, defaultValue: '[]' },
+    code_challenge: { type: DataTypes.STRING(128), allowNull: true },
+    expires_at: { type: DataTypes.DATE, allowNull: false },
+    used_at: { type: DataTypes.DATE, allowNull: true }
+}, Object.assign({
+    tableName: 'oauth_auth_codes',
+    indexes: [
+        { fields: ['code'], unique: true },
+        { fields: ['app_id'] },
+        { fields: ['user_id'] }
+    ]
+}, TIMESTAMP_OPTS));
+
+const OAuthAccessToken = sequelize.define('OAuthAccessToken', {
+    id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+    token_hash: { type: DataTypes.STRING(64), allowNull: false, unique: true },
+    app_id: { type: DataTypes.INTEGER, allowNull: false },
+    user_id: { type: DataTypes.INTEGER, allowNull: false },
+    scopes: { type: DataTypes.TEXT, allowNull: false, defaultValue: '[]' },
+    expires_at: { type: DataTypes.DATE, allowNull: false },
+    revoked_at: { type: DataTypes.DATE, allowNull: true }
+}, Object.assign({
+    tableName: 'oauth_access_tokens',
+    indexes: [
+        { fields: ['token_hash'], unique: true },
+        { fields: ['app_id'] },
+        { fields: ['user_id'] }
+    ]
+}, TIMESTAMP_OPTS));
+
+const OAuthRefreshToken = sequelize.define('OAuthRefreshToken', {
+    id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+    token_hash: { type: DataTypes.STRING(64), allowNull: false, unique: true },
+    app_id: { type: DataTypes.INTEGER, allowNull: false },
+    user_id: { type: DataTypes.INTEGER, allowNull: false },
+    scopes: { type: DataTypes.TEXT, allowNull: false, defaultValue: '[]' },
+    expires_at: { type: DataTypes.DATE, allowNull: false },
+    revoked_at: { type: DataTypes.DATE, allowNull: true },
+    replaced_by: { type: DataTypes.INTEGER, allowNull: true }
+}, Object.assign({
+    tableName: 'oauth_refresh_tokens',
+    indexes: [
+        { fields: ['token_hash'], unique: true },
+        { fields: ['app_id'] },
+        { fields: ['user_id'] }
+    ]
+}, TIMESTAMP_OPTS));
+
+const UserAppAuthorization = sequelize.define('UserAppAuthorization', {
+    id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+    user_id: { type: DataTypes.INTEGER, allowNull: false },
+    app_id: { type: DataTypes.INTEGER, allowNull: false },
+    scopes: { type: DataTypes.TEXT, allowNull: false, defaultValue: '[]' },
+    authorized_at: { type: DataTypes.DATE, allowNull: false },
+    revoked_at: { type: DataTypes.DATE, allowNull: true }
+}, Object.assign({
+    tableName: 'user_app_authorizations',
+    indexes: [
+        { fields: ['user_id', 'app_id'] },
+        { fields: ['app_id'] }
+    ]
+}, TIMESTAMP_OPTS));
+
+DeveloperApp.belongsTo(User, { foreignKey: 'owner_user_id', as: 'owner' });
+DeveloperApp.belongsTo(User, { foreignKey: 'reviewed_by', as: 'reviewer' });
+User.hasMany(DeveloperApp, { foreignKey: 'owner_user_id', as: 'developer_apps' });
+OAuthAuthCode.belongsTo(DeveloperApp, { foreignKey: 'app_id', as: 'app' });
+OAuthAuthCode.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
+OAuthAccessToken.belongsTo(DeveloperApp, { foreignKey: 'app_id', as: 'app' });
+OAuthAccessToken.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
+OAuthRefreshToken.belongsTo(DeveloperApp, { foreignKey: 'app_id', as: 'app' });
+OAuthRefreshToken.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
+UserAppAuthorization.belongsTo(DeveloperApp, { foreignKey: 'app_id', as: 'app' });
+UserAppAuthorization.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
+DeveloperApp.hasMany(UserAppAuthorization, { foreignKey: 'app_id', as: 'authorizations' });
+
 Comment.hasMany(Comment, { foreignKey: 'parent_id', as: 'replies', onDelete: 'SET NULL' });
 Comment.belongsTo(Comment, { foreignKey: 'parent_id', as: 'parent' });
 
 module.exports = {
     sequelize,
     User, Work, Comment, Post, Studio, StudioMember, StudioWork,
-    Report, ReportAuditLog, Like, Favorite, Follow, Notification, Announcement, Banner, IpBan, CaptchaStats,
+    Report, ReportAuditLog, DeveloperApp, OAuthAuthCode, OAuthAccessToken, OAuthRefreshToken, UserAppAuthorization, Like, Favorite, Follow, Notification, Announcement, Banner, IpBan, CaptchaStats,
     SystemConfig, OperationLog, RolePermission, Statistics, SensitiveWord
 };

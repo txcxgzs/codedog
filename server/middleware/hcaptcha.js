@@ -46,7 +46,10 @@ async function hcaptchaGuard(req, res, next) {
         '/api/health',
         '/api/hcaptcha',
         '/api/geetest',
-        '/api/public'
+        '/api/public',
+        '/api/oauth',
+        '/api/open',
+        '/api/developer'
     ];
 
     if (excludePaths.some(p => req.path === p || req.path.startsWith(p + '/'))) {

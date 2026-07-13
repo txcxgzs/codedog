@@ -94,6 +94,29 @@
             </el-form>
           </div>
         </el-tab-pane>
+
+        <el-tab-pane label="已授权应用" name="authorizations">
+          <div class="r-profile--tab_content">
+            <el-table :data="authorizations" v-loading="authLoading" empty-text="暂无授权的第三方应用">
+              <el-table-column label="应用" min-width="160">
+                <template #default="{ row }">{{ row.app?.name || '-' }}</template>
+              </el-table-column>
+              <el-table-column label="权限" min-width="180">
+                <template #default="{ row }">
+                  <el-tag v-for="s in (row.scopes || [])" :key="s" size="small" style="margin:0 4px 4px 0">{{ s }}</el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column label="授权时间" width="160">
+                <template #default="{ row }">{{ formatAuthDate(row.authorized_at) }}</template>
+              </el-table-column>
+              <el-table-column label="操作" width="120">
+                <template #default="{ row }">
+                  <el-button size="small" type="danger" @click="revokeAuth(row)">撤销</el-button>
+                </template>
+              </el-table-column>
+            </el-table>
+          </div>
+        </el-tab-pane>
       </el-tabs>
     </div>
     
@@ -105,13 +128,16 @@
 import { ref, reactive, onMounted, watch } from 'vue'
 import { useUserStore } from '@/stores/user'
 import { userApi } from '@/api/user'
+import { developerApi } from '@/api/developer'
 import { geetestApi } from '@/api/geetest'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import GeetestDialog from '@/components/GeetestDialog.vue'
 import AppImage from '@/components/AppImage.vue'
 
 const userStore = useUserStore()
 const activeTab = ref('info')
+const authorizations = ref([])
+const authLoading = ref(false)
 const formRef = ref(null)
 const passwordFormRef = ref(null)
 const loading = ref(false)
@@ -266,6 +292,43 @@ watch(() => userStore.user, (user) => {
     form.bio = user.bio || ''
   }
 }, { immediate: true })
+
+
+const formatAuthDate = (d) => {
+  if (!d) return '-'
+  return new Date(d).toLocaleString('zh-CN')
+}
+
+const loadAuthorizations = async () => {
+  authLoading.value = true
+  try {
+    const res = await developerApi.listAuthorizations()
+    if (res.code === 200) authorizations.value = res.data || []
+  } catch (e) {
+    console.error(e)
+  } finally {
+    authLoading.value = false
+  }
+}
+
+const revokeAuth = async (row) => {
+  try {
+    await ElMessageBox.confirm(`撤销对「${row.app?.name || '该应用'}」的授权？`, '撤销授权', { type: 'warning' })
+    const res = await developerApi.revokeAuthorization(row.id)
+    if (res.code === 200) {
+      ElMessage.success('已撤销')
+      loadAuthorizations()
+    } else {
+      ElMessage.error(res.msg || '撤销失败')
+    }
+  } catch (e) {
+    if (e !== 'cancel') ElMessage.error(e.response?.data?.msg || '撤销失败')
+  }
+}
+
+watch(activeTab, (v) => {
+  if (v === 'authorizations') loadAuthorizations()
+})
 
 onMounted(() => {
   fetchGeetestConfig()

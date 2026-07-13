@@ -74,6 +74,7 @@
                 <el-dropdown-menu>
                   <el-dropdown-item command="profile"><el-icon><User /></el-icon>个人中心</el-dropdown-item>
                   <el-dropdown-item command="myWorks"><el-icon><Monitor /></el-icon>我的作品</el-dropdown-item>
+                  <el-dropdown-item command="developer">开发者平台</el-dropdown-item>
                   <el-dropdown-item command="notifications"><el-icon><Bell /></el-icon>消息通知</el-dropdown-item>
                   <el-dropdown-item command="favorites"><el-icon><Star /></el-icon>我的收藏</el-dropdown-item>
                   <el-dropdown-item v-if="userStore.isAdmin" command="admin" divided><el-icon><Setting /></el-icon>后台管理</el-dropdown-item>
@@ -365,6 +366,7 @@ const handleCommand = (command) => {
   switch (command) {
     case 'profile': router.push('/profile'); break
     case 'myWorks': router.push('/my-works'); break
+    case 'developer': router.push('/developer'); break
     case 'notifications': router.push('/notifications'); break
     case 'favorites': router.push('/favorites'); break
     case 'admin': router.push('/admin'); break

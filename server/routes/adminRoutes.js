@@ -5,6 +5,7 @@
 const express = require('express');
 const router = express.Router();
 const adminController = require('../controllers/adminController');
+const developerController = require('../controllers/developerController');
 const { authMiddleware, adminMiddleware } = require('../middleware/auth');
 const { requireRole, requirePermission } = require('../middleware/permission');
 
@@ -183,5 +184,11 @@ router.delete('/studios/:id', requireRole('admin'), adminController.deleteStudio
  * 工作室作品管理
  */
 router.put('/studio-works/:id/score', requireRole('admin'), adminController.setWorkScore);
+
+/**
+ * Developer app review
+ */
+router.get('/developer-apps', requirePermission('developer:review'), developerController.adminListApps);
+router.post('/developer-apps/:id/review', requirePermission('developer:review'), developerController.adminReviewApp);
 
 module.exports = router;

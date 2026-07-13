@@ -97,6 +97,24 @@ const routes = [
     meta: { title: '后台管理', requiresAuth: true, requiresAdmin: true }
   },
   {
+    path: '/developer',
+    name: 'Developer',
+    component: () => import('@/views/developer/DeveloperHome.vue'),
+    meta: { title: '开发者平台', requiresAuth: true }
+  },
+  {
+    path: '/developer/docs',
+    name: 'DeveloperDocs',
+    component: () => import('@/views/developer/DeveloperDocs.vue'),
+    meta: { title: '开发者文档', requiresAuth: true }
+  },
+  {
+    path: '/oauth/authorize',
+    name: 'OAuthAuthorize',
+    component: () => import('@/views/OAuthAuthorize.vue'),
+    meta: { title: '应用授权', requiresAuth: true }
+  },
+  {
     path: '/admin/init',
     name: 'AdminInit',
     component: () => import('@/views/admin/Init.vue'),

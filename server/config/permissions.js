@@ -74,6 +74,7 @@ const DEFAULT_ROLES = {
             // 原因: getRealtimeLogs / getOperationLogs 返回的日志含管理员操作链(谁改了谁),
             // admin 角色可读 = 越权(普通 admin 能看到 superadmin 隐藏作品等敏感操作记录)
             'sensitive:manage',
+            'developer:review',
             'config:manage',
             'role:manage'
         ]
@@ -115,6 +116,7 @@ const ALL_PERMISSIONS = [
     { key: 'statistics:view', name: '查看统计', category: '系统功能' },
     { key: 'crawl:works', name: '爬取作品', category: '系统功能' },
     { key: 'sensitive:manage', name: '管理敏感词', category: '系统功能' },
+    { key: 'developer:review', name: '审核开发者应用', category: '系统功能' },
     { key: 'config:manage', name: '系统设置', category: '系统功能' },
     { key: 'log:view', name: '查看日志', category: '系统功能' },
     { key: 'role:manage', name: '管理角色权限', category: '系统功能' }

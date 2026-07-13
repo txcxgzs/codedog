@@ -77,7 +77,11 @@
             <el-icon><Lock /></el-icon>
             <span>安全验证</span>
           </el-menu-item>
-          <el-menu-item index="crawl">
+                    <el-menu-item index="developer-apps" v-if="['admin', 'superadmin'].includes(userStore.user?.role)">
+            <el-icon><Key /></el-icon>
+            <span>开发者应用</span>
+          </el-menu-item>
+<el-menu-item index="crawl">
             <el-icon><Download /></el-icon>
             <span>作品爬取</span>
           </el-menu-item>
@@ -1289,6 +1293,65 @@
         </el-dialog>
         
         <!-- 作品爬取 -->
+                <div v-if="activeMenu === 'developer-apps'" class="r-admin--section">
+          <div class="r-admin--header">
+            <h2 class="r-admin--title">开发者应用审核</h2>
+            <div style="display:flex;gap:8px;align-items:center;">
+              <el-select v-model="developerAppFilter.status" clearable placeholder="状态" style="width:120px" @change="() => { developerAppFilter.page = 1; fetchDeveloperApps() }">
+                <el-option label="待审核" value="pending" />
+                <el-option label="已通过" value="active" />
+                <el-option label="已拒绝" value="rejected" />
+                <el-option label="已停用" value="suspended" />
+              </el-select>
+              <el-input v-model="developerAppFilter.keyword" clearable placeholder="搜索应用名" style="width:180px" @keyup.enter="fetchDeveloperApps" />
+              <el-button type="primary" @click="fetchDeveloperApps">刷新</el-button>
+            </div>
+          </div>
+          <el-table :data="developerApps" v-loading="loadingDeveloperApps" empty-text="暂无应用">
+            <el-table-column prop="name" label="应用" min-width="140" />
+            <el-table-column prop="client_id" label="client_id" min-width="160">
+              <template #default="{ row }"><code style="font-size:12px">{{ row.client_id }}</code></template>
+            </el-table-column>
+            <el-table-column label="所有者" width="140">
+              <template #default="{ row }">{{ row.owner?.nickname || row.owner?.username || '-' }}</template>
+            </el-table-column>
+            <el-table-column prop="status" label="状态" width="100">
+              <template #default="{ row }">
+                <el-tag size="small" :type="{pending:'warning',active:'success',rejected:'danger',suspended:'info'}[row.status] || 'info'">
+                  {{ {pending:'待审核',active:'已通过',rejected:'已拒绝',suspended:'已停用'}[row.status] || row.status }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="权限" min-width="160">
+              <template #default="{ row }">
+                <el-tag v-for="s in (row.scopes_requested || [])" :key="s" size="small" style="margin:0 4px 4px 0">{{ s }}</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column prop="created_at" label="申请时间" width="150">
+              <template #default="{ row }">{{ formatDate(row.created_at) }}</template>
+            </el-table-column>
+            <el-table-column label="操作" width="260" fixed="right">
+              <template #default="{ row }">
+                <div class="r-admin--ops">
+                  <el-button size="small" type="success" :disabled="row.status==='active'" @click="reviewDeveloperApp(row,'approve')">通过</el-button>
+                  <el-button size="small" type="danger" :disabled="row.status==='rejected'" @click="reviewDeveloperApp(row,'reject')">拒绝</el-button>
+                  <el-button size="small" type="warning" :disabled="row.status==='suspended'" @click="reviewDeveloperApp(row,'suspend')">停用</el-button>
+                </div>
+              </template>
+            </el-table-column>
+          </el-table>
+          <div style="margin-top:12px;display:flex;justify-content:flex-end;">
+            <el-pagination
+              background
+              layout="total, prev, pager, next"
+              :total="developerAppTotal"
+              :page-size="developerAppFilter.pageSize"
+              :current-page="developerAppFilter.page"
+              @current-change="onDeveloperAppPageChange"
+            />
+          </div>
+        </div>
+
         <div v-if="activeMenu === 'crawl'" class="r-admin--section">
           <h2 class="r-admin--title">作品爬取</h2>
           
@@ -2283,6 +2346,10 @@ const userStore = useUserStore()
 
 const activeMenu = ref('dashboard')
 const loadingStats = ref(false)
+const loadingDeveloperApps = ref(false)
+const developerApps = ref([])
+const developerAppTotal = ref(0)
+const developerAppFilter = ref({ status: 'pending', keyword: '', page: 1, pageSize: 20 })
 const loadingUsers = ref(false)
 const loadingWorks = ref(false)
 const loadingComments = ref(false)
@@ -3647,6 +3714,60 @@ const formatDateTimeSeconds = (date) => {
 }
 
 
+const onDeveloperAppPageChange = (p) => {
+  developerAppFilter.value.page = p
+  fetchDeveloperApps()
+}
+
+const fetchDeveloperApps = async () => {
+  loadingDeveloperApps.value = true
+  try {
+    const f = developerAppFilter.value
+    const res = await adminApi.getDeveloperApps({
+      status: f.status || undefined,
+      keyword: f.keyword || undefined,
+      page: f.page,
+      pageSize: f.pageSize
+    })
+    if (res.code === 200) {
+      developerApps.value = res.data?.list || []
+      developerAppTotal.value = res.data?.total ?? res.data?.pagination?.total ?? 0
+    } else {
+      ElMessage.error(res.msg || '加载失败')
+    }
+  } catch (e) {
+    ElMessage.error(e.response?.data?.msg || '加载失败')
+  } finally {
+    loadingDeveloperApps.value = false
+  }
+}
+
+const reviewDeveloperApp = async (row, action) => {
+  const labels = { approve: '通过', reject: '拒绝', suspend: '停用' }
+  try {
+    const { value: note } = await ElMessageBox.prompt(
+      `确认${labels[action] || action}应用「${row.name}」？可填写备注`,
+      '开发者应用审核',
+      {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        inputPlaceholder: '审核备注（可选）',
+        inputValue: ''
+      }
+    )
+    const res = await adminApi.reviewDeveloperApp(row.id, { action, note })
+    if (res.code === 200) {
+      ElMessage.success(res.msg || '审核完成')
+      fetchDeveloperApps()
+    } else {
+      ElMessage.error(res.msg || '审核失败')
+    }
+  } catch (e) {
+    if (e === 'cancel' || e === 'close') return
+    ElMessage.error(e.response?.data?.msg || '审核失败')
+  }
+}
+
 const handleMenuSelect = (key) => {
   activeMenu.value = key
   if (key === 'dashboard') { fetchStats(); fetchTrends() }
@@ -3662,6 +3783,7 @@ const handleMenuSelect = (key) => {
   if (key === 'configs') fetchConfigs()
   if (key === 'logs') fetchOperationLogs()
   if (key === 'permissions') fetchRolePermissions()
+  if (key === 'developer-apps') fetchDeveloperApps()
 }
 
 const fetchStats = async () => {
@@ -4777,6 +4899,9 @@ watch(activeMenu, (newVal) => {
   }
   if (newVal === 'studios') {
     fetchStudios()
+  }
+  if (newVal === 'developer-apps') {
+    fetchDeveloperApps()
   }
 })
 </script>

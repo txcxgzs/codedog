@@ -5,6 +5,12 @@
 import request from './request'
 
 export const adminApi = {
+  getDeveloperApps(params = {}) {
+    return request.get('/admin/developer-apps', { params })
+  },
+  reviewDeveloperApp(id, data) {
+    return request.post(`/admin/developer-apps/${id}/review`, data)
+  },
   /**
    * 统计数据
    */

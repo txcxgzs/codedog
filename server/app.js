@@ -26,6 +26,9 @@ const notificationRoutes = require('./routes/notificationRoutes');
 const geetestRoutes = require('./routes/geetestRoutes');
 const hcaptchaRoutes = require('./routes/hcaptchaRoutes');
 const dbMigrationRoutes = require('./routes/dbMigration');
+const developerRoutes = require('./routes/developerRoutes');
+const oauthRoutes = require('./routes/oauthRoutes');
+const openRoutes = require('./routes/openRoutes');
 const { hcaptchaGuard } = require('./middleware/hcaptcha');
 const { createRateLimiter } = require('./middleware/rateLimit');
 const { ipBanMiddleware } = require('./middleware/ipBan');
@@ -232,6 +235,9 @@ app.use('/api/reports', reportRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/geetest', geetestRoutes);
 app.use('/api/hcaptcha', hcaptchaRoutes);
+app.use('/api/developer', developerRoutes);
+app.use('/api/oauth', oauthRoutes);
+app.use('/api/open/v1', openRoutes);
 
 app.get('/api/health', (req, res) => {
     res.json({ status: 'ok', message: 'Service is running' });
