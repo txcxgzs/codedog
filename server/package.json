@@ -9,7 +9,7 @@
     "dev": "nodemon app.js",
     "check:consistency": "node ../scripts/check-consistency.js",
     "security:attack": "node ../scripts/security-attack-test.js",
-    "security:targeted": "node ../scripts/security-targeted-test.js",
+    "security:targeted": "node ../scripts/security-targeted-test.js",`n    "fix:ipban-dirty": "node scripts/fix-ipban-dirty-data.js",
     "toolbox": "node ../scripts/toolbox.js"
   },
   "dependencies": {

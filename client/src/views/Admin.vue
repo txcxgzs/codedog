@@ -1099,7 +1099,7 @@
           </div>
           <el-table :data="ipBans" v-loading="loadingIpBans" stripe>
             <el-table-column prop="id" label="ID" width="60" />
-            <el-table-column prop="ip" label="IP地址" width="150" />
+            <el-table-column prop="ip" label="IP地址" width="150" :formatter="(row) => row.ip || '未知'" />
             <el-table-column prop="reason" label="封禁原因" min-width="200" />
             <el-table-column label="操作人" width="120">
               <template #default="{ row }">
