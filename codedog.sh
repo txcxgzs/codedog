@@ -404,7 +404,12 @@ do_update() {
 
     echo "[1/8] 停止服务并备份..."
     $COMPOSE_CMD down
-    $COMPOSE_CMD --profile maintenance up -d --no-deps maintenance
+    # 等待端口释放,避免 maintenance 启动冲突
+    for i in $(seq 1 10); do
+        if ! curl -fs http://localhost:3001/api/health >/dev/null 2>&1; then break; fi
+        sleep 1
+    done
+    $COMPOSE_CMD --profile maintenance up -d --no-deps maintenance 2>&1 || true
     echo "  [OK] 维护页已启动 (port 3001)"
 
     BACKUP="backup_$(date +%Y%m%d_%H%M%S)"
@@ -497,6 +502,7 @@ do_update() {
     # 停止维护页,释放 3001 端口给 codedog
     $COMPOSE_CMD --profile maintenance stop maintenance 2>/dev/null || true
     $COMPOSE_CMD rm -f codedog-maintenance 2>/dev/null || true
+    sleep 2  # 等待端口释放
     $COMPOSE_CMD build --no-cache
     $COMPOSE_CMD up -d
 
