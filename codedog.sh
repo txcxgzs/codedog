@@ -509,7 +509,14 @@ do_update() {
         bash "$SCRIPT_DIR/scripts/maintenance-server.sh" stop
     fi
     sleep 2  # 等待端口释放
-    $COMPOSE_CMD build --no-cache
+    if ! $COMPOSE_CMD build --no-cache; then
+        echo "[!!] 构建失败,停止维护页并退出"
+        if [ -f "$SCRIPT_DIR/scripts/maintenance-server.sh" ]; then
+            bash "$SCRIPT_DIR/scripts/maintenance-server.sh" stop
+        fi
+        wait_enter
+        return 1
+    fi
     $COMPOSE_CMD up -d
 
     # ========== 步骤7: 等待启动 + 智能诊断 ==========
