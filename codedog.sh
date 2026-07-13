@@ -399,8 +399,14 @@ do_update() {
 
     # ========== 步骤1: 停服务 + 备份 ==========
     echo ""
+    # 清理上次可能残留的维护页容器
+    $COMPOSE_CMD --profile maintenance down 2>/dev/null || true
+
     echo "[1/8] 停止服务并备份..."
     $COMPOSE_CMD down
+    $COMPOSE_CMD --profile maintenance up -d --no-deps maintenance
+    echo "  [OK] 维护页已启动 (port 3001)"
+
     BACKUP="backup_$(date +%Y%m%d_%H%M%S)"
     backup_data "$BACKUP"
 
@@ -488,6 +494,9 @@ do_update() {
     # ========== 步骤6: 重新构建 + 启动 ==========
     echo ""
     echo "[6/8] 重新构建并启动..."
+    # 停止维护页,释放 3001 端口给 codedog
+    $COMPOSE_CMD --profile maintenance stop maintenance 2>/dev/null || true
+    $COMPOSE_CMD rm -f codedog-maintenance 2>/dev/null || true
     $COMPOSE_CMD build --no-cache
     $COMPOSE_CMD up -d
 
