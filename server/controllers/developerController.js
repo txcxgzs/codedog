@@ -209,6 +209,7 @@ async function adminListApps(req, res) {
         const list = rows.map(r => {
             const json = r.toJSON ? r.toJSON() : r;
             return {
+                ...serializeApp(json),
                 owner: json.owner || null,
                 reviewer: json.reviewer || null,
                 reviewed_by: json.reviewed_by,
