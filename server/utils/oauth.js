@@ -1,4 +1,4 @@
-﻿/**
+/**
  * OAuth2 / Developer platform helpers
  */
 const crypto = require('crypto');
@@ -20,6 +20,22 @@ const ALL_SCOPES = {
     'posts:read': {
         name: '读取帖子',
         description: '读取用户发表的帖子列表与详情'
+    },
+    'studios:read': {
+        name: '读取工作室',
+        description: '读取用户加入的工作室列表与详情、成员和作品'
+    },
+    'follows:read': {
+        name: '读取关注关系',
+        description: '读取用户的关注列表与粉丝列表'
+    },
+    'favorites:read': {
+        name: '读取收藏与点赞',
+        description: '读取用户收藏的作品/帖子列表以及点赞记录'
+    },
+    'studios:review': {
+        name: '审核工作室',
+        description: '查看待审核工作室并通过/拒绝（需应用已授权且用户具备管理员身份）'
     }
 };
 

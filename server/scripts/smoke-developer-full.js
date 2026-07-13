@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Full OAuth developer platform smoke against local server.
  */
 require('dotenv').config();
@@ -159,6 +159,20 @@ function pass(name, cond, detail) {
     if (!pass('revoke authorization', false, 'no auth id')) failed++;
   }
 
+
+  // ---- New scopes smoke ----
+  const studios = await req('GET', '/api/open/v1/me/studios', { headers: { Authorization: 'Bearer ' + access } });
+  if (!pass('open /studios', studios.status === 200, JSON.stringify(studios.data).slice(0, 200))) failed++;
+  const followers = await req('GET', '/api/open/v1/me/followers', { headers: { Authorization: 'Bearer ' + access } });
+  if (!pass('open /followers', followers.status === 200, JSON.stringify(followers.data).slice(0, 200))) failed++;
+  const following = await req('GET', '/api/open/v1/me/following', { headers: { Authorization: 'Bearer ' + access } });
+  if (!pass('open /following', following.status === 200, JSON.stringify(following.data).slice(0, 200))) failed++;
+  const favorites = await req('GET', '/api/open/v1/me/favorites', { headers: { Authorization: 'Bearer ' + access } });
+  if (!pass('open /favorites', favorites.status === 200, JSON.stringify(favorites.data).slice(0, 200))) failed++;
+  const likes = await req('GET', '/api/open/v1/me/likes', { headers: { Authorization: 'Bearer ' + access } });
+  if (!pass('open /likes', likes.status === 200, JSON.stringify(likes.data).slice(0, 200))) failed++;
+  const reviewNo = await req('GET', '/api/open/v1/studios/pending-review', { headers: { Authorization: 'Bearer ' + access } });
+  if (!pass('review without scope 403', reviewNo.status === 403, JSON.stringify(reviewNo.data))) failed++;
   try { await user.destroy(); } catch {}
   console.log('\nDONE failed=', failed);
   process.exit(failed ? 1 : 0);

@@ -87,6 +87,22 @@ GET /api/oauth/userinfo   # 等价于 profile:read</pre>
       </el-card>
     </div>
   </div>
+
+      <el-card shadow="never" class="r-devdocs--card">
+        <h2>5. 工作室、关注、收藏与审核</h2>
+        <pre class="r-devdocs--pre">GET  /api/open/v1/me/studios?status=active&amp;page=1&amp;pageSize=20
+GET  /api/open/v1/me/studios/:id
+GET  /api/open/v1/me/followers?page=1&amp;pageSize=20
+GET  /api/open/v1/me/following?page=1&amp;pageSize=20
+GET  /api/open/v1/me/favorites?page=1&amp;pageSize=20
+GET  /api/open/v1/me/likes?page=1&amp;pageSize=20        (scope: favorites:read)
+
+GET  /api/open/v1/studios/pending-review?keyword=xxx     (scope: studios:review, admin)
+POST /api/open/v1/studios/:id/review                     (scope: studios, admin)
+Body: { action: "approve" | "reject" | "ban", note?: "..." }
+
+审核接口要求 OAuth 用户具备 admin 或 superadmin 角色。</pre>
+      </el-card>
 </template>
 
 <script setup>
@@ -97,7 +113,11 @@ const scopes = ref([
   { key: 'profile:read', name: '读取资料', description: '昵称、头像、简介、等级、粉丝/关注/作品数' },
   { key: 'works:read', name: '读取作品', description: '本人已发布且可见的作品列表与详情' },
   { key: 'comments:read', name: '读取评论', description: '本人评论列表' },
-  { key: 'posts:read', name: '读取帖子', description: '本人帖子列表与详情' }
+  { key: 'posts:read', name: '读取帖子', description: '本人帖子列表与详情' },
+  { key: 'studios:read', name: '读取工作室', description: '本人加入的工作室列表与详情、成员和作品' },
+  { key: 'follows:read', name: '读取关注关系', description: '本人的关注列表与粉丝列表' },
+  { key: 'favorites:read', name: '读取收藏与点赞', description: '本人收藏的作品/帖子与点赞记录' },
+  { key: 'studios:review', name: '审核工作室', description: '查看待审核工作室并通过/拒绝（需 app scope + 管理员身份）' }
 ])
 
 onMounted(async () => {

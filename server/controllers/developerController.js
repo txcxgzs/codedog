@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Developer platform + OAuth2 controller
  */
 const { Op } = require('sequelize');
@@ -613,6 +613,227 @@ async function openMyPostDetail(req, res) {
     } catch (e) {
         console.error('openMyPostDetail', e);
         return errorResponse(res, '获取帖子失败', 500);
+    }
+}
+
+
+// -------- Studios (studios:read / studios:review) --------
+async function openMyStudios(req, res) {
+    try {
+        const { page, pageSize, offset } = DbAdapter.parsePagination(req.query);
+        const { count, rows } = await DbAdapter.findAndCountAll(StudioMember, {
+            where: { user_id: req.oauth.userId, status: "active" },
+            include: [{
+                model: Studio,
+                as: "studio",
+                where: req.query.status ? { status: String(req.query.status) } : undefined,
+                required: true,
+                include: [
+                    { model: User, as: "owner", attributes: ["id", "username", "nickname", "avatar"] }
+                ]
+            }],
+            order: [["created_at", "DESC"]],
+            limit: pageSize,
+            offset
+        });
+        const list = rows.map(r => {
+            const json = r.toJSON ? r.toJSON() : r;
+            const s = json.studio || {};
+            return {
+                member_id: json.id,
+                member_role: json.role,
+                member_status: json.status,
+                member_joined_at: json.created_at,
+                studio: {
+                    id: s.id,
+                    name: s.name,
+                    description: s.description,
+                    logo_url: s.logo_url,
+                    cover_url: s.cover_url,
+                    status: s.status,
+                    member_count: s.member_count,
+                    work_count: s.work_count,
+                    owner: s.owner || null,
+                    created_at: s.created_at,
+                    updated_at: s.updated_at
+                }
+            };
+        });
+        return paginateResponse(res, list, count, page, pageSize);
+    } catch (e) {
+        console.error("openMyStudios", e);
+        return errorResponse(res, "Failed to get studios", 500);
+    }
+}
+
+async function openMyStudioDetail(req, res) {
+    try {
+        const member = await DbAdapter.findOne(StudioMember, {
+            where: { user_id: req.oauth.userId, studio_id: req.params.id, status: "active" },
+            include: [{
+                model: Studio,
+                as: "studio",
+                include: [
+                    { model: User, as: "owner", attributes: ["id", "username", "nickname", "avatar"] }
+                ]
+            }]
+        });
+        if (!member) return errorResponse(res, "Not found", 404);
+        const json = member.toJSON ? member.toJSON() : member;
+        const s = json.studio || {};
+        const members = await DbAdapter.count(StudioMember, { where: { studio_id: s.id, status: "active" } });
+        const works = await DbAdapter.count(StudioWork, { where: { studio_id: s.id, status: "approved" } });
+        return successResponse(res, {
+            id: s.id, name: s.name, description: s.description,
+            logo_url: s.logo_url, cover_url: s.cover_url, status: s.status,
+            member_count: members, work_count: works,
+            owner: s.owner || null, my_role: json.role,
+            created_at: s.created_at, updated_at: s.updated_at
+        });
+    } catch (e) {
+        console.error("openMyStudioDetail", e);
+        return errorResponse(res, "Failed to get studio", 500);
+    }
+}
+
+async function openMyFollowers(req, res) {
+    try {
+        const { page, pageSize, offset } = DbAdapter.parsePagination(req.query);
+        const { count, rows } = await DbAdapter.findAndCountAll(Follow, {
+            where: { following_id: req.oauth.userId },
+            include: [{ model: User, as: "follower", attributes: ["id", "username", "nickname", "avatar", "bio", "level"] }],
+            order: [["created_at", "DESC"]],
+            limit: pageSize, offset
+        });
+        const list = rows.map(r => {
+            const json = r.toJSON ? r.toJSON() : r;
+            return { ...(json.follower || {}), followed_at: json.created_at };
+        });
+        return paginateResponse(res, list, count, page, pageSize);
+    } catch (e) {
+        console.error("openMyFollowers", e);
+        return errorResponse(res, "Failed to get followers", 500);
+    }
+}
+
+async function openMyFollowing(req, res) {
+    try {
+        const { page, pageSize, offset } = DbAdapter.parsePagination(req.query);
+        const { count, rows } = await DbAdapter.findAndCountAll(Follow, {
+            where: { follower_id: req.oauth.userId },
+            include: [{ model: User, as: "following", attributes: ["id", "username", "nickname", "avatar", "bio", "level"] }],
+            order: [["created_at", "DESC"]],
+            limit: pageSize, offset
+        });
+        const list = rows.map(r => {
+            const json = r.toJSON ? r.toJSON() : r;
+            return { ...(json.following || {}), followed_at: json.created_at };
+        });
+        return paginateResponse(res, list, count, page, pageSize);
+    } catch (e) {
+        console.error("openMyFollowing", e);
+        return errorResponse(res, "Failed to get following", 500);
+    }
+}
+
+async function openMyFavorites(req, res) {
+    try {
+        const { page, pageSize, offset } = DbAdapter.parsePagination(req.query);
+        const { count, rows } = await DbAdapter.findAndCountAll(Favorite, {
+            where: { user_id: req.oauth.userId },
+            order: [["created_at", "DESC"]],
+            limit: pageSize, offset
+        });
+        const workIds = rows.map(r => r.work_id).filter(Boolean);
+        const postIds = rows.map(r => r.post_id).filter(Boolean);
+        const works = workIds.length
+            ? await DbAdapter.findAll(Work, { where: { id: { [Op.in]: workIds }, status: "published" }, attributes: ["id", "name", "preview", "user_id", "created_at"] })
+            : [];
+        const posts = postIds.length
+            ? await DbAdapter.findAll(Post, { where: { id: { [Op.in]: postIds }, status: { [Op.in]: ["published", "active"] } }, attributes: ["id", "title", "user_id", "created_at"] })
+            : [];
+        const workMap = new Map(works.map(w => [DbAdapter.getId(w), w]));
+        const postMap = new Map(posts.map(p => [DbAdapter.getId(p), p]));
+        const list = rows.map(r => {
+            if (r.work_id) { const w = workMap.get(r.work_id); return w ? { type: "work", target_id: r.work_id, created_at: r.created_at, target: w } : null; }
+            if (r.post_id) { const p = postMap.get(r.post_id); return p ? { type: "post", target_id: r.post_id, created_at: r.created_at, target: p } : null; }
+            return null;
+        }).filter(Boolean);
+        return paginateResponse(res, list, count, page, pageSize);
+    } catch (e) {
+        console.error("openMyFavorites", e);
+        return errorResponse(res, "Failed to get favorites", 500);
+    }
+}
+
+async function openMyLikes(req, res) {
+    try {
+        const { page, pageSize, offset } = DbAdapter.parsePagination(req.query);
+        const { count, rows } = await DbAdapter.findAndCountAll(Like, {
+            where: { user_id: req.oauth.userId },
+            order: [["created_at", "DESC"]],
+            limit: pageSize, offset
+        });
+        return paginateResponse(res, rows, count, page, pageSize);
+    } catch (e) {
+        console.error("openMyLikes", e);
+        return errorResponse(res, "Failed to get likes", 500);
+    }
+}
+
+async function assertCanReview(req, res) {
+    const role = req.oauth && req.oauth.user ? req.oauth.user.role : null;
+    if (!["admin", "superadmin"].includes(role)) {
+        return errorResponse(res, "Admin role required", 403, "oauth_forbidden_role");
+    }
+    return null;
+}
+
+async function openStudiosPendingReview(req, res) {
+    try {
+        const denied = await assertCanReview(req, res);
+        if (denied) return denied;
+        const { page, pageSize, offset } = DbAdapter.parsePagination(req.query);
+        const where = { status: "pending" };
+        if (req.query.keyword) where.name = { [Op.like]: "%" + String(req.query.keyword).trim() + "%" };
+        const { count, rows } = await DbAdapter.findAndCountAll(Studio, {
+            where,
+            include: [{ model: User, as: "owner", attributes: ["id", "username", "nickname", "avatar"] }],
+            order: [["created_at", "ASC"]],
+            limit: pageSize, offset
+        });
+        return paginateResponse(res, rows, count, page, pageSize);
+    } catch (e) {
+        console.error("openStudiosPendingReview", e);
+        return errorResponse(res, "Failed to get pending studios", 500);
+    }
+}
+
+async function openReviewStudio(req, res) {
+    try {
+        const denied = await assertCanReview(req, res);
+        if (denied) return denied;
+        const { action, note } = req.body || {};
+        if (!["approve", "reject", "ban"].includes(action)) return errorResponse(res, "Invalid action", 400);
+        const statusMap = { approve: "active", reject: "rejected", ban: "banned" };
+        const studio = await DbAdapter.findByPk(Studio, req.params.id);
+        if (!studio) return errorResponse(res, "Not found", 404);
+        if (studio.status !== "pending") return errorResponse(res, "Only pending studios can be reviewed", 400);
+        await DbAdapter.update(Studio, {
+            status: statusMap[action],
+            review_note: note != null ? String(note).trim() : null,
+            reviewed_by: req.oauth.userId,
+            reviewed_at: new Date()
+        }, { where: { id: studio.id } });
+        logOperation(req, "review_studio", "studio", studio.id, { action, note });
+        const updated = await DbAdapter.findByPk(Studio, studio.id);
+        return successResponse(res, {
+            id: updated.id, name: updated.name, status: updated.status,
+            review_note: updated.review_note, reviewed_at: updated.reviewed_at
+        }, "Review done");
+    } catch (e) {
+        console.error("openReviewStudio", e);
+        return errorResponse(res, "Review failed", 500);
     }
 }
 
