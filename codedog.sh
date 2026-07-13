@@ -406,14 +406,19 @@ do_update() {
 
     echo "[1/8] 停止服务并备份..."
     $COMPOSE_CMD down --remove-orphans
-    # 等待端口释放
+    # 等待容器真正释放监听端口。仅探测 /api/health 会在容器退出过程中误判。
     for i in $(seq 1 10); do
-        if ! curl -fs http://localhost:3001/api/health >/dev/null 2>&1; then break; fi
+        if ! ss -tln 2>/dev/null | grep -q ':3001 '; then break; fi
         sleep 1
     done
     # 启动宿主机维护页服务器(非 Docker,直接绑定 3001)
     if [ -f "$SCRIPT_DIR/scripts/maintenance-server.sh" ]; then
-        bash "$SCRIPT_DIR/scripts/maintenance-server.sh" start
+        if ! bash "$SCRIPT_DIR/scripts/maintenance-server.sh" start; then
+            echo -e "${RED}[!!] 维护页启动失败，为避免更新期间出现 502，更新已中止${NC}"
+            $COMPOSE_CMD up -d
+            wait_enter
+            return 1
+        fi
     fi
     echo "  [OK] 维护页已启动 (port 3001)"
 
@@ -504,23 +509,21 @@ do_update() {
     # ========== 步骤6: 重新构建 + 启动 ==========
     echo ""
     echo "[6/8] 重新构建并启动..."
-    # 停止宿主机维护页,释放 3001 端口给 codedog
-    if [ -f "$SCRIPT_DIR/scripts/maintenance-server.sh" ]; then
-        bash "$SCRIPT_DIR/scripts/maintenance-server.sh" stop
-    fi
-    # 主动等待端口释放(而非固定 sleep),最多等 15 秒
-    for i in $(seq 1 15); do
-        if ! ss -tlnp 2>/dev/null | grep -q ':3001 '; then break; fi
-        sleep 1
-    done
+    # 镜像构建不占用 3001，构建期间继续由维护服务器响应 Cloudflare。
     if ! $COMPOSE_CMD build --no-cache; then
-        echo "[!!] 构建失败,停止维护页并退出"
-        if [ -f "$SCRIPT_DIR/scripts/maintenance-server.sh" ]; then
-            bash "$SCRIPT_DIR/scripts/maintenance-server.sh" stop
-        fi
+        echo "[!!] 构建失败，维护页将继续保持在线，请修复后重新更新"
         wait_enter
         return 1
     fi
+
+    # 新镜像构建成功后再短暂切换端口，尽量缩小无监听窗口。
+    if [ -f "$SCRIPT_DIR/scripts/maintenance-server.sh" ]; then
+        bash "$SCRIPT_DIR/scripts/maintenance-server.sh" stop
+    fi
+    for i in $(seq 1 15); do
+        if ! ss -tln 2>/dev/null | grep -q ':3001 '; then break; fi
+        sleep 1
+    done
     $COMPOSE_CMD up -d
 
     # ========== 步骤7: 等待启动 + 智能诊断 ==========
