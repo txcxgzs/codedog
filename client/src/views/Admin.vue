@@ -1341,14 +1341,9 @@
             <el-table-column prop="created_at" label="申请时间" width="150">
               <template #default="{ row }">{{ formatDate(row.created_at) }}</template>
             </el-table-column>
-            <el-table-column label="操作" width="260" fixed="right">
+            <el-table-column label="操作" width="110" fixed="right">
               <template #default="{ row }">
-                <div class="r-admin--ops">
-                  <el-button size="small" @click="openDeveloperAppDetail(row)">详情</el-button>
-                  <el-button size="small" type="success" :disabled="row.status==='active'" @click="reviewDeveloperApp(row,'approve')">通过</el-button>
-                  <el-button size="small" type="danger" :disabled="row.status==='rejected'" @click="reviewDeveloperApp(row,'reject')">拒绝</el-button>
-                  <el-button size="small" type="warning" :disabled="row.status==='suspended'" @click="reviewDeveloperApp(row,'suspend')">停用</el-button>
-                </div>
+                <el-button size="small" :type="row.status === 'pending' ? 'warning' : 'primary'" @click="openDeveloperAppDetail(row)">{{ row.status === 'pending' ? '审核' : '详情' }}</el-button>
               </template>
             </el-table-column>
           </el-table>
@@ -1401,6 +1396,11 @@
                 <el-col :span="6"><el-statistic title="API 调用" :value="developerAppDetail.stats?.callCount || 0" /></el-col>
               </el-row>
               <div style="margin:12px 0;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+                <el-divider content-position="left" style="width:100%;margin:4px 0">审核操作</el-divider>
+                <el-button size="small" type="success" :disabled="developerAppDetail.status === 'active'" @click="reviewDeveloperApp(developerAppDetail,'approve')">通过</el-button>
+                <el-button size="small" type="danger" :disabled="developerAppDetail.status === 'rejected'" @click="reviewDeveloperApp(developerAppDetail,'reject')">拒绝</el-button>
+                <el-button size="small" type="warning" :disabled="developerAppDetail.status === 'suspended'" @click="reviewDeveloperApp(developerAppDetail,'suspend')">停用</el-button>
+                <el-divider content-position="left" style="width:100%;margin:4px 0">应用管理</el-divider>
                 <el-button size="small" @click="editRateLimit(developerAppDetail)" title="修改限流"><el-icon><EditPen /></el-icon> 修改限流</el-button>
                 <el-button size="small" type="warning" @click="confirmRevokeAllTokens(developerAppDetail)" title="强制撤销全部令牌"><el-icon><SwitchButton /></el-icon> 撤销全部令牌</el-button>
                 <el-button size="small" type="primary" @click="confirmRegenerateSecret(developerAppDetail)" title="重新生成密钥"><el-icon><Key /></el-icon> 重新生成密钥</el-button>
@@ -4067,7 +4067,8 @@ const reviewDeveloperApp = async (row, action) => {
     const res = await adminApi.reviewDeveloperApp(row.id, { action, note })
     if (res.code === 200) {
       ElMessage.success(res.msg || '审核完成')
-      fetchDeveloperApps()
+      await fetchDeveloperApps()
+      if (developerAppDetailVisible.value && row.id) await openDeveloperAppDetail({ id: row.id })
     } else {
       ElMessage.error(res.msg || '审核失败')
     }
