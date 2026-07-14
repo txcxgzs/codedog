@@ -116,7 +116,7 @@
         </template>
       </el-dialog>
 
-      <el-drawer v-model="detailVisible" title="应用详情" size="440px">
+      <el-drawer v-model="detailVisible" title="应用详情" size="560px" class="r-dev--detail_drawer">
         <template v-if="detailApp">
           <p class="r-dev--detail_name"><el-avatar :size="42" :src="detailApp.logo_url">{{ (detailApp.name || 'A').charAt(0) }}</el-avatar><b>{{ detailApp.name }}</b></p>
           <p><b>状态：</b>{{ statusText(detailApp.status) }}</p>
@@ -311,7 +311,16 @@ onMounted(async () => { await loadScopes(); await loadApps() })
 .r-dev--scope_grid code { margin-left:4px; color:#909399; font-size:11px; }
 .r-dev--review_box { padding:16px; border:1px solid #e4e7ed; border-radius:8px; background:#fafafa; }
 .r-dev--detail_actions { display:flex; gap:8px; margin:16px 0; padding-top:12px; border-top:1px solid #ebeef5; }
+.r-dev--detail_actions { padding:12px; border:1px solid #e7ebf2; border-radius:10px; background:#fff; }
 .r-dev--upload_hint { margin-left:8px; color:#909399; font-size:12px; }
 .r-dev--app_name { display:flex; align-items:center; gap:10px; font-weight:600; }
-.r-dev--detail_name { display:flex; align-items:center; gap:10px; font-size:18px; }
+.r-dev--detail_name { display:flex; align-items:center; gap:12px; font-size:20px; margin: -8px -4px 18px; padding:16px; border-radius:14px; background:linear-gradient(135deg,#f7f4ff,#eef8ff); color:#202938; box-shadow:inset 0 1px 0 rgba(255,255,255,.9); }
+.r-dev--detail_drawer :deep(.el-drawer__body) { padding:20px; background:#fbfcff; color:#334155; }
+.r-dev--detail_drawer :deep(.el-drawer__header) { margin-bottom:0; padding:18px 20px; background:#fff; border-bottom:1px solid #eef1f6; }
+.r-dev--detail_drawer :deep(.el-drawer__title) { font-weight:700; color:#1f2937; }
+.r-dev--detail_drawer :deep(.el-drawer__body > p:not(.r-dev--detail_name)) { margin:10px 0; padding:10px 12px; border-radius:8px; background:#fff; border:1px solid #edf0f5; line-height:1.55; }
+.r-dev--detail_drawer :deep(.el-drawer__body > ul) { margin:8px 0 14px; padding:10px 12px 10px 30px; background:#fff; border:1px solid #edf0f5; border-radius:8px; }
+.r-dev--detail_drawer :deep(.el-drawer__body > ul code) { word-break:break-all; color:#64748b; font-size:12px; }
+.r-dev--detail_drawer :deep(.el-divider) { margin:20px 0; border-color:#e8edf4; }
+.r-dev--detail_drawer :deep(.el-table) { border-radius:10px; overflow:hidden; border:1px solid #e8edf4; }
 </style>
