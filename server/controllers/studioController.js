@@ -223,7 +223,7 @@ async function getStudios(req, res) {
         await Promise.all(rows.filter(studio => {
             const cover = studio.cover || '';
             const wasGeneratedByUs = cover && cover === studio.cover_url;
-            return !cover || (wasGeneratedByUs && !cover.endsWith('#codedog-studio-v2'));
+            return !cover || (wasGeneratedByUs && !cover.endsWith('#codedog-studio-v3'));
         }).map(async (studio) => {
             try {
                 const url = await generateAndUploadStudioCover(studio);
@@ -267,7 +267,7 @@ async function getStudioDetail(req, res) {
         }
 
         const detailCover = studio.cover || '';
-        const detailNeedsCover = !detailCover || (detailCover === studio.cover_url && !detailCover.endsWith('#codedog-studio-v2'));
+        const detailNeedsCover = !detailCover || (detailCover === studio.cover_url && !detailCover.endsWith('#codedog-studio-v3'));
         if (detailNeedsCover) {
             try {
                 const url = await generateAndUploadStudioCover(studio);
