@@ -244,6 +244,7 @@ app.use('/api/notifications', notificationRoutes);
 app.use('/api/geetest', geetestRoutes);
 app.use('/api/hcaptcha', hcaptchaRoutes);
 app.use('/api/developer', developerRoutes);
+app.use('/api/uploads', require('./routes/uploadRoutes'));
 app.use('/api/oauth', oauthRoutes);
 app.use('/api/open/v1', openRoutes);
 

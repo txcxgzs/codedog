@@ -73,7 +73,12 @@
           <el-input v-model="createForm.description" type="textarea" :rows="3" placeholder="介绍一下你的工作室吧" maxlength="500" />
         </el-form-item>
         <el-form-item label="封面" prop="cover">
-          <el-input v-model="createForm.cover" placeholder="封面图片URL（可选）" />
+          <div class="r-studio--cover_upload" @click="studioCoverInput?.click()">
+            <img v-if="createForm.cover" :src="createForm.cover" alt="工作室封面" />
+            <span v-else>选择工作室封面图片</span>
+            <el-button size="small" :loading="coverUploading">{{ createForm.cover ? '更换图片' : '上传图片' }}</el-button>
+          </div>
+          <input ref="studioCoverInput" type="file" accept="image/jpeg,image/png,image/webp,image/gif" hidden @change="uploadStudioCover" />
         </el-form-item>
         <el-form-item label="加入方式" prop="join_type">
           <el-radio-group v-model="createForm.join_type">
@@ -101,6 +106,7 @@ import { ElMessage } from 'element-plus'
 import GeetestDialog from '@/components/GeetestDialog.vue'
 import { useGeetestConfig } from '@/composables/useGeetestConfig'
 import { Search, Plus } from '@element-plus/icons-vue'
+import { uploadApi } from '@/api/upload'
 
 const userStore = useUserStore()
 const loading = ref(true)
@@ -114,6 +120,23 @@ const createDialogVisible = ref(false)
 const createFormRef = ref(null)
 const geetestDialog = ref(null)
 const searchKeyword = ref('')
+const studioCoverInput = ref(null)
+const coverUploading = ref(false)
+
+const uploadStudioCover = async (event) => {
+  const file = event.target.files?.[0]
+  event.target.value = ''
+  if (!file) return
+  if (file.size > 5 * 1024 * 1024) return ElMessage.warning('封面不能超过 5MB')
+  coverUploading.value = true
+  try {
+    const res = await uploadApi.image(file)
+    createForm.cover = res.data?.url || ''
+    if (!createForm.cover) throw new Error('图床未返回地址')
+    ElMessage.success('封面上传成功')
+  } catch (e) { ElMessage.error(e.response?.data?.msg || '封面上传失败') }
+  finally { coverUploading.value = false }
+}
 
 const { geetestEnabled } = useGeetestConfig()
 
@@ -517,4 +540,8 @@ $border-color: #eee;
 .r-studio--card .r-studio--card_body .r-studio--card_meta { padding-top:13px; border-top:1px solid #edf0f5; }
 @media(max-width:768px){.r-studio--page{padding:28px 14px 56px}.r-studio--header{align-items:flex-start;flex-direction:column}.r-studio--header .r-studio--header_actions{width:100%;flex-wrap:wrap}.r-studio--header .r-studio--header_actions .r-studio--search_input{width:100%}.r-studio--content{padding:14px}.r-studio--grid{grid-template-columns:repeat(2,1fr)}}
 @media(max-width:520px){.r-studio--grid{grid-template-columns:1fr}}
+.r-studio--cover_upload { width:100%; min-height:92px; padding:12px; display:flex; align-items:center; gap:12px; border:1px dashed #cad2df; border-radius:14px; background:#f8faff; cursor:pointer; }
+.r-studio--cover_upload:hover { border-color:#fec433; background:#fffaf0; }
+.r-studio--cover_upload img { width:132px; height:72px; object-fit:cover; border-radius:10px; }
+.r-studio--cover_upload > span { flex:1; color:#667085; }
 </style>

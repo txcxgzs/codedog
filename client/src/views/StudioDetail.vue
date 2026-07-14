@@ -126,7 +126,12 @@
           <el-input v-model="editForm.description" type="textarea" :rows="3" maxlength="500" />
         </el-form-item>
         <el-form-item label="封面">
-          <el-input v-model="editForm.cover" placeholder="封面图片URL" />
+          <div class="r-studio-detail--cover_upload" @click="editCoverInput?.click()">
+            <img v-if="editForm.cover" :src="editForm.cover" alt="工作室封面" />
+            <span v-else>选择工作室封面图片</span>
+            <el-button size="small" :loading="editCoverUploading">{{ editForm.cover ? '更换图片' : '上传图片' }}</el-button>
+          </div>
+          <input ref="editCoverInput" type="file" accept="image/jpeg,image/png,image/webp,image/gif" hidden @change="uploadEditCover" />
         </el-form-item>
         <el-form-item label="加入方式">
           <el-radio-group v-model="editForm.join_type">
@@ -269,6 +274,7 @@ import { workApi } from '@/api/work'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import GeetestDialog from '@/components/GeetestDialog.vue'
 import { useGeetestConfig } from '@/composables/useGeetestConfig'
+import { uploadApi } from '@/api/upload'
 import AppImage from '@/components/AppImage.vue'
 
 const route = useRoute()
@@ -290,6 +296,8 @@ const worksTotal = ref(0)
 
 const editDialogVisible = ref(false)
 const editLoading = ref(false)
+const editCoverInput = ref(null)
+const editCoverUploading = ref(false)
 const defaultStudioCover = (studio) => {
   const seed = Math.abs((Number(studio?.id || 0) * 2654435761) ^ String(studio?.name || '').length)
   const colors = [['#ff9a9e','#fad0c4'],['#a18cd1','#fbc2eb'],['#84fab0','#8fd3f4'],['#f6d365','#fda085'],['#5ee7df','#b490ca']]
@@ -299,6 +307,21 @@ const defaultStudioCover = (studio) => {
 }
 
 const editForm = reactive({ name: '', description: '', cover: '', join_type: 'apply' })
+
+const uploadEditCover = async (event) => {
+  const file = event.target.files?.[0]
+  event.target.value = ''
+  if (!file) return
+  if (file.size > 5 * 1024 * 1024) return ElMessage.warning('封面不能超过 5MB')
+  editCoverUploading.value = true
+  try {
+    const res = await uploadApi.image(file)
+    editForm.cover = res.data?.url || ''
+    if (!editForm.cover) throw new Error('图床未返回地址')
+    ElMessage.success('封面上传成功')
+  } catch (e) { ElMessage.error(e.response?.data?.msg || '封面上传失败') }
+  finally { editCoverUploading.value = false }
+}
 
 const viceOwnerDialogVisible = ref(false)
 const viceOwnerLoading = ref(false)
@@ -1040,4 +1063,8 @@ $border-color: #eee;
 :deep(.el-dialog__header) { padding:22px 24px 16px; }
 :deep(.el-dialog__body) { padding:20px 24px; }
 @media(max-width:800px){.r-studio-detail--page{padding:20px 14px 56px}.r-studio-detail--header{align-items:flex-start;flex-direction:column;padding:20px}.r-studio-detail--header .r-studio-detail--cover{width:100%;height:auto;aspect-ratio:16/7}.r-studio-detail--header .r-studio-detail--info .r-studio-detail--stats{gap:7px}.r-studio-detail--tabs{padding:0 14px 20px}.r-studio-detail--member_list{grid-template-columns:repeat(2,1fr)}}
+.r-studio-detail--cover_upload { width:100%; min-height:96px; padding:12px; display:flex; align-items:center; gap:12px; border:1px dashed #cad2df; border-radius:14px; background:#f8faff; cursor:pointer; }
+.r-studio-detail--cover_upload:hover { border-color:#fec433; background:#fffaf0; }
+.r-studio-detail--cover_upload img { width:136px; height:76px; object-fit:cover; border-radius:10px; }
+.r-studio-detail--cover_upload > span { flex:1; color:#667085; }
 </style>

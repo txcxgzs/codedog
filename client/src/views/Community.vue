@@ -95,7 +95,8 @@
     </div>
     
     <!-- 发帖对话框 -->
-    <el-dialog v-model="postDialogVisible" title="发布帖子" width="600px">
+    <el-dialog v-model="postDialogVisible" title="发布新帖子" width="860px" class="r-community--compose_dialog">
+      <div class="r-community--compose_intro">把想法写清楚，配上图片，让更多人加入讨论。</div>
       <el-form :model="postForm" :rules="postRules" ref="postFormRef" label-width="80px">
         <el-form-item label="标题" prop="title">
           <el-input v-model="postForm.title" placeholder="请输入标题" maxlength="100" show-word-limit />
@@ -113,7 +114,12 @@
           <WysiwygEditor v-model="postForm.content" ref="wysiwygRef" />
         </el-form-item>
         <el-form-item label="封面" prop="cover">
-          <el-input v-model="postForm.cover" placeholder="封面图片URL（可选）" />
+          <div class="r-community--cover_upload" @click="coverInput?.click()">
+            <img v-if="postForm.cover" :src="postForm.cover" alt="帖子封面" />
+            <div v-else><b>上传封面图片</b><span>JPG、PNG、WebP，最大 5MB（可选）</span></div>
+            <el-button :loading="coverUploading" size="small">{{ postForm.cover ? '更换封面' : '选择图片' }}</el-button>
+          </div>
+          <input ref="coverInput" type="file" accept="image/jpeg,image/png,image/webp,image/gif" hidden @change="uploadCover" />
         </el-form-item>
         <el-form-item label="标签" prop="tags">
           <el-input v-model="postForm.tags" placeholder="标签，用逗号分隔（可选）" />
@@ -143,6 +149,7 @@ import hljs from 'highlight.js'
 import 'highlight.js/styles/github.css'
 import AppImage from '@/components/AppImage.vue'
 import WysiwygEditor from '@/components/WysiwygEditor.vue'
+import { uploadApi } from '@/api/upload'
 
 // 配置 marked
 marked.setOptions({
@@ -192,6 +199,23 @@ const postFormRef = ref(null)
 const geetestDialogRef = ref(null)
 const geetestConfig = ref(null)
 const wysiwygRef = ref(null)
+const coverInput = ref(null)
+const coverUploading = ref(false)
+
+const uploadCover = async (event) => {
+  const file = event.target.files?.[0]
+  event.target.value = ''
+  if (!file) return
+  if (file.size > 5 * 1024 * 1024) return ElMessage.warning('封面不能超过 5MB')
+  coverUploading.value = true
+  try {
+    const res = await uploadApi.image(file)
+    postForm.cover = res.data?.url || ''
+    if (!postForm.cover) throw new Error('图床未返回地址')
+    ElMessage.success('封面上传成功')
+  } catch (e) { ElMessage.error(e.response?.data?.msg || '封面上传失败') }
+  finally { coverUploading.value = false }
+}
 
 const defaultAvatar = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI0ZFQzQzMyIvPjx0ZXh0IHg9IjUwIiB5PSI2MCIgZm9udC1zaXplPSI0MCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZmlsbD0id2hpdGUiPuahijwvdGV4dD48L3N2Zz4='
 
@@ -659,4 +683,17 @@ $border-color: #eee;
   .r-community--item { padding: 20px 18px; }
   .r-community--item .r-community--item_cover { display: none; }
 }
+.r-community--compose_dialog :deep(.el-dialog) { border-radius:22px!important; }
+.r-community--compose_dialog :deep(.el-dialog__header) { padding:25px 28px 16px; border-bottom:1px solid #edf0f5; }
+.r-community--compose_dialog :deep(.el-dialog__title) { color:#172033; font-size:22px; font-weight:800; }
+.r-community--compose_dialog :deep(.el-dialog__body) { padding:18px 28px 10px; }
+.r-community--compose_dialog :deep(.el-dialog__footer) { padding:16px 28px 24px; }
+.r-community--compose_intro { margin-bottom:20px; padding:12px 14px; border-radius:12px; background:linear-gradient(90deg,#fff8e5,#f2f8ff); color:#667085; }
+.r-community--compose_dialog :deep(.el-form-item__label) { color:#344054; font-weight:700; }
+.r-community--compose_dialog :deep(.el-input__wrapper) { min-height:42px; border-radius:11px!important; }
+.r-community--cover_upload { width:100%; min-height:96px; padding:12px; display:flex; align-items:center; gap:14px; border:1px dashed #cad2df; border-radius:14px; background:#f8faff; cursor:pointer; transition:border-color .2s,background .2s; }
+.r-community--cover_upload:hover { border-color:#fec433; background:#fffaf0; }
+.r-community--cover_upload img { width:126px; height:72px; object-fit:cover; border-radius:10px; }
+.r-community--cover_upload > div { flex:1; display:flex; flex-direction:column; gap:4px; color:#344054; }
+.r-community--cover_upload > div span { color:#98a2b3; font-size:12px; }
 </style>

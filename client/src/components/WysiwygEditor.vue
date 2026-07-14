@@ -15,7 +15,9 @@
         <el-button size="small" @click="exec('formatBlock', 'pre')" title="代码块" :type="isActive('formatBlock', 'pre') ? 'primary' : 'default'">&lt;/&gt;</el-button>
         <el-button size="small" @click="exec('createLink')" title="链接">🔗</el-button>
         <el-button size="small" @click="exec('unlink')" title="取消链接">🔗✕</el-button>
+        <el-button size="small" :loading="imageUploading" @click="chooseImage" title="上传并插入图片">▧ 图片</el-button>
       </el-button-group>
+      <input ref="imageInput" type="file" accept="image/jpeg,image/png,image/webp,image/gif" hidden @change="insertUploadedImage" />
       <el-tag size="small" type="info">{{ wordCount }} 字</el-tag>
     </div>
 
@@ -36,6 +38,8 @@
 <script setup>
 import { ref, computed, onMounted, nextTick, watch } from 'vue'
 import DOMPurify from 'dompurify'
+import { ElMessage } from 'element-plus'
+import { uploadApi } from '@/api/upload'
 
 // DOMPurify 配置:编辑路径和展示路径一致,禁止 iframe/script/style 等危险标签
 const PURIFY_CONFIG = {
@@ -57,6 +61,42 @@ const emit = defineEmits(['update:modelValue'])
 
 const editorRef = ref(null)
 const activeCommands = ref(new Set())
+const imageInput = ref(null)
+const imageUploading = ref(false)
+let savedRange = null
+
+const chooseImage = () => {
+  const selection = window.getSelection()
+  savedRange = selection?.rangeCount ? selection.getRangeAt(0).cloneRange() : null
+  imageInput.value?.click()
+}
+
+const insertUploadedImage = async (event) => {
+  const file = event.target.files?.[0]
+  event.target.value = ''
+  if (!file) return
+  if (file.size > 5 * 1024 * 1024) return ElMessage.warning('图片不能超过 5MB')
+  imageUploading.value = true
+  try {
+    const res = await uploadApi.image(file)
+    const url = res.data?.url
+    if (!url) throw new Error('图床未返回地址')
+    editorRef.value?.focus()
+    if (savedRange) {
+      const selection = window.getSelection()
+      selection.removeAllRanges()
+      selection.addRange(savedRange)
+    }
+    document.execCommand('insertImage', false, url)
+    handleInput()
+    ElMessage.success('图片已插入')
+  } catch (error) {
+    ElMessage.error(error.response?.data?.msg || '图片上传失败')
+  } finally {
+    imageUploading.value = false
+    savedRange = null
+  }
+}
 
 const wordCount = computed(() => {
   if (!editorRef.value) return 0
@@ -192,7 +232,7 @@ defineExpose({ setContent, getSanitizedHtml, editorRef })
 <style scoped>
 .r-wysiwyg {
   border: 1px solid #dcdfe6;
-  border-radius: 6px;
+  border-radius: 15px;
   overflow: hidden;
 }
 
@@ -200,8 +240,8 @@ defineExpose({ setContent, getSanitizedHtml, editorRef })
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 6px 10px;
-  background: #fafafa;
+  padding: 10px 12px;
+  background: #f7f9fc;
   border-bottom: 1px solid #ebeef5;
 }
 
@@ -212,10 +252,10 @@ defineExpose({ setContent, getSanitizedHtml, editorRef })
 }
 
 .r-wysiwyg--editor {
-  min-height: 300px;
+  min-height: 380px;
   max-height: 500px;
   overflow-y: auto;
-  padding: 16px;
+  padding: 22px;
   outline: none;
   line-height: 1.8;
   font-size: 15px;

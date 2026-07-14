@@ -1340,6 +1340,9 @@ $border-color: #eee;
     margin-top: 16px;
   }
 }
+.r-post--edit_form { padding:22px; border:1px solid #e5eaf1; border-radius:17px; background:linear-gradient(145deg,#fbfcff,#fffaf0); }
+.r-post--edit_form :deep(.el-form-item__label) { color:#344054; font-weight:700; }
+.r-post--edit_form :deep(.el-input__wrapper) { min-height:42px; border-radius:11px!important; }
 
 /* 内容阅读页：降低空白感，强化文章与讨论层级 */
 .r-post--page { position:relative; overflow:hidden; padding:34px 24px 80px; background:radial-gradient(circle at 8% 6%,rgba(255,205,92,.31),transparent 28rem),radial-gradient(circle at 92% 14%,rgba(108,190,255,.25),transparent 31rem),linear-gradient(145deg,#f5f8ff 0%,#fafbff 50%,#fff8eb 100%); }
