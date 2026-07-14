@@ -50,8 +50,8 @@
             </div>
           </div>
           
-          <div class="r-work--tags" v-if="work.type">
-            <el-tag class="r-work--tag" effect="dark">{{ getTypeName(work.type) }}</el-tag>
+          <div class="r-work--tags" v-if="work.ide_type || work.type">
+            <el-tag class="r-work--tag" effect="dark">{{ getTypeName(work.ide_type || work.type) }}</el-tag>
           </div>
           
           <div class="r-work--actions">
@@ -213,8 +213,8 @@
                 <span class="r-work--info_value">{{ work.codemao_work_id }}</span>
               </li>
               <li>
-                <span class="r-work--info_label">作品类型</span>
-                <span class="r-work--info_value">{{ getTypeName(work.type) }}</span>
+                <span class="r-work--info_label">开发环境</span>
+                <span class="r-work--info_value">{{ getTypeName(work.ide_type || work.type) }}</span>
               </li>
               <li>
                 <span class="r-work--info_label">来源</span>
