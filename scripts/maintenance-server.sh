@@ -80,7 +80,7 @@ HTMLEOF
 import http.server, socketserver, os
 class H(http.server.SimpleHTTPRequestHandler):
     def log_message(self, fmt, *args): pass  # suppress logs
-class Server(socketserver.ThreadingHTTPServer):
+class Server(http.server.ThreadingHTTPServer):
     allow_reuse_address = True
 server = Server(('0.0.0.0', $PORT), H)
 os.chdir('$MAINTENANCE_DIR')

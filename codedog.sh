@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # CodeDog 管理工具箱
-VERSION="1.0.5"
+VERSION="1.0.6"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
