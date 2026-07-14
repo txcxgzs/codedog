@@ -95,9 +95,9 @@
     </div>
     
     <!-- 发帖对话框 -->
-    <el-dialog v-model="postDialogVisible" title="发布新帖子" width="860px" class="r-community--compose_dialog">
-      <div class="r-community--compose_intro">把想法写清楚，配上图片，让更多人加入讨论。</div>
-      <el-form :model="postForm" :rules="postRules" ref="postFormRef" label-width="80px">
+    <el-dialog v-model="postDialogVisible" title="创作新帖子" width="min(1180px, 96vw)" top="3vh" class="r-community--compose_dialog">
+      <div class="r-community--compose_intro">像写文档一样组织你的内容，支持排版、链接、代码和图床图片。</div>
+      <el-form :model="postForm" :rules="postRules" ref="postFormRef" label-position="top">
         <el-form-item label="标题" prop="title">
           <el-input v-model="postForm.title" placeholder="请输入标题" maxlength="100" show-word-limit />
         </el-form-item>
@@ -687,6 +687,8 @@ $border-color: #eee;
 .r-community--compose_dialog :deep(.el-dialog__header) { padding:25px 28px 16px; border-bottom:1px solid #edf0f5; }
 .r-community--compose_dialog :deep(.el-dialog__title) { color:#172033; font-size:22px; font-weight:800; }
 .r-community--compose_dialog :deep(.el-dialog__body) { padding:18px 28px 10px; }
+.r-community--compose_dialog :deep(.el-dialog) { max-height:94vh; display:flex; flex-direction:column; overflow:hidden; }
+.r-community--compose_dialog :deep(.el-dialog__body) { overflow-y:auto; }
 .r-community--compose_dialog :deep(.el-dialog__footer) { padding:16px 28px 24px; }
 .r-community--compose_intro { margin-bottom:20px; padding:12px 14px; border-radius:12px; background:linear-gradient(90deg,#fff8e5,#f2f8ff); color:#667085; }
 .r-community--compose_dialog :deep(.el-form-item__label) { color:#344054; font-weight:700; }

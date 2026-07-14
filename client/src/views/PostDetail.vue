@@ -247,6 +247,26 @@ const qrcodeUrl = ref('')
 const geetestDialogRef = ref(null)
 const geetestConfig = ref(null)
 
+const sanitizePostHtml = (html) => {
+  const clean = DOMPurify.sanitize(html, {
+    FORBID_TAGS: ['style', 'form', 'input', 'iframe', 'object', 'embed', 'script'],
+    FORBID_ATTR: ['onerror', 'onload', 'onclick', 'onmouseover', 'onfocus', 'onblur', 'formaction']
+  })
+  const wrapper = document.createElement('div')
+  wrapper.innerHTML = clean
+  const allowedStyles = new Set(['color', 'background-color', 'text-align', 'margin-left'])
+  wrapper.querySelectorAll('[style]').forEach((element) => {
+    const safe = []
+    for (const property of [...element.style]) {
+      const value = element.style.getPropertyValue(property)
+      if (allowedStyles.has(property) && !/url\s*\(|expression\s*\(|javascript:/i.test(value)) safe.push(`${property}:${value}`)
+    }
+    if (safe.length) element.setAttribute('style', safe.join(';'))
+    else element.removeAttribute('style')
+  })
+  return wrapper.innerHTML
+}
+
 const renderedContent = computed(() => {
   if (!post.value?.content) return ''
   const content = post.value.content
@@ -254,10 +274,7 @@ const renderedContent = computed(() => {
   // 如果内容包含 HTML 标签,直接渲染;如果是纯 markdown 语法,用 marked 转换
   const hasHtmlTags = /<[a-z][\s\S]*>/i.test(content)
   const html = hasHtmlTags ? content : marked(content)
-  return DOMPurify.sanitize(html, {
-    FORBID_TAGS: ['style', 'form', 'input', 'iframe', 'object', 'embed', 'script'],
-    FORBID_ATTR: ['onerror', 'onload', 'onclick', 'onmouseover', 'style', 'formaction']
-  })
+  return sanitizePostHtml(html)
 })
 
 const defaultAvatar = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI0ZFQzQzMyIvPjx0ZXh0IHg9IjUwIiB5PSI2MCIgZm9udC1zaXplPSI0MCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZmlsbD0id2hpdGUiPuahijwvdGV4dD48L3N2Zz4='
