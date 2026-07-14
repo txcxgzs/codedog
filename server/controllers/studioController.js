@@ -43,6 +43,22 @@ async function isStudioMember(studioId, userId) {
     return !!member;
 }
 
+// A user may belong to (or have a pending application for) only one studio.
+// Keep this check on the server so the rule cannot be bypassed by calling the
+// join endpoint directly.
+async function findOtherStudioMembership(userId, studioId = null, transaction = null) {
+    const where = {
+        user_id: userId,
+        status: { [Op.in]: ['active', 'pending'] }
+    };
+    if (studioId !== null && studioId !== undefined) {
+        where.studio_id = { [Op.ne]: studioId };
+    }
+    const options = { where };
+    if (transaction) options.transaction = transaction;
+    return DbAdapter.findOne(StudioMember, options);
+}
+
 async function canViewStudio(req, studio) {
     if (!studio || studio.status !== 'active') {
         return false;
@@ -100,6 +116,13 @@ async function createStudio(req, res) {
         // 修复: 将"一人只能创建一个工作室"和"名称查重"检查移入事务内
         // 原先检查在事务外,并发请求可同时通过检查后各自创建,导致同一用户拥有多个工作室
         const studio = await sequelize.transaction(async (t) => {
+            const existingMembership = await findOtherStudioMembership(DbAdapter.getId(req.user), null, t);
+            if (existingMembership) {
+                const err = new Error('您已加入或正在申请其他工作室，每人只能属于一个工作室');
+                err.statusCode = 400;
+                throw err;
+            }
+
             // 事务内重新检查 owner 唯一性,防止并发绕过
             const existingOwner = await DbAdapter.findOne(Studio, {
                 where: { owner_id: DbAdapter.getId(req.user), status: { [Op.ne]: 'banned' } },
@@ -289,13 +312,17 @@ async function getStudioDetail(req, res) {
         
         let userRole = null;
         let userMemberStatus = null;
+        let joinBlockedReason = null;
         if (req.user) {
+            const userId = DbAdapter.getId(req.user);
             const member = await DbAdapter.findOne(StudioMember, {
-                where: { studio_id: id, user_id: DbAdapter.getId(req.user) }
+                where: { studio_id: id, user_id: userId }
             });
             if (member) {
                 userRole = member.role;
                 userMemberStatus = member.status;
+            } else if (await findOtherStudioMembership(userId, id)) {
+                joinBlockedReason = '您已加入或正在申请其他工作室，每人只能属于一个工作室';
             }
         }
         
@@ -319,7 +346,8 @@ async function getStudioDetail(req, res) {
                 submittedAt: w.added_at
             })),
             userRole,
-            userMemberStatus
+            userMemberStatus,
+            joinBlockedReason
         });
     } catch (error) {
         console.error('获取工作室详情错误:', error);
@@ -355,6 +383,11 @@ async function joinStudio(req, res) {
             if (existing.status === 'pending') {
                 return errorResponse(res, '您的申请正在审核中', 400);
             }
+        }
+
+        const otherMembership = await findOtherStudioMembership(DbAdapter.getId(req.user), id);
+        if (otherMembership) {
+            return errorResponse(res, '您已加入或正在申请其他工作室，每人只能属于一个工作室', 400);
         }
         
         if (studio.join_type === 'invite') {

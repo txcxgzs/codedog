@@ -2072,7 +2072,7 @@
             <el-table-column prop="id" label="ID" width="60" />
             <el-table-column prop="user" label="操作者" width="150">
               <template #default="{ row }">
-                <span>{{ row.user?.nickname || row.user?.username || '系统' }}</span>
+                <span>{{ row.user?.nickname || row.user?.username || (row.action?.startsWith('developer_api_') ? '开发者 API' : '系统') }}</span>
               </template>
             </el-table-column>
             <el-table-column prop="action" label="操作" width="140">

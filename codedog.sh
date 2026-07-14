@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # CodeDog 管理工具箱
-VERSION="1.0.4"
+VERSION="1.0.5"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
@@ -411,7 +411,8 @@ do_update() {
         if ! ss -tln 2>/dev/null | grep -q ':3001 '; then break; fi
         sleep 1
     done
-    # 启动宿主机维护页服务器(非 Docker,直接绑定 3001)
+    # 启动宿主机维护页服务器(非 Docker,直接绑定 3001)。维护脚本会等待
+    # Docker 完全释放端口，并在失败时直接输出诊断日志。
     if [ -f "$SCRIPT_DIR/scripts/maintenance-server.sh" ]; then
         if ! bash "$SCRIPT_DIR/scripts/maintenance-server.sh" start; then
             echo -e "${RED}[!!] 维护页启动失败，为避免更新期间出现 502，更新已中止${NC}"
