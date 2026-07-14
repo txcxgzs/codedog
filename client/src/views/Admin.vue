@@ -4060,7 +4060,7 @@ const reviewDeveloperApp = async (row, action) => {
       {
         confirmButtonText: '确定',
         cancelButtonText: '取消',
-        inputPlaceholder: '审核备注（可选）',
+        inputPlaceholder: action === 'reject' ? '整改建议（拒绝时必填，至少5字）' : '审核备注（可选）',
         inputValue: ''
       }
     )

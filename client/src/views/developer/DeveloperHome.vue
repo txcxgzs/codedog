@@ -74,6 +74,8 @@
           </el-form-item>
           <el-form-item v-show="wizardStep === 0" label="Logo URL">
             <el-input v-model="form.logo_url" placeholder="https://..." />
+            <input ref="logoInput" type="file" accept="image/png,image/jpeg,image/webp" style="display:none" @change="onLogoSelected" />
+            <el-button size="small" style="margin-top:8px" @click="logoInput?.click()">上传图标</el-button><span v-if="logoFile" class="r-dev--upload_hint">{{ logoFile.name }}</span>
           </el-form-item>
           <el-form-item v-show="wizardStep === 1" label="回调 URL" required>
             <el-input
@@ -160,6 +162,8 @@ const scopeOptions = ref([])
 const wizardStep = ref(0)
 const calls = ref([])
 const callsLoading = ref(false)
+const logoInput = ref(null)
+const logoFile = ref(null)
 
 const form = reactive({
   name: '',
@@ -206,7 +210,7 @@ const loadScopes = async () => {
 }
 const resetForm = () => {
   form.name = ''; form.description = ''; form.homepage_url = ''; form.logo_url = ''
-  form.redirect_uris_text = ''; form.scopes = ['profile:read']; editingId.value = null
+  form.redirect_uris_text = ''; form.scopes = ['profile:read']; logoFile.value = null; editingId.value = null
 }
 const openCreate = () => { resetForm(); wizardStep.value = 0; dialogVisible.value = true }
 const openEdit = (row) => {
@@ -215,8 +219,10 @@ const openEdit = (row) => {
   form.homepage_url = row.homepage_url || ''; form.logo_url = row.logo_url || ''
   form.redirect_uris_text = (row.redirect_uris || []).join('\n')
   form.scopes = [...(row.scopes_requested || ['profile:read'])]
+  logoFile.value = null
   wizardStep.value = 0; detailVisible.value = false; dialogVisible.value = true
 }
+const onLogoSelected = (event) => { const file = event.target.files?.[0]; if (!file) return; if (file.size > 2 * 1024 * 1024) return ElMessage.warning('图标不能超过2MB'); logoFile.value = file }
 const nextWizardStep = () => {
   if (wizardStep.value === 0 && !form.name.trim()) return ElMessage.warning('请填写应用名称')
   if (wizardStep.value === 1 && !form.redirect_uris_text.split(/\r?\n/).some(Boolean)) return ElMessage.warning('请至少填写一个回调地址')
@@ -254,6 +260,10 @@ const submitForm = async () => {
     else res = await developerApi.createApp(payload)
     if (res.code === 200) {
       ElMessage.success(res.msg || '保存成功')
+      if (logoFile.value && res.data?.id) {
+        const uploadRes = await developerApi.uploadAppLogo(res.data.id, logoFile.value)
+        if (uploadRes.code !== 200) ElMessage.warning(uploadRes.msg || '图标上传失败')
+      }
       if (res.data?.client_secret) secretOnce.value = { client_id: res.data.client_id, client_secret: res.data.client_secret }
       dialogVisible.value = false
       await loadApps()
@@ -299,4 +309,5 @@ onMounted(async () => { await loadScopes(); await loadApps() })
 .r-dev--scope_grid code { margin-left:4px; color:#909399; font-size:11px; }
 .r-dev--review_box { padding:16px; border:1px solid #e4e7ed; border-radius:8px; background:#fafafa; }
 .r-dev--detail_actions { display:flex; gap:8px; margin:16px 0; padding-top:12px; border-top:1px solid #ebeef5; }
+.r-dev--upload_hint { margin-left:8px; color:#909399; font-size:12px; }
 </style>

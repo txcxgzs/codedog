@@ -10,6 +10,10 @@ export const developerApi = {
   listAppCalls(id, params = {}) {
     return request.get(`/developer/apps/${id}/calls`, { params })
   },
+  uploadAppLogo(id, file) {
+    const data = new FormData(); data.append('logo', file)
+    return request.post(`/developer/apps/${id}/logo`, data, { headers: { 'Content-Type': 'multipart/form-data' } })
+  },
   listApps() {
     return request.get('/developer/apps')
   },

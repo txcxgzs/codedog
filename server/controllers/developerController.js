@@ -18,6 +18,10 @@ const commentController = require('./commentController');
 const postController = require('./postController');
 const workController = require('./workController');
 const adminController = require('./adminController');
+const { createNotification } = require('./notificationController');
+const axios = require('axios');
+const FormData = require('form-data');
+const fs = require('fs');
 
 function getOwnerId(req) {
     return DbAdapter.getId(req.user);
@@ -303,6 +307,23 @@ async function adminGetApp(req, res) {
     }
 }
 
+async function uploadAppLogo(req, res) {
+    try {
+        const app = await DbAdapter.findOne(DeveloperApp, { where: { id: req.params.id, owner_user_id: getOwnerId(req) } });
+        if (!app || !req.file) return errorResponse(res, '应用或图标不存在', 404);
+        const form = new FormData();
+        form.append('image', fs.createReadStream(req.file.path), { filename: req.file.originalname, contentType: req.file.mimetype });
+        form.append('cdn_domain', 'img.scdn.io');
+        form.append('storage_destination', 'telegram');
+        const upload = await axios.post('https://img.scdn.io/api/v1.php', form, { headers: form.getHeaders(), maxContentLength: 3 * 1024 * 1024, timeout: 30000 });
+        const logoUrl = upload.data?.url || upload.data?.data?.url;
+        if (!logoUrl) return errorResponse(res, upload.data?.message || upload.data?.error || '图床未返回图片地址', 502);
+        await DbAdapter.update(DeveloperApp, { logo_url: logoUrl }, { where: { id: app.id } });
+        try { fs.unlinkSync(req.file.path); } catch (_) {}
+        return successResponse(res, { logo_url: logoUrl }, '图标上传成功');
+    } catch (e) { console.error('uploadAppLogo', e); return errorResponse(res, '上传应用图标失败', 500); }
+}
+
 async function listMyAppCalls(req, res) {
     try {
         const app = await DbAdapter.findOne(DeveloperApp, { where: { id: req.params.id, owner_user_id: getOwnerId(req) } });
@@ -357,10 +378,12 @@ async function adminReviewApp(req, res) {
             suspend: 'suspended'
         };
         if (!map[action]) return errorResponse(res, '无效的审核操作', 400);
+        const cleanNote = note != null ? String(note).trim() : '';
+        if (action === 'reject' && cleanNote.length < 5) return errorResponse(res, '拒绝审核必须填写至少5字的整改建议', 400);
 
         await DbAdapter.update(DeveloperApp, {
             status: map[action],
-            review_note: note != null ? String(note).trim() : app.review_note,
+            review_note: cleanNote || app.review_note,
             reviewed_by: getOwnerId(req),
             reviewed_at: new Date()
         }, { where: { id: app.id } });
@@ -373,6 +396,9 @@ async function adminReviewApp(req, res) {
 
         logOperation(req, 'review_developer_app', 'developer_app', app.id, { action, note });
         await recordAppAudit(app.id, getOwnerId(req), { action: 'review_' + action, fromStatus: app.status, toStatus: map[action], reviewNote: note != null ? String(note).trim() : null });
+        if (action === 'reject') {
+            await createNotification({ user_id: app.owner_user_id, type: 'developer_app_review', title: '开发者应用审核未通过', content: `应用「${app.name}」未通过审核。整改建议：${cleanNote}`, related_id: app.id, related_type: 'developer_app', sender_id: getOwnerId(req), meta: JSON.stringify({ action: 'reject', app_id: app.id }) });
+        }
         const updated = await DbAdapter.findByPk(DeveloperApp, app.id);
         return successResponse(res, serializeApp(updated), '审核完成');
     } catch (e) {
@@ -1421,6 +1447,7 @@ module.exports = {
     listMyAppCalls,
     createApp,
     updateApp,
+    uploadAppLogo,
     rotateSecret,
     getScopeDocs,
     adminListApps,
