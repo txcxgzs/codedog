@@ -1356,7 +1356,7 @@ $border-color: #eee;
 .r-post--header .r-post--meta .r-post--author_name { color:#344054; font-weight:700; }
 .r-post--header .r-post--meta .r-post--time::before, .r-post--header .r-post--meta .r-post--views::before { content:'·'; margin-right:10px; color:#c0c6d0; }
 .r-post--header .r-post--meta .r-post--tag { margin-left:4px; padding:4px 9px; border-radius:7px; background:#fff4d7; color:#9b6800; font-weight:700; }
-.r-post--content { min-height:150px; margin-bottom:36px; color:#2b3445; font-size:17px; line-height:1.95; }
+.r-post--content { min-height:0; margin-bottom:28px; color:#2b3445; font-size:17px; line-height:1.95; }
 .r-post--content.markdown-body :deep(p) { margin-bottom:20px; }
 .r-post--content.markdown-body :deep(a) { color:#b27700; text-decoration:underline; text-decoration-color:rgba(178,119,0,.35); text-underline-offset:4px; }
 .r-post--content.markdown-body :deep(blockquote) { padding:14px 18px; border-left:3px solid #fec433; border-radius:0 11px 11px 0; background:#fffaf0; }

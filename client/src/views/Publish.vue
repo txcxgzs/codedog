@@ -2,31 +2,34 @@
   <div class="r-publish--page">
     <div class="r-publish--container">
       <div class="r-publish--header">
-        <h2 class="r-publish--title">发布作品</h2>
-        <p class="r-publish--desc">输入编程猫作品ID，系统将自动获取作品信息并发布到本平台</p>
+        <h2 class="r-publish--title">把你的作品带到这里</h2>
+        <p class="r-publish--desc">粘贴作品 ID，预览确认后即可发布到编程狗社区。</p>
+      </div>
+      <div class="r-publish--steps">
+        <span class="is-active"><b>1</b>填写 ID</span><i></i><span :class="{ 'is-active': previewData }"><b>2</b>确认作品</span><i></i><span><b>3</b>发布完成</span>
       </div>
       
       <el-form 
         ref="formRef" 
         :model="form" 
         :rules="rules" 
-        label-width="100px"
+        label-position="top"
         class="r-publish--form"
         @submit.prevent="handlePublish"
       >
-        <el-form-item label="作品ID" prop="codemaoWorkId">
+        <el-form-item label="编程猫作品 ID" prop="codemaoWorkId">
           <el-input
             v-model="form.codemaoWorkId"
-            placeholder="请输入编程猫作品ID"
+            placeholder="例如：233220320"
             class="r-publish--input"
           >
             <template #append>
-              <el-button @click="previewWork" :loading="previewLoading">预览</el-button>
+              <el-button @click="previewWork" :loading="previewLoading">获取作品</el-button>
             </template>
           </el-input>
           <div class="r-publish--tip">
             <span class="r-publish--tip_icon"></span>
-            <span>如何获取作品ID：打开编程猫作品页面，URL中的数字即为作品ID。例如：https://shequ.codemao.cn/work/<strong>233220320</strong></span>
+            <span>打开编程猫作品页面，复制网址 <code>/work/</code> 后面的数字即可。</span>
           </div>
         </el-form-item>
         
@@ -174,18 +177,28 @@ $white: #fff;
 $border-color: #eee;
 
 .r-publish--page {
-  padding: 24px;
+  position:relative;
+  min-height:calc(100vh - 64px);
+  padding:46px 24px 80px;
   display: flex;
   justify-content: center;
+  overflow:hidden;
+  background:radial-gradient(circle at 8% 6%,rgba(255,205,92,.32),transparent 28rem),radial-gradient(circle at 92% 14%,rgba(108,190,255,.25),transparent 32rem),linear-gradient(145deg,#f5f8ff 0%,#fafbff 50%,#fff8eb 100%);
 }
+.r-publish--page::before { content:''; position:absolute; inset:0; pointer-events:none; opacity:.5; background-image:linear-gradient(rgba(95,125,170,.055) 1px,transparent 1px),linear-gradient(90deg,rgba(95,125,170,.055) 1px,transparent 1px); background-size:44px 44px; mask-image:linear-gradient(to bottom,#000,transparent 82%); }
 
 .r-publish--container {
-  max-width: 700px;
+  position:relative;
+  z-index:1;
+  max-width: 900px;
   width: 100%;
   background: $white;
-  border-radius: 12px;
-  padding: 32px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+  border:1px solid rgba(255,255,255,.94);
+  border-radius: 22px;
+  padding: 40px 44px;
+  background:rgba(255,255,255,.84);
+  backdrop-filter:blur(18px);
+  box-shadow: 0 20px 55px rgba(39,55,82,.09);
   
   .r-publish--header {
     margin-bottom: 24px;
@@ -193,27 +206,32 @@ $border-color: #eee;
     border-bottom: 1px solid $border-color;
     
     .r-publish--title {
-      font-size: 24px;
-      font-weight: 600;
-      color: $text-color;
+      font-size: clamp(31px,4vw,43px);
+      line-height:1.15;
+      letter-spacing:-.045em;
+      font-weight: 800;
+      color: #172033;
       margin: 0 0 8px;
     }
     
     .r-publish--desc {
-      color: $text-muted;
-      font-size: 14px;
+      color: #667085;
+      font-size: 15px;
       margin: 0;
     }
   }
   
   .r-publish--form {
+    :deep(.el-form-item__label) { color:#344054; font-size:15px; font-weight:700; }
     .r-publish--input {
       :deep(.el-input__wrapper) {
-        border-radius: 8px;
+        min-height:48px;
+        border-radius: 12px 0 0 12px!important;
+        background:#f8faff;
       }
       
       :deep(.el-input-group__append) {
-        border-radius: 0 8px 8px 0;
+        border-radius: 0 12px 12px 0;
         background: $primary-color;
         border-color: $primary-color;
         color: $text-color;
@@ -233,7 +251,7 @@ $border-color: #eee;
     font-size: 13px;
     color: $text-muted;
     margin-top: 12px;
-    padding: 12px 16px;
+        padding: 14px 16px;
     background: $primary-light;
     border-radius: 8px;
     line-height: 1.6;
@@ -255,12 +273,12 @@ $border-color: #eee;
   .r-publish--preview {
     width: 100%;
     border: 1px solid $border-color;
-    border-radius: 12px;
+    border-radius: 17px;
     overflow: hidden;
     
     .r-publish--preview_header {
-      background: #f9fafb;
-      padding: 12px 16px;
+      background: linear-gradient(90deg,#fff8e5,#f2f8ff);
+      padding: 14px 18px;
       font-size: 14px;
       font-weight: 500;
       color: $text-color;
@@ -280,7 +298,7 @@ $border-color: #eee;
     .r-publish--preview_content {
       display: flex;
       gap: 20px;
-      padding: 20px;
+      padding: 22px;
       
       @media (max-width: 576px) {
         flex-direction: column;
@@ -302,7 +320,7 @@ $border-color: #eee;
           width: 100%;
           height: 100%;
           object-fit: cover;
-          border-radius: 8px;
+          border-radius: 13px;
         }
         
         &::before {
@@ -368,7 +386,7 @@ $border-color: #eee;
     width: 100%;
     height: 48px;
     font-size: 16px;
-    border-radius: 8px;
+    border-radius: 13px!important;
     background: $primary-color;
     border-color: $primary-color;
     color: $text-color;
@@ -391,4 +409,12 @@ $border-color: #eee;
     }
   }
 }
+.r-publish--steps { display:flex; align-items:center; margin:0 0 28px; padding:14px 16px; border-radius:14px; background:#f6f8fb; color:#98a2b3; }
+.r-publish--steps span { display:flex; align-items:center; gap:7px; white-space:nowrap; font-weight:600; }
+.r-publish--steps span b { display:grid; place-items:center; width:25px; height:25px; border-radius:8px; background:#e6eaf0; color:#7b8493; }
+.r-publish--steps span.is-active { color:#172033; }
+.r-publish--steps span.is-active b { background:#fec433; color:#172033; }
+.r-publish--steps i { flex:1; height:1px; margin:0 12px; background:#dfe4ec; }
+.r-publish--tip code { padding:2px 5px; border-radius:5px; background:rgba(255,255,255,.72); color:#9b6800; }
+@media(max-width:640px){.r-publish--page{padding:20px 14px 56px}.r-publish--container{padding:28px 18px;border-radius:18px}.r-publish--steps{overflow-x:auto}.r-publish--steps i{min-width:20px}}
 </style>

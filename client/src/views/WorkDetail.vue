@@ -63,7 +63,7 @@
               :style="{ width: 'auto' }"
             >
               <el-icon class="el-icon--left" v-if="!work.liked && !likeLoading"><Pointer /></el-icon>
-              <el-icon class="el-icon--left" v-else-if="work.liked && !likeLoading"><StarFilled /></el-icon>
+              <el-icon class="el-icon--left" v-else-if="work.liked && !likeLoading"><Pointer /></el-icon>
               {{ work.liked ? '已点赞' : '点赞' }}
             </el-button>
             <el-button 

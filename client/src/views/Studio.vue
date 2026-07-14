@@ -34,7 +34,8 @@
         <div class="r-studio--grid" v-if="studios.length > 0">
           <div v-for="studio in studios" :key="studio.id" class="r-studio--card" @click="$router.push(`/studio/${studio.id}`)">
             <!-- 修复: 默认封面用工作室名称首字艺术字,而非 emoji -->
-            <div class="r-studio--card_cover" :style="{ backgroundImage: studio.cover ? `url(${studio.cover})` : `url(${defaultStudioCover(studio)})` }">
+            <div class="r-studio--card_cover">
+              <img :src="studio.cover || defaultStudioCover(studio)" :alt="studio.name" class="r-studio--card_cover_image" />
               <div class="r-studio--card_level">Lv.{{ studio.level || 1 }}</div>
               <div class="r-studio--card_badge" v-if="studio.memberRole">{{ roleText(studio.memberRole) }}</div>
             </div>
@@ -400,6 +401,14 @@ $border-color: #eee;
     background-position: center;
     position: relative;
     background-color: #6978dc; /* 仅作加载兜底，不能覆盖模板传入的 background-image */
+
+    .r-studio--card_cover_image {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
 
     /* 工作室首字艺术字占位符 */
     .r-studio--cover_placeholder {
