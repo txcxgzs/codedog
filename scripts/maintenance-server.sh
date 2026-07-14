@@ -9,6 +9,16 @@ PORT_LOCK="/tmp/codedog-maintenance.portlock"
 MAINTENANCE_DIR="$(cd "$(dirname "$0")/../maintenance" && pwd)"
 LOG_FILE="/tmp/codedog-maintenance.log"
 
+_port_in_use() {
+    if command -v ss >/dev/null 2>&1; then
+        ss -H -ltn "sport = :$PORT" 2>/dev/null | grep -q .
+    elif command -v lsof >/dev/null 2>&1; then
+        lsof -nP -iTCP:"$PORT" -sTCP:LISTEN >/dev/null 2>&1
+    else
+        return 1
+    fi
+}
+
 _start() {
     # Check python3 available
     if ! command -v python3 >/dev/null 2>&1; then
@@ -23,12 +33,16 @@ _start() {
     fi
 
     # Port in use? (codedog might still be holding it)
-    if command -v ss >/dev/null 2>&1; then
-        if ss -tlnp | grep -q ":${PORT} "; then
-            echo "[!] Port $PORT is in use, cannot start maintenance server"
+    # Docker may need a few seconds to release the host port after `down`.
+    for i in $(seq 1 15); do
+        _port_in_use || break
+        [ "$i" -eq 15 ] && {
+            echo "[!] Port $PORT is still in use after 15 seconds"
+            command -v ss >/dev/null 2>&1 && ss -ltnp "sport = :$PORT" 2>/dev/null || true
             return 1
-        fi
-    fi
+        }
+        sleep 1
+    done
 
     # Create a minimal index.html if the maintenance dir doesn't have one
     if [ ! -f "$MAINTENANCE_DIR/index.html" ]; then
@@ -66,7 +80,9 @@ HTMLEOF
 import http.server, socketserver, os
 class H(http.server.SimpleHTTPRequestHandler):
     def log_message(self, fmt, *args): pass  # suppress logs
-server = socketserver.ThreadingHTTPServer(('0.0.0.0', $PORT), H)
+class Server(socketserver.ThreadingHTTPServer):
+    allow_reuse_address = True
+server = Server(('0.0.0.0', $PORT), H)
 os.chdir('$MAINTENANCE_DIR')
 server.serve_forever()
 " >"$LOG_FILE" 2>&1 &
@@ -78,7 +94,12 @@ server.serve_forever()
     if kill -0 "$pid" 2>/dev/null; then
         echo "[OK] Maintenance server started (PID $pid, port $PORT)"
     else
-        echo "[!] Failed to start, check $LOG_FILE"
+        echo "[!] Failed to start maintenance server"
+        if [ -s "$LOG_FILE" ]; then
+            echo "--- $LOG_FILE ---"
+            tail -20 "$LOG_FILE"
+            echo "-----------------"
+        fi
         rm -f "$PID_FILE"
         return 1
     fi

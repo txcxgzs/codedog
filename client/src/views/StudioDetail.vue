@@ -41,7 +41,10 @@
                 <el-button disabled>申请审核中</el-button>
               </template>
               <template v-else>
-                <el-button type="primary" @click="handleJoin">{{ joinText }}</el-button>
+                <el-tooltip v-if="joinBlockedReason" :content="joinBlockedReason" placement="top">
+                  <span><el-button type="primary" disabled>不可加入</el-button></span>
+                </el-tooltip>
+                <el-button v-else type="primary" @click="handleJoin">{{ joinText }}</el-button>
               </template>
             </template>
             <template v-else>
@@ -278,6 +281,7 @@ const members = ref([])
 const works = ref([])
 const userRole = ref(null)
 const userMemberStatus = ref(null)
+const joinBlockedReason = ref(null)
 
 const activeTab = ref('works')
 const worksPage = ref(1)
@@ -381,6 +385,7 @@ const fetchStudio = async () => {
       worksTotal.value = res.data.works?.length || 0
       userRole.value = res.data.userRole
       userMemberStatus.value = res.data.userMemberStatus
+      joinBlockedReason.value = res.data.joinBlockedReason || null
     } else {
       ElMessage.error(res.msg || '获取工作室失败')
     }
