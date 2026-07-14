@@ -6,11 +6,12 @@
 }
 
 .codedog-liquid-glass-defs {
-  position: fixed;
+  position: absolute;
   width: 0;
   height: 0;
   overflow: hidden;
   pointer-events: none;
+  visibility: hidden;
 }
 
 .c-navigator--glass_toggle {
@@ -54,6 +55,22 @@
     backdrop-filter: blur(12px) saturate(135%);
   }
 
+  /* Keep interactive controls above any glass backdrops so clicks work */
+  html[data-liquid-glass='on'] .c-navigator--header-content {
+    position: relative;
+    z-index: 2;
+  }
+  html[data-liquid-glass='on'] .c-navigator--logo_wrap,
+  html[data-liquid-glass='on'] .c-navigator--nav_wrap,
+  html[data-liquid-glass='on'] .c-navigator--user_wrap,
+  html[data-liquid-glass='on'] .c-navigator--search_wrap {
+    position: relative;
+    z-index: 3;
+  }
+  html[data-liquid-glass='on'] .c-navigator--nav_wrap {
+    isolation: isolate;
+  }
+
   html[data-liquid-glass='on'] :is(
     .c-navigator--glass_toggle,
     .c-navigator--user_info,
@@ -80,13 +97,12 @@
   )::before {
     content: '';
     position: absolute;
-    inset: -6px;
+    inset: -4px;
     z-index: -1;
     pointer-events: none;
     background: var(--liquid-glass-bg-strong);
-    -webkit-backdrop-filter: blur(7px) saturate(155%);
-    backdrop-filter: blur(7px) saturate(155%);
-    filter: url(#codedog-liquid-glass-warp);
+    -webkit-backdrop-filter: blur(7px) saturate(140%);
+    backdrop-filter: blur(7px) saturate(140%);
   }
 
   html[data-liquid-glass='on'] :is(
