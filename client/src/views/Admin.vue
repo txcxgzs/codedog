@@ -1186,13 +1186,13 @@
         </div>
         
         <!-- 工作室详情弹窗 -->
-        <el-dialog v-model="studioDetailVisible" title="工作室详情" width="900px" destroy-on-close>
+        <el-dialog v-model="studioDetailVisible" title="工作室详情" width="980px" destroy-on-close class="r-admin--studio_dialog">
           <div v-if="studioDetailLoading" style="text-align: center; padding: 40px;">
             <el-icon class="is-loading" :size="40"><Loading /></el-icon>
           </div>
           <div v-else-if="studioDetail" class="r-admin--studio_detail">
             <div class="r-admin--studio_detail_header">
-              <img :src="studioDetail.studio.logo || defaultStudioCover" class="r-admin--studio_detail_logo" referrerpolicy="no-referrer" />
+              <img :src="studioDetail.studio.cover || studioDetail.studio.logo || defaultStudioCover" class="r-admin--studio_detail_logo" referrerpolicy="no-referrer" />
               <div class="r-admin--studio_detail_info">
                 <h3>{{ studioDetail.studio.name }}</h3>
                 <p>{{ studioDetail.studio.description || '暂无描述' }}</p>
@@ -2812,7 +2812,7 @@ const loadingStudios = ref(false)
 const studioDetailVisible = ref(false)
 const studioDetailLoading = ref(false)
 const studioDetail = ref(null)
-const defaultStudioCover = 'https://via.placeholder.com/100x100?text=Studio'
+const defaultStudioCover = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 260"%3E%3Cdefs%3E%3ClinearGradient id="g" x2="1" y2="1"%3E%3Cstop stop-color="%236879e6"/%3E%3Cstop offset="1" stop-color="%23845bb7"/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width="640" height="260" rx="28" fill="url(%23g)"/%3E%3Ccircle cx="550" cy="40" r="120" fill="white" opacity=".12"/%3E%3Cpath d="M80 180h210M80 140h130" stroke="white" stroke-width="18" stroke-linecap="round" opacity=".82"/%3E%3C/svg%3E'
 
 const banners = ref([])
 const bannerDialogVisible = ref(false)
@@ -5933,4 +5933,22 @@ $sidebar-width: 200px;
 .r-admin--ops .el-button { border-radius:9px!important; }
 :deep(.el-drawer) { border-radius:22px 0 0 22px; overflow:hidden; }
 @media(max-width:900px){.r-admin--sidebar{width:76px;padding:8px}.r-admin--sidebar .r-admin--logo_text,.r-admin--sidebar :deep(.el-menu-item span),.r-admin--sidebar :deep(.el-sub-menu__title span){display:none}.r-admin--main{margin-left:76px;padding:16px}.r-admin--section{padding:18px}}
+.r-admin--studio_dialog :deep(.el-dialog) { border-radius:22px!important; overflow:hidden; }
+.r-admin--studio_dialog :deep(.el-dialog__header) { padding:24px 28px 17px; border-bottom:1px solid #edf0f5; background:linear-gradient(90deg,#fffaf0,#f3f8ff); }
+.r-admin--studio_dialog :deep(.el-dialog__title) { color:#172033; font-size:21px; font-weight:800; }
+.r-admin--studio_dialog :deep(.el-dialog__body) { padding:24px 28px 28px; background:#f8faff; }
+.r-admin--studio_detail_header { display:grid; grid-template-columns:190px 1fr auto; gap:20px; align-items:center; margin-bottom:22px; padding:18px; border:1px solid #e5eaf1; border-radius:17px; background:#fff; box-shadow:0 9px 28px rgba(39,55,82,.06); }
+.r-admin--studio_detail_logo { width:190px; height:112px; border-radius:13px; object-fit:cover; background:#eef2f7; }
+.r-admin--studio_detail_info h3 { margin:0 0 7px; color:#172033; font-size:23px; font-weight:800; }
+.r-admin--studio_detail_info p { margin:0 0 12px; color:#697386; line-height:1.6; }
+.r-admin--studio_detail_tags { display:flex; flex-wrap:wrap; gap:7px; }
+.r-admin--studio_detail_actions { display:flex; flex-direction:column; gap:8px; }
+.r-admin--studio_detail_actions .el-button { width:116px; margin:0; border-radius:10px!important; }
+.r-admin--studio_detail :deep(.el-tabs__header) { margin:0 0 18px; padding:0 6px; border-radius:13px; background:#fff; }
+.r-admin--studio_detail :deep(.el-tabs__item) { height:50px; padding:0 18px; color:#667085; font-weight:700; }
+.r-admin--studio_detail :deep(.el-tabs__item.is-active) { color:#172033; }
+.r-admin--studio_detail :deep(.el-tabs__active-bar) { height:3px; border-radius:3px; background:#fec433; }
+.r-admin--studio_detail :deep(.el-tabs__content) { padding:16px; border:1px solid #e5eaf1; border-radius:15px; background:#fff; }
+.r-admin--studio_detail :deep(.el-descriptions) { overflow:hidden; border-radius:12px; }
+@media(max-width:760px){.r-admin--studio_detail_header{grid-template-columns:1fr}.r-admin--studio_detail_logo{width:100%;height:auto;aspect-ratio:16/7}.r-admin--studio_detail_actions{flex-direction:row}.r-admin--studio_detail_actions .el-button{width:auto}}
 </style>

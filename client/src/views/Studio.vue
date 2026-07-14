@@ -65,8 +65,9 @@
       </div>
     </div>
     
-    <el-dialog v-model="createDialogVisible" title="创建工作室" width="500px">
-      <el-form :model="createForm" :rules="createRules" ref="createFormRef" label-width="80px">
+    <el-dialog v-model="createDialogVisible" title="创建工作室" width="720px" class="r-studio--create_dialog">
+      <div class="r-studio--create_intro"><b>组建你的创作小队</b><span>设置名称和加入方式，创建后还可以邀请伙伴、管理作品。</span></div>
+      <el-form :model="createForm" :rules="createRules" ref="createFormRef" label-position="top" class="r-studio--create_form">
         <el-form-item label="名称" prop="name">
           <el-input v-model="createForm.name" placeholder="请输入工作室名称" maxlength="50" />
         </el-form-item>
@@ -82,10 +83,10 @@
           <input ref="studioCoverInput" type="file" accept="image/jpeg,image/png,image/webp,image/gif" hidden @change="uploadStudioCover" />
         </el-form-item>
         <el-form-item label="加入方式" prop="join_type">
-          <el-radio-group v-model="createForm.join_type">
-            <el-radio label="free">自由加入</el-radio>
-            <el-radio label="apply">申请加入</el-radio>
-            <el-radio label="invite">仅限邀请</el-radio>
+          <el-radio-group v-model="createForm.join_type" class="r-studio--join_options">
+            <el-radio label="free"><b>自由加入</b><span>任何人都可以直接加入</span></el-radio>
+            <el-radio label="apply"><b>申请加入</b><span>管理员审核后加入</span></el-radio>
+            <el-radio label="invite"><b>仅限邀请</b><span>只允许受邀用户加入</span></el-radio>
           </el-radio-group>
         </el-form-item>
       </el-form>
@@ -553,4 +554,21 @@ $border-color: #eee;
 .r-studio--cover_upload:hover { border-color:#fec433; background:#fffaf0; }
 .r-studio--cover_upload img { width:132px; height:72px; object-fit:cover; border-radius:10px; }
 .r-studio--cover_upload > span { flex:1; color:#667085; }
+.r-studio--create_dialog :deep(.el-dialog) { border-radius:22px!important; }
+.r-studio--create_dialog :deep(.el-dialog__header) { padding:25px 28px 16px; border-bottom:1px solid #edf0f5; }
+.r-studio--create_dialog :deep(.el-dialog__title) { color:#172033; font-size:22px; font-weight:800; }
+.r-studio--create_dialog :deep(.el-dialog__body) { padding:18px 28px 8px; }
+.r-studio--create_dialog :deep(.el-dialog__footer) { padding:16px 28px 24px; }
+.r-studio--create_intro { display:flex; flex-direction:column; gap:4px; margin-bottom:20px; padding:14px 16px; border-radius:13px; background:linear-gradient(90deg,#fff8e5,#f2f8ff); }
+.r-studio--create_intro b { color:#172033; font-size:15px; }
+.r-studio--create_intro span { color:#7b8596; font-size:13px; }
+.r-studio--create_form :deep(.el-form-item__label) { color:#344054; font-weight:700; }
+.r-studio--create_form :deep(.el-input__wrapper), .r-studio--create_form :deep(.el-textarea__inner) { border-radius:11px!important; background:#fbfcff; }
+.r-studio--create_form :deep(.el-input__wrapper) { min-height:42px; }
+.r-studio--join_options { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; width:100%; }
+.r-studio--join_options :deep(.el-radio) { height:auto; margin:0; padding:14px; align-items:flex-start; border:1px solid #e1e6ee; border-radius:13px; background:#fff; }
+.r-studio--join_options :deep(.el-radio.is-checked) { border-color:#fec433; background:#fffaf0; box-shadow:0 7px 20px rgba(220,159,24,.1); }
+.r-studio--join_options :deep(.el-radio__label) { display:flex; flex-direction:column; gap:3px; padding-left:8px; color:#344054; }
+.r-studio--join_options :deep(.el-radio__label span) { color:#98a2b3; font-size:11px; white-space:normal; }
+@media(max-width:640px){.r-studio--join_options{grid-template-columns:1fr}}
 </style>

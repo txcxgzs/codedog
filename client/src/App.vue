@@ -27,20 +27,23 @@
         </ul>
         
         <!-- 搜索框 -->
-        <div class="c-navigator--search_wrap">
+        <form class="c-navigator--search_wrap" role="search" autocomplete="off" @submit.prevent="handleSearch">
           <el-input
             v-model="searchKeyword"
             class="c-navigator--search_input"
             type="search"
-            name="site-search"
-            autocomplete="off"
+            id="codedog-content-search"
+            name="codedog-content-search-query"
+            autocomplete="one-time-code"
+            inputmode="search"
+            aria-label="搜索社区作品和用户"
             role="searchbox"
             placeholder="搜索作品、用户"
             :prefix-icon="Search"
             @keyup.enter="handleSearch"
             clearable
           />
-        </div>
+        </form>
         
         <!-- 用户区域 -->
         <div class="c-navigator--user_wrap">
