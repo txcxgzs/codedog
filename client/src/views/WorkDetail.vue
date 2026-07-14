@@ -213,7 +213,7 @@
                 <span class="r-work--info_value">{{ work.codemao_work_id }}</span>
               </li>
               <li>
-                <span class="r-work--info_label">开发环境</span>
+                <span class="r-work--info_label">作品类型</span>
                 <span class="r-work--info_value">{{ getTypeName(work.ide_type || work.type) }}</span>
               </li>
               <li>
