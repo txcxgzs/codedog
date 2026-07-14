@@ -100,7 +100,15 @@
         <el-tab-pane label="成员" name="members">
           <div class="r-studio-detail--members">
             <div class="r-studio-detail--member_list">
-              <div v-for="member in members" :key="member.id" class="r-studio-detail--member_item">
+              <div
+                v-for="member in members"
+                :key="member.id"
+                class="r-studio-detail--member_item"
+                role="link"
+                tabindex="0"
+                @click="goUser(member.user || member)"
+                @keydown.enter="goUser(member.user || member)"
+              >
                 <AppImage :src="member.user?.avatar || member.avatar || defaultAvatar" :fallback="defaultAvatar" class="r-studio-detail--member_avatar" />
                 <div class="r-studio-detail--member_info">
                   <span class="r-studio-detail--member_name">{{ member.user?.nickname || member.user?.username || member.nickname || member.username }}</span>
@@ -1046,6 +1054,8 @@ $border-color: #eee;
 .r-studio-detail--work_card .r-studio-detail--work_info .r-studio-detail--work_title_row h4 { color:#1b2436; font-size:13px; font-weight:700; }
 .r-studio-detail--member_list { display:grid; grid-template-columns:repeat(4,1fr); gap:14px; }
 .r-studio-detail--member_item { min-width:0; padding:14px; border:1px solid #e8ecf2; border-radius:14px; background:linear-gradient(145deg,#fff,#f8faff); box-shadow:0 6px 20px rgba(39,55,82,.045); }
+.r-studio-detail--member_item { cursor:pointer; transition:transform .2s ease,border-color .2s ease,box-shadow .2s ease; }
+.r-studio-detail--member_item:hover,.r-studio-detail--member_item:focus-visible { transform:translateY(-3px); border-color:#f2c54a; box-shadow:0 12px 28px rgba(39,55,82,.1); outline:none; }
 .r-studio-detail--member_item .r-studio-detail--member_avatar { box-shadow:0 0 0 3px #fff,0 5px 13px rgba(35,48,70,.12); }
 .r-studio-detail--my_work_item { border-color:#e5eaf1; border-radius:14px; }
 .r-studio-detail--my_work_item:hover { transform:translateY(-3px); box-shadow:0 10px 24px rgba(39,55,82,.1); }

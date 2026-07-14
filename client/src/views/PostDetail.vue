@@ -1393,7 +1393,7 @@ $border-color: #eee;
 .r-post--comment_item .r-post--comment_header .r-post--comment_name { color:#344054; font-weight:700; }
 .r-post--comment_item .r-post--comment_content { color:#4f5b6e; font-size:15px; line-height:1.7; }
 .r-post--replies { padding:12px 16px; border:0; border-radius:12px; background:#f6f8fb; }
-.r-post--sidebar { width:300px; position:sticky; top:84px; }
+.r-post--sidebar { width:300px; position:static; align-self:flex-start; }
 .r-post--author_card, .r-post--related { border:1px solid rgba(255,255,255,.94); border-radius:18px; background:rgba(255,255,255,.78); backdrop-filter:blur(17px); box-shadow:0 15px 42px rgba(39,55,82,.075); }
 .r-post--author_card { padding:24px 20px; background:linear-gradient(145deg,rgba(255,250,235,.9),rgba(255,255,255,.82) 58%,rgba(240,248,255,.88)); }
 .r-post--author_card .r-post--author_card_avatar { width:72px; height:72px; box-shadow:0 0 0 4px #fff,0 10px 24px rgba(35,48,70,.15); }

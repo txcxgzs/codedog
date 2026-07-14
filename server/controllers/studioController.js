@@ -220,7 +220,11 @@ async function getStudios(req, res) {
         });
 
         // 旧工作室首次读取时补齐持久化默认封面，以后列表和详情始终使用同一图床地址。
-        await Promise.all(rows.filter(studio => !studio.cover && !studio.cover_url).map(async (studio) => {
+        await Promise.all(rows.filter(studio => {
+            const cover = studio.cover || '';
+            const wasGeneratedByUs = cover && cover === studio.cover_url;
+            return !cover || (wasGeneratedByUs && !cover.endsWith('#codedog-studio-v2'));
+        }).map(async (studio) => {
             try {
                 const url = await generateAndUploadStudioCover(studio);
                 await DbAdapter.update(Studio, { cover: url, cover_url: url }, { where: { id: studio.id } });
@@ -262,7 +266,9 @@ async function getStudioDetail(req, res) {
             return errorResponse(res, '工作室不存在', 404);
         }
 
-        if (!studio.cover && !studio.cover_url) {
+        const detailCover = studio.cover || '';
+        const detailNeedsCover = !detailCover || (detailCover === studio.cover_url && !detailCover.endsWith('#codedog-studio-v2'));
+        if (detailNeedsCover) {
             try {
                 const url = await generateAndUploadStudioCover(studio);
                 await DbAdapter.update(Studio, { cover: url, cover_url: url }, { where: { id: studio.id } });
