@@ -53,30 +53,29 @@
         <el-table-column prop="created_at" label="创建时间" width="160">
           <template #default="{ row }">{{ formatDate(row.created_at) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="280" fixed="right">
+        <el-table-column label="操作" width="110" fixed="right">
           <template #default="{ row }">
-            <el-button size="small" @click="openEdit(row)">编辑</el-button>
-            <el-button size="small" type="warning" :disabled="row.status !== 'active'" @click="handleRotate(row)">重置密钥</el-button>
-            <el-button size="small" type="primary" link @click="showDetail(row)">详情</el-button>
+            <el-button size="small" type="primary" @click="showDetail(row)">详情</el-button>
           </template>
         </el-table-column>
       </el-table>
 
       <el-dialog v-model="dialogVisible" :title="editingId ? '编辑应用' : '创建应用'" width="600px" destroy-on-close>
+        <el-steps :active="wizardStep" finish-status="success" simple style="margin-bottom:24px"><el-step title="基本信息" /><el-step title="回调地址" /><el-step title="申请权限" /><el-step title="确认提交" /></el-steps>
         <el-form :model="form" label-width="110px">
-          <el-form-item label="应用名称" required>
+          <el-form-item v-show="wizardStep === 0" label="应用名称" required>
             <el-input v-model="form.name" maxlength="100" show-word-limit placeholder="例如：我的工具" />
           </el-form-item>
-          <el-form-item label="简介">
+          <el-form-item v-show="wizardStep === 0" label="简介">
             <el-input v-model="form.description" type="textarea" :rows="3" maxlength="500" show-word-limit />
           </el-form-item>
-          <el-form-item label="主页 URL">
+          <el-form-item v-show="wizardStep === 0" label="主页 URL">
             <el-input v-model="form.homepage_url" placeholder="https://..." />
           </el-form-item>
-          <el-form-item label="Logo URL">
+          <el-form-item v-show="wizardStep === 0" label="Logo URL">
             <el-input v-model="form.logo_url" placeholder="https://..." />
           </el-form-item>
-          <el-form-item label="回调 URL" required>
+          <el-form-item v-show="wizardStep === 1" label="回调 URL" required>
             <el-input
               v-model="form.redirect_uris_text"
               type="textarea"
@@ -84,15 +83,19 @@
               placeholder="每行一个回调地址，生产环境需 HTTPS（localhost 可用 HTTP）"
             />
           </el-form-item>
-          <el-form-item label="申请权限" required>
-            <el-checkbox-group v-model="form.scopes">
-              <el-checkbox v-for="s in scopeOptions" :key="s.key" :label="s.key">
-                {{ s.name }}（{{ s.key }}）
-                <el-tag v-if="s.risk === 'write'" size="small" type="warning">写入</el-tag>
-                <el-tag v-else-if="s.risk === 'admin'" size="small" type="danger">管理</el-tag>
-              </el-checkbox>
-            </el-checkbox-group>
+          <el-form-item v-show="wizardStep === 2" label="申请权限" required>
+            <div v-for="group in scopeGroups" :key="group.key" class="r-dev--scope_group">
+              <div class="r-dev--scope_group_title"><b>{{ group.title }}</b><span>{{ group.description }}</span></div>
+              <el-checkbox-group v-model="form.scopes" class="r-dev--scope_grid">
+                <el-checkbox v-for="s in group.items" :key="s.key" :label="s.key"><span>{{ s.name }}</span><code>{{ s.key }}</code><el-tag v-if="s.risk === 'write'" size="small" type="warning">写入</el-tag><el-tag v-else-if="s.risk === 'admin'" size="small" type="danger">管理</el-tag></el-checkbox>
+              </el-checkbox-group>
+            </div>
           </el-form-item>
+          <div v-if="wizardStep === 3" class="r-dev--review_box">
+            <h3>请确认申请信息</h3>
+            <p><b>应用：</b>{{ form.name }}</p><p><b>主页：</b>{{ form.homepage_url || '-' }}</p>
+            <p><b>回调地址：</b>{{ form.redirect_uris_text }}</p><p><b>权限：</b>{{ form.scopes.join(', ') }}</p>
+          </div>
           <el-alert
             v-if="editingId"
             type="info"
@@ -103,7 +106,9 @@
         </el-form>
         <template #footer>
           <el-button @click="dialogVisible = false">取消</el-button>
-          <el-button type="primary" :loading="saving" @click="submitForm">保存</el-button>
+          <el-button v-if="wizardStep > 0" @click="wizardStep--">上一步</el-button>
+          <el-button v-if="wizardStep < 3" type="primary" @click="nextWizardStep">下一步</el-button>
+          <el-button v-else type="primary" :loading="saving" @click="submitForm">确认提交</el-button>
         </template>
       </el-dialog>
 
@@ -119,6 +124,7 @@
           </ul>
           <p><b>权限：</b></p>
           <el-tag v-for="s in (detailApp.scopes_requested || [])" :key="s" size="small" class="r-dev--scope_tag">{{ s }}</el-tag>
+          <div class="r-dev--detail_actions"><el-button size="small" @click="openEdit(detailApp)">编辑应用</el-button><el-button size="small" type="warning" @click="handleRotate(detailApp)">重置密钥</el-button></div>
           <el-divider />
           <p class="r-dev--hint">授权链接示例：</p>
           <pre class="r-dev--pre">{{ authExample(detailApp) }}</pre>
@@ -138,7 +144,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { developerApi } from '@/api/developer'
 
@@ -151,6 +157,7 @@ const detailApp = ref(null)
 const editingId = ref(null)
 const secretOnce = ref(null)
 const scopeOptions = ref([])
+const wizardStep = ref(0)
 const calls = ref([])
 const callsLoading = ref(false)
 
@@ -162,6 +169,12 @@ const form = reactive({
   redirect_uris_text: '',
   scopes: ['profile:read']
 })
+const scopeGroups = computed(() => [
+  { key: 'basic', title: '基础读取', description: '用户基础资料和通知', items: scopeOptions.value.filter(s => s.risk === 'read' && /profile|notifications/.test(s.key)) },
+  { key: 'content', title: '内容读取', description: '作品、评论、帖子和社区数据', items: scopeOptions.value.filter(s => s.risk === 'read' && !/profile|notifications/.test(s.key)) },
+  { key: 'write', title: '写入操作', description: '会修改用户数据，请谨慎申请', items: scopeOptions.value.filter(s => s.risk === 'write') },
+  { key: 'admin', title: '管理权限', description: '高风险审核和管理能力', items: scopeOptions.value.filter(s => s.risk === 'admin') }
+].filter(g => g.items.length))
 
 const statusText = (s) => ({
   pending: '待审核', active: '已通过', rejected: '已拒绝', suspended: '已停用'
@@ -195,14 +208,20 @@ const resetForm = () => {
   form.name = ''; form.description = ''; form.homepage_url = ''; form.logo_url = ''
   form.redirect_uris_text = ''; form.scopes = ['profile:read']; editingId.value = null
 }
-const openCreate = () => { resetForm(); dialogVisible.value = true }
+const openCreate = () => { resetForm(); wizardStep.value = 0; dialogVisible.value = true }
 const openEdit = (row) => {
   editingId.value = row.id
   form.name = row.name || ''; form.description = row.description || ''
   form.homepage_url = row.homepage_url || ''; form.logo_url = row.logo_url || ''
   form.redirect_uris_text = (row.redirect_uris || []).join('\n')
   form.scopes = [...(row.scopes_requested || ['profile:read'])]
-  dialogVisible.value = true
+  wizardStep.value = 0; detailVisible.value = false; dialogVisible.value = true
+}
+const nextWizardStep = () => {
+  if (wizardStep.value === 0 && !form.name.trim()) return ElMessage.warning('请填写应用名称')
+  if (wizardStep.value === 1 && !form.redirect_uris_text.split(/\r?\n/).some(Boolean)) return ElMessage.warning('请至少填写一个回调地址')
+  if (wizardStep.value === 2 && !form.scopes.length) return ElMessage.warning('请至少选择一个权限')
+  wizardStep.value = Math.min(3, wizardStep.value + 1)
 }
 const showDetail = async (row) => { detailApp.value = row; detailVisible.value = true; await loadCalls(row) }
 const loadCalls = async (row) => {
@@ -272,4 +291,12 @@ onMounted(async () => { await loadScopes(); await loadApps() })
 .r-dev--calls_head { display:flex; align-items:center; justify-content:space-between; margin: 8px 0; }
 .r-dev--payload { padding: 8px; background: #fafafa; }
 .r-dev--payload pre { white-space: pre-wrap; word-break: break-all; max-height: 160px; overflow:auto; background:#f1f3f5; padding:6px; border-radius:4px; font-size:11px; }
+.r-dev--scope_group { margin-bottom:16px; padding:12px; border:1px solid #ebeef5; border-radius:8px; background:#fafcff; }
+.r-dev--scope_group_title { display:flex; align-items:baseline; gap:10px; margin-bottom:10px; color:#303133; }
+.r-dev--scope_group_title span { color:#909399; font-size:12px; }
+.r-dev--scope_grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px 12px; }
+.r-dev--scope_grid .el-checkbox { margin-right:0; min-height:30px; }
+.r-dev--scope_grid code { margin-left:4px; color:#909399; font-size:11px; }
+.r-dev--review_box { padding:16px; border:1px solid #e4e7ed; border-radius:8px; background:#fafafa; }
+.r-dev--detail_actions { display:flex; gap:8px; margin:16px 0; padding-top:12px; border-top:1px solid #ebeef5; }
 </style>
