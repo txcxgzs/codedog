@@ -19,9 +19,8 @@ const postController = require('./postController');
 const workController = require('./workController');
 const adminController = require('./adminController');
 const { createNotification } = require('./notificationController');
-const axios = require('axios');
-const FormData = require('form-data');
 const fs = require('fs');
+const { uploadToImageHost } = require('../services/imageHost');
 
 function getOwnerId(req) {
     return DbAdapter.getId(req.user);
@@ -311,13 +310,7 @@ async function uploadAppLogo(req, res) {
     try {
         const app = await DbAdapter.findOne(DeveloperApp, { where: { id: req.params.id, owner_user_id: getOwnerId(req) } });
         if (!app || !req.file) return errorResponse(res, '应用或图标不存在', 404);
-        const form = new FormData();
-        form.append('image', fs.createReadStream(req.file.path), { filename: req.file.originalname, contentType: req.file.mimetype });
-        form.append('cdn_domain', 'img.scdn.io');
-        form.append('storage_destination', 'telegram');
-        const upload = await axios.post('https://img.scdn.io/api/v1.php', form, { headers: form.getHeaders(), maxContentLength: 3 * 1024 * 1024, timeout: 30000 });
-        const logoUrl = upload.data?.url || upload.data?.data?.url;
-        if (!logoUrl) return errorResponse(res, upload.data?.message || upload.data?.error || '图床未返回图片地址', 502);
+        const logoUrl = await uploadToImageHost(req.file);
         await DbAdapter.update(DeveloperApp, { logo_url: logoUrl }, { where: { id: app.id } });
         try { fs.unlinkSync(req.file.path); } catch (_) {}
         return successResponse(res, { logo_url: logoUrl }, '图标上传成功');

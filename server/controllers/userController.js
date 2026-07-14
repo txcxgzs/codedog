@@ -562,7 +562,7 @@ async function updateProfile(req, res) {
         let avatar = user.avatar;
         const oldAvatar = user.avatar; // (Report 1 #7) 记录旧头像，DB 更新后清理磁盘文件
         if (req.file) {
-            avatar = `/uploads/avatars/${req.file.filename}`;
+            avatar = req.file.external_url || `/uploads/avatars/${req.file.filename}`;
         }
 
         // (Report 2 #21) 先对原始（未转义）文本做内容审核，再转义落库。
