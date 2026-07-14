@@ -330,8 +330,31 @@ $border-color: #eee;
 }
 
 .r-home--home_page {
-  min-height: 100%;
+  min-height: calc(100vh - 60px);
   padding-bottom: 40px;
+  position: relative;
+  isolation: isolate;
+  background:
+    radial-gradient(circle at 8% 12%, rgba(255, 205, 92, .28), transparent 24rem),
+    radial-gradient(circle at 92% 18%, rgba(108, 190, 255, .24), transparent 26rem),
+    linear-gradient(145deg, #f5f8ff 0%, #f9fbff 48%, #fff9ef 100%);
+  overflow: hidden;
+}
+
+.r-home--home_page::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: .45;
+  background-image:
+    linear-gradient(rgba(93, 134, 184, .07) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(93, 134, 184, .07) 1px, transparent 1px),
+    radial-gradient(circle at 22% 70%, rgba(255,255,255,.9) 0 2px, transparent 3px),
+    radial-gradient(circle at 78% 42%, rgba(255,255,255,.8) 0 1.5px, transparent 2.5px);
+  background-size: 42px 42px, 42px 42px, 180px 180px, 230px 230px;
+  mask-image: linear-gradient(to bottom, #000, transparent 90%);
 }
 
 .r-home--container {
