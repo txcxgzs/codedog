@@ -148,14 +148,36 @@ $text-secondary: #666;
 $text-muted: #999;
 $white: #fff;
 
-.works-page { min-height: 100%; }
+.works-page {
+  position: relative;
+  min-height: calc(100vh - 64px);
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 8% 8%, rgba(255, 205, 92, .3), transparent 28rem),
+    radial-gradient(circle at 92% 16%, rgba(108, 190, 255, .25), transparent 30rem),
+    linear-gradient(145deg, #f5f8ff 0%, #fafbff 50%, #fff8eb 100%);
+}
+.works-page::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: .5;
+  background-image: linear-gradient(rgba(95,125,170,.055) 1px,transparent 1px), linear-gradient(90deg,rgba(95,125,170,.055) 1px,transparent 1px);
+  background-size: 44px 44px;
+  mask-image: linear-gradient(to bottom, #000, transparent 80%);
+}
 
 .page-header {
   position: relative;
   overflow: hidden;
-  background: radial-gradient(circle at var(--glow-x, 50%) var(--glow-y, 50%), rgba(255,255,255,.62) 0%, rgba(255,255,255,.18) 18%, transparent 42%), linear-gradient(135deg, #fff8e8 0%, #f8f2ff 48%, #eaf7ff 100%);
-  border-bottom: 1px solid rgba(255,255,255,.8);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.9), 0 8px 28px rgba(80,90,110,.08);
+  margin: 24px auto 18px;
+  max-width: 1200px;
+  width: calc(100% - 48px);
+  background: radial-gradient(circle at var(--glow-x, 50%) var(--glow-y, 50%), rgba(255,255,255,.7) 0%, rgba(255,255,255,.16) 28%, transparent 52%), linear-gradient(135deg, rgba(255,248,226,.92), rgba(247,243,255,.9) 48%, rgba(232,247,255,.92));
+  border: 1px solid rgba(255,255,255,.92);
+  border-radius: 22px;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.95), 0 18px 50px rgba(39,55,82,.09);
   padding: 48px 24px;
 
   &::after { content: ''; position:absolute; inset:0; pointer-events:none; background: linear-gradient(115deg, rgba(255,255,255,.34), transparent 42%, rgba(255,255,255,.22)); mix-blend-mode: screen; }
@@ -168,16 +190,22 @@ $white: #fff;
     text-align: center;
     color: $text-color;
     
-    h1 { font-size: 32px; font-weight: 600; margin: 0 0 8px; }
-    p { font-size: 16px; opacity: 0.8; margin: 0; }
+    h1 { color:#172033; font-size: clamp(34px, 4vw, 46px); line-height:1.1; letter-spacing:-.045em; font-weight:800; margin: 0 0 12px; }
+    p { color:#667085; font-size: 16px; opacity: 1; margin: 0; }
   }
 }
 
 @media (prefers-reduced-motion: reduce) { .page-header { --glow-x: 50% !important; --glow-y: 50% !important; } }
 
 .filter-bar {
-  background: $white;
-  border-bottom: 1px solid #eee;
+  width: calc(100% - 48px);
+  max-width: 1200px;
+  margin: 0 auto;
+  background: rgba(255,255,255,.78);
+  border: 1px solid rgba(255,255,255,.92);
+  border-radius: 17px;
+  backdrop-filter: blur(18px);
+  box-shadow: 0 12px 36px rgba(39,55,82,.07);
   position: sticky;
   top: 60px;
   z-index: 100;
@@ -185,7 +213,7 @@ $white: #fff;
   .filter-content {
     max-width: 1200px;
     margin: 0 auto;
-    padding: 16px 24px;
+    padding: 13px 16px;
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -204,13 +232,14 @@ $white: #fff;
     padding: 8px 16px;
     font-size: 14px;
     color: $text-secondary;
-    background: #f5f5f5;
-    border-radius: 20px;
+    background: transparent;
+    border-radius: 10px;
+    font-weight: 600;
     cursor: pointer;
     transition: all 0.2s;
     
     &:hover { color: $primary-color; background: $primary-light; }
-    &.active { color: $white; background: $primary-color; }
+    &.active { color: $white; background: #172033; box-shadow:0 6px 14px rgba(23,32,51,.16); }
   }
 }
 
@@ -223,7 +252,8 @@ $white: #fff;
     height: 36px;
     padding: 0 16px;
     border: 1px solid #ddd;
-    border-radius: 18px;
+    border-radius: 11px;
+    background: rgba(255,255,255,.86);
     font-size: 14px;
     outline: none;
     transition: all 0.2s;
@@ -235,7 +265,8 @@ $white: #fff;
     height: 36px;
     padding: 0 12px;
     border: 1px solid #ddd;
-    border-radius: 8px;
+    border-radius: 11px;
+    background: rgba(255,255,255,.86);
     font-size: 14px;
     outline: none;
     cursor: pointer;
@@ -245,15 +276,17 @@ $white: #fff;
 }
 
 .works-container {
+  position: relative;
+  z-index: 1;
   max-width: 1200px;
   margin: 0 auto;
-  padding: 24px;
+  padding: 28px 24px 72px;
 }
 
 .work-grid {
   display: grid;
   grid-template-columns: repeat(5, 1fr);
-  gap: 16px;
+  gap: 20px 16px;
   
   @media (max-width: 1200px) { grid-template-columns: repeat(4, 1fr); }
   @media (max-width: 992px) { grid-template-columns: repeat(3, 1fr); }
@@ -261,16 +294,17 @@ $white: #fff;
 }
 
 .work-card {
-  background: $white;
-  border-radius: 10px;
+  background: rgba(255,255,255,.88);
+  border-radius: 16px;
   overflow: hidden;
   cursor: pointer;
   transition: all 0.3s;
-  border: 1px solid #eee;
+  border: 1px solid rgba(255,255,255,.95);
+  box-shadow: 0 8px 25px rgba(39,55,82,.06);
   
   &:hover {
-    transform: translateY(-3px);
-    box-shadow: 0 8px 20px rgba(0,0,0,0.1);
+    transform: translateY(-6px);
+    box-shadow: 0 18px 38px rgba(39,55,82,.14);
     
     .card-cover img { transform: scale(1.05); }
   }
@@ -299,7 +333,8 @@ $white: #fff;
       background: rgba(0,0,0,0.6);
       color: #fff;
       font-size: 11px;
-      border-radius: 4px;
+      border-radius: 7px;
+      backdrop-filter: blur(8px);
     }
     
     .card-ide {
@@ -316,9 +351,9 @@ $white: #fff;
   }
   
   .card-body {
-    padding: 12px;
+    padding: 14px;
     
-    .card-title { font-size: 14px; font-weight: 500; color: $text-color; margin: 0 0 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .card-title { font-size: 15px; font-weight: 700; color: #1b2436; margin: 0 0 7px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .card-desc { font-size: 12px; color: $text-muted; margin: 0 0 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .card-author { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; span { font-size: 12px; color: $text-secondary; } }
     .card-stats { display: flex; gap: 12px; font-size: 12px; color: $text-muted; span { display: flex; align-items: center; gap: 4px; } }
@@ -326,4 +361,12 @@ $white: #fff;
 }
 
 .pagination { display: flex; justify-content: center; margin-top: 32px; }
+
+@media (max-width: 768px) {
+  .page-header, .filter-bar { width: calc(100% - 28px); }
+  .page-header { margin-top: 14px; padding: 34px 18px; border-radius: 18px; }
+  .filter-bar { position: relative; top: auto; }
+  .filter-actions { width:100%; .search-input{flex:1;width:auto}.sort-select{max-width:120px} }
+  .works-container { padding: 20px 14px 52px; }
+}
 </style>

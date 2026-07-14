@@ -360,7 +360,7 @@ $border-color: #eee;
 .r-home--container {
   max-width: 1200px;
   margin: 0 auto;
-  padding: 0 20px;
+  padding: 20px 20px 0;
   display: flex;
   gap: 20px;
   align-items: flex-start;
@@ -380,17 +380,17 @@ $border-color: #eee;
   display: flex;
   flex-direction: column;
   gap: 16px;
-  position: sticky;
-  top: 80px;
+  position: static;
 }
 
 .r-home--banner_area {
   width: 100%;
   
   :deep(.el-carousel) {
-    border-radius: 12px;
+    border-radius: 18px;
     overflow: hidden;
     transform: translateZ(0); // 解决某些浏览器圆角溢出问题
+    box-shadow: 0 16px 42px rgba(39,55,82,.12);
   }
 }
 
@@ -424,8 +424,9 @@ $border-color: #eee;
 
 .r-home--user_card {
   background: $white;
-  border-radius: 8px;
-  padding: 16px;
+  border-radius: 16px;
+  padding: 18px;
+  box-shadow: 0 12px 34px rgba(39,55,82,.08);
   
   .r-home--user_header {
     display: flex;
