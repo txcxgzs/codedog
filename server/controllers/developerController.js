@@ -101,6 +101,7 @@ async function updateApp(req, res) {
         const { name, description, homepage_url, logo_url, redirect_uris, scopes } = req.body || {};
         const updateData = {};
         let sensitiveChanged = false;
+        let nextScopeList = null;
 
         if (name !== undefined) {
             const n = String(name).trim();
@@ -121,6 +122,7 @@ async function updateApp(req, res) {
         if (scopes !== undefined) {
             let scopeList = oauth.normalizeScopes(scopes);
             if (scopeList.length === 0) return errorResponse(res, '至少选择一个权限范围', 400);
+            nextScopeList = scopeList;
             updateData.scopes_requested = oauth.stringifyJsonField(scopeList);
             sensitiveChanged = true;
         }
@@ -132,7 +134,44 @@ async function updateApp(req, res) {
             updateData.reviewed_at = null;
         }
 
-        await DbAdapter.update(DeveloperApp, updateData, { where: { id: app.id } });
+        await sequelize.transaction(async (t) => {
+            await DbAdapter.update(DeveloperApp, updateData, { where: { id: app.id }, transaction: t });
+
+            if (sensitiveChanged) {
+                const now = new Date();
+                // 回调地址或权限发生变化后，旧授权码/令牌不能在重新审核通过后恢复使用。
+                await DbAdapter.destroy(OAuthAuthCode, { where: { app_id: app.id }, transaction: t });
+                await DbAdapter.update(OAuthAccessToken, { revoked_at: now }, {
+                    where: { app_id: app.id, revoked_at: null }, transaction: t
+                });
+                await DbAdapter.update(OAuthRefreshToken, { revoked_at: now }, {
+                    where: { app_id: app.id, revoked_at: null }, transaction: t
+                });
+
+                // 应用缩减权限时，同步收缩用户历史授权，避免后续授权合并时恢复已删除 scope。
+                if (nextScopeList) {
+                    const authorizations = await DbAdapter.findAll(UserAppAuthorization, {
+                        where: { app_id: app.id, revoked_at: null }, transaction: t
+                    });
+                    for (const authorization of authorizations) {
+                        const narrowed = oauth.intersectScopes(
+                            oauth.parseJsonField(authorization.scopes, []),
+                            nextScopeList
+                        );
+                        const authorizationId = DbAdapter.getId(authorization);
+                        if (narrowed.length === 0) {
+                            await DbAdapter.update(UserAppAuthorization, { revoked_at: now }, {
+                                where: { id: authorizationId }, transaction: t
+                            });
+                        } else {
+                            await DbAdapter.update(UserAppAuthorization, {
+                                scopes: oauth.stringifyJsonField(narrowed)
+                            }, { where: { id: authorizationId }, transaction: t });
+                        }
+                    }
+                }
+            }
+        });
         const updated = await DbAdapter.findByPk(DeveloperApp, app.id);
         logOperation(req, 'update_developer_app', 'developer_app', app.id, updateData);
         return successResponse(res, serializeApp(updated), sensitiveChanged ? '已保存，敏感变更需重新审核' : '保存成功');
@@ -593,10 +632,10 @@ async function approveAuthorize(req, res) {
                 transaction: t
             });
             if (existing) {
-                const merged = oauth.normalizeScopes([
+                const merged = oauth.intersectScopes(oauth.normalizeScopes([
                     ...oauth.parseJsonField(existing.scopes, []),
                     ...allowed
-                ]);
+                ]), oauth.parseJsonField(app.scopes_requested, []));
                 await DbAdapter.update(UserAppAuthorization, {
                     scopes: oauth.stringifyJsonField(merged),
                     authorized_at: new Date()
@@ -691,7 +730,22 @@ async function tokenEndpoint(req, res) {
             if (new Date(authCode.expires_at).getTime() <= Date.now()) return errorResponse(res, '授权码已过期', 400, 'invalid_grant');
             if (authCode.redirect_uri !== String(redirect_uri)) return errorResponse(res, 'redirect_uri 不匹配', 400, 'invalid_grant');
 
-            const scopes = oauth.parseJsonField(authCode.scopes, []);
+            const activeAuthorization = await DbAdapter.findOne(UserAppAuthorization, {
+                where: { user_id: authCode.user_id, app_id: app.id, revoked_at: null }
+            });
+            if (!activeAuthorization) {
+                return errorResponse(res, '用户授权已撤销，请重新授权', 400, 'invalid_grant');
+            }
+            const scopes = oauth.intersectScopes(
+                oauth.intersectScopes(
+                    oauth.parseJsonField(authCode.scopes, []),
+                    oauth.parseJsonField(app.scopes_requested, [])
+                ),
+                oauth.parseJsonField(activeAuthorization.scopes, [])
+            );
+            if (scopes.length === 0) {
+                return errorResponse(res, '授权权限已失效，请重新授权', 400, 'invalid_grant');
+            }
             const tokens = await sequelize.transaction(async (t) => {
                 await DbAdapter.update(OAuthAuthCode, { used_at: new Date() }, { where: { id: authCode.id }, transaction: t });
                 return issueTokens(app, authCode.user_id, scopes, t);
@@ -713,7 +767,24 @@ async function tokenEndpoint(req, res) {
             });
             if (!old) return errorResponse(res, 'refresh_token 无效', 400, 'invalid_grant');
 
-            const scopes = oauth.parseJsonField(old.scopes, []);
+            const activeAuthorization = await DbAdapter.findOne(UserAppAuthorization, {
+                where: { user_id: old.user_id, app_id: app.id, revoked_at: null }
+            });
+            if (!activeAuthorization) {
+                await DbAdapter.update(OAuthRefreshToken, { revoked_at: new Date() }, { where: { id: old.id } });
+                return errorResponse(res, '用户授权已撤销，请重新授权', 400, 'invalid_grant');
+            }
+            const scopes = oauth.intersectScopes(
+                oauth.intersectScopes(
+                    oauth.parseJsonField(old.scopes, []),
+                    oauth.parseJsonField(app.scopes_requested, [])
+                ),
+                oauth.parseJsonField(activeAuthorization.scopes, [])
+            );
+            if (scopes.length === 0) {
+                await DbAdapter.update(OAuthRefreshToken, { revoked_at: new Date() }, { where: { id: old.id } });
+                return errorResponse(res, '授权权限已失效，请重新授权', 400, 'invalid_grant');
+            }
             const tokens = await sequelize.transaction(async (t) => {
                 const issued = await issueTokens(app, old.user_id, scopes, t);
                 // mark old refresh revoked; store replaced_by if we can find new one
@@ -1130,6 +1201,10 @@ async function revokeMyAuthorization(req, res) {
         const now = new Date();
         await sequelize.transaction(async (t) => {
             await DbAdapter.update(UserAppAuthorization, { revoked_at: now }, { where: { id: auth.id }, transaction: t });
+            await DbAdapter.destroy(OAuthAuthCode, {
+                where: { user_id: auth.user_id, app_id: auth.app_id, used_at: null },
+                transaction: t
+            });
             await DbAdapter.update(OAuthAccessToken, { revoked_at: now }, {
                 where: { user_id: auth.user_id, app_id: auth.app_id, revoked_at: null },
                 transaction: t

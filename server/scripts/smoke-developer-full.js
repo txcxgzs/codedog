@@ -147,14 +147,60 @@ function pass(name, cond, detail) {
   });
   if (!pass('refresh token', refreshed.status === 200 && refreshed.data?.data?.access_token, JSON.stringify(refreshed.data))) failed++;
 
+  // 缩减应用权限后，旧 access/refresh token 必须立即失效，历史授权也必须同步收缩。
+  const narrowed = await req('PATCH', `/api/developer/apps/${appId}`, {
+    token,
+    body: {
+      redirect_uris: ['http://localhost:9999/callback'],
+      scopes: ['profile:read']
+    }
+  });
+  if (!pass('narrow app scopes -> pending', narrowed.status === 200 && narrowed.data?.data?.status === 'pending', JSON.stringify(narrowed.data))) failed++;
+  await req('POST', `/api/admin/developer-apps/${appId}/review`, { token, body: { action: 'approve', note: 'approve narrowed scopes' } });
+
+  const oldAccessAfterNarrow = await req('GET', '/api/open/v1/me', { headers: { Authorization: 'Bearer ' + refreshed.data?.data?.access_token } });
+  if (!pass('old access revoked after scope change', oldAccessAfterNarrow.status === 401, JSON.stringify(oldAccessAfterNarrow.data))) failed++;
+  const oldRefreshAfterNarrow = await req('POST', '/api/oauth/token', {
+    body: {
+      grant_type: 'refresh_token',
+      refresh_token: refreshed.data?.data?.refresh_token,
+      client_id: clientId,
+      client_secret: clientSecret
+    }
+  });
+  if (!pass('old refresh revoked after scope change', oldRefreshAfterNarrow.status >= 400 && oldRefreshAfterNarrow.data?.code !== 200, JSON.stringify(oldRefreshAfterNarrow.data))) failed++;
+
   const auths = await req('GET', '/api/developer/authorizations', { token });
   if (!pass('list authorizations', auths.status === 200 && Array.isArray(auths.data?.data), JSON.stringify(auths.data))) failed++;
   const authId = auths.data?.data?.[0]?.id;
+  if (!pass('authorization scopes narrowed', JSON.stringify(auths.data?.data?.[0]?.scopes || []) === JSON.stringify(['profile:read']), JSON.stringify(auths.data?.data?.[0]))) failed++;
   if (authId) {
+    const codeBeforeRevoke = await req('POST', '/api/oauth/authorize', {
+      token,
+      body: {
+        client_id: clientId,
+        redirect_uri: 'http://localhost:9999/callback',
+        scope: 'profile:read',
+        state: 'before-revoke',
+        approved: true
+      }
+    });
+    let pendingCode = '';
+    try { pendingCode = new URL(codeBeforeRevoke.data?.data?.redirect_to).searchParams.get('code') || ''; } catch {}
     const rev = await req('DELETE', `/api/developer/authorizations/${authId}`, { token });
     if (!pass('revoke authorization', rev.status === 200, JSON.stringify(rev.data))) failed++;
     const meAfter = await req('GET', '/api/open/v1/me', { headers: { Authorization: 'Bearer ' + access } });
     if (!pass('access after revoke invalid', meAfter.status === 401, JSON.stringify(meAfter.data))) failed++;
+    const exchangeAfterRevoke = await req('POST', '/api/oauth/token', {
+      body: {
+        grant_type: 'authorization_code',
+        code: pendingCode,
+        redirect_uri: 'http://localhost:9999/callback',
+        client_id: clientId,
+        client_secret: clientSecret
+      }
+    });
+    if (!pass('authorization code invalid after revoke', exchangeAfterRevoke.status >= 400 && exchangeAfterRevoke.data?.code !== 200, JSON.stringify(exchangeAfterRevoke.data))) failed++;
   } else {
     if (!pass('revoke authorization', false, 'no auth id')) failed++;
   }

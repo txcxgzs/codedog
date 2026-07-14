@@ -37,7 +37,7 @@ const uris = oauth.normalizeRedirectUris(['http://localhost:9999/cb', 'https://e
 ok('normalizeRedirectUris', uris.ok && uris.list.length === 2, JSON.stringify(uris));
 const badUri = oauth.normalizeRedirectUris(['not-a-url']);
 ok('normalizeRedirectUris reject bad', !badUri.ok);
-ok('scopeCatalog', oauth.scopeCatalog().length === 4);
+ok('scopeCatalog', oauth.scopeCatalog().length === Object.keys(oauth.ALL_SCOPES).length);
 const redir = oauth.buildRedirectWithParams('http://localhost:9999/cb', { code: 'c1', state: 's1' });
 ok('buildRedirect', redir.includes('code=c1') && redir.includes('state=s1'), redir);
 (async () => {

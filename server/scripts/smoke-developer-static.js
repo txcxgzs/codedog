@@ -49,7 +49,7 @@ if (oauth) {
   const uris = oauth.normalizeRedirectUris(['http://localhost:9999/cb', 'https://example.com/cb']);
   ok('normalizeRedirectUris ok', uris.ok && uris.list.length === 2, JSON.stringify(uris));
   const scopes = oauth.scopeCatalog();
-  ok('scopeCatalog has 4', Array.isArray(scopes) && scopes.length === 4);
+  ok('scopeCatalog matches ALL_SCOPES', Array.isArray(scopes) && scopes.length === Object.keys(oauth.ALL_SCOPES).length);
 }
 
 const appJs = fs.readFileSync(path.join(serverRoot, 'app.js'), 'utf8');
