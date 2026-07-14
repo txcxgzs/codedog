@@ -226,9 +226,30 @@ const openEdit = (row) => {
   wizardStep.value = 0; detailVisible.value = false; dialogVisible.value = true
 }
 const onLogoSelected = (event) => { const file = event.target.files?.[0]; if (!file) return; if (file.size > 2 * 1024 * 1024) return ElMessage.warning('图标不能超过2MB'); logoFile.value = file }
+const normalizeRedirectUris = () => form.redirect_uris_text.split(/\r?\n/).map(value => {
+  const uri = value.trim()
+  if (!uri) return ''
+  if (/^localhost(?::\d+)?(?:\/|$)/i.test(uri) || /^127\.0\.0\.1(?::\d+)?(?:\/|$)/.test(uri)) return `http://${uri}`
+  if (!/^https?:\/\//i.test(uri)) return `https://${uri}`
+  return uri
+}).filter(Boolean)
+const validateRedirectUris = () => {
+  const uris = normalizeRedirectUris()
+  if (!uris.length) return { ok: false, message: '请至少填写一个回调地址' }
+  for (const uri of uris) {
+    try {
+      const parsed = new URL(uri)
+      const local = ['localhost', '127.0.0.1'].includes(parsed.hostname)
+      if (parsed.hash) return { ok: false, message: `回调地址不能包含 #：${uri}` }
+      if (parsed.protocol !== 'https:' && !(local && parsed.protocol === 'http:')) return { ok: false, message: `回调地址必须使用 HTTPS：${uri}` }
+    } catch { return { ok: false, message: `回调地址格式错误：${uri}` } }
+  }
+  form.redirect_uris_text = uris.join('\n')
+  return { ok: true, uris }
+}
 const nextWizardStep = () => {
   if (wizardStep.value === 0 && !form.name.trim()) return ElMessage.warning('请填写应用名称')
-  if (wizardStep.value === 1 && !form.redirect_uris_text.split(/\r?\n/).some(Boolean)) return ElMessage.warning('请至少填写一个回调地址')
+  if (wizardStep.value === 1) { const result = validateRedirectUris(); if (!result.ok) return ElMessage.warning(result.message) }
   if (wizardStep.value === 2 && !form.scopes.length) return ElMessage.warning('请至少选择一个权限')
   wizardStep.value = Math.min(3, wizardStep.value + 1)
 }
@@ -249,8 +270,9 @@ const authExample = (app) => {
 }
 const submitForm = async () => {
   if (!form.name.trim()) { ElMessage.warning('请填写应用名称'); return }
-  const redirect_uris = form.redirect_uris_text.split(/\r?\n/).map(s => s.trim()).filter(Boolean)
-  if (!redirect_uris.length) { ElMessage.warning('请至少填写一个回调 URL'); return }
+  const redirectResult = validateRedirectUris()
+  if (!redirectResult.ok) { ElMessage.warning(redirectResult.message); wizardStep.value = 1; return }
+  const redirect_uris = redirectResult.uris
   if (!form.scopes.length) { ElMessage.warning('请至少选择一个权限'); return }
   saving.value = true
   try {
