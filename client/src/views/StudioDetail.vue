@@ -1005,4 +1005,39 @@ $border-color: #eee;
     margin-left: 8px;
   }
 }
+
+/* 工作室详情：开放式资料头 + 单一内容工作区 */
+.r-studio-detail--page { position:relative; overflow:hidden; padding:34px 24px 80px; background:radial-gradient(circle at 8% 6%,rgba(255,205,92,.31),transparent 28rem),radial-gradient(circle at 92% 13%,rgba(108,190,255,.25),transparent 32rem),linear-gradient(145deg,#f5f8ff 0%,#fafbff 50%,#fff8eb 100%); }
+.r-studio-detail--page::before { content:''; position:absolute; inset:0; pointer-events:none; opacity:.5; background-image:linear-gradient(rgba(95,125,170,.055) 1px,transparent 1px),linear-gradient(90deg,rgba(95,125,170,.055) 1px,transparent 1px); background-size:44px 44px; mask-image:linear-gradient(to bottom,#000,transparent 82%); }
+.r-studio-detail--container { position:relative; z-index:1; max-width:1220px; }
+.r-studio-detail--header { position:relative; gap:28px; align-items:center; margin-bottom:20px; padding:28px; border:1px solid rgba(255,255,255,.94); border-radius:22px; background:linear-gradient(135deg,rgba(255,250,235,.9),rgba(255,255,255,.78) 48%,rgba(239,248,255,.88)); backdrop-filter:blur(18px); box-shadow:0 20px 55px rgba(39,55,82,.09); }
+.r-studio-detail--header .r-studio-detail--cover { width:230px; height:142px; border-radius:16px; box-shadow:0 14px 32px rgba(35,48,70,.16); }
+.r-studio-detail--header .r-studio-detail--info .r-studio-detail--title_row { margin-bottom:10px; }
+.r-studio-detail--header .r-studio-detail--info .r-studio-detail--name { color:#172033; font-size:clamp(28px,3vw,38px); line-height:1.12; letter-spacing:-.04em; font-weight:800; }
+.r-studio-detail--header .r-studio-detail--info .r-studio-detail--level { padding:4px 9px; border-radius:7px; }
+.r-studio-detail--header .r-studio-detail--info .r-studio-detail--desc { max-width:680px; margin-bottom:15px; color:#667085; font-size:14px; }
+.r-studio-detail--header .r-studio-detail--info .r-studio-detail--stats { gap:10px; flex-wrap:wrap; margin-bottom:18px; }
+.r-studio-detail--header .r-studio-detail--info .r-studio-detail--stats span { padding:7px 10px; border:1px solid rgba(222,227,235,.78); border-radius:9px; background:rgba(255,255,255,.62); color:#5f6b7d; font-weight:600; }
+.r-studio-detail--header .r-studio-detail--info .r-studio-detail--actions .el-button { height:40px; padding:0 17px; border-radius:11px!important; font-weight:700; }
+.r-studio-detail--tabs { padding:0 24px 28px; border:1px solid rgba(255,255,255,.94); border-radius:20px; background:rgba(255,255,255,.8); backdrop-filter:blur(18px); box-shadow:0 20px 55px rgba(39,55,82,.08); }
+.r-studio-detail--tabs :deep(.el-tabs__header) { margin:0 0 24px; }
+.r-studio-detail--tabs :deep(.el-tabs__nav-wrap::after) { height:1px; background:#edf0f5; }
+.r-studio-detail--tabs :deep(.el-tabs__item) { height:62px; padding:0 22px; color:#667085; font-size:15px; font-weight:700; }
+.r-studio-detail--tabs :deep(.el-tabs__item.is-active) { color:#172033; }
+.r-studio-detail--tabs :deep(.el-tabs__active-bar) { height:3px; border-radius:3px; background:#fec433; }
+.r-studio-detail--work_grid { grid-template-columns:repeat(5,1fr); gap:18px; }
+.r-studio-detail--work_card { border:1px solid #e8ecf2; border-radius:15px; box-shadow:0 7px 22px rgba(39,55,82,.055); }
+.r-studio-detail--work_card:hover { transform:translateY(-5px); border-color:transparent; box-shadow:0 17px 36px rgba(39,55,82,.13); }
+.r-studio-detail--work_card .r-studio-detail--work_preview .r-studio-detail--work_ide { top:8px; right:8px; padding:3px 7px; border-radius:6px; backdrop-filter:blur(8px); }
+.r-studio-detail--work_card .r-studio-detail--work_info { padding:12px; }
+.r-studio-detail--work_card .r-studio-detail--work_info .r-studio-detail--work_title_row h4 { color:#1b2436; font-size:13px; font-weight:700; }
+.r-studio-detail--member_list { display:grid; grid-template-columns:repeat(4,1fr); gap:14px; }
+.r-studio-detail--member_item { min-width:0; padding:14px; border:1px solid #e8ecf2; border-radius:14px; background:linear-gradient(145deg,#fff,#f8faff); box-shadow:0 6px 20px rgba(39,55,82,.045); }
+.r-studio-detail--member_item .r-studio-detail--member_avatar { box-shadow:0 0 0 3px #fff,0 5px 13px rgba(35,48,70,.12); }
+.r-studio-detail--my_work_item { border-color:#e5eaf1; border-radius:14px; }
+.r-studio-detail--my_work_item:hover { transform:translateY(-3px); box-shadow:0 10px 24px rgba(39,55,82,.1); }
+:deep(.el-dialog) { border-radius:20px!important; }
+:deep(.el-dialog__header) { padding:22px 24px 16px; }
+:deep(.el-dialog__body) { padding:20px 24px; }
+@media(max-width:800px){.r-studio-detail--page{padding:20px 14px 56px}.r-studio-detail--header{align-items:flex-start;flex-direction:column;padding:20px}.r-studio-detail--header .r-studio-detail--cover{width:100%;height:auto;aspect-ratio:16/7}.r-studio-detail--header .r-studio-detail--info .r-studio-detail--stats{gap:7px}.r-studio-detail--tabs{padding:0 14px 20px}.r-studio-detail--member_list{grid-template-columns:repeat(2,1fr)}}
 </style>

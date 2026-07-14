@@ -2,7 +2,10 @@
   <div class="r-studio--page">
     <div class="r-studio--container">
       <div class="r-studio--header">
-        <h2 class="r-studio--title">工作室</h2>
+        <div class="r-studio--heading">
+          <h2 class="r-studio--title">找到一起创造的人</h2>
+          <p>加入工作室，与伙伴分享灵感、作品与成长。</p>
+        </div>
         <div class="r-studio--header_actions">
           <el-input 
             v-model="searchKeyword" 
@@ -482,4 +485,35 @@ $border-color: #eee;
   justify-content: center;
   margin-top: 20px;
 }
+
+/* 全新工作室广场：与发现/社区统一的蓝金画布 */
+.r-studio--page { position:relative; overflow:hidden; padding:46px 24px 80px; background:radial-gradient(circle at 8% 6%,rgba(255,205,92,.32),transparent 27rem),radial-gradient(circle at 92% 14%,rgba(108,190,255,.25),transparent 31rem),linear-gradient(145deg,#f5f8ff 0%,#fafbff 50%,#fff8eb 100%); }
+.r-studio--page::before { content:''; position:absolute; inset:0; pointer-events:none; opacity:.5; background-image:linear-gradient(rgba(95,125,170,.055) 1px,transparent 1px),linear-gradient(90deg,rgba(95,125,170,.055) 1px,transparent 1px); background-size:44px 44px; mask-image:linear-gradient(to bottom,#000,transparent 80%); }
+.r-studio--container { position:relative; z-index:1; max-width:1220px; }
+.r-studio--header { align-items:flex-end; margin-bottom:22px; }
+.r-studio--heading p { margin:10px 0 0; color:#667085; font-size:15px; }
+.r-studio--header .r-studio--title { color:#172033; font-size:clamp(32px,3vw,43px); line-height:1.12; letter-spacing:-.045em; font-weight:800; }
+.r-studio--header .r-studio--header_actions { gap:10px; }
+.r-studio--header .r-studio--header_actions .r-studio--search_input { width:310px; }
+.r-studio--header .r-studio--header_actions .r-studio--search_input :deep(.el-input__wrapper) { height:44px; border-radius:12px 0 0 12px!important; background:rgba(255,255,255,.84); box-shadow:0 0 0 1px rgba(213,219,230,.9) inset!important; }
+.r-studio--header .r-studio--header_actions .r-studio--search_input :deep(.el-input-group__append) { border-radius:0 12px 12px 0!important; box-shadow:none; }
+.r-studio--header .r-studio--header_actions .r-studio--search_input :deep(.el-input-group__append .el-button) { width:52px; padding:0; border-radius:0!important; }
+.r-studio--header .el-button { height:44px; padding:0 19px; border:0; border-radius:12px!important; box-shadow:0 9px 22px rgba(220,159,24,.2); }
+.r-studio--tabs { display:inline-flex; margin-bottom:18px; padding:5px; border:1px solid rgba(255,255,255,.92); border-radius:14px; background:rgba(255,255,255,.72); backdrop-filter:blur(16px); box-shadow:0 10px 28px rgba(39,55,82,.06); }
+.r-studio--tabs :deep(.el-radio-button) { margin:0; }
+.r-studio--tabs :deep(.el-radio-button .el-radio-button__inner) { padding:9px 18px; border:0!important; border-radius:10px!important; background:transparent; color:#667085; font-weight:600; }
+.r-studio--tabs :deep(.el-radio-button.is-active .el-radio-button__inner) { color:#fff; background:#172033; box-shadow:0 6px 14px rgba(23,32,51,.16)!important; }
+.r-studio--content { min-height:430px; padding:24px; border:1px solid rgba(255,255,255,.94); border-radius:20px; background:rgba(255,255,255,.76); backdrop-filter:blur(18px); box-shadow:0 20px 55px rgba(39,55,82,.08); }
+.r-studio--grid { grid-template-columns:repeat(3,1fr); gap:20px; }
+.r-studio--card { border:1px solid rgba(226,231,239,.85); border-radius:17px; box-shadow:0 8px 24px rgba(39,55,82,.06); }
+.r-studio--card:hover { transform:translateY(-6px); box-shadow:0 18px 38px rgba(39,55,82,.14); }
+.r-studio--card .r-studio--card_cover { height:150px; }
+.r-studio--card .r-studio--card_cover .r-studio--card_level { top:12px; right:12px; padding:4px 9px; border-radius:8px; backdrop-filter:blur(8px); }
+.r-studio--card .r-studio--card_cover .r-studio--card_badge { bottom:12px; right:12px; border-radius:7px; }
+.r-studio--card .r-studio--card_body { padding:18px; }
+.r-studio--card .r-studio--card_body .r-studio--card_name { color:#1b2436; font-size:17px; font-weight:700; }
+.r-studio--card .r-studio--card_body .r-studio--card_desc { color:#697386; }
+.r-studio--card .r-studio--card_body .r-studio--card_meta { padding-top:13px; border-top:1px solid #edf0f5; }
+@media(max-width:768px){.r-studio--page{padding:28px 14px 56px}.r-studio--header{align-items:flex-start;flex-direction:column}.r-studio--header .r-studio--header_actions{width:100%;flex-wrap:wrap}.r-studio--header .r-studio--header_actions .r-studio--search_input{width:100%}.r-studio--content{padding:14px}.r-studio--grid{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:520px){.r-studio--grid{grid-template-columns:1fr}}
 </style>
