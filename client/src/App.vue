@@ -15,7 +15,7 @@
       <div class="c-navigator--header-content">
         <!-- Logo -->
         <a href="/" class="c-navigator--logo_wrap">
-          <img src="https://static.codemao.cn/community/shequ_logo.png" alt="编程狗社区" class="c-navigator--logo_img" referrerpolicy="no-referrer">
+          <span class="c-navigator--logo_text">编程狗</span>
         </a>
         
         <!-- 导航菜单 -->
@@ -482,11 +482,17 @@ $shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
   flex-shrink: 0;
   text-decoration: none;
   
-  .c-navigator--logo_img {
-    height: 38px;
-    width: auto;
+  .c-navigator--logo_text {
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    background: linear-gradient(135deg, #f59e0b 0%, #f97316 50%, #ec4899 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
     flex-shrink: 0;
-    display: block;
+    line-height: 1;
+    user-select: none;
   }
   
 }
