@@ -1,6 +1,6 @@
 <template>
   <el-config-provider :locale="zhCn">
-  <div class="r-index--root_container">
+  <div class="r-index--root_container" :class="{ 'is-liquid-glass': liquidGlassActive }">
     <!-- 顶部导航栏 -->
     <div class="c-navigator--navigator">
       <div class="c-navigator--header-content">
@@ -44,6 +44,18 @@
         
         <!-- 用户区域 -->
         <div class="c-navigator--user_wrap">
+          <el-tooltip :content="liquidGlassTooltip" placement="bottom">
+            <button
+              type="button"
+              class="c-navigator--glass_toggle"
+              :class="{ 'is-active': liquidGlassActive }"
+              :aria-pressed="liquidGlassActive"
+              @click="toggleLiquidGlass"
+            >
+              <el-icon><MagicStick /></el-icon>
+              <span class="c-navigator--glass_beta">玻璃 Beta</span>
+            </button>
+          </el-tooltip>
           <template v-if="userStore.isLoggedIn">
             <el-button type="primary" round class="c-navigator--publish_btn" @click="$router.push('/publish')">
               <el-icon class="el-icon--left"><EditPen /></el-icon>
@@ -168,7 +180,8 @@ import { storeToRefs } from 'pinia'
 import HCaptchaDialog from '@/components/HCaptchaDialog.vue'
 import { hcaptchaApi } from '@/api/hcaptcha'
 import { publicApi } from '@/api/public'
-import { Search, EditPen, Bell, CaretBottom, User, Monitor, Star, Setting, SwitchButton } from '@element-plus/icons-vue'
+import { useLiquidGlass } from '@/composables/useLiquidGlass'
+import { Search, EditPen, Bell, CaretBottom, User, Monitor, Star, Setting, SwitchButton, MagicStick } from '@element-plus/icons-vue'
 
 const router = useRouter()
 const userStore = useUserStore()
@@ -177,6 +190,27 @@ const { unreadCount } = storeToRefs(notificationStore)
 const searchKeyword = ref('')
 const hcaptchaDialogRef = ref(null)
 const hcaptchaVerified = ref(false)
+const {
+  active: liquidGlassActive,
+  supported: liquidGlassSupported,
+  toggle: toggleLiquidGlassState,
+  initializePointerTracking
+} = useLiquidGlass()
+let stopLiquidGlassPointerTracking = null
+
+const liquidGlassTooltip = computed(() => {
+  if (!liquidGlassSupported.value) return '当前浏览器不支持液态玻璃测试版'
+  return liquidGlassActive.value ? '关闭液态玻璃测试版' : '开启液态玻璃测试版'
+})
+
+const toggleLiquidGlass = () => {
+  if (!liquidGlassSupported.value) {
+    ElMessage.warning('当前浏览器不支持 backdrop-filter，无法开启液态玻璃测试版')
+    return
+  }
+  toggleLiquidGlassState()
+  ElMessage.success(liquidGlassActive.value ? '已开启液态玻璃测试版' : '已关闭液态玻璃测试版')
+}
 
 const announcements = ref([])
 const dismissedTopBarIds = ref(loadDismissedIds('ann_topbar_dismissed'))
@@ -332,6 +366,7 @@ const startHCaptchaCheck = () => {
 }
 
 onMounted(async () => {
+  stopLiquidGlassPointerTracking = initializePointerTracking()
   loadAnnouncements()
   if (userStore.token && !userStore.user) {
     await userStore.fetchCurrentUser()
@@ -349,6 +384,7 @@ onMounted(async () => {
 
 // 组件卸载时清理事件监听与定时器，避免内存泄漏
 onUnmounted(() => {
+  if (stopLiquidGlassPointerTracking) stopLiquidGlassPointerTracking()
   window.removeEventListener('hcaptcha-required', checkHCaptcha)
   if (hcaptchaCheckInterval) {
     clearInterval(hcaptchaCheckInterval)

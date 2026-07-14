@@ -1,0 +1,134 @@
+:root {
+  --liquid-pointer-x: 50%;
+  --liquid-pointer-y: 18%;
+  --liquid-glass-bg: rgba(255, 255, 255, 0.64);
+  --liquid-glass-bg-strong: rgba(255, 255, 255, 0.78);
+  --liquid-glass-border: rgba(255, 255, 255, 0.78);
+  --liquid-glass-shadow: 0 14px 42px rgba(61, 52, 32, 0.12), 0 2px 8px rgba(61, 52, 32, 0.06);
+}
+
+.c-navigator--glass_toggle {
+  min-width: 36px;
+  height: 36px;
+  padding: 0 10px;
+  border: 1px solid #ebe7dc;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.72);
+  color: #74694f;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  cursor: pointer;
+  font: inherit;
+  transition: transform .22s cubic-bezier(.2,.8,.2,1), box-shadow .22s ease, background .22s ease;
+}
+.c-navigator--glass_toggle:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(82, 69, 35, .12); }
+.c-navigator--glass_toggle:active { transform: scale(.96, 1.04); }
+.c-navigator--glass_toggle.is-active { color: #4f421f; border-color: rgba(254, 196, 51, .62); }
+.c-navigator--glass_beta { font-size: 11px; white-space: nowrap; }
+
+@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  html[data-liquid-glass='on'] body {
+    background:
+      radial-gradient(circle at var(--liquid-pointer-x) var(--liquid-pointer-y), rgba(255, 221, 128, .30), transparent 28rem),
+      radial-gradient(circle at 12% 68%, rgba(129, 224, 255, .18), transparent 24rem),
+      linear-gradient(135deg, #f8f6f0 0%, #eef5f7 52%, #fff8e7 100%);
+    background-attachment: fixed;
+  }
+
+  html[data-liquid-glass='on'] .r-index--root_container {
+    background: transparent;
+  }
+
+  html[data-liquid-glass='on'] .c-navigator--navigator {
+    background: rgba(255, 255, 255, .58);
+    border-bottom: 1px solid rgba(255, 255, 255, .76);
+    box-shadow: 0 10px 30px rgba(67, 58, 38, .08);
+    -webkit-backdrop-filter: blur(20px) saturate(145%);
+    backdrop-filter: blur(20px) saturate(145%);
+  }
+
+  html[data-liquid-glass='on'] .c-navigator--glass_toggle,
+  html[data-liquid-glass='on'] .c-navigator--user_info,
+  html[data-liquid-glass='on'] .c-navigator--notification,
+  html[data-liquid-glass='on'] .c-navigator--nav_wrap .c-navigator--selected a {
+    background: var(--liquid-glass-bg-strong);
+    border-color: var(--liquid-glass-border);
+    box-shadow:
+      inset 0 1px 0 rgba(255,255,255,.92),
+      inset 1px 0 0 rgba(106, 221, 255, .12),
+      inset -1px 0 0 rgba(255, 128, 196, .10),
+      0 6px 20px rgba(69, 58, 31, .10);
+    -webkit-backdrop-filter: blur(12px) saturate(150%);
+    backdrop-filter: blur(12px) saturate(150%);
+  }
+
+  html[data-liquid-glass='on'] :is(
+    .r-home--user_card,
+    .r-home--login_card,
+    .r-home--side_card,
+    .r-login--container,
+    .r-oauth--card,
+    .r-dev--container,
+    .r-devdocs--card,
+    .el-dialog,
+    .el-message-box,
+    .el-popper.is-light
+  ) {
+    background: var(--liquid-glass-bg);
+    border: 1px solid var(--liquid-glass-border);
+    box-shadow: var(--liquid-glass-shadow),
+      inset 0 1px 0 rgba(255,255,255,.92),
+      inset 1px 0 0 rgba(92, 220, 255, .10),
+      inset -1px 0 0 rgba(255, 117, 186, .08);
+    -webkit-backdrop-filter: blur(18px) saturate(145%);
+    backdrop-filter: blur(18px) saturate(145%);
+  }
+
+  html[data-liquid-glass='on'] :is(.r-home--user_card, .r-home--login_card, .r-home--side_card) {
+    transition: transform .28s cubic-bezier(.2,.8,.2,1), box-shadow .28s ease;
+  }
+  html[data-liquid-glass='on'] :is(.r-home--user_card, .r-home--login_card, .r-home--side_card):hover {
+    transform: translateY(-2px) scale(1.006);
+    box-shadow: 0 20px 48px rgba(61, 52, 32, .15), inset 0 1px 0 rgba(255,255,255,.96);
+  }
+
+  html[data-liquid-glass='on'] .el-overlay {
+    background-color: rgba(28, 31, 36, .22);
+    -webkit-backdrop-filter: blur(5px);
+    backdrop-filter: blur(5px);
+  }
+
+  html[data-liquid-glass='on'] .c-footer--footer {
+    background: rgba(255,255,255,.46);
+    border-color: rgba(255,255,255,.68);
+    -webkit-backdrop-filter: blur(14px) saturate(130%);
+    backdrop-filter: blur(14px) saturate(130%);
+  }
+}
+
+@media (max-width: 768px) {
+  .c-navigator--user_wrap { gap: 8px !important; }
+  .c-navigator--publish_btn { display: none !important; }
+  .c-navigator--glass_toggle { padding: 0 8px; }
+  .c-navigator--glass_beta { display: none; }
+  html[data-liquid-glass='on'] :is(.r-login--container, .r-dev--container, .r-devdocs--card) {
+    -webkit-backdrop-filter: blur(13px) saturate(135%);
+    backdrop-filter: blur(13px) saturate(135%);
+  }
+}
+
+@media (max-width: 420px) {
+  .c-navigator--user_info .c-navigator--username,
+  .c-navigator--user_info .el-icon--right { display: none; }
+  .c-navigator--user_info { padding-inline: 4px !important; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .c-navigator--glass_toggle,
+  html[data-liquid-glass='on'] :is(.r-home--user_card, .r-home--login_card, .r-home--side_card) {
+    transition: none !important;
+    transform: none !important;
+  }
+}

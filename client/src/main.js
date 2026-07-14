@@ -13,6 +13,7 @@ import * as ElementPlusIconsVue from '@element-plus/icons-vue'
 import App from './App.vue'
 import router from './router'
 import './styles/main.scss'
+import './styles/liquid-glass.scss'
 
 // 创建Vue应用
 const app = createApp(App)
