@@ -3419,7 +3419,17 @@ async function getOperationLogs(req, res) {
             offset
         });
         
-        return paginateResponse(res, rows, count, page, pageSize);
+        const logs = rows.map((row) => {
+            const item = row.toJSON ? row.toJSON() : row;
+            let auditDetails = {};
+            try {
+                auditDetails = item.details ? JSON.parse(item.details) : {};
+            } catch (_) {
+                auditDetails = { legacy_raw_details: item.details || '' };
+            }
+            return { ...item, audit_details: auditDetails };
+        });
+        return paginateResponse(res, logs, count, page, pageSize);
     } catch (error) {
         console.error('获取操作日志错误:', error);
         return errorResponse(res, '获取失败', 500);

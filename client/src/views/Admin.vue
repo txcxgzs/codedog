@@ -2422,8 +2422,8 @@
     </el-dialog>
     
     <!-- 日志详情对话框 -->
-    <el-dialog v-model="logDetailDialogVisible" title="操作详情" width="500px">
-      <pre style="white-space: pre-wrap; word-break: break-all; background: #f5f5f5; padding: 16px; border-radius: 8px;">{{ logDetailContent }}</pre>
+    <el-dialog v-model="logDetailDialogVisible" title="完整审计详情" width="760px" class="admin-detail-dialog">
+      <pre style="max-height: 65vh; overflow: auto; white-space: pre-wrap; word-break: break-word; background: #f6f8fc; color: #182033; padding: 18px; border: 1px solid #e4e9f2; border-radius: 12px; line-height: 1.65;">{{ logDetailContent }}</pre>
     </el-dialog>
   </div>
 </template>
@@ -3700,11 +3700,20 @@ const fetchOperationLogs = async () => {
 }
 
 const showLogDetail = (log) => {
-  try {
-    logDetailContent.value = JSON.stringify(JSON.parse(log.details), null, 2)
-  } catch (e) {
-    logDetailContent.value = log.details || '无详情'
+  let details = log.audit_details
+  if (!details || typeof details !== 'object') {
+    try { details = log.details ? JSON.parse(log.details) : {} } catch (e) { details = { legacy_raw_details: log.details || '' } }
   }
+  logDetailContent.value = JSON.stringify({
+    log_id: log.id,
+    operator: log.user || details.operator || { id: log.user_id, name: '历史记录操作者' },
+    action: { code: log.action, name: getActionName(log.action) },
+    target: { type: log.target_type, id: log.target_id },
+    ip_address: log.ip_address,
+    user_agent: log.user_agent,
+    created_at: log.created_at,
+    details
+  }, null, 2)
   logDetailDialogVisible.value = true
 }
 

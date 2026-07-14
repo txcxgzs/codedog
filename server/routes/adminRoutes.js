@@ -8,6 +8,7 @@ const adminController = require('../controllers/adminController');
 const developerController = require('../controllers/developerController');
 const { authMiddleware, adminMiddleware } = require('../middleware/auth');
 const { requireRole, requirePermission } = require('../middleware/permission');
+const { auditAdminRequest } = require('../middleware/operationLog');
 
 /**
  * 以下路由需要管理员权限
@@ -15,6 +16,8 @@ const { requireRole, requirePermission } = require('../middleware/permission');
  */
 router.use(authMiddleware);
 router.use(adminMiddleware);
+// 所有后台请求统一审计，避免各控制器手工埋点造成漏记。
+router.use(auditAdminRequest());
 
 /**
  * 统计数据
