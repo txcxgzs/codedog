@@ -1628,9 +1628,17 @@ async function getRealtimeLogs(req, res) {
             });
         }
 
+        const selectedLogs = source === 'file'
+            ? (result.fileLogs || [])
+            : source === 'memory'
+                ? (result.memoryLogs || [])
+                : [...(result.memoryLogs || []), ...(result.fileLogs || [])]
+                    .sort((a, b) => new Date(a.time || 0) - new Date(b.time || 0));
         return successResponse(res, {
             ...result,
-            total: realtimeLogs.length
+            logs: selectedLogs,
+            total: selectedLogs.length,
+            memoryTotal: realtimeLogs.length
         });
     } catch (error) {
         return errorResponse(res, '获取日志失败', 500);

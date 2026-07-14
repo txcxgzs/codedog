@@ -6,6 +6,10 @@ const cors = require('cors');
 const session = require('express-session');
 const path = require('path');
 const fs = require('fs');
+const { installConsoleCapture } = require('./utils/logger');
+
+// 尽早捕获全应用 stdout/stderr，后台“文件日志”不再只包含少数手工埋点。
+installConsoleCapture();
 
 const { sequelize, testConnection } = require('./config/database');
 const { isValidSessionSecret, resolveSessionSecret } = require('./config/auth');

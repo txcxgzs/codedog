@@ -6,6 +6,7 @@ const { isRoleAtLeast } = require('../config/permissions');
 const { likeContains } = require('../utils/security');
 // 引入内容审核服务,落库前做敏感词/违规检查(参照 userController/postController)
 const aiReview = require('../services/aiReview');
+const { generateAndUploadStudioCover } = require('../services/studioCover');
 
 const VALID_JOIN_TYPES = ['public', 'apply', 'invite'];
 
@@ -167,6 +168,17 @@ async function createStudio(req, res) {
             return newStudio;
         });
 
+        if (!studio.cover) {
+            try {
+                const url = await generateAndUploadStudioCover(studio);
+                await DbAdapter.update(Studio, { cover: url, cover_url: url }, { where: { id: studio.id } });
+                studio.cover = url;
+                studio.cover_url = url;
+            } catch (coverError) {
+                console.error('[studio-cover] 新工作室默认封面生成失败:', coverError.message);
+            }
+        }
+
         // Bug-17: pending 状态的工作室返回不同提示
         const msg = studioStatus === 'pending' ? '工作室已创建，正在审核中' : '工作室创建成功';
         return successResponse(res, studio, msg);
@@ -207,6 +219,18 @@ async function getStudios(req, res) {
             offset
         });
 
+        // 旧工作室首次读取时补齐持久化默认封面，以后列表和详情始终使用同一图床地址。
+        await Promise.all(rows.filter(studio => !studio.cover && !studio.cover_url).map(async (studio) => {
+            try {
+                const url = await generateAndUploadStudioCover(studio);
+                await DbAdapter.update(Studio, { cover: url, cover_url: url }, { where: { id: studio.id } });
+                studio.cover = url;
+                studio.cover_url = url;
+            } catch (error) {
+                console.error(`[studio-cover] 工作室 ${studio.id} 默认封面生成失败:`, error.message);
+            }
+        }));
+
         return paginateResponse(res, rows, count, page, pageSize);
     } catch (error) {
         console.error('获取工作室列表错误:', error);
@@ -236,6 +260,17 @@ async function getStudioDetail(req, res) {
 
         if (!await canViewStudio(req, studio)) {
             return errorResponse(res, '工作室不存在', 404);
+        }
+
+        if (!studio.cover && !studio.cover_url) {
+            try {
+                const url = await generateAndUploadStudioCover(studio);
+                await DbAdapter.update(Studio, { cover: url, cover_url: url }, { where: { id: studio.id } });
+                studio.cover = url;
+                studio.cover_url = url;
+            } catch (error) {
+                console.error(`[studio-cover] 工作室 ${studio.id} 详情封面生成失败:`, error.message);
+            }
         }
         
         // (低) 成员按角色优先级排序:owner → vice_owner → admin → member;

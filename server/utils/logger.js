@@ -14,6 +14,12 @@ const MAX_LOG_SIZE = 5 * 1024 * 1024; // 5MB 自动轮转
 
 // 写队列:顺序写入,避免高并发下内容错乱
 let writeQueue = Promise.resolve();
+const nativeConsole = {
+    log: console.log.bind(console),
+    warn: console.warn.bind(console),
+    error: console.error.bind(console)
+};
+let consoleCaptureInstalled = false;
 
 function ensureLogDir() {
     if (!fs.existsSync(LOG_DIR)) {
@@ -29,7 +35,7 @@ function formatLine(level, tag, message) {
 function enqueueWrite(level, tag, message) {
     // 入队异步写入,不阻塞事件循环
     writeQueue = writeQueue.then(() => doWrite(level, tag, message)).catch((e) => {
-        console.error('[logger] write failed:', e.message);
+        nativeConsole.error('[logger] write failed:', e.message);
     });
 }
 
@@ -51,7 +57,7 @@ function doWrite(level, tag, message) {
 
             // 修复: 异步写入,不阻塞事件循环
             fs.appendFile(LOG_FILE, line, { encoding: 'utf8' }, (err) => {
-              if (err) console.error('[logger] write error:', err.message)
+              if (err) nativeConsole.error('[logger] write error:', err.message)
               resolve()
             });
         } catch (e) {
@@ -64,17 +70,37 @@ function doWrite(level, tag, message) {
 // 同时输出到原始 console
 function log(tag, message) {
     enqueueWrite('INFO', tag, message);
-    console.log(`[${tag}]`, message);
+    nativeConsole.log(`[${tag}]`, message);
 }
 
 function warn(tag, message) {
     enqueueWrite('WARN', tag, message);
-    console.warn(`[${tag}]`, message);
+    nativeConsole.warn(`[${tag}]`, message);
 }
 
 function error(tag, message) {
     enqueueWrite('ERROR', tag, message);
-    console.error(`[${tag}]`, message);
+    nativeConsole.error(`[${tag}]`, message);
+}
+
+function stringifyArg(value) {
+    if (typeof value === 'string') return value;
+    if (value instanceof Error) return `${value.name}: ${value.message}\n${value.stack || ''}`;
+    try { return JSON.stringify(value); } catch (_) { return String(value); }
+}
+
+/** 捕获全应用 console 输出，同时保留原 stdout/stderr 行为。 */
+function installConsoleCapture() {
+    if (consoleCaptureInstalled) return;
+    consoleCaptureInstalled = true;
+    const levels = { log: 'INFO', info: 'INFO', warn: 'WARN', error: 'ERROR' };
+    for (const [method, level] of Object.entries(levels)) {
+        const output = method === 'error' ? nativeConsole.error : (method === 'warn' ? nativeConsole.warn : nativeConsole.log);
+        console[method] = (...args) => {
+            enqueueWrite(level, 'app', args.map(stringifyArg).join(' '));
+            output(...args);
+        };
+    }
 }
 
 // 高效尾部读取: 从文件末尾读取(大文件友好,异步 Promise)
@@ -93,10 +119,13 @@ function getRecentLogs(limit = 200) {
             let remainder = '';
             const lines = [];
 
+            let firstChunk = true;
             stream.on('data', (chunk) => {
                 const data = remainder + chunk;
                 const parts = data.split('\n');
-                remainder = parts.shift();
+                remainder = parts.pop();
+                if (firstChunk && startPos > 0) parts.shift();
+                firstChunk = false;
                 for (const line of parts) {
                     if (line.trim()) lines.push(line);
                 }
@@ -160,4 +189,4 @@ function rotateLogIfNeeded() {
     }
 }
 
-module.exports = { log, warn, error, getRecentLogs, writeLog: enqueueWrite };
+module.exports = { log, warn, error, getRecentLogs, writeLog: enqueueWrite, installConsoleCapture, LOG_FILE };

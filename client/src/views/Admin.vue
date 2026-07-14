@@ -3557,18 +3557,13 @@ const crawlLogInterval = ref(null)
 const fetchRealtimeLogs = async () => {
   loadingRealtimeLogs.value = true
   try {
-    const lastLog = realtimeLogs.value[realtimeLogs.value.length - 1]
-    const lastTime = lastLog?.time || null
-    // 修复: 根据日志来源传不同参数
-    const res = await adminApi.getRealtimeLogs(lastTime, 200, logSource.value)
+    // 手动刷新始终重新获取最近日志，避免来源切换后沿用另一来源时间戳导致空列表。
+    const res = await adminApi.getRealtimeLogs(null, 500, logSource.value)
     if (res.code === 200) {
-      if (logSource.value === 'file' && res.data?.fileLogs) {
-        realtimeLogs.value = res.data.fileLogs.slice(-500)
-      } else if (res.data?.logs?.length > 0) {
-        realtimeLogs.value = [...realtimeLogs.value, ...res.data.logs].slice(-500)
-      } else if (res.data?.memoryLogs?.length > 0) {
-        realtimeLogs.value = res.data.memoryLogs.slice(-500)
-      }
+      const logs = Array.isArray(res.data?.logs)
+        ? res.data.logs
+        : (logSource.value === 'file' ? res.data?.fileLogs : res.data?.memoryLogs) || []
+      realtimeLogs.value = logs.slice(-500)
       nextTick(() => {
         if (realtimeLogsRef.value) {
           realtimeLogsRef.value.scrollTop = realtimeLogsRef.value.scrollHeight

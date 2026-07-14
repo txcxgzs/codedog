@@ -35,7 +35,8 @@
           <div v-for="studio in studios" :key="studio.id" class="r-studio--card" @click="$router.push(`/studio/${studio.id}`)">
             <!-- 修复: 默认封面用工作室名称首字艺术字,而非 emoji -->
             <div class="r-studio--card_cover">
-              <img :src="studio.cover || defaultStudioCover(studio)" :alt="studio.name" class="r-studio--card_cover_image" />
+              <img v-if="studio.cover || studio.cover_url" :src="studio.cover || studio.cover_url" :alt="studio.name" class="r-studio--card_cover_image" />
+              <div v-else class="r-studio--card_cover_image r-studio--card_cover_pending">封面生成中</div>
               <div class="r-studio--card_level">Lv.{{ studio.level || 1 }}</div>
               <div class="r-studio--card_badge" v-if="studio.memberRole">{{ roleText(studio.memberRole) }}</div>
             </div>
@@ -157,19 +158,6 @@ const createRules = {
 const roleText = (role) => {
   const map = { owner: '创建者', admin: '管理员', member: '成员' }
   return map[role] || ''
-}
-
-const defaultStudioCover = (studio) => {
-  const id = Number(studio?.id || 0)
-  const seed = Math.abs((id * 2654435761) ^ String(studio?.name || '').length)
-  const colors = [['#ff9a9e','#fad0c4'],['#a18cd1','#fbc2eb'],['#84fab0','#8fd3f4'],['#f6d365','#fda085'],['#5ee7df','#b490ca'],['#cfd9df','#e2ebf0']]
-  const pair = colors[seed % colors.length]
-  const initial = (studio?.name || 'S').charAt(0).toUpperCase()
-  const easterEgg = seed % 997 === 7
-  const svg = easterEgg
-    ? `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 220"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#79c2ff"/><stop offset="1" stop-color="#5267d9"/></linearGradient></defs><rect width="640" height="220" fill="url(#g)"/><circle cx="520" cy="55" r="90" fill="#fff" opacity=".16"/><path d="M480 148c8-56 33-76 55-76s47 20 55 76c-25 17-85 17-110 0z" fill="#fff" opacity=".92"/><circle cx="518" cy="111" r="7" fill="#5267d9"/><circle cx="552" cy="111" r="7" fill="#5267d9"/><text x="30" y="70" fill="#fff" font-size="28" font-family="sans-serif" font-weight="700">BLUE MOMENT</text><text x="30" y="105" fill="#e8f3ff" font-size="16" font-family="sans-serif">A tiny secret studio</text></svg>`
-    : `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 220"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop stop-color="${pair[0]}"/><stop offset="1" stop-color="${pair[1]}"/></linearGradient><pattern id="p" width="34" height="34" patternUnits="userSpaceOnUse" patternTransform="rotate(25)"><circle cx="8" cy="8" r="2" fill="#fff" opacity=".28"/><path d="M0 28h34" stroke="#fff" opacity=".12"/></pattern></defs><rect width="640" height="220" fill="url(#g)"/><rect width="640" height="220" fill="url(#p)"/><circle cx="560" cy="20" r="130" fill="#fff" opacity=".12"/><text x="40" y="140" fill="#fff" font-size="82" font-family="sans-serif" font-weight="700" opacity=".92">${initial}</text></svg>`
-  return `data:image/svg+xml,${encodeURIComponent(svg)}`
 }
 
 // 修复: 切换标签时重置分页,避免从"我的工作室"切回"全部"时停留在非第一页
@@ -542,6 +530,7 @@ $border-color: #eee;
 .r-studio--card { border:1px solid rgba(226,231,239,.85); border-radius:17px; box-shadow:0 8px 24px rgba(39,55,82,.06); }
 .r-studio--card:hover { transform:translateY(-6px); box-shadow:0 18px 38px rgba(39,55,82,.14); }
 .r-studio--card .r-studio--card_cover { height:150px; }
+.r-studio--card_cover_pending { display:flex; align-items:center; justify-content:center; background:linear-gradient(135deg,#edf2fa,#e5eaf4); color:#8a96a8; font-size:13px; }
 .r-studio--card .r-studio--card_cover .r-studio--card_level { top:12px; right:12px; padding:4px 9px; border-radius:8px; backdrop-filter:blur(8px); }
 .r-studio--card .r-studio--card_cover .r-studio--card_badge { bottom:12px; right:12px; border-radius:7px; }
 .r-studio--card .r-studio--card_body { padding:18px; }
