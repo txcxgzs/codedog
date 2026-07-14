@@ -29,6 +29,11 @@
         </div>
       </el-alert>
 
+      <div class="r-dev--apps_panel">
+        <div class="r-dev--section_head">
+          <div><h2>我的应用</h2><p>管理凭证、权限与接口调用</p></div>
+          <span>{{ apps.length }} 个应用</span>
+        </div>
       <el-table :data="apps" v-loading="loading" empty-text="还没有应用，点击右上角创建">
         <el-table-column prop="name" label="应用名称" min-width="180">
           <template #default="{ row }"><div class="r-dev--app_name"><el-avatar :size="34" :src="row.logo_url">{{ (row.name || 'A').charAt(0) }}</el-avatar><span>{{ row.name }}</span></div></template>
@@ -62,6 +67,7 @@
           </template>
         </el-table-column>
       </el-table>
+      </div>
 
       <el-dialog v-model="dialogVisible" :title="editingId ? '编辑应用' : '创建应用'" width="600px" destroy-on-close>
         <el-steps :active="wizardStep" finish-status="success" simple style="margin-bottom:24px"><el-step title="基本信息" /><el-step title="回调地址" /><el-step title="申请权限" /><el-step title="确认提交" /></el-steps>
@@ -354,4 +360,39 @@ onMounted(async () => { await loadScopes(); await loadApps() })
 .r-dev--detail_drawer :deep(.el-drawer__body > ul code) { word-break:break-all; color:#64748b; font-size:12px; }
 .r-dev--detail_drawer :deep(.el-divider) { margin:20px 0; border-color:#e8edf4; }
 .r-dev--detail_drawer :deep(.el-table) { border-radius:10px; overflow:hidden; border:1px solid #e8edf4; }
+
+/* 与首页统一的明亮开发者工作台 */
+.r-dev--page {
+  position: relative; overflow: hidden; padding: 54px 24px 80px;
+  background: radial-gradient(circle at 8% 4%, rgba(255,205,92,.34), transparent 27rem), radial-gradient(circle at 92% 10%, rgba(108,190,255,.25), transparent 32rem), linear-gradient(145deg,#f4f8ff 0%,#fafbff 50%,#fff8eb 100%);
+}
+.r-dev--page::before { content:''; position:absolute; inset:0; pointer-events:none; opacity:.52; background-image:linear-gradient(rgba(95,125,170,.055) 1px,transparent 1px),linear-gradient(90deg,rgba(95,125,170,.055) 1px,transparent 1px); background-size:44px 44px; mask-image:linear-gradient(to bottom,#000,transparent 74%); }
+.r-dev--container { position:relative; z-index:1; max-width:1220px; padding:0; border:0; border-radius:0; background:transparent; box-shadow:none; }
+.r-dev--header { align-items:flex-end; margin-bottom:30px; }
+.r-dev--header h1 { margin:2px 0 9px; color:#172033; font-size:clamp(32px,3vw,44px); line-height:1.1; letter-spacing:-.045em; font-weight:800; }
+.r-dev--back_home { color:#667085; font-weight:600; }
+.r-dev--subtitle { color:#667085; font-size:15px; }
+.r-dev--header_actions .el-button { height:44px; padding:0 18px; border-radius:12px; font-weight:700; }
+.r-dev--header_actions .el-button--primary { color:#172033; border-color:#fec433; background:#fec433; box-shadow:0 10px 24px rgba(220,159,24,.24); }
+.r-dev--secret_alert { border-radius:14px; box-shadow:0 12px 32px rgba(82,63,22,.08); }
+.r-dev--apps_panel { overflow:hidden; border:1px solid rgba(255,255,255,.92); border-radius:20px; background:rgba(255,255,255,.82); backdrop-filter:blur(18px); box-shadow:0 20px 55px rgba(39,55,82,.09); }
+.r-dev--section_head { display:flex; justify-content:space-between; align-items:center; padding:24px 26px 18px; border-bottom:1px solid #edf0f5; }
+.r-dev--section_head h2 { margin:0 0 5px; color:#1b2436; font-size:19px; }
+.r-dev--section_head p { margin:0; color:#8a94a6; font-size:13px; }
+.r-dev--section_head > span { color:#667085; font-size:13px; font-weight:600; }
+.r-dev--apps_panel :deep(.el-table), .r-dev--apps_panel :deep(.el-table tr), .r-dev--apps_panel :deep(.el-table th.el-table__cell) { background:transparent; }
+.r-dev--apps_panel :deep(.el-table th.el-table__cell) { height:48px; color:#667085; font-size:12px; font-weight:700; }
+.r-dev--apps_panel :deep(.el-table td.el-table__cell) { height:72px; border-bottom-color:#edf0f5; }
+.r-dev--apps_panel :deep(.el-table__row) { transition:background .2s; }
+.r-dev--apps_panel :deep(.el-table__row:hover > td.el-table__cell) { background:linear-gradient(90deg,rgba(255,248,228,.72),rgba(246,249,255,.72)); }
+.r-dev--app_name :deep(.el-avatar) { box-shadow:0 0 0 3px #fff,0 5px 14px rgba(30,45,70,.13); }
+.r-dev--code { display:inline-block; max-width:210px; overflow:hidden; text-overflow:ellipsis; color:#475467; font-family:"SFMono-Regular",Consolas,monospace; }
+.r-dev--detail_drawer :deep(.el-drawer) { border-radius:24px 0 0 24px; overflow:hidden; box-shadow:-18px 0 55px rgba(26,39,61,.15); }
+.r-dev--detail_drawer :deep(.el-drawer__header) { padding:24px 26px 18px; background:linear-gradient(135deg,#fffaf0,#f3f8ff); }
+.r-dev--detail_drawer :deep(.el-drawer__body) { padding:24px 26px; background:#f8faff; }
+.r-dev--detail_name { margin:0 0 18px; padding:18px; border:1px solid rgba(255,255,255,.9); border-radius:16px; background:linear-gradient(135deg,#fff7df,#eef7ff); box-shadow:0 10px 30px rgba(39,55,82,.08); }
+.r-dev--detail_drawer :deep(.el-drawer__body > p:not(.r-dev--detail_name)), .r-dev--detail_drawer :deep(.el-drawer__body > ul) { border-color:#e7ebf2; border-radius:12px; box-shadow:0 5px 18px rgba(39,55,82,.035); }
+.r-dev--detail_actions { padding:14px; border-radius:12px; box-shadow:0 6px 20px rgba(39,55,82,.04); }
+.r-dev--pre { padding:14px; border:1px solid #e5eaf1; border-radius:12px; background:#f0f4f9; color:#344054; line-height:1.6; }
+@media (max-width: 720px) { .r-dev--page{padding:30px 14px 56px}.r-dev--header{align-items:flex-start;flex-direction:column}.r-dev--header_actions{width:100%}.r-dev--header_actions .el-button{flex:1}.r-dev--apps_panel{border-radius:16px}.r-dev--section_head{padding:20px}.r-dev--detail_drawer :deep(.el-drawer){width:94%!important}.r-dev--scope_grid{grid-template-columns:1fr} }
 </style>

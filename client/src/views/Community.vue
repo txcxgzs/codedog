@@ -2,7 +2,10 @@
   <div class="r-community--page">
     <div class="r-community--container">
       <div class="r-community--header">
-        <h2 class="r-community--title">社区</h2>
+        <div class="r-community--heading">
+          <h2 class="r-community--title">一起聊点有趣的</h2>
+          <p>分享灵感、解决问题，也记录每一次创造。</p>
+        </div>
         <el-button type="primary" @click="showPostDialog" v-if="userStore.isLoggedIn">
           <span class="r-community--post_icon"></span>
           发布帖子
@@ -13,6 +16,7 @@
         <!-- 左侧内容 -->
         <div class="r-community--content">
           <div class="r-community--tabs">
+            <span class="r-community--tabs_label">浏览话题</span>
             <el-radio-group v-model="activeCategory" @change="fetchPosts">
               <el-radio-button label="">全部</el-radio-button>
               <el-radio-button label="discussion">讨论</el-radio-button>
@@ -596,5 +600,60 @@ $border-color: #eee;
   padding: 20px;
   background: $white;
   border-radius: 0 0 12px 12px;
+}
+
+/* 首页同源的社区视觉：柔和渐变背景 + 开放式内容流 */
+.r-community--page {
+  position: relative;
+  padding: 46px 24px 80px;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 8% 5%, rgba(255, 205, 92, .34), transparent 25rem),
+    radial-gradient(circle at 92% 14%, rgba(112, 184, 255, .26), transparent 30rem),
+    linear-gradient(145deg, #f5f8ff 0%, #fafbff 50%, #fff8eb 100%);
+}
+.r-community--page::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: .55;
+  background-image: linear-gradient(rgba(95, 125, 170, .055) 1px, transparent 1px), linear-gradient(90deg, rgba(95, 125, 170, .055) 1px, transparent 1px);
+  background-size: 44px 44px;
+  mask-image: linear-gradient(to bottom, #000, transparent 75%);
+}
+.r-community--container { position: relative; z-index: 1; max-width: 1220px; }
+.r-community--header { margin-bottom: 28px; align-items: flex-end; }
+.r-community--heading p { margin: 10px 0 0; color: #667085; font-size: 15px; }
+.r-community--header .r-community--title { font-size: clamp(30px, 3vw, 42px); line-height: 1.15; letter-spacing: -.04em; color: #172033; font-weight: 800; }
+.r-community--header .el-button { height: 44px; padding: 0 20px; border: 0; border-radius: 13px; font-weight: 700; box-shadow: 0 10px 24px rgba(220, 159, 24, .24); }
+.r-community--main { gap: 24px; align-items: flex-start; }
+.r-community--tabs { display: flex; align-items: center; gap: 18px; padding: 13px 16px; border: 1px solid rgba(255,255,255,.9); border-radius: 16px; background: rgba(255,255,255,.72); backdrop-filter: blur(16px); box-shadow: 0 10px 32px rgba(45, 63, 91, .06); }
+.r-community--tabs_label { padding-left: 4px; font-size: 13px; font-weight: 700; color: #344054; white-space: nowrap; }
+.r-community--tabs :deep(.el-radio-button__inner) { background: transparent; color: #667085; font-weight: 600; border-radius: 10px; padding: 8px 17px; }
+.r-community--tabs :deep(.el-radio-button__original-radio:checked + .el-radio-button__inner) { background: #172033; color: #fff; box-shadow: 0 5px 12px rgba(23,32,51,.16); }
+.r-community--list { overflow: hidden; border: 1px solid rgba(255,255,255,.92); border-radius: 20px; background: rgba(255,255,255,.82); backdrop-filter: blur(18px); box-shadow: 0 18px 50px rgba(39, 55, 82, .08); }
+.r-community--item { padding: 24px 26px; border-color: #edf0f5; transition: background .2s, transform .2s; }
+.r-community--item:hover { background: linear-gradient(90deg, rgba(255,247,224,.72), rgba(246,249,255,.88)); transform: translateX(3px); }
+.r-community--item .r-community--item_header { margin-bottom: 14px; }
+.r-community--item .r-community--item_header .r-community--item_avatar { width: 40px; height: 40px; box-shadow: 0 0 0 3px #fff, 0 4px 12px rgba(35,48,70,.12); }
+.r-community--item .r-community--item_title { margin-bottom: 8px; color: #1b2436; font-size: 18px; letter-spacing: -.01em; }
+.r-community--item .r-community--item_content { color: #697386; line-height: 1.7; }
+.r-community--item .r-community--item_footer { gap: 18px; }
+.r-community--item .r-community--item_cover { width: 148px; height: 96px; border-radius: 13px; box-shadow: 0 7px 18px rgba(35,48,70,.12); }
+.r-community--sidebar { width: 292px; position: sticky; top: 82px; }
+.r-community--side_card { padding: 20px; border: 1px solid rgba(255,255,255,.9); border-radius: 18px; background: rgba(255,255,255,.76); backdrop-filter: blur(16px); box-shadow: 0 14px 40px rgba(39,55,82,.07); }
+.r-community--side_card:first-child { background: linear-gradient(145deg, rgba(255,250,232,.94), rgba(255,255,255,.82)); }
+.r-community--side_card .r-community--card_title { color: #1b2436; font-size: 16px; border-bottom-color: rgba(219,164,37,.18); }
+.r-community--side_card ul { padding-left: 18px; }
+.r-community--side_card ul li { color: #697386; line-height: 2.15; }
+.r-community--pagination { margin-top: -18px; padding-top: 38px; border-radius: 0 0 20px 20px; background: rgba(255,255,255,.82); }
+@media (max-width: 768px) {
+  .r-community--page { padding: 28px 14px 56px; }
+  .r-community--header { align-items: flex-start; }
+  .r-community--heading p { max-width: 230px; }
+  .r-community--tabs { align-items: flex-start; flex-direction: column; gap: 10px; }
+  .r-community--item { padding: 20px 18px; }
+  .r-community--item .r-community--item_cover { display: none; }
 }
 </style>
