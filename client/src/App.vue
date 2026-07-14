@@ -118,6 +118,7 @@
         </transition>
       </router-view>
     </div>
+    <MobileBottomNav v-if="!$route.path.startsWith('/developer') && !$route.path.startsWith('/admin')" />
     
     <!-- 底部 -->
     <div class="c-footer--footer">
@@ -169,6 +170,7 @@ import { ElMessage, ElConfigProvider } from 'element-plus'
 import zhCn from 'element-plus/dist/locale/zh-cn.mjs'
 import { storeToRefs } from 'pinia'
 import HCaptchaDialog from '@/components/HCaptchaDialog.vue'
+import MobileBottomNav from '@/components/MobileBottomNav.vue'
 import { hcaptchaApi } from '@/api/hcaptcha'
 import { publicApi } from '@/api/public'
 import { Search, EditPen, Bell, CaretBottom, User, Monitor, Star, Setting, SwitchButton } from '@element-plus/icons-vue'

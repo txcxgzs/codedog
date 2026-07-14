@@ -1,0 +1,97 @@
+/* 编程狗移动端产品层：统一安全区、触控、页面重排和 Element Plus 适配。 */
+@media (max-width: 768px) {
+  :root { --mobile-gutter: 14px; --mobile-nav-space: 86px; }
+  html { font-size: 14px; overflow-x: hidden; }
+  body { overflow-x: hidden; background: #f7f9fd; -webkit-tap-highlight-color: transparent; }
+  button, a, .el-button, .el-radio-button__inner { touch-action: manipulation; }
+  .r-index--root_container:not(.is-developer-shell) { padding-bottom: var(--mobile-nav-space); background: radial-gradient(circle at 100% 0,#eaf5ff 0,transparent 34%),radial-gradient(circle at 0 18%,#fff5dc 0,transparent 30%),#f7f9fd; }
+  .c-navigator--navigator { height: 54px; box-shadow: 0 1px 0 rgba(27,39,64,.08); }
+  .c-navigator--navigator .c-navigator--header-content { height: 54px; padding: 0 var(--mobile-gutter); gap: 8px; }
+  .c-navigator--logo_wrap { flex: 1; min-width: 0; }
+  .c-navigator--logo_wrap .c-navigator--logo_img { height: 30px; max-width: 122px; object-fit: contain; object-position: left center; }
+  .c-navigator--logo_wrap .c-navigator--logo_text { display: none; }
+  .c-navigator--nav_wrap,.c-navigator--search_wrap,.c-navigator--publish_btn,.c-navigator--register_btn,.c-navigator--username,.c-navigator--user_info .el-icon--right { display: none !important; }
+  .c-navigator--user_wrap { gap: 2px; }
+  .c-navigator--notification { width: 38px!important; height: 38px!important; }
+  .c-navigator--user_info { padding: 2px!important; }
+  .c-navigator--user_info .el-avatar { width: 32px!important; height: 32px!important; }
+  .c-navigator--login_btn { min-height: 38px; padding: 0 12px!important; font-size: 14px!important; }
+  .r-ann--top_bar_inner { padding: 7px 12px; }.r-ann--top_title{max-width:30%;overflow:hidden;text-overflow:ellipsis}.r-ann--top_content{font-size:12px}
+  .c-footer--footer { display: none; }
+  .r-index--main_content { min-width: 0; }
+
+  /* Element Plus：弹窗成为稳定的手机工作面板。 */
+  .el-overlay-dialog { display:flex; align-items:flex-end; padding:0; }
+  .el-dialog { width:100%!important; max-width:none!important; max-height:94dvh!important; margin:0!important; border-radius:20px 20px 0 0!important; display:flex; flex-direction:column; }
+  .el-dialog__header { padding:18px 18px 12px!important; margin:0!important; flex:none; }.el-dialog__title{font-size:18px!important;font-weight:800!important;color:#172033}
+  .el-dialog__body { padding:14px 16px!important; overflow-y:auto!important; min-height:0; }.el-dialog__footer{padding:12px 16px max(16px,env(safe-area-inset-bottom))!important;flex:none}
+  .el-message-box { width:calc(100vw - 28px)!important; border-radius:16px!important; }
+  .el-form-item { margin-bottom:18px; }.el-form-item__label{line-height:1.3!important;margin-bottom:7px!important;font-weight:700}.el-input__wrapper{min-height:44px}.el-textarea__inner{font-size:16px;padding:12px}
+  .el-button { min-height:40px; }.el-button+.el-button{margin-left:8px}.el-pagination{justify-content:center;overflow:hidden}.el-pagination .el-pager li{min-width:30px}
+  .el-radio-group { max-width:100%; overflow-x:auto; flex-wrap:nowrap; scrollbar-width:none; }.el-radio-button{flex:none}.el-radio-button__inner{min-height:38px;display:flex;align-items:center}
+  .el-table { font-size:12px; }.el-table__body-wrapper,.el-table__header-wrapper{overflow-x:auto!important}.el-drawer{width:88vw!important}
+
+  /* 通用页面容器与标题比例。 */
+  [class$="--page"] { min-width:0; }
+  [class$="--container"] { width:100%!important; max-width:none!important; margin:0!important; }
+  h1 { font-size:28px!important; line-height:1.18!important; letter-spacing:-.5px; } h2{font-size:24px!important;line-height:1.25!important}
+  .r-home--home_page,.works-page,.r-community--page,.r-studio--page,.r-post--page,.r-work--page,.r-profile--page,.r-publish--page { padding:18px var(--mobile-gutter) calc(24px + var(--mobile-nav-space))!important; min-height:calc(100dvh - 54px)!important; }
+
+  /* 首页：轮播全宽，侧栏下沉，作品双列。 */
+  .r-home--container { padding:0!important; display:flex!important; flex-direction:column!important; gap:14px!important; }
+  .r-home--main_column,.r-home--sidebar { width:100%!important; min-width:0!important; }
+  .r-home--banner_area { margin-top:0!important; border-radius:14px!important; overflow:hidden; }.r-home--banner_item{min-height:160px!important;background-size:cover!important}
+  .r-home--sidebar { display:grid!important; grid-template-columns:1fr 1fr; gap:10px!important; }.r-home--user_card{grid-column:1/-1}
+  .r-home--work_grid { grid-template-columns:repeat(2,minmax(0,1fr))!important; gap:10px!important; }.r-home-c-work_card--card{min-width:0}.r-home-c-work_card--cover{aspect-ratio:1/1;height:auto!important}.r-home-c-work_card--title{font-size:13px!important}
+
+  /* 发现：标题与筛选同轴，卡片双列，控件横滑。 */
+  .works-page{overflow:visible!important}.page-header{width:100%!important;margin:0 0 14px!important;padding:26px 16px!important;border-radius:16px!important;min-height:0!important}.page-header h1{font-size:30px!important}
+  .filter-bar{width:100%!important;padding:10px!important;border-radius:14px!important;overflow:hidden!important}.filter-content{gap:10px!important}.filter-tabs{overflow-x:auto!important;flex-wrap:nowrap!important}.filter-tabs .tab{flex:none}.filter-actions{width:100%!important}.search-input{flex:1;min-width:0;width:auto!important}.sort-select{width:108px!important}
+  .works-container{padding:14px 0!important}.work-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:10px!important}.work-card{min-width:0}.card-cover{height:auto!important;aspect-ratio:1/1}.card-body{padding:10px!important}
+
+  /* 社区：发布按钮进入标题行，侧栏下沉。 */
+  .r-community--header { align-items:flex-start!important; gap:10px!important; margin-bottom:16px!important; }.r-community--heading{min-width:0}.r-community--title{font-size:27px!important}.r-community--heading p{font-size:13px}.r-community--header>.el-button{flex:none;padding:0 12px}
+  .r-community--main { display:flex!important; flex-direction:column!important; gap:14px!important; }.r-community--content,.r-community--sidebar{width:100%!important;min-width:0!important}.r-community--sidebar{position:static!important;order:2;display:grid!important;grid-template-columns:1fr!important}
+  .r-community--tabs { padding:10px!important; overflow-x:auto!important; align-items:center!important; }.r-community--tabs_label{display:none}.r-community--item{padding:16px!important}.r-community--item_cover{width:86px!important;height:72px!important}.r-community--item_title{font-size:17px!important}.r-community--item_content{font-size:13px!important}
+
+  /* 工作室：搜索、标签、卡片均按触控逻辑重排。 */
+  .r-studio--header { display:flex!important; flex-direction:column!important; align-items:stretch!important; gap:14px!important; }.r-studio--heading h1{font-size:29px!important}.r-studio--actions{width:100%!important;display:flex!important}.r-studio--search{flex:1!important;min-width:0!important}.r-studio--actions>.el-button{flex:none}
+  .r-studio--tabs{width:max-content;max-width:100%;overflow-x:auto}.r-studio--content{padding:12px!important;border-radius:16px!important}.r-studio--grid{grid-template-columns:1fr!important;gap:12px!important}.r-studio--card_cover{height:auto!important;aspect-ratio:16/6}.r-studio--card_body{padding:15px!important}
+
+  /* 两类详情页：主内容优先，作者/关联信息下沉。 */
+  .r-post--container { display:flex!important; flex-direction:column!important; gap:14px!important; }
+  .r-post--main,.r-post--sidebar { width:100%!important; min-width:0!important; }
+  .r-post--main{padding:20px 16px!important;border-radius:16px!important}.r-post--sidebar{order:2!important;position:static!important;display:grid!important;gap:10px!important}.r-post--header{padding-bottom:18px!important}.r-post--title{font-size:27px!important}.r-post--meta{gap:7px!important;flex-wrap:wrap}.r-post--content{min-height:0!important;padding:22px 0!important;font-size:16px!important}.r-post--actions{display:grid!important;grid-template-columns:repeat(3,1fr);gap:8px!important}.r-post--actions .el-button{margin:0!important;padding:0 8px!important}.r-post--comments{margin-top:22px!important}.r-post--comment_form{padding:12px!important}.r-post--comment_item{gap:9px!important}.r-post--comment_avatar{width:34px!important;height:34px!important}
+  .r-work--page{overflow:visible!important}.r-work--container{width:100%!important}.r-work--preview_section{padding:8px!important;border-radius:16px!important}.r-work--player{min-height:210px!important}.r-work--info_section{display:flex!important;flex-direction:column!important;gap:14px!important}.r-work--main_info,.r-work--side_info{width:100%!important;padding:18px 14px!important;border-radius:16px!important}.r-work--side_info{position:static!important}.r-work--actions{display:grid!important;grid-template-columns:repeat(2,1fr);gap:8px}.r-work--actions .el-button{margin:0!important}.r-work--comment_item{gap:9px!important}.r-work--comment_avatar{width:34px!important;height:34px!important}
+
+  /* 工作室详情：封面横幅化，信息自然流。 */
+  .r-studio-detail--page{padding:18px var(--mobile-gutter) calc(24px + var(--mobile-nav-space))!important}.r-studio-detail--header{padding:16px!important;border-radius:16px!important;gap:16px!important}.r-studio-detail--header .r-studio-detail--cover{width:100%!important;height:auto!important;aspect-ratio:16/7;border-radius:12px!important}.r-studio-detail--info{width:100%!important}.r-studio-detail--title_row{align-items:center!important}.r-studio-detail--stats{display:grid!important;grid-template-columns:1fr 1fr;gap:8px!important}.r-studio-detail--stats span{justify-content:center}.r-studio-detail--tabs{padding:0 12px 18px!important;border-radius:16px!important}.r-studio-detail--work_grid{grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:10px!important}.r-studio-detail--member_list{grid-template-columns:1fr!important}
+
+  /* 创作、资料页与 Word 编辑器。 */
+  .r-publish--card,.r-profile--card,.r-post--edit_form{padding:18px 14px!important;border-radius:16px!important}.r-publish--page .el-form,.r-profile--page .el-form{width:100%!important}.r-profile--header{padding:18px 14px!important;display:flex!important;flex-direction:column!important;text-align:center}.r-profile--info_section{width:100%!important}.r-profile--actions{justify-content:center!important;flex-wrap:wrap}.r-profile--tabs .el-tabs__nav-wrap{overflow-x:auto}.r-profile--form{width:100%!important}
+  .word-editor__topbar{padding:0 10px!important}.word-editor__topbar>div:first-child span{display:none}.word-editor__ribbon{padding:7px!important}.word-editor__workspace{padding:0!important}.word-editor__page{min-height:360px!important}.word-editor__canvas{min-height:360px!important;padding:26px 18px!important;font-size:16px!important}.word-editor__status span:last-child{display:none}
+
+  /* 账户相关页面：统一手机留白与卡片密度。 */
+  .r-myworks--page,.r-favorites--page,.r-notification--page,.r-user--page{padding:18px var(--mobile-gutter) calc(24px + var(--mobile-nav-space))!important;min-height:calc(100dvh - 54px)!important}
+  .r-myworks--header,.r-favorites--header,.r-notification--header{gap:10px!important;align-items:flex-start!important}.r-myworks--grid,.r-favorites--grid{grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:10px!important}.r-myworks--card_cover,.r-favorites--card_cover{height:auto!important;aspect-ratio:1/1}.r-myworks--card_body,.r-favorites--card_body{padding:11px!important}
+  .r-notification--container{border-radius:16px!important;overflow:hidden}.r-notification--header{padding:14px!important}.r-notification--tabs{overflow-x:auto!important;display:flex!important;scrollbar-width:none}.r-notification--tabs span{flex:none}.r-notification--item{padding:14px 12px!important;gap:10px!important}.r-notification--avatar{width:38px!important;height:38px!important;flex:none}.r-notification--actions{flex-wrap:wrap}
+  .r-user--profile_card{border-radius:16px!important;overflow:hidden}.r-user--cover{height:96px!important}.r-user--profile_content{padding:0 15px 18px!important;display:flex!important;flex-direction:column!important;align-items:center!important;text-align:center}.r-user--avatar{width:88px!important;height:88px!important;margin-top:-44px!important}.r-user--info{width:100%!important}.r-user--name_row,.r-user--stats{justify-content:center!important}.r-user--works_grid{grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:10px!important}
+  .r-login--page{padding:16px!important;min-height:100dvh!important}.r-login--container{width:100%!important;min-height:0!important;border-radius:18px!important}.r-login--banner{display:none!important}.r-login--form_wrapper{width:100%!important;padding:28px 20px!important}.r-oauth--page{padding:16px!important}.r-oauth--card{width:100%!important;padding:22px 16px!important;border-radius:18px!important}
+
+  /* 开发者平台使用自己的壳，但同样不能保留桌面表格宽度。 */
+  .r-dev--page,.r-devdocs--page{padding:14px!important;min-height:100dvh!important}.r-dev--container,.r-devdocs--container{width:100%!important;max-width:none!important}.r-dev--header{padding:18px 14px!important;align-items:flex-start!important;flex-direction:column!important}.r-dev--header_actions{width:100%!important;display:flex!important;overflow-x:auto}.r-dev--apps_panel{padding:14px!important;border-radius:16px!important;overflow-x:auto}.r-dev--apps_panel .el-table{min-width:760px}.r-devdocs--header{padding:20px 16px!important}.r-devdocs--card{border-radius:14px!important}.r-devdocs--pre{font-size:11px!important;overflow-x:auto!important;white-space:pre!important}
+
+  /* 管理后台：不挤压成桌面缩略图。 */
+  .r-admin--page{min-height:calc(100dvh - 54px)!important;overflow:visible!important}.r-admin--container{min-width:0!important;height:auto!important;min-height:calc(100dvh - 54px)!important;overflow:visible!important;display:flex!important;flex-direction:column!important}
+  .r-admin--sidebar{position:sticky!important;left:auto!important;right:auto!important;bottom:auto!important;top:54px!important;width:100%!important;height:52px!important;padding:4px 8px!important;z-index:50;overflow-x:auto!important;overflow-y:hidden!important;background:#172238!important;box-shadow:0 8px 20px rgba(23,32,51,.12)!important}.r-admin--logo{display:none!important}
+  .r-admin--sidebar .el-menu{display:flex!important;width:max-content!important;margin:0!important;border:0!important}.r-admin--sidebar .el-menu-item{height:44px!important;margin:0 2px!important;padding:0 14px!important;flex:none}.r-admin--sidebar .el-menu-item span{display:inline!important}
+  .r-admin--main{margin-left:0!important;padding:14px!important;width:100%!important;height:auto!important;overflow:visible!important}.r-admin--section{min-height:0!important;padding:16px 12px!important;border-radius:16px!important;overflow:hidden}.r-admin--header{align-items:flex-start!important;gap:10px!important;flex-direction:column}.r-admin--header_actions{width:100%;overflow-x:auto;display:flex;flex-wrap:nowrap}.r-admin--header_actions>*{flex:none}.r-admin--title{font-size:22px!important}
+  .r-admin--stats_grid,.r-admin--dashboard_grid{grid-template-columns:1fr!important}.r-admin--realtime_logs{height:55dvh!important;font-size:11px!important}.r-admin--pagination{overflow-x:auto}.r-admin--section>.el-table{width:900px!important;max-width:none!important}
+}
+
+@media (max-width: 380px) {
+  :root { --mobile-gutter: 10px; }
+  .r-home--work_grid,.work-grid,.r-studio-detail--work_grid{grid-template-columns:1fr!important}
+  .r-post--actions{grid-template-columns:repeat(2,1fr)}
+  .r-myworks--grid,.r-favorites--grid,.r-user--works_grid{grid-template-columns:1fr!important}
+}
