@@ -3,6 +3,7 @@
     <div class="r-dev--container">
       <div class="r-dev--header">
         <div>
+          <el-button class="r-dev--back_home" text @click="$router.push('/')">← 返回主页</el-button>
           <h1>开发者平台</h1>
           <p class="r-dev--subtitle">创建应用、申请权限，通过 OAuth2 安全读取用户授权数据与审核工作室</p>
         </div>
@@ -291,6 +292,8 @@ onMounted(async () => { await loadScopes(); await loadApps() })
 .r-dev--container { max-width: 1180px; margin: 0 auto; background: rgba(255,255,255,.92); border: 1px solid rgba(255,255,255,.9); border-radius: 18px; padding: 32px; box-shadow: 0 18px 50px rgba(36,54,74,.10); }
 .r-dev--header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 20px;
   h1 { margin: 0 0 6px; font-size: 22px; color: #333; } }
+.r-dev--back_home { padding: 0 0 8px; color: #6b7280; font-size: 13px; }
+.r-dev--back_home:hover { color: #d97706; }
 .r-dev--subtitle { margin: 0; color: #888; font-size: 13px; }
 .r-dev--header_actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .r-dev--secret_alert { margin-bottom: 16px; }
