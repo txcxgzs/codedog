@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const developerController = require('../controllers/developerController');
 const { StudioMember, Studio, Follow, Favorite, Like, Work, Post, User, DeveloperApp } = require('../models');
-const { oauthAuth, requireScopes } = require('../middleware/oauthAuth');
+const { oauthAuth, requireScopes, requireAnyScopes } = require('../middleware/oauthAuth');
 const { perAppRateLimiter, failLogMiddleware, captureRequest, installResponseCapture, redact } = require('../middleware/developerOpenApi');
 
 const models = { DeveloperApp };
@@ -50,7 +50,7 @@ router.get('/me/studios/:id', requireScopes('studios:read'), developerController
 router.get('/me/followers', requireScopes('follows:read'), developerController.openMyFollowers);
 router.get('/me/following', requireScopes('follows:read'), developerController.openMyFollowing);
 router.get('/me/favorites', requireScopes('favorites:read'), developerController.openMyFavorites);
-router.get('/me/likes', requireScopes('favorites:read'), developerController.openMyLikes);
+router.get('/me/likes', requireAnyScopes('likes:read', 'favorites:read'), developerController.openMyLikes);
 router.get('/me/notifications', requireScopes('notifications:read'), developerController.openMyNotifications);
 router.post('/me/notifications', requireScopes('notifications:write'), developerController.openSendNotification);
 router.get('/me/activity', requireScopes('community:activity:read'), developerController.openMyActivity);

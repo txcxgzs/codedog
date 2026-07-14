@@ -73,4 +73,12 @@ function requireScopes(...needed) {
     };
 }
 
-module.exports = { oauthAuth, requireScopes, getBearerToken };
+function requireAnyScopes(...scopes) {
+    return (req, res, next) => {
+        const granted = req.oauth?.scopes || [];
+        if (!scopes.some(scope => hasScope(granted, scope))) return errorResponse(res, `缺少权限 scope: ${scopes.join(' 或 ')}`, 403, 'oauth_insufficient_scope');
+        next();
+    };
+}
+
+module.exports = { oauthAuth, requireScopes, requireAnyScopes, getBearerToken };

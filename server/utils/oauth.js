@@ -5,6 +5,11 @@ const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 
 const ALL_SCOPES = {
+    'profile:email:read': {
+        name: '读取邮箱地址',
+        description: '读取当前用户已验证的邮箱地址，属于敏感个人信息',
+        risk: 'read'
+    },
     'profile:read': {
         name: '读取基本资料',
         description: '读取昵称、头像、简介、等级、粉丝/关注/作品数（不含邮箱与密码）'
@@ -32,6 +37,11 @@ const ALL_SCOPES = {
     'favorites:read': {
         name: '读取收藏与点赞',
         description: '读取用户收藏的作品/帖子列表以及点赞记录'
+    },
+    'likes:read': {
+        name: '读取点赞记录',
+        description: '读取当前用户点赞过的作品、帖子记录',
+        risk: 'read'
     },
     'studios:review': {
         name: '审核工作室',

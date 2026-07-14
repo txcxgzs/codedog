@@ -867,7 +867,7 @@ async function revokeToken(req, res) {
 async function userinfo(req, res) {
     try {
         const user = req.oauth.user;
-        return successResponse(res, {
+        const result = {
             id: user.id,
             username: user.username,
             nickname: user.nickname,
@@ -877,7 +877,10 @@ async function userinfo(req, res) {
             follower_count: user.follower_count,
             following_count: user.following_count,
             work_count: user.work_count
-        });
+        };
+        const scopes = oauth.parseJsonField(req.oauth?.scopes, req.oauth?.scopes || []);
+        if (Array.isArray(scopes) && scopes.includes('profile:email:read')) result.email = user.email || null;
+        return successResponse(res, result);
     } catch (e) {
         return errorResponse(res, '获取用户信息失败', 500);
     }
