@@ -3,7 +3,7 @@
     <div class="r-studio-detail--container" v-loading="loading">
       <div class="r-studio-detail--header" v-if="studio">
         <!-- 修复: 默认封面用工作室名称首字艺术字,而非 emoji -->
-        <div class="r-studio-detail--cover" :style="{ backgroundImage: studio.cover ? `url(${studio.cover})` : '' }">
+        <div class="r-studio-detail--cover" :style="{ backgroundImage: studio.cover ? `url(${studio.cover})` : `url(${defaultStudioCover(studio)})` }">
           <div v-if="!studio.cover" class="r-studio-detail--cover_placeholder">
             <span class="r-studio-detail--cover_initial">{{ (studio.name || '?').charAt(0).toUpperCase() }}</span>
           </div>
@@ -290,6 +290,14 @@ const worksTotal = ref(0)
 
 const editDialogVisible = ref(false)
 const editLoading = ref(false)
+const defaultStudioCover = (studio) => {
+  const seed = Math.abs((Number(studio?.id || 0) * 2654435761) ^ String(studio?.name || '').length)
+  const colors = [['#ff9a9e','#fad0c4'],['#a18cd1','#fbc2eb'],['#84fab0','#8fd3f4'],['#f6d365','#fda085'],['#5ee7df','#b490ca']]
+  const pair = colors[seed % colors.length]; const initial = (studio?.name || 'S').charAt(0).toUpperCase()
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 220"><defs><linearGradient id="g"><stop stop-color="${pair[0]}"/><stop offset="1" stop-color="${pair[1]}"/></linearGradient></defs><rect width="640" height="220" fill="url(#g)"/><circle cx="550" cy="20" r="130" fill="#fff" opacity=".14"/><text x="40" y="140" fill="#fff" font-size="82" font-family="sans-serif" font-weight="700">${initial}</text></svg>`
+  return `data:image/svg+xml,${encodeURIComponent(svg)}`
+}
+
 const editForm = reactive({ name: '', description: '', cover: '', join_type: 'apply' })
 
 const viceOwnerDialogVisible = ref(false)
