@@ -948,7 +948,7 @@ $border-color: #eee;
   .el-tag {
     background: rgba($primary-color, 0.1);
     border-color: rgba($primary-color, 0.3);
-    color: darken($primary-color, 30%);
+    color: color.adjust($primary-color, $lightness: -30%);
   }
 }
 
@@ -1340,4 +1340,52 @@ $border-color: #eee;
     margin-top: 16px;
   }
 }
+
+/* 内容阅读页：降低空白感，强化文章与讨论层级 */
+.r-post--page { position:relative; overflow:hidden; padding:34px 24px 80px; background:radial-gradient(circle at 8% 6%,rgba(255,205,92,.31),transparent 28rem),radial-gradient(circle at 92% 14%,rgba(108,190,255,.25),transparent 31rem),linear-gradient(145deg,#f5f8ff 0%,#fafbff 50%,#fff8eb 100%); }
+.r-post--page::before { content:''; position:absolute; inset:0; pointer-events:none; opacity:.5; background-image:linear-gradient(rgba(95,125,170,.055) 1px,transparent 1px),linear-gradient(90deg,rgba(95,125,170,.055) 1px,transparent 1px); background-size:44px 44px; mask-image:linear-gradient(to bottom,#000,transparent 82%); }
+.r-post--container { position:relative; z-index:1; max-width:1220px; gap:24px; align-items:flex-start; }
+.r-post--main { padding:42px 44px 36px; border:1px solid rgba(255,255,255,.94); border-radius:22px; background:rgba(255,255,255,.84); backdrop-filter:blur(18px); box-shadow:0 20px 55px rgba(39,55,82,.09); }
+.r-post--header { padding-bottom:25px; margin-bottom:27px; border-bottom:1px solid #edf0f5; }
+.r-post--header .r-post--title { margin-bottom:20px; color:#172033; font-size:clamp(30px,3vw,42px); line-height:1.22; letter-spacing:-.04em; font-weight:800; }
+.r-post--header .r-post--meta { gap:10px; color:#7b8596; }
+.r-post--header .r-post--meta .r-post--author_avatar { width:42px; height:42px; margin-right:2px; box-shadow:0 0 0 3px #fff,0 5px 14px rgba(35,48,70,.13); }
+.r-post--header .r-post--meta .r-post--author_name { color:#344054; font-weight:700; }
+.r-post--header .r-post--meta .r-post--time::before, .r-post--header .r-post--meta .r-post--views::before { content:'·'; margin-right:10px; color:#c0c6d0; }
+.r-post--header .r-post--meta .r-post--tag { margin-left:4px; padding:4px 9px; border-radius:7px; background:#fff4d7; color:#9b6800; font-weight:700; }
+.r-post--content { min-height:150px; margin-bottom:36px; color:#2b3445; font-size:17px; line-height:1.95; }
+.r-post--content.markdown-body :deep(p) { margin-bottom:20px; }
+.r-post--content.markdown-body :deep(a) { color:#b27700; text-decoration:underline; text-decoration-color:rgba(178,119,0,.35); text-underline-offset:4px; }
+.r-post--content.markdown-body :deep(blockquote) { padding:14px 18px; border-left:3px solid #fec433; border-radius:0 11px 11px 0; background:#fffaf0; }
+.r-post--content.markdown-body :deep(pre) { border:1px solid #e5eaf1; border-radius:13px; background:#f4f7fb; }
+.r-post--content.markdown-body :deep(code) { border-radius:6px; }
+.r-post--content.markdown-body :deep(img) { border-radius:16px; box-shadow:0 12px 32px rgba(39,55,82,.12); }
+.r-post--tags { margin-bottom:20px; }
+.r-post--actions { gap:9px; margin:0 -10px 28px; padding:14px 10px 26px; }
+.r-post--actions .el-button { height:38px; margin:0; padding:0 14px; border-color:#dfe4ec; border-radius:11px!important; background:rgba(255,255,255,.76); color:#586476; font-weight:600; }
+.r-post--actions .el-button:hover { transform:translateY(-2px); border-color:#fec433; box-shadow:0 7px 18px rgba(39,55,82,.08); }
+.r-post--comments .r-post--comments_title { color:#172033; font-size:21px; font-weight:800; }
+.r-post--comment_form { padding:16px; border:1px solid #e7ebf2; border-radius:16px; background:linear-gradient(145deg,#fbfcff,#fffaf0); }
+.r-post--comment_form :deep(.el-textarea__inner) { min-height:92px!important; padding:14px; border:0; border-radius:12px!important; background:#fff; box-shadow:0 0 0 1px #e2e7ef inset; }
+.r-post--comment_form .el-button { height:38px; padding:0 17px; border-radius:11px!important; font-weight:700; }
+.r-post--comment_item { gap:14px; padding:20px 4px; border-bottom-color:#edf0f5; }
+.r-post--comment_item .r-post--comment_avatar { width:42px; height:42px; box-shadow:0 0 0 3px #fff,0 4px 12px rgba(35,48,70,.1); }
+.r-post--comment_item .r-post--comment_header .r-post--comment_name { color:#344054; font-weight:700; }
+.r-post--comment_item .r-post--comment_content { color:#4f5b6e; font-size:15px; line-height:1.7; }
+.r-post--replies { padding:12px 16px; border:0; border-radius:12px; background:#f6f8fb; }
+.r-post--sidebar { width:300px; position:sticky; top:84px; }
+.r-post--author_card, .r-post--related { border:1px solid rgba(255,255,255,.94); border-radius:18px; background:rgba(255,255,255,.78); backdrop-filter:blur(17px); box-shadow:0 15px 42px rgba(39,55,82,.075); }
+.r-post--author_card { padding:24px 20px; background:linear-gradient(145deg,rgba(255,250,235,.9),rgba(255,255,255,.82) 58%,rgba(240,248,255,.88)); }
+.r-post--author_card .r-post--author_card_avatar { width:72px; height:72px; box-shadow:0 0 0 4px #fff,0 10px 24px rgba(35,48,70,.15); }
+.r-post--author_card .r-post--author_card_info h4 { color:#172033; font-size:17px; font-weight:800; }
+.r-post--author_card .r-post--author_card_info p { color:#7a8495; line-height:1.6; }
+.r-post--author_card .el-button { height:38px; border-radius:11px!important; font-weight:700; }
+.r-post--related { padding:20px; }
+.r-post--related h4 { padding-bottom:14px; border-bottom:1px solid #edf0f5; color:#172033; font-weight:800; }
+.r-post--related .r-post--related_item { padding:13px 4px; transition:transform .2s; }
+.r-post--related .r-post--related_item:hover { transform:translateX(4px); }
+.r-post--related .r-post--related_item .r-post--related_title { color:#4f5b6e; font-weight:600; }
+.r-post--login_tip { border:1px solid #e7ebf2; border-radius:14px; background:#f8faff; }
+@media(max-width:900px){.r-post--page{padding:20px 14px 56px}.r-post--main{padding:28px 22px;border-radius:18px}.r-post--header .r-post--title{font-size:30px}.r-post--actions{margin-left:0;margin-right:0}.r-post--sidebar{display:none}}
+@media(max-width:520px){.r-post--main{padding:24px 17px}.r-post--header .r-post--meta .r-post--time::before,.r-post--header .r-post--meta .r-post--views::before{display:none}.r-post--actions .el-button{padding:0 10px}.r-post--more{margin-left:0!important}}
 </style>
