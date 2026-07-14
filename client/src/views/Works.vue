@@ -1,7 +1,7 @@
 <template>
   <div class="works-page">
     <!-- 页面头部 -->
-    <div class="page-header">
+    <div class="page-header" :style="heroStyle" @mousemove="handleHeroMove" @mouseleave="resetHeroGlow">
       <div class="header-content">
         <h1>发现作品</h1>
         <p>探索有趣的编程作品</p>
@@ -63,7 +63,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { View, Star } from '@element-plus/icons-vue'
 import { workApi } from '@/api/work'
@@ -77,6 +77,10 @@ const total = ref(0)
 const keyword = ref('')
 const sortBy = ref('latest')
 const currentType = ref('')
+const heroGlow = ref({ x: 50, y: 50 })
+const heroStyle = computed(() => ({ '--glow-x': `${heroGlow.value.x}%`, '--glow-y': `${heroGlow.value.y}%` }))
+const handleHeroMove = (event) => { const rect = event.currentTarget.getBoundingClientRect(); heroGlow.value = { x: ((event.clientX - rect.left) / rect.width) * 100, y: ((event.clientY - rect.top) / rect.height) * 100 } }
+const resetHeroGlow = () => { heroGlow.value = { x: 50, y: 50 } }
 
 const formatNum = (n) => {
   if (n == null) return 0
@@ -147,10 +151,18 @@ $white: #fff;
 .works-page { min-height: 100%; }
 
 .page-header {
-  background: linear-gradient(135deg, $primary-color 0%, $primary-hover 100%);
+  position: relative;
+  overflow: hidden;
+  background: radial-gradient(circle at var(--glow-x, 50%) var(--glow-y, 50%), rgba(255,255,255,.62) 0%, rgba(255,255,255,.18) 18%, transparent 42%), linear-gradient(135deg, #fff8e8 0%, #f8f2ff 48%, #eaf7ff 100%);
+  border-bottom: 1px solid rgba(255,255,255,.8);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.9), 0 8px 28px rgba(80,90,110,.08);
   padding: 48px 24px;
+
+  &::after { content: ''; position:absolute; inset:0; pointer-events:none; background: linear-gradient(115deg, rgba(255,255,255,.34), transparent 42%, rgba(255,255,255,.22)); mix-blend-mode: screen; }
   
   .header-content {
+    position: relative;
+    z-index: 1;
     max-width: 1200px;
     margin: 0 auto;
     text-align: center;
@@ -160,6 +172,8 @@ $white: #fff;
     p { font-size: 16px; opacity: 0.8; margin: 0; }
   }
 }
+
+@media (prefers-reduced-motion: reduce) { .page-header { --glow-x: 50% !important; --glow-y: 50% !important; } }
 
 .filter-bar {
   background: $white;
