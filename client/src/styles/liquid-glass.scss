@@ -70,13 +70,9 @@
     box-shadow: 0 10px 30px rgba(67, 58, 38, .08);
     -webkit-backdrop-filter: blur(12px) saturate(135%);
     backdrop-filter: blur(12px) saturate(135%);
-    animation: codedog-liquid-breathe 7s ease-in-out infinite;
-    pointer-events: none;
+  
   }
-  html[data-liquid-glass='on'] .c-navigator--navigator > * {
-    pointer-events: auto;
-  }
-
+  
   /* Keep interactive controls above any glass backdrops so clicks work */
   html[data-liquid-glass='on'] .c-navigator--header-content {
     position: relative;
@@ -186,13 +182,4 @@
   0%   { transform: translateX(-8%) skewX(-6deg); opacity: .55; }
   50%  { transform: translateX(8%)  skewX(-6deg); opacity: .85; }
   100% { transform: translateX(-8%) skewX(-6deg); opacity: .55; }
-}
-@keyframes codedog-liquid-breathe {
-  0%, 100% { filter: blur(18px) saturate(145%); }
-  50%      { filter: blur(22px) saturate(160%); }
-}
-
-html[data-liquid-glass='on'] .c-navigator--navigator::before,
-html[data-liquid-glass='on'] .c-navigator--navigator::after {
-  pointer-events: none !important;
 }
