@@ -1626,25 +1626,6 @@
           </div>
 
           <div class="r-admin--configs_body">
-            <!-- 基本信息 -->
-            <div class="r-admin--config_section" id="config-basic">
-              <div class="r-admin--config_section_title">
-                <span class="r-admin--config_section_icon">🌐</span>
-                <span>网站基本信息</span>
-              </div>
-              <el-form :model="configForm" label-width="90px" class="r-admin--config_form">
-                <el-row :gutter="20">
-                  <el-col :span="12"><el-form-item label="网站名称"><el-input v-model="configForm.site_name" placeholder="编程狗社区" /></el-form-item></el-col>
-                  <el-col :span="12"><el-form-item label="联系邮箱"><el-input v-model="configForm.contact_email" placeholder="admin@example.com" /></el-form-item></el-col>
-                </el-row>
-                <el-form-item label="网站描述"><el-input v-model="configForm.site_description" type="textarea" :rows="2" placeholder="一句话描述你的网站" /></el-form-item>
-                <el-row :gutter="20">
-                  <el-col :span="16"><el-form-item label="SEO关键词"><el-input v-model="configForm.site_keywords" placeholder="关键词1,关键词2" /></el-form-item></el-col>
-                  <el-col :span="8"><el-form-item label="备案号"><el-input v-model="configForm.icp_number" placeholder="京ICP备xxx号" /></el-form-item></el-col>
-                </el-row>
-              </el-form>
-            </div>
-
             <!-- AI 审核 -->
             <div class="r-admin--config_section" id="config-ai">
               <div class="r-admin--config_section_title">
@@ -3113,11 +3094,6 @@ const handleBatchImportSensitiveWords = async () => {
 // 系统设置
 const showPromptHelp = ref(false)
 const configForm = ref({
-  site_name: '',
-  site_description: '',
-  site_keywords: '',
-  contact_email: '',
-  icp_number: '',
   ai_enabled: 'false',
   ai_api_url: '',
   ai_api_key: '',
@@ -3319,11 +3295,6 @@ const fetchConfigs = async () => {
       const data = res.data
       // 逐个更新表单字段
       const form = configForm.value
-      form.site_name = data.site_name || ''
-      form.site_description = data.site_description || ''
-      form.site_keywords = data.site_keywords || ''
-      form.contact_email = data.contact_email || ''
-      form.icp_number = data.icp_number || ''
       form.ai_enabled = String(data.ai_enabled ?? 'false')
       form.ai_api_url = data.ai_api_url || ''
       form.ai_api_key = data.ai_api_key || ''
