@@ -50,6 +50,10 @@ if (oauth) {
   ok('normalizeRedirectUris ok', uris.ok && uris.list.length === 2, JSON.stringify(uris));
   const scopes = oauth.scopeCatalog();
   ok('scopeCatalog matches ALL_SCOPES', Array.isArray(scopes) && scopes.length === Object.keys(oauth.ALL_SCOPES).length);
+  for (const key of ['notifications:read','notifications:write','works:stats:read','community:activity:read','reports:read','reports:write','comments:write','posts:write','works:write']) {
+    ok('extended scope ' + key, !!oauth.ALL_SCOPES[key]);
+  }
+  ok('write/admin risk metadata', oauth.ALL_SCOPES['posts:write']?.risk === 'write' && oauth.ALL_SCOPES['reports:write']?.risk === 'admin');
 }
 
 const appJs = fs.readFileSync(path.join(serverRoot, 'app.js'), 'utf8');
@@ -90,8 +94,13 @@ const appVue = fs.readFileSync(path.join(root, 'client/src/App.vue'), 'utf8');
 ok('nav developer entry', appVue.includes('command="developer"'));
 
 const ctrl = fs.readFileSync(path.join(serverRoot, 'controllers/developerController.js'), 'utf8');
-for (const name of ['listMyApps','createApp','tokenEndpoint','approveAuthorize','openMe','adminReviewApp','revokeMyAuthorization']) {
+for (const name of ['listMyApps','createApp','tokenEndpoint','approveAuthorize','openMe','adminReviewApp','revokeMyAuthorization','openMyNotifications','openMyWorkStats','openMyActivity','openCreatePost','openCreateComment','openReports']) {
   ok('controller exports ' + name, ctrl.includes(name));
+}
+
+const openRoutes = fs.readFileSync(path.join(serverRoot, 'routes/openRoutes.js'), 'utf8');
+for (const route of ['/me/notifications','/me/activity','/me/works/stats','/comments','/posts','/works','/reports']) {
+  ok('extended open route ' + route, openRoutes.includes(route));
 }
 
 const failed = results.filter(r => !r.pass);

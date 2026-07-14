@@ -18,11 +18,20 @@
           </div>
         </div>
 
-        <el-alert type="info" :closable="false" show-icon title="授权后，该应用将获得以下只读权限：" />
+        <el-alert
+          :type="riskAlertType"
+          :closable="false"
+          show-icon
+          :title="riskAlertTitle"
+        />
 
         <ul class="r-oauth--scopes">
           <li v-for="s in info.scopes" :key="s.key">
-            <b>{{ s.name || s.key }}</b>
+            <b>
+              {{ s.name || s.key }}
+              <el-tag v-if="s.risk === 'write'" size="small" type="warning">可修改数据</el-tag>
+              <el-tag v-else-if="s.risk === 'admin'" size="small" type="danger">管理权限</el-tag>
+            </b>
             <span>{{ s.description || s.key }}</span>
           </li>
         </ul>
@@ -38,7 +47,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useUserStore } from '@/stores/user'
@@ -52,6 +61,15 @@ const loading = ref(true)
 const submitting = ref(false)
 const info = ref(null)
 const errorMsg = ref('')
+
+const hasAdminScope = computed(() => (info.value?.scopes || []).some(s => s.risk === 'admin'))
+const hasWriteScope = computed(() => (info.value?.scopes || []).some(s => s.risk === 'write'))
+const riskAlertType = computed(() => hasAdminScope.value ? 'error' : (hasWriteScope.value ? 'warning' : 'info'))
+const riskAlertTitle = computed(() => {
+  if (hasAdminScope.value) return '该应用申请管理权限，授权后可能查看或处理后台数据，请确认应用可信。'
+  if (hasWriteScope.value) return '该应用申请写入权限，授权后可以代表你发布、修改或删除数据。'
+  return '授权后，该应用将获得以下只读权限：'
+})
 
 const loadInfo = async () => {
   loading.value = true

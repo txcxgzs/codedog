@@ -35,7 +35,58 @@ const ALL_SCOPES = {
     },
     'studios:review': {
         name: '审核工作室',
-        description: '查看待审核工作室并通过/拒绝（需应用已授权且用户具备管理员身份）'
+        description: '查看待审核工作室并通过/拒绝（需应用已授权且用户具备管理员身份）',
+        risk: 'admin'
+    },
+    'notifications:read': {
+        name: '读取通知',
+        description: '读取用户的站内通知和未读状态',
+        risk: 'read'
+    },
+    'studios:members:read': {
+        name: '读取工作室成员',
+        description: '读取用户已加入工作室的成员列表和成员角色',
+        risk: 'read'
+    },
+    'works:stats:read': {
+        name: '读取作品统计',
+        description: '读取用户作品的浏览、点赞、收藏和评论统计',
+        risk: 'read'
+    },
+    'community:activity:read': {
+        name: '读取社区动态',
+        description: '读取用户近期发布的作品、帖子和评论动态',
+        risk: 'read'
+    },
+    'reports:read': {
+        name: '读取举报',
+        description: '读取后台举报记录（授权用户还需具备举报查看权限）',
+        risk: 'admin'
+    },
+    'reports:write': {
+        name: '处理举报',
+        description: '变更举报状态并执行处理动作（授权用户还需具备对应后台权限）',
+        risk: 'admin'
+    },
+    'comments:write': {
+        name: '管理评论',
+        description: '以用户身份发表评论，并删除用户自己的评论',
+        risk: 'write'
+    },
+    'posts:write': {
+        name: '管理帖子',
+        description: '以用户身份发布、编辑和删除用户自己的帖子',
+        risk: 'write'
+    },
+    'works:write': {
+        name: '管理作品',
+        description: '发布用户自己的编程猫作品，并编辑或删除自己的作品',
+        risk: 'write'
+    },
+    'notifications:write': {
+        name: '发送应用通知',
+        description: '由应用向当前授权用户发送站内通知',
+        risk: 'write'
     }
 };
 
@@ -188,7 +239,8 @@ function scopeCatalog() {
     return Object.entries(ALL_SCOPES).map(([key, meta]) => ({
         key,
         name: meta.name,
-        description: meta.description
+        description: meta.description,
+        risk: meta.risk || 'read'
     }));
 }
 

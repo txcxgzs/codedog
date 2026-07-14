@@ -8,7 +8,7 @@
 
       <el-card shadow="never" class="r-devdocs--card">
         <h2>概述</h2>
-        <p>编程狗开发者平台提供 OAuth2 授权码模式，让你的应用在用户授权后，只读访问用户的公开资料、作品、评论与帖子。</p>
+        <p>编程狗开发者平台提供 OAuth2 授权码模式。应用可申请只读、写入或管理权限；写入和管理权限会在授权页明确警示。</p>
         <ul>
           <li>Token：access_token 2 小时，refresh_token 30 天</li>
           <li>仅支持机密客户端（backend 保管 client_secret）</li>
@@ -21,6 +21,13 @@
         <el-table :data="scopes" size="small">
           <el-table-column prop="key" label="Scope" width="160" />
           <el-table-column prop="name" label="名称" width="140" />
+          <el-table-column label="风险" width="90">
+            <template #default="{ row }">
+              <el-tag :type="row.risk === 'admin' ? 'danger' : (row.risk === 'write' ? 'warning' : 'info')" size="small">
+                {{ row.risk === 'admin' ? '管理' : (row.risk === 'write' ? '写入' : '只读') }}
+              </el-tag>
+            </template>
+          </el-table-column>
           <el-table-column prop="description" label="说明" />
         </el-table>
       </el-card>
@@ -75,34 +82,53 @@ GET /api/open/v1/me/works/:id
 GET /api/open/v1/me/comments
 GET /api/open/v1/me/posts
 GET /api/open/v1/me/posts/:id
+GET /api/open/v1/me/notifications
+GET /api/open/v1/me/activity
+GET /api/open/v1/me/works/stats
+GET /api/open/v1/me/works/:id/stats
+GET /api/open/v1/me/studios/:id/members
 
 GET /api/oauth/userinfo   # 等价于 profile:read</pre>
         <p>统一响应：<code>{ code, msg, data }</code>。默认限流约 60 次/分钟/应用+IP。</p>
       </el-card>
 
       <el-card shadow="never" class="r-devdocs--card">
-        <h2>5. 撤销 token</h2>
+        <h2>5. 写入 API</h2>
+        <pre class="r-devdocs--pre">POST   /api/open/v1/comments              (comments:write)
+DELETE /api/open/v1/comments/:id          (comments:write)
+POST   /api/open/v1/posts                 (posts:write)
+PATCH  /api/open/v1/posts/:id             (posts:write)
+DELETE /api/open/v1/posts/:id             (posts:write)
+POST   /api/open/v1/works                 (works:write, body: { codemaoWorkId })
+PATCH  /api/open/v1/works/:codemaoId      (works:write)
+DELETE /api/open/v1/works/:codemaoId      (works:write)
+POST   /api/open/v1/me/notifications      (notifications:write)</pre>
+      </el-card>
+
+      <el-card shadow="never" class="r-devdocs--card">
+        <h2>6. 管理 API</h2>
+        <pre class="r-devdocs--pre">GET   /api/open/v1/reports                (reports:read + 后台 report:view)
+PATCH /api/open/v1/reports/:id            (reports:write + 后台 report:handle)
+GET   /api/open/v1/studios/pending-review (studios:review + 管理员身份)
+POST  /api/open/v1/studios/:id/review     (studios:review + 管理员身份)</pre>
+      </el-card>
+
+      <el-card shadow="never" class="r-devdocs--card">
+        <h2>7. 撤销 token</h2>
         <pre class="r-devdocs--pre">POST /api/oauth/revoke
 { "token": "atk_... 或 rtk_..." }</pre>
       </el-card>
-    </div>
-  </div>
-
       <el-card shadow="never" class="r-devdocs--card">
-        <h2>5. 工作室、关注、收藏与审核</h2>
+        <h2>8. 工作室、关注与收藏</h2>
         <pre class="r-devdocs--pre">GET  /api/open/v1/me/studios?status=active&amp;page=1&amp;pageSize=20
 GET  /api/open/v1/me/studios/:id
 GET  /api/open/v1/me/followers?page=1&amp;pageSize=20
 GET  /api/open/v1/me/following?page=1&amp;pageSize=20
 GET  /api/open/v1/me/favorites?page=1&amp;pageSize=20
-GET  /api/open/v1/me/likes?page=1&amp;pageSize=20        (scope: favorites:read)
-
-GET  /api/open/v1/studios/pending-review?keyword=xxx     (scope: studios:review, admin)
-POST /api/open/v1/studios/:id/review                     (scope: studios, admin)
-Body: { action: "approve" | "reject" | "ban", note?: "..." }
-
-审核接口要求 OAuth 用户具备 admin 或 superadmin 角色。</pre>
+GET  /api/open/v1/me/likes?page=1&amp;pageSize=20        (scope: favorites:read)</pre>
       </el-card>
+    </div>
+  </div>
 </template>
 
 <script setup>
@@ -110,14 +136,7 @@ import { ref, onMounted } from 'vue'
 import { developerApi } from '@/api/developer'
 
 const scopes = ref([
-  { key: 'profile:read', name: '读取资料', description: '昵称、头像、简介、等级、粉丝/关注/作品数' },
-  { key: 'works:read', name: '读取作品', description: '本人已发布且可见的作品列表与详情' },
-  { key: 'comments:read', name: '读取评论', description: '本人评论列表' },
-  { key: 'posts:read', name: '读取帖子', description: '本人帖子列表与详情' },
-  { key: 'studios:read', name: '读取工作室', description: '本人加入的工作室列表与详情、成员和作品' },
-  { key: 'follows:read', name: '读取关注关系', description: '本人的关注列表与粉丝列表' },
-  { key: 'favorites:read', name: '读取收藏与点赞', description: '本人收藏的作品/帖子与点赞记录' },
-  { key: 'studios:review', name: '审核工作室', description: '查看待审核工作室并通过/拒绝（需 app scope + 管理员身份）' }
+  { key: 'profile:read', name: '读取资料', description: '昵称、头像、简介与公开统计', risk: 'read' }
 ])
 
 onMounted(async () => {

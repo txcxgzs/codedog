@@ -88,6 +88,8 @@
             <el-checkbox-group v-model="form.scopes">
               <el-checkbox v-for="s in scopeOptions" :key="s.key" :label="s.key">
                 {{ s.name }}（{{ s.key }}）
+                <el-tag v-if="s.risk === 'write'" size="small" type="warning">写入</el-tag>
+                <el-tag v-else-if="s.risk === 'admin'" size="small" type="danger">管理</el-tag>
               </el-checkbox>
             </el-checkbox-group>
           </el-form-item>

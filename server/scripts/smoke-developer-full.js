@@ -213,7 +213,11 @@ function pass(name, cond, detail) {
       name: 'Smoke App2 ' + Date.now(),
       description: 'smoke new scopes',
       redirect_uris: ['http://localhost:9999/callback'],
-      scopes: ['profile:read','studios:read','follows:read','favorites:read']
+      scopes: [
+        'profile:read','studios:read','follows:read','favorites:read',
+        'notifications:read','notifications:write','works:stats:read','community:activity:read',
+        'posts:write','comments:write','works:write','reports:read','reports:write'
+      ]
     }
   });
   if (!pass('create app2', create2.status === 200 && create2.data?.data?.client_id, '')) failed++;
@@ -223,7 +227,12 @@ function pass(name, cond, detail) {
   await req('POST', '/api/admin/developer-apps/' + app2.id + '/review', { token, body: { action: 'approve' } });
   const approve2 = await req('POST', '/api/oauth/authorize', {
     token,
-    body: { client_id: cid2, redirect_uri: 'http://localhost:9999/callback', scope: 'profile:read studios:read follows:read favorites:read', state: 's2', approved: true }
+    body: {
+      client_id: cid2,
+      redirect_uri: 'http://localhost:9999/callback',
+      scope: 'profile:read studios:read follows:read favorites:read notifications:read notifications:write works:stats:read community:activity:read posts:write comments:write works:write reports:read reports:write',
+      state: 's2', approved: true
+    }
   });
   let code2 = '';
   try { code2 = new URL(approve2.data?.data?.redirect_to).searchParams.get('code') || ''; } catch {}
@@ -244,6 +253,59 @@ function pass(name, cond, detail) {
   if (!pass('open /likes', likes.status === 200, JSON.stringify(likes.data).slice(0, 200))) failed++;
   const reviewNo = await req('GET', '/api/open/v1/studios/pending-review', { headers: { Authorization: 'Bearer ' + access2 } });
   if (!pass('review without scope 403', reviewNo.status === 403, JSON.stringify(reviewNo.data))) failed++;
+
+  const sendNotification = await req('POST', '/api/open/v1/me/notifications', {
+    headers: { Authorization: 'Bearer ' + access2 },
+    body: { title: 'OAuth smoke notification', content: 'hello from app2' }
+  });
+  if (!pass('open notification write', sendNotification.status === 200, JSON.stringify(sendNotification.data))) failed++;
+  const notifications = await req('GET', '/api/open/v1/me/notifications', { headers: { Authorization: 'Bearer ' + access2 } });
+  if (!pass('open notifications read', notifications.status === 200 && notifications.data?.data?.list?.length >= 1, JSON.stringify(notifications.data).slice(0, 300))) failed++;
+
+  const activity = await req('GET', '/api/open/v1/me/activity', { headers: { Authorization: 'Bearer ' + access2 } });
+  if (!pass('open activity read', activity.status === 200, JSON.stringify(activity.data).slice(0, 200))) failed++;
+  const workStats = await req('GET', '/api/open/v1/me/works/stats', { headers: { Authorization: 'Bearer ' + access2 } });
+  if (!pass('open work stats', workStats.status === 200, JSON.stringify(workStats.data).slice(0, 200))) failed++;
+
+  const createPost = await req('POST', '/api/open/v1/posts', {
+    headers: { Authorization: 'Bearer ' + access2 },
+    body: { title: 'OAuth smoke post', content: 'OAuth write scope smoke content', category: 'discussion', tags: ['oauth'] }
+  });
+  const openPostId = createPost.data?.data?.id;
+  if (!pass('open post write', createPost.status === 200 && !!openPostId, JSON.stringify(createPost.data).slice(0, 300))) failed++;
+  if (openPostId) {
+    const createComment = await req('POST', '/api/open/v1/comments', {
+      headers: { Authorization: 'Bearer ' + access2 },
+      body: { post_id: openPostId, content: 'OAuth comment write smoke' }
+    });
+    const openCommentId = createComment.data?.data?.id;
+    if (!pass('open comment write', createComment.status === 200 && !!openCommentId, JSON.stringify(createComment.data).slice(0, 300))) failed++;
+    if (openCommentId) {
+      const deleteComment = await req('DELETE', `/api/open/v1/comments/${openCommentId}`, { headers: { Authorization: 'Bearer ' + access2 } });
+      if (!pass('open comment delete own', deleteComment.status === 200, JSON.stringify(deleteComment.data))) failed++;
+    }
+    const updatePost = await req('PATCH', `/api/open/v1/posts/${openPostId}`, {
+      headers: { Authorization: 'Bearer ' + access2 },
+      body: { title: 'OAuth smoke post edited', content: 'OAuth write scope edited content' }
+    });
+    if (!pass('open post update own', updatePost.status === 200, JSON.stringify(updatePost.data).slice(0, 200))) failed++;
+    const deletePost = await req('DELETE', `/api/open/v1/posts/${openPostId}`, { headers: { Authorization: 'Bearer ' + access2 } });
+    if (!pass('open post delete own', deletePost.status === 200, JSON.stringify(deletePost.data))) failed++;
+  }
+
+  const workWriteValidation = await req('POST', '/api/open/v1/works', {
+    headers: { Authorization: 'Bearer ' + access2 }, body: {}
+  });
+  if (!pass('open work write scope reaches validation', workWriteValidation.status === 400, JSON.stringify(workWriteValidation.data))) failed++;
+  const reports = await req('GET', '/api/open/v1/reports', { headers: { Authorization: 'Bearer ' + access2 } });
+  if (!pass('open reports read as superadmin', reports.status === 200, JSON.stringify(reports.data).slice(0, 200))) failed++;
+  const reportWriteValidation = await req('PATCH', '/api/open/v1/reports/999999', {
+    headers: { Authorization: 'Bearer ' + access2 },
+    body: { status: 'resolved', handleNote: 'not found smoke', takeAction: false }
+  });
+  if (!pass('open reports write reaches business validation', reportWriteValidation.status === 404, JSON.stringify(reportWriteValidation.data))) failed++;
+  const studioMembersValidation = await req('GET', '/api/open/v1/me/studios/999999/members', { headers: { Authorization: 'Bearer ' + access2 } });
+  if (!pass('studio members scope required', studioMembersValidation.status === 403, JSON.stringify(studioMembersValidation.data))) failed++;
   try { await user.destroy(); } catch {}
   try { await user.destroy(); } catch {}
   console.log('\nDONE failed=', failed);

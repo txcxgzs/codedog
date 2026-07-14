@@ -5,7 +5,7 @@ const { Op } = require('sequelize');
 const {
     User, Work, Comment, Post, DeveloperApp, DeveloperAppAuditLog, OAuthAuthCode, OAuthAccessToken,
     OAuthRefreshToken, UserAppAuthorization, sequelize,
-    StudioMember, Studio, Follow, Favorite, Like, OperationLog
+    StudioMember, Studio, StudioWork, Follow, Favorite, Like, Notification, OperationLog
 } = require('../models');
 const DbAdapter = require('../utils/dbAdapter');
 const { successResponse, errorResponse, paginateResponse } = require('../middleware/response');
@@ -13,6 +13,11 @@ const { logOperation } = require('../middleware/operationLog');
 const oauth = require('../utils/oauth');
 const { getDeveloperApiLogger } = require('../services/developerApiLogger');
 const { DEFAULT_RATE_LIMIT_PER_MIN } = require('../middleware/developerOpenApi');
+const { hasPermission } = require('../config/permissions');
+const commentController = require('./commentController');
+const postController = require('./postController');
+const workController = require('./workController');
+const adminController = require('./adminController');
 
 function getOwnerId(req) {
     return DbAdapter.getId(req.user);
@@ -1104,6 +1109,176 @@ async function openMyLikes(req, res) {
     }
 }
 
+// -------- Extended read/write scopes --------
+function attachOAuthUser(req) {
+    req.user = req.oauth.user;
+    return req;
+}
+
+async function openMyNotifications(req, res) {
+    try {
+        const { page, pageSize, offset } = DbAdapter.parsePagination(req.query);
+        const where = { user_id: req.oauth.userId };
+        if (req.query.unread === 'true' || req.query.unread === '1') where.is_read = false;
+        const { count, rows } = await DbAdapter.findAndCountAll(Notification, {
+            where,
+            attributes: ['id', 'type', 'title', 'content', 'related_id', 'related_type', 'sender_id', 'is_read', 'created_at'],
+            order: [['created_at', 'DESC']], limit: pageSize, offset
+        });
+        return paginateResponse(res, rows, count, page, pageSize);
+    } catch (e) {
+        console.error('openMyNotifications', e);
+        return errorResponse(res, '获取通知失败', 500);
+    }
+}
+
+async function openSendNotification(req, res) {
+    try {
+        const title = req.body && req.body.title != null ? String(req.body.title).trim() : '';
+        const content = req.body && req.body.content != null ? String(req.body.content).trim() : '';
+        if (!title) return errorResponse(res, '通知标题不能为空', 400);
+        if (title.length > 200) return errorResponse(res, '通知标题不能超过200字', 400);
+        if (content.length > 5000) return errorResponse(res, '通知内容不能超过5000字', 400);
+        const notification = await DbAdapter.create(Notification, {
+            user_id: req.oauth.userId,
+            sender_id: req.oauth.userId,
+            type: 'developer_app',
+            title,
+            content: content || null,
+            related_type: 'developer_app',
+            related_id: req.oauth.appId,
+            meta: JSON.stringify({ app_id: req.oauth.appId, app_name: req.oauth.app && req.oauth.app.name })
+        });
+        return successResponse(res, notification, '通知已发送');
+    } catch (e) {
+        console.error('openSendNotification', e);
+        return errorResponse(res, '发送通知失败', 500);
+    }
+}
+
+async function openMyWorkStats(req, res) {
+    try {
+        const { page, pageSize, offset } = DbAdapter.parsePagination(req.query);
+        const where = { user_id: req.oauth.userId, status: { [Op.ne]: 'deleted' } };
+        if (req.params.id) where.id = req.params.id;
+        const { count, rows } = await DbAdapter.findAndCountAll(Work, {
+            where,
+            attributes: ['id', 'codemao_work_id', 'name', 'status', 'view_times', 'praise_times', 'collection_times', 'comment_count', 'created_at', 'updated_at'],
+            order: [['created_at', 'DESC']],
+            limit: req.params.id ? 1 : pageSize,
+            offset: req.params.id ? 0 : offset
+        });
+        if (req.params.id) {
+            if (!rows.length) return errorResponse(res, '作品不存在', 404);
+            return successResponse(res, rows[0]);
+        }
+        return paginateResponse(res, rows, count, page, pageSize);
+    } catch (e) {
+        console.error('openMyWorkStats', e);
+        return errorResponse(res, '获取作品统计失败', 500);
+    }
+}
+
+async function openMyActivity(req, res) {
+    try {
+        const { page, pageSize, offset } = DbAdapter.parsePagination(req.query);
+        const fetchLimit = Math.min(offset + pageSize, 500);
+        const [works, posts, comments, workCount, postCount, commentCount] = await Promise.all([
+            DbAdapter.findAll(Work, { where: { user_id: req.oauth.userId, status: 'published' }, attributes: ['id', 'name', 'preview', 'created_at'], order: [['created_at', 'DESC']], limit: fetchLimit }),
+            DbAdapter.findAll(Post, { where: { user_id: req.oauth.userId, status: 'published' }, attributes: ['id', 'title', 'category', 'created_at'], order: [['created_at', 'DESC']], limit: fetchLimit }),
+            DbAdapter.findAll(Comment, { where: { user_id: req.oauth.userId, status: 'active' }, attributes: ['id', 'content', 'work_id', 'post_id', 'created_at'], order: [['created_at', 'DESC']], limit: fetchLimit }),
+            DbAdapter.count(Work, { where: { user_id: req.oauth.userId, status: 'published' } }),
+            DbAdapter.count(Post, { where: { user_id: req.oauth.userId, status: 'published' } }),
+            DbAdapter.count(Comment, { where: { user_id: req.oauth.userId, status: 'active' } })
+        ]);
+        const activity = [
+            ...works.map(row => ({ type: 'work', created_at: row.created_at, data: row })),
+            ...posts.map(row => ({ type: 'post', created_at: row.created_at, data: row })),
+            ...comments.map(row => ({ type: 'comment', created_at: row.created_at, data: row }))
+        ].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).slice(offset, offset + pageSize);
+        // 活动聚合最多回溯 500 条，避免高页码导致一次加载大量三表数据。
+        const total = Math.min(workCount + postCount + commentCount, 500);
+        return paginateResponse(res, activity, total, page, pageSize);
+    } catch (e) {
+        console.error('openMyActivity', e);
+        return errorResponse(res, '获取社区动态失败', 500);
+    }
+}
+
+async function openMyStudioMembers(req, res) {
+    try {
+        const mine = await DbAdapter.findOne(StudioMember, {
+            where: { studio_id: req.params.id, user_id: req.oauth.userId, status: 'active' }
+        });
+        if (!mine) return errorResponse(res, '工作室不存在或无权查看', 404);
+        const { page, pageSize, offset } = DbAdapter.parsePagination(req.query);
+        const { count, rows } = await DbAdapter.findAndCountAll(StudioMember, {
+            where: { studio_id: req.params.id, status: 'active' },
+            include: [{ model: User, as: 'user', attributes: ['id', 'username', 'nickname', 'avatar', 'bio', 'level'] }],
+            attributes: ['id', 'role', 'joined_at'],
+            order: [['joined_at', 'ASC']], limit: pageSize, offset
+        });
+        return paginateResponse(res, rows, count, page, pageSize);
+    } catch (e) {
+        console.error('openMyStudioMembers', e);
+        return errorResponse(res, '获取工作室成员失败', 500);
+    }
+}
+
+function requireOAuthAdminPermission(permission) {
+    return async (req, res, callback) => {
+        const role = req.oauth && req.oauth.user && req.oauth.user.role;
+        if (!role || !hasPermission(role, permission)) {
+            return errorResponse(res, `授权用户缺少后台权限: ${permission}`, 403, 'oauth_forbidden_role');
+        }
+        attachOAuthUser(req);
+        return callback(req, res);
+    };
+}
+
+const openReports = (req, res) => requireOAuthAdminPermission('report:view')(req, res, adminController.getReports);
+const openHandleReport = (req, res) => {
+    req.params.reportId = req.params.id;
+    return requireOAuthAdminPermission('report:handle')(req, res, adminController.handleReport);
+};
+
+async function withOwnedResource(req, res, model, where, label, callback) {
+    try {
+        const owned = await DbAdapter.findOne(model, { where });
+        if (!owned) return errorResponse(res, `${label}不存在`, 404);
+        return callback();
+    } catch (e) {
+        console.error(`open owned ${label} operation`, e);
+        return errorResponse(res, `${label}操作失败`, 500);
+    }
+}
+
+const openCreateComment = (req, res) => commentController.createComment(attachOAuthUser(req), res);
+const openDeleteComment = (req, res) => withOwnedResource(
+    req, res, Comment, { id: req.params.id, user_id: req.oauth.userId }, '评论',
+    () => commentController.deleteComment(attachOAuthUser(req), res)
+);
+const openCreatePost = (req, res) => postController.createPost(attachOAuthUser(req), res);
+const openUpdatePost = (req, res) => withOwnedResource(
+    req, res, Post, { id: req.params.id, user_id: req.oauth.userId, status: { [Op.ne]: 'deleted' } }, '帖子',
+    () => postController.updatePost(attachOAuthUser(req), res)
+);
+const openDeletePost = (req, res) => withOwnedResource(
+    req, res, Post, { id: req.params.id, user_id: req.oauth.userId, status: { [Op.ne]: 'deleted' } }, '帖子',
+    () => postController.deletePost(attachOAuthUser(req), res)
+);
+const openPublishWork = (req, res) => workController.publishWork(attachOAuthUser(req), res);
+const openUpdateWork = (req, res) => withOwnedResource(
+    req, res, Work,
+    { codemao_work_id: String(req.params.id), user_id: req.oauth.userId, status: { [Op.ne]: 'deleted' } },
+    '作品', () => { req.params.codemaoId = req.params.id; return workController.updateWork(attachOAuthUser(req), res); }
+);
+const openDeleteWork = (req, res) => withOwnedResource(
+    req, res, Work,
+    { codemao_work_id: String(req.params.id), user_id: req.oauth.userId, status: { [Op.ne]: 'deleted' } },
+    '作品', () => { req.params.codemaoId = req.params.id; return workController.deleteWork(attachOAuthUser(req), res); }
+);
+
 async function assertCanReview(req, res) {
     const role = req.oauth && req.oauth.user ? req.oauth.user.role : null;
     if (!["admin", "superadmin"].includes(role)) {
@@ -1254,6 +1429,21 @@ module.exports = {
     openMyLikes,
     openStudiosPendingReview,
     openReviewStudio,
+    openMyNotifications,
+    openSendNotification,
+    openMyWorkStats,
+    openMyActivity,
+    openMyStudioMembers,
+    openReports,
+    openHandleReport,
+    openCreateComment,
+    openDeleteComment,
+    openCreatePost,
+    openUpdatePost,
+    openDeletePost,
+    openPublishWork,
+    openUpdateWork,
+    openDeleteWork,
     adminUpdateAppRateLimit,
     adminRevokeAllTokens,
     adminRegenerateSecret,
