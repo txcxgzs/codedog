@@ -4096,13 +4096,15 @@ const renderChart = (data) => {
   if (!data.dates || data.dates.length < 2) return
 
   const canvas = document.createElement('canvas')
-  canvas.width = chartRef.value.offsetWidth
-  canvas.height = 300
+  canvas.width = Math.max(280, chartRef.value.clientWidth)
+  canvas.height = window.innerWidth <= 768 ? 240 : 300
+  canvas.style.width = '100%'
+  canvas.style.height = `${canvas.height}px`
   chartRef.value.innerHTML = ''
   chartRef.value.appendChild(canvas)
   
   const ctx = canvas.getContext('2d')
-  const padding = 50
+  const padding = Math.min(50, Math.max(28, canvas.width * 0.1))
   const width = canvas.width - padding * 2
   const height = canvas.height - padding * 2
   
