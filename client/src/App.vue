@@ -1,6 +1,6 @@
 <template>
   <el-config-provider :locale="zhCn">
-  <div class="r-index--root_container">
+  <div class="r-index--root_container" :class="{ 'is-developer-shell': $route.path.startsWith('/developer') }">
     <!-- 顶部导航栏 -->
     <div class="c-navigator--navigator">
       <div class="c-navigator--header-content">
@@ -700,6 +700,11 @@ $shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
   border-radius: 8px;
   padding: 14px 16px;
 }
+.is-developer-shell .c-navigator--navigator,
+.is-developer-shell .r-ann--top_stack,
+.is-developer-shell .c-footer--footer { display: none !important; }
+.is-developer-shell .r-index--main_content { min-height: 100vh; }
+
 .r-ann--popup_content {
   white-space: pre-wrap;
   line-height: 1.7;

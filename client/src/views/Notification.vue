@@ -285,6 +285,15 @@ $text-muted: #999;
         background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23909399'%3E%3Cpath d='M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z'/%3E%3C/svg%3E") no-repeat center;
         background-size: contain;
       }
+
+      &.r-notification--icon_report,
+      &.r-notification--icon_report_received,
+      &.r-notification--icon_report_submitted,
+      &.r-notification--icon_report_processed,
+      &.r-notification--icon_developer_app_review {
+        background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23F59E0B'%3E%3Cpath d='M12 2 2 6v5c0 5.55 3.84 10.74 10 12 6.16-1.26 10-6.45 10-12V6L12 2zm0 4 6 2.4V11c0 3.7-2.37 7.45-6 8.55C8.37 18.45 6 14.7 6 11V8.4L12 6zm-1 3v5h2V9h-2zm0 6v2h2v-2h-2z'/%3E%3C/svg%3E") no-repeat center;
+        background-size: contain;
+      }
     }
   }
   

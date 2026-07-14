@@ -29,7 +29,9 @@
       </el-alert>
 
       <el-table :data="apps" v-loading="loading" empty-text="还没有应用，点击右上角创建">
-        <el-table-column prop="name" label="应用名称" min-width="140" />
+        <el-table-column prop="name" label="应用名称" min-width="180">
+          <template #default="{ row }"><div class="r-dev--app_name"><el-avatar :size="34" :src="row.logo_url">{{ (row.name || 'A').charAt(0) }}</el-avatar><span>{{ row.name }}</span></div></template>
+        </el-table-column>
         <el-table-column prop="client_id" label="client_id" min-width="180">
           <template #default="{ row }">
             <code class="r-dev--code">{{ row.client_id }}</code>
@@ -116,7 +118,7 @@
 
       <el-drawer v-model="detailVisible" title="应用详情" size="440px">
         <template v-if="detailApp">
-          <p><b>名称：</b>{{ detailApp.name }}</p>
+          <p class="r-dev--detail_name"><el-avatar :size="42" :src="detailApp.logo_url">{{ (detailApp.name || 'A').charAt(0) }}</el-avatar><b>{{ detailApp.name }}</b></p>
           <p><b>状态：</b>{{ statusText(detailApp.status) }}</p>
           <p v-if="detailApp.review_note"><b>审核备注：</b>{{ detailApp.review_note }}</p>
           <p><b>client_id：</b><code>{{ detailApp.client_id }}</code></p>
@@ -285,8 +287,8 @@ onMounted(async () => { await loadScopes(); await loadApps() })
 </script>
 
 <style scoped lang="scss">
-.r-dev--page { min-height: calc(100vh - 64px); background: #f7f8fa; padding: 24px 16px 48px; }
-.r-dev--container { max-width: 1180px; margin: 0 auto; background: #fff; border-radius: 12px; padding: 24px; box-shadow: 0 2px 12px rgba(0,0,0,.04); }
+.r-dev--page { min-height: 100vh; background: radial-gradient(circle at 10% 0%, #fff4d6 0, transparent 32%), linear-gradient(145deg,#f7f9fc,#eef3f8); padding: 42px 24px 64px; }
+.r-dev--container { max-width: 1180px; margin: 0 auto; background: rgba(255,255,255,.92); border: 1px solid rgba(255,255,255,.9); border-radius: 18px; padding: 32px; box-shadow: 0 18px 50px rgba(36,54,74,.10); }
 .r-dev--header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 20px;
   h1 { margin: 0 0 6px; font-size: 22px; color: #333; } }
 .r-dev--subtitle { margin: 0; color: #888; font-size: 13px; }
@@ -310,4 +312,6 @@ onMounted(async () => { await loadScopes(); await loadApps() })
 .r-dev--review_box { padding:16px; border:1px solid #e4e7ed; border-radius:8px; background:#fafafa; }
 .r-dev--detail_actions { display:flex; gap:8px; margin:16px 0; padding-top:12px; border-top:1px solid #ebeef5; }
 .r-dev--upload_hint { margin-left:8px; color:#909399; font-size:12px; }
+.r-dev--app_name { display:flex; align-items:center; gap:10px; font-weight:600; }
+.r-dev--detail_name { display:flex; align-items:center; gap:10px; font-size:18px; }
 </style>
