@@ -1,10 +1,16 @@
 :root {
-  --liquid-pointer-x: 50%;
-  --liquid-pointer-y: 18%;
-  --liquid-glass-bg: rgba(255, 255, 255, 0.64);
-  --liquid-glass-bg-strong: rgba(255, 255, 255, 0.78);
-  --liquid-glass-border: rgba(255, 255, 255, 0.78);
-  --liquid-glass-shadow: 0 14px 42px rgba(61, 52, 32, 0.12), 0 2px 8px rgba(61, 52, 32, 0.06);
+  --liquid-glass-bg: rgba(255, 255, 255, 0.24);
+  --liquid-glass-bg-strong: rgba(255, 255, 255, 0.38);
+  --liquid-glass-border: rgba(255, 255, 255, 0.72);
+  --liquid-glass-shadow: 0 12px 34px rgba(34, 48, 58, 0.16), 0 2px 6px rgba(34, 48, 58, 0.08);
+}
+
+.codedog-liquid-glass-defs {
+  position: fixed;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+  pointer-events: none;
 }
 
 .c-navigator--glass_toggle {
@@ -31,10 +37,9 @@
 @supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   html[data-liquid-glass='on'] body {
     background:
-      radial-gradient(circle at var(--liquid-pointer-x) var(--liquid-pointer-y), rgba(255, 221, 128, .30), transparent 28rem),
+      radial-gradient(circle at 58% 8%, rgba(255, 221, 128, .24), transparent 28rem),
       radial-gradient(circle at 12% 68%, rgba(129, 224, 255, .18), transparent 24rem),
       linear-gradient(135deg, #f8f6f0 0%, #eef5f7 52%, #fff8e7 100%);
-    background-attachment: fixed;
   }
 
   html[data-liquid-glass='on'] .r-index--root_container {
@@ -42,26 +47,62 @@
   }
 
   html[data-liquid-glass='on'] .c-navigator--navigator {
-    background: rgba(255, 255, 255, .58);
+    background: rgba(255, 255, 255, .76);
     border-bottom: 1px solid rgba(255, 255, 255, .76);
     box-shadow: 0 10px 30px rgba(67, 58, 38, .08);
-    -webkit-backdrop-filter: blur(20px) saturate(145%);
-    backdrop-filter: blur(20px) saturate(145%);
+    -webkit-backdrop-filter: blur(12px) saturate(135%);
+    backdrop-filter: blur(12px) saturate(135%);
   }
 
-  html[data-liquid-glass='on'] .c-navigator--glass_toggle,
-  html[data-liquid-glass='on'] .c-navigator--user_info,
-  html[data-liquid-glass='on'] .c-navigator--notification,
-  html[data-liquid-glass='on'] .c-navigator--nav_wrap .c-navigator--selected a {
-    background: var(--liquid-glass-bg-strong);
+  html[data-liquid-glass='on'] :is(
+    .c-navigator--glass_toggle,
+    .c-navigator--user_info,
+    .c-navigator--notification,
+    .c-navigator--nav_wrap .c-navigator--selected a
+  ) {
+    position: relative;
+    isolation: isolate;
+    overflow: hidden;
+    background: rgba(255,255,255,.18);
     border-color: var(--liquid-glass-border);
     box-shadow:
       inset 0 1px 0 rgba(255,255,255,.92),
-      inset 1px 0 0 rgba(106, 221, 255, .12),
-      inset -1px 0 0 rgba(255, 128, 196, .10),
-      0 6px 20px rgba(69, 58, 31, .10);
-    -webkit-backdrop-filter: blur(12px) saturate(150%);
-    backdrop-filter: blur(12px) saturate(150%);
+      inset 2px 0 1px rgba(91, 213, 255, .20),
+      inset -2px 0 1px rgba(255, 121, 190, .16),
+      0 7px 22px rgba(42, 54, 62, .14);
+  }
+
+  html[data-liquid-glass='on'] :is(
+    .c-navigator--glass_toggle,
+    .c-navigator--user_info,
+    .c-navigator--notification,
+    .c-navigator--nav_wrap .c-navigator--selected a
+  )::before {
+    content: '';
+    position: absolute;
+    inset: -6px;
+    z-index: -1;
+    pointer-events: none;
+    background: var(--liquid-glass-bg-strong);
+    -webkit-backdrop-filter: blur(7px) saturate(155%);
+    backdrop-filter: blur(7px) saturate(155%);
+    filter: url(#codedog-liquid-glass-warp);
+  }
+
+  html[data-liquid-glass='on'] :is(
+    .c-navigator--glass_toggle,
+    .c-navigator--user_info,
+    .c-navigator--notification,
+    .c-navigator--nav_wrap .c-navigator--selected a
+  )::after {
+    content: '';
+    position: absolute;
+    inset: 1px;
+    border-radius: inherit;
+    z-index: 2;
+    pointer-events: none;
+    background: linear-gradient(135deg, rgba(255,255,255,.52), transparent 28%, transparent 68%, rgba(255,255,255,.22));
+    mix-blend-mode: screen;
   }
 
   html[data-liquid-glass='on'] :is(
@@ -82,16 +123,15 @@
       inset 0 1px 0 rgba(255,255,255,.92),
       inset 1px 0 0 rgba(92, 220, 255, .10),
       inset -1px 0 0 rgba(255, 117, 186, .08);
-    -webkit-backdrop-filter: blur(18px) saturate(145%);
-    backdrop-filter: blur(18px) saturate(145%);
+    -webkit-backdrop-filter: blur(10px) saturate(135%);
+    backdrop-filter: blur(10px) saturate(135%);
   }
 
   html[data-liquid-glass='on'] :is(.r-home--user_card, .r-home--login_card, .r-home--side_card) {
     transition: transform .28s cubic-bezier(.2,.8,.2,1), box-shadow .28s ease;
   }
   html[data-liquid-glass='on'] :is(.r-home--user_card, .r-home--login_card, .r-home--side_card):hover {
-    transform: translateY(-2px) scale(1.006);
-    box-shadow: 0 20px 48px rgba(61, 52, 32, .15), inset 0 1px 0 rgba(255,255,255,.96);
+    box-shadow: 0 16px 36px rgba(61, 52, 32, .13), inset 0 1px 0 rgba(255,255,255,.96);
   }
 
   html[data-liquid-glass='on'] .el-overlay {
@@ -116,6 +156,14 @@
   html[data-liquid-glass='on'] :is(.r-login--container, .r-dev--container, .r-devdocs--card) {
     -webkit-backdrop-filter: blur(13px) saturate(135%);
     backdrop-filter: blur(13px) saturate(135%);
+  }
+  html[data-liquid-glass='on'] :is(
+    .c-navigator--glass_toggle,
+    .c-navigator--user_info,
+    .c-navigator--notification,
+    .c-navigator--nav_wrap .c-navigator--selected a
+  )::before {
+    filter: none;
   }
 }
 

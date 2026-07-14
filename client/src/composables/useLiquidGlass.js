@@ -3,8 +3,6 @@ import { computed, ref } from 'vue'
 const STORAGE_KEY = 'codedog_liquid_glass_beta'
 const enabled = ref(false)
 const supported = ref(false)
-let initialized = false
-let pointerFrame = 0
 
 const detectSupport = () => {
   if (typeof window === 'undefined' || typeof CSS === 'undefined') return false
@@ -41,27 +39,5 @@ export function useLiquidGlass() {
 
   const toggle = () => setEnabled(!enabled.value)
 
-  const initializePointerTracking = () => {
-    if (initialized || typeof window === 'undefined') return () => {}
-    initialized = true
-    const onPointerMove = (event) => {
-      if (!active.value || pointerFrame) return
-      pointerFrame = window.requestAnimationFrame(() => {
-        pointerFrame = 0
-        const x = Math.max(0, Math.min(100, event.clientX / window.innerWidth * 100))
-        const y = Math.max(0, Math.min(100, event.clientY / window.innerHeight * 100))
-        document.documentElement.style.setProperty('--liquid-pointer-x', `${x.toFixed(2)}%`)
-        document.documentElement.style.setProperty('--liquid-pointer-y', `${y.toFixed(2)}%`)
-      })
-    }
-    window.addEventListener('pointermove', onPointerMove, { passive: true })
-    return () => {
-      window.removeEventListener('pointermove', onPointerMove)
-      if (pointerFrame) window.cancelAnimationFrame(pointerFrame)
-      pointerFrame = 0
-      initialized = false
-    }
-  }
-
-  return { enabled, supported, active, setEnabled, toggle, initializePointerTracking }
+  return { enabled, supported, active, setEnabled, toggle }
 }

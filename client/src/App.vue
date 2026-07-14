@@ -1,6 +1,15 @@
 <template>
   <el-config-provider :locale="zhCn">
   <div class="r-index--root_container" :class="{ 'is-liquid-glass': liquidGlassActive }">
+    <svg class="codedog-liquid-glass-defs" aria-hidden="true">
+      <defs>
+        <filter id="codedog-liquid-glass-warp" x="-20%" y="-30%" width="140%" height="160%" color-interpolation-filters="sRGB">
+          <feTurbulence type="fractalNoise" baseFrequency="0.012 0.045" numOctaves="2" seed="7" result="noise" />
+          <feGaussianBlur in="noise" stdDeviation="1.2" result="softNoise" />
+          <feDisplacementMap in="SourceGraphic" in2="softNoise" scale="18" xChannelSelector="R" yChannelSelector="B" />
+        </filter>
+      </defs>
+    </svg>
     <!-- 顶部导航栏 -->
     <div class="c-navigator--navigator">
       <div class="c-navigator--header-content">
@@ -193,10 +202,8 @@ const hcaptchaVerified = ref(false)
 const {
   active: liquidGlassActive,
   supported: liquidGlassSupported,
-  toggle: toggleLiquidGlassState,
-  initializePointerTracking
+  toggle: toggleLiquidGlassState
 } = useLiquidGlass()
-let stopLiquidGlassPointerTracking = null
 
 const liquidGlassTooltip = computed(() => {
   if (!liquidGlassSupported.value) return '当前浏览器不支持液态玻璃测试版'
@@ -366,7 +373,6 @@ const startHCaptchaCheck = () => {
 }
 
 onMounted(async () => {
-  stopLiquidGlassPointerTracking = initializePointerTracking()
   loadAnnouncements()
   if (userStore.token && !userStore.user) {
     await userStore.fetchCurrentUser()
@@ -384,7 +390,6 @@ onMounted(async () => {
 
 // 组件卸载时清理事件监听与定时器，避免内存泄漏
 onUnmounted(() => {
-  if (stopLiquidGlassPointerTracking) stopLiquidGlassPointerTracking()
   window.removeEventListener('hcaptcha-required', checkHCaptcha)
   if (hcaptchaCheckInterval) {
     clearInterval(hcaptchaCheckInterval)
@@ -502,8 +507,13 @@ $shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
   padding: 0;
   
   .c-navigator--item {
+    min-height: 40px;
+    display: flex;
+    align-items: stretch;
+
     a {
-      display: block;
+      display: flex;
+      align-items: center;
       padding: 8px 16px;
       font-size: 16px;
       color: $text-secondary;
@@ -511,6 +521,7 @@ $shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
       border-radius: 20px;
       transition: all 0.2s;
       font-weight: 500;
+      touch-action: manipulation;
     }
     
     &:hover a {
