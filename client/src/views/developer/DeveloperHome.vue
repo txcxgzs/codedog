@@ -65,7 +65,7 @@
 
       <el-dialog v-model="dialogVisible" :title="editingId ? '编辑应用' : '创建应用'" width="600px" destroy-on-close>
         <el-steps :active="wizardStep" finish-status="success" simple style="margin-bottom:24px"><el-step title="基本信息" /><el-step title="回调地址" /><el-step title="申请权限" /><el-step title="确认提交" /></el-steps>
-        <el-form :model="form" label-width="110px">
+        <el-form :model="form" class="r-dev--wizard_form" label-position="top">
           <el-form-item v-show="wizardStep === 0" label="应用名称" required>
             <el-input v-model="form.name" maxlength="100" show-word-limit placeholder="例如：我的工具" />
           </el-form-item>
@@ -340,6 +340,12 @@ onMounted(async () => { await loadScopes(); await loadApps() })
 .r-dev--upload_hint { margin-left:8px; color:#909399; font-size:12px; }
 .r-dev--app_name { display:flex; align-items:center; gap:10px; font-weight:600; }
 .r-dev--detail_name { display:flex; align-items:center; gap:12px; font-size:20px; margin: -8px -4px 18px; padding:16px; border-radius:14px; background:linear-gradient(135deg,#f7f4ff,#eef8ff); color:#202938; box-shadow:inset 0 1px 0 rgba(255,255,255,.9); }
+.r-dev--wizard_form { max-width:100%; }
+.r-dev--wizard_form :deep(.el-form-item) { margin-bottom:18px; }
+.r-dev--wizard_form :deep(.el-form-item__label) { padding:0 0 7px; line-height:1.2; font-weight:600; color:#475569; }
+.r-dev--wizard_form :deep(.el-form-item__content) { display:block; }
+.r-dev--wizard_form :deep(.el-input), .r-dev--wizard_form :deep(.el-textarea) { width:100%; }
+.r-dev--wizard_form :deep(.el-checkbox-group) { width:100%; }
 .r-dev--detail_drawer :deep(.el-drawer__body) { padding:20px; background:#fbfcff; color:#334155; }
 .r-dev--detail_drawer :deep(.el-drawer__header) { margin-bottom:0; padding:18px 20px; background:#fff; border-bottom:1px solid #eef1f6; }
 .r-dev--detail_drawer :deep(.el-drawer__title) { font-weight:700; color:#1f2937; }

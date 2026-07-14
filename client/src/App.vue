@@ -71,7 +71,7 @@
                 <el-icon class="el-icon--right"><CaretBottom /></el-icon>
               </div>
               <template #dropdown>
-                <el-dropdown-menu>
+                <el-dropdown-menu class="c-navigator--menu">
                   <el-dropdown-item command="profile"><el-icon><User /></el-icon>个人中心</el-dropdown-item>
                   <el-dropdown-item command="myWorks"><el-icon><Monitor /></el-icon>我的作品</el-dropdown-item>
                   <el-dropdown-item command="developer">开发者平台</el-dropdown-item>
@@ -704,6 +704,7 @@ $shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
 .is-developer-shell .r-ann--top_stack,
 .is-developer-shell .c-footer--footer { display: none !important; }
 .is-developer-shell .r-index--main_content { min-height: 100vh; }
+.c-navigator--menu .el-dropdown-menu__item:nth-child(3)::before { content:''; display:inline-block; width:16px; height:16px; margin-right:8px; vertical-align:-3px; background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='1.7'%3E%3Crect x='4' y='3' width='16' height='18' rx='2'/%3E%3Cpath d='M8 7h8M8 11h8M8 15h5'/%3E%3C/svg%3E") center/contain no-repeat; }
 
 .r-ann--popup_content {
   white-space: pre-wrap;
