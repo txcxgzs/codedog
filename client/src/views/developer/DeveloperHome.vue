@@ -122,6 +122,15 @@
           <el-divider />
           <p class="r-dev--hint">授权链接示例：</p>
           <pre class="r-dev--pre">{{ authExample(detailApp) }}</pre>
+          <el-divider />
+          <div class="r-dev--calls_head"><b>API 调用记录</b><el-button size="small" @click="loadCalls(detailApp)">刷新</el-button></div>
+          <el-table :data="calls" size="small" v-loading="callsLoading" max-height="300" empty-text="暂无调用记录">
+            <el-table-column prop="created_at" label="时间" width="145"><template #default="{ row }">{{ formatDate(row.created_at) }}</template></el-table-column>
+            <el-table-column prop="method" label="方法" width="60" />
+            <el-table-column prop="path" label="接口" min-width="150" show-overflow-tooltip />
+            <el-table-column prop="status" label="状态" width="60" />
+            <el-table-column type="expand" width="36"><template #default="{ row }"><div class="r-dev--payload"><b>请求</b><pre>{{ formatPayload(row.request) }}</pre><b>响应</b><pre>{{ formatPayload(row.response) }}</pre></div></template></el-table-column>
+          </el-table>
         </template>
       </el-drawer>
     </div>
@@ -142,6 +151,8 @@ const detailApp = ref(null)
 const editingId = ref(null)
 const secretOnce = ref(null)
 const scopeOptions = ref([])
+const calls = ref([])
+const callsLoading = ref(false)
 
 const form = reactive({
   name: '',
@@ -193,7 +204,15 @@ const openEdit = (row) => {
   form.scopes = [...(row.scopes_requested || ['profile:read'])]
   dialogVisible.value = true
 }
-const showDetail = (row) => { detailApp.value = row; detailVisible.value = true }
+const showDetail = async (row) => { detailApp.value = row; detailVisible.value = true; await loadCalls(row) }
+const loadCalls = async (row) => {
+  if (!row?.id) return
+  callsLoading.value = true
+  try { const res = await developerApi.listAppCalls(row.id, { page: 1, pageSize: 50 }); calls.value = res.data?.list || [] }
+  catch (e) { ElMessage.error(e.response?.data?.msg || '加载调用记录失败') }
+  finally { callsLoading.value = false }
+}
+const formatPayload = (value) => { if (value == null || value === '') return '无记录'; try { return typeof value === 'string' ? JSON.stringify(JSON.parse(value), null, 2) : JSON.stringify(value, null, 2) } catch { return String(value) } }
 const authExample = (app) => {
   if (!app) return ''
   const redirect = (app.redirect_uris && app.redirect_uris[0]) || 'https://your.app/callback'
@@ -250,4 +269,7 @@ onMounted(async () => { await loadScopes(); await loadApps() })
 .r-dev--scope_tag { margin: 0 4px 4px 0; }
 .r-dev--pre { background: #f5f5f5; padding: 10px; border-radius: 8px; white-space: pre-wrap; word-break: break-all; font-size: 12px; }
 .r-dev--hint { color: #888; font-size: 13px; }
+.r-dev--calls_head { display:flex; align-items:center; justify-content:space-between; margin: 8px 0; }
+.r-dev--payload { padding: 8px; background: #fafafa; }
+.r-dev--payload pre { white-space: pre-wrap; word-break: break-all; max-height: 160px; overflow:auto; background:#f1f3f5; padding:6px; border-radius:4px; font-size:11px; }
 </style>

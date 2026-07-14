@@ -303,13 +303,31 @@ async function adminGetApp(req, res) {
     }
 }
 
+async function listMyAppCalls(req, res) {
+    try {
+        const app = await DbAdapter.findOne(DeveloperApp, { where: { id: req.params.id, owner_user_id: getOwnerId(req) } });
+        if (!app) return errorResponse(res, '应用不存在', 404);
+        const { page, pageSize, offset } = DbAdapter.parsePagination(req.query);
+        const { count, rows } = await DbAdapter.findAndCountAll(OperationLog, {
+            where: { action: { [Op.in]: ['developer_api_call', 'developer_api_fail'] }, target_type: 'developer_app', target_id: DbAdapter.getId(app) },
+            order: [['created_at', 'DESC']], limit: pageSize, offset
+        });
+        const list = rows.map(row => {
+            const json = row.toJSON ? row.toJSON() : row;
+            let details = {}; try { details = json.details ? JSON.parse(json.details) : {}; } catch (_) {}
+            return { id: json.id, action: json.action, ...details, ip_address: json.ip_address, user_agent: json.user_agent, created_at: json.created_at };
+        });
+        return paginateResponse(res, list, count, page, pageSize);
+    } catch (e) { console.error('listMyAppCalls', e); return errorResponse(res, '获取调用记录失败', 500); }
+}
+
 async function adminListAppCalls(req, res) {
     try {
         const app = await DbAdapter.findByPk(DeveloperApp, req.params.id);
         if (!app) return errorResponse(res, '应用不存在', 404);
         const { page, pageSize, offset } = DbAdapter.parsePagination(req.query);
         const { count, rows } = await DbAdapter.findAndCountAll(OperationLog, {
-            where: { action: 'developer_api_call', target_type: 'developer_app', target_id: DbAdapter.getId(app) },
+            where: { action: { [Op.in]: ['developer_api_call', 'developer_api_fail'] }, target_type: 'developer_app', target_id: DbAdapter.getId(app) },
             order: [['created_at', 'DESC']],
             limit: pageSize,
             offset
@@ -1400,6 +1418,7 @@ async function revokeMyAuthorization(req, res) {
 module.exports = {
     listMyApps,
     getMyApp,
+    listMyAppCalls,
     createApp,
     updateApp,
     rotateSecret,

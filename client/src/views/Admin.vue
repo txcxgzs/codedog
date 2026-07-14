@@ -1424,7 +1424,16 @@
               <el-tabs v-model="developerAppDetailTab">
                 <el-tab-pane label="API 调用记录" name="calls">
                   <el-table :data="developerAppCalls" v-loading="loadingDeveloperAppCalls" size="small" empty-text="暂无调用记录（部署本版本后开始记录）">
+                    <el-table-column type="expand" width="42">
+                      <template #default="{ row }">
+                        <div style="padding:8px 24px;display:grid;grid-template-columns:1fr 1fr;gap:12px">
+                          <div><b>请求内容</b><pre style="white-space:pre-wrap;word-break:break-all;background:#f6f7f9;padding:8px;border-radius:6px;max-height:220px;overflow:auto">{{ formatCallPayload(row.request) }}</pre></div>
+                          <div><b>返回内容</b><pre style="white-space:pre-wrap;word-break:break-all;background:#f6f7f9;padding:8px;border-radius:6px;max-height:220px;overflow:auto">{{ formatCallPayload(row.response) }}</pre></div>
+                        </div>
+                      </template>
+                    </el-table-column>
                     <el-table-column prop="created_at" label="时间" width="170"><template #default="{ row }">{{ formatDateTime(row.created_at) }}</template></el-table-column>
+                    <el-table-column prop="action" label="类型" width="100"><template #default="{ row }">{{ row.action === 'developer_api_fail' ? '失败/安全' : '成功调用' }}</template></el-table-column>
                     <el-table-column prop="method" label="方法" width="80" />
                     <el-table-column prop="path" label="接口" min-width="230" show-overflow-tooltip />
                     <el-table-column prop="status" label="状态码" width="90" />
@@ -5180,6 +5189,10 @@ onMounted(() => {
     fetchAdminUsers()
   }
 })
+const formatCallPayload = (value) => {
+  if (value == null || value === '') return '无记录'
+  try { return typeof value === 'string' ? JSON.stringify(JSON.parse(value), null, 2) : JSON.stringify(value, null, 2) } catch { return String(value) }
+}
 
 onBeforeUnmount(() => {
   if (logRefreshInterval) {

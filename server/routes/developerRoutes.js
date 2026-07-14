@@ -12,6 +12,7 @@ router.get('/docs/scopes', developerController.getScopeDocs);
 router.get('/apps', developerController.listMyApps);
 router.post('/apps', developerController.createApp);
 router.get('/apps/:id', developerController.getMyApp);
+router.get('/apps/:id/calls', developerController.listMyAppCalls);
 router.patch('/apps/:id', developerController.updateApp);
 router.put('/apps/:id', developerController.updateApp);
 router.post('/apps/:id/rotate-secret', developerController.rotateSecret);

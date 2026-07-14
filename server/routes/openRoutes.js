@@ -3,13 +3,14 @@ const router = express.Router();
 const developerController = require('../controllers/developerController');
 const { StudioMember, Studio, Follow, Favorite, Like, Work, Post, User, DeveloperApp } = require('../models');
 const { oauthAuth, requireScopes } = require('../middleware/oauthAuth');
-const { perAppRateLimiter, failLogMiddleware } = require('../middleware/developerOpenApi');
+const { perAppRateLimiter, failLogMiddleware, captureRequest, installResponseCapture, redact } = require('../middleware/developerOpenApi');
 
 const models = { DeveloperApp };
 
 router.use(failLogMiddleware(models));
 router.use(oauthAuth);
 router.use(function (req, res, next) {
+    installResponseCapture(res);
     res.on('finish', function () {
         // Skip failed-auth responses (401/403); those are logged separately as developer_api_fail by failLogMiddleware
         if (res.statusCode === 401 || res.statusCode === 403) return;
@@ -23,7 +24,9 @@ router.use(function (req, res, next) {
                 method: req.method,
                 path: req.originalUrl ? req.originalUrl.split('?')[0] : req.path,
                 status: res.statusCode,
-                oauth_user_id: req.oauth && req.oauth.userId || null
+                oauth_user_id: req.oauth && req.oauth.userId || null,
+                request: captureRequest(req),
+                response: (() => { try { return redact(JSON.parse(res.__developerResponseBody || 'null')); } catch (_) { return (res.__developerResponseBody || '').slice(0, 16384); } })()
             }),
             ip_address: req.ip || req.socket && req.socket.remoteAddress || 'unknown',
             user_agent: req.headers['user-agent'] || null

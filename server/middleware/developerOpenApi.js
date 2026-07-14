@@ -4,6 +4,43 @@ const { getDeveloperApiLogger } = require("../services/developerApiLogger");
 const DEFAULT_RATE_LIMIT_PER_MIN = 60;
 const AUTH_FAIL_MAX = Number(process.env.DEVELOPER_AUTH_FAIL_MAX || 20);
 const AUTH_FAIL_WINDOW_MS = Number(process.env.DEVELOPER_AUTH_FAIL_WINDOW || 15 * 60 * 1000);
+const MAX_CAPTURE_BYTES = Number(process.env.DEVELOPER_LOG_CAPTURE_BYTES || 16384);
+
+function redact(value, depth = 0) {
+  if (depth > 5) return '[MaxDepth]';
+  if (value === null || value === undefined) return value;
+  if (typeof value === 'string') return value.length > MAX_CAPTURE_BYTES ? value.slice(0, MAX_CAPTURE_BYTES) + '…[truncated]' : value;
+  if (Array.isArray(value)) return value.slice(0, 100).map(v => redact(v, depth + 1));
+  if (typeof value !== 'object') return value;
+  const out = {};
+  for (const [key, val] of Object.entries(value).slice(0, 100)) {
+    if (/authorization|cookie|secret|token|password|passwd|private.?key|client_secret/i.test(key)) out[key] = '[REDACTED]';
+    else out[key] = redact(val, depth + 1);
+  }
+  return out;
+}
+
+function captureRequest(req) {
+  const body = req.body && typeof req.body === 'object' ? redact(req.body) : null;
+  const headers = {};
+  for (const key of ['content-type', 'content-length', 'accept']) if (req.headers[key]) headers[key] = req.headers[key];
+  return { headers, query: redact(req.query || {}), body };
+}
+
+function installResponseCapture(res) {
+  let chunks = [];
+  const originalWrite = res.write;
+  const originalEnd = res.end;
+  res.write = function (chunk, encoding) {
+    if (chunks.join('').length < MAX_CAPTURE_BYTES && chunk) chunks.push(Buffer.isBuffer(chunk) ? chunk.toString(encoding) : String(chunk));
+    return originalWrite.apply(this, arguments);
+  };
+  res.end = function (chunk, encoding) {
+    if (chunks.join('').length < MAX_CAPTURE_BYTES && chunk) chunks.push(Buffer.isBuffer(chunk) ? chunk.toString(encoding) : String(chunk));
+    res.__developerResponseBody = chunks.join('').slice(0, MAX_CAPTURE_BYTES);
+    return originalEnd.apply(this, arguments);
+  };
+}
 
 const authFailLimiter = createRateLimiter({
   windowMs: AUTH_FAIL_WINDOW_MS,
@@ -56,6 +93,7 @@ function perAppRateLimiter(models) {
 function failLogMiddleware(models) {
   const logger = getDeveloperApiLogger(models);
   return (req, res, next) => {
+    installResponseCapture(res);
     res.on("finish", () => {
       if (res.statusCode === 401 || res.statusCode === 403) {
         logger.log({
@@ -67,7 +105,9 @@ function failLogMiddleware(models) {
             method: req.method,
             path: req.originalUrl ? req.originalUrl.split("?")[0] : req.path,
             status: res.statusCode,
-            ip: req.ip || req.socket && req.socket.remoteAddress || "unknown"
+            ip: req.ip || req.socket && req.socket.remoteAddress || "unknown",
+            request: captureRequest(req),
+            response: (() => { try { return redact(JSON.parse(res.__developerResponseBody || 'null')); } catch (_) { return (res.__developerResponseBody || '').slice(0, MAX_CAPTURE_BYTES); } })()
           }),
           ip_address: req.ip || req.socket && req.socket.remoteAddress || "unknown",
           user_agent: req.headers["user-agent"] || null
@@ -78,4 +118,4 @@ function failLogMiddleware(models) {
   };
 }
 
-module.exports = { perAppRateLimiter, authFailLimiter, failLogMiddleware, DEFAULT_RATE_LIMIT_PER_MIN };
+module.exports = { perAppRateLimiter, authFailLimiter, failLogMiddleware, DEFAULT_RATE_LIMIT_PER_MIN, captureRequest, installResponseCapture, redact };

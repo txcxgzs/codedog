@@ -7,6 +7,9 @@ export const developerApi = {
   getScopeDocs() {
     return request.get('/developer/docs/scopes')
   },
+  listAppCalls(id, params = {}) {
+    return request.get(`/developer/apps/${id}/calls`, { params })
+  },
   listApps() {
     return request.get('/developer/apps')
   },
