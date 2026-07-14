@@ -16,7 +16,6 @@
         <!-- Logo -->
         <a href="/" class="c-navigator--logo_wrap">
           <img src="https://static.codemao.cn/community/shequ_logo.png" alt="编程狗社区" class="c-navigator--logo_img" referrerpolicy="no-referrer">
-          <span class="c-navigator--logo_text">编程狗社区</span>
         </a>
         
         <!-- 导航菜单 -->
@@ -490,12 +489,6 @@ $shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
     display: block;
   }
   
-  .c-navigator--logo_text {
-    font-size: 20px;
-    font-weight: bold;
-    color: $text-color;
-    white-space: nowrap;
-  }
 }
 
 .c-navigator--nav_wrap {
@@ -702,9 +695,6 @@ $shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
     display: none;
   }
   
-  .c-navigator--logo_text {
-    display: none;
-  }
 }
 
 .r-ann--top_stack {

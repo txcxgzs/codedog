@@ -35,6 +35,21 @@
 .c-navigator--glass_toggle.is-active { color: #4f421f; border-color: rgba(254, 196, 51, .62); }
 .c-navigator--glass_beta { font-size: 11px; white-space: nowrap; }
 
+.c-navigator--glass_toggle::after,
+.c-navigator--user_info::after,
+.c-navigator--notification::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: radial-gradient(circle at 30% 0%, rgba(255,255,255,.6) 0%, transparent 55%);
+  opacity: .8;
+  transition: opacity .3s ease;
+}
+.c-navigator--glass_toggle:hover::after,
+.c-navigator--user_info:hover::after { opacity: 1; }
+
 @supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   html[data-liquid-glass='on'] body {
     background:
@@ -53,6 +68,7 @@
     box-shadow: 0 10px 30px rgba(67, 58, 38, .08);
     -webkit-backdrop-filter: blur(12px) saturate(135%);
     backdrop-filter: blur(12px) saturate(135%);
+    animation: codedog-liquid-breathe 7s ease-in-out infinite;
   }
 
   /* Keep interactive controls above any glass backdrops so clicks work */
@@ -78,48 +94,19 @@
     .c-navigator--nav_wrap .c-navigator--selected a
   ) {
     position: relative;
-    isolation: isolate;
-    overflow: hidden;
-    background: rgba(255,255,255,.18);
-    border-color: var(--liquid-glass-border);
+    background: rgba(255, 255, 255, .55);
+    border: 1px solid rgba(255,255,255,.75);
     box-shadow:
-      inset 0 1px 0 rgba(255,255,255,.92),
-      inset 2px 0 1px rgba(91, 213, 255, .20),
-      inset -2px 0 1px rgba(255, 121, 190, .16),
-      0 7px 22px rgba(42, 54, 62, .14);
+      inset 0 1px 0 rgba(255,255,255,.95),
+      inset 1px 0 0 rgba(120, 224, 255, .22),
+      inset -1px 0 0 rgba(255, 120, 200, .18),
+      0 8px 18px rgba(30,40,50,.10);
+    -webkit-backdrop-filter: blur(16px) saturate(150%);
+    backdrop-filter: blur(16px) saturate(150%);
+    transition: transform .28s cubic-bezier(.34,1.4,.6,1), box-shadow .28s ease;
   }
 
-  html[data-liquid-glass='on'] :is(
-    .c-navigator--glass_toggle,
-    .c-navigator--user_info,
-    .c-navigator--notification,
-    .c-navigator--nav_wrap .c-navigator--selected a
-  )::before {
-    content: '';
-    position: absolute;
-    inset: -4px;
-    z-index: -1;
-    pointer-events: none;
-    background: var(--liquid-glass-bg-strong);
-    -webkit-backdrop-filter: blur(7px) saturate(140%);
-    backdrop-filter: blur(7px) saturate(140%);
-  }
 
-  html[data-liquid-glass='on'] :is(
-    .c-navigator--glass_toggle,
-    .c-navigator--user_info,
-    .c-navigator--notification,
-    .c-navigator--nav_wrap .c-navigator--selected a
-  )::after {
-    content: '';
-    position: absolute;
-    inset: 1px;
-    border-radius: inherit;
-    z-index: 2;
-    pointer-events: none;
-    background: linear-gradient(135deg, rgba(255,255,255,.52), transparent 28%, transparent 68%, rgba(255,255,255,.22));
-    mix-blend-mode: screen;
-  }
 
   html[data-liquid-glass='on'] :is(
     .r-home--user_card,
@@ -173,14 +160,6 @@
     -webkit-backdrop-filter: blur(13px) saturate(135%);
     backdrop-filter: blur(13px) saturate(135%);
   }
-  html[data-liquid-glass='on'] :is(
-    .c-navigator--glass_toggle,
-    .c-navigator--user_info,
-    .c-navigator--notification,
-    .c-navigator--nav_wrap .c-navigator--selected a
-  )::before {
-    filter: none;
-  }
 }
 
 @media (max-width: 420px) {
@@ -195,4 +174,14 @@
     transition: none !important;
     transform: none !important;
   }
+}
+
+@keyframes codedog-liquid-shimmer {
+  0%   { transform: translateX(-8%) skewX(-6deg); opacity: .55; }
+  50%  { transform: translateX(8%)  skewX(-6deg); opacity: .85; }
+  100% { transform: translateX(-8%) skewX(-6deg); opacity: .55; }
+}
+@keyframes codedog-liquid-breathe {
+  0%, 100% { filter: blur(18px) saturate(145%); }
+  50%      { filter: blur(22px) saturate(160%); }
 }
