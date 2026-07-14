@@ -5905,4 +5905,32 @@ $sidebar-width: 200px;
 .r-admin--ops .el-button + .el-button {
   margin-left: 0;
 }
+
+/* 后台统一为清晰的深色导航 + 明亮管理画布 */
+.r-admin--page { background:radial-gradient(circle at 18% 0,rgba(255,205,92,.16),transparent 25rem),linear-gradient(145deg,#f3f6fb,#f8faff 55%,#fffaf0); }
+.r-admin--sidebar { width:224px; padding:12px; border-right:0; background:#172033; box-shadow:12px 0 36px rgba(23,32,51,.13); }
+.r-admin--sidebar .r-admin--logo { height:58px; justify-content:flex-start; padding:0 12px; border:0; border-radius:14px; background:rgba(255,255,255,.07); color:#fff; }
+.r-admin--sidebar .r-admin--logo .r-admin--logo_text { font-size:17px; font-weight:800; }
+.r-admin--sidebar :deep(.el-menu) { margin-top:12px; background:transparent; }
+.r-admin--sidebar :deep(.el-menu-item), .r-admin--sidebar :deep(.el-sub-menu__title) { height:44px; margin:4px 0; border-radius:11px; color:#aeb8c8; }
+.r-admin--sidebar :deep(.el-menu-item:hover), .r-admin--sidebar :deep(.el-sub-menu__title:hover) { background:rgba(255,255,255,.07); color:#fff; }
+.r-admin--sidebar :deep(.el-menu-item.is-active) { background:#fec433; color:#172033; font-weight:800; }
+.r-admin--main { margin-left:224px; padding:30px; }
+.r-admin--section { min-height:calc(100vh - 60px); padding:28px; border:1px solid rgba(255,255,255,.94); border-radius:20px; background:rgba(255,255,255,.84); box-shadow:0 18px 50px rgba(39,55,82,.075); }
+.r-admin--title { color:#172033; font-size:25px; letter-spacing:-.025em; font-weight:800; }
+.r-admin--header { padding-bottom:18px; border-bottom:1px solid #edf0f5; }
+.r-admin--filters :deep(.el-input__wrapper), .r-admin--filters :deep(.el-select__wrapper) { min-height:40px; border-radius:11px!important; background:#f8faff; box-shadow:0 0 0 1px #e2e7ef inset; }
+.r-admin--filters .el-button { height:40px; border-radius:11px!important; font-weight:700; }
+.r-admin--stat_card { padding:20px; border-color:#e7ebf2; border-radius:15px; box-shadow:0 8px 24px rgba(39,55,82,.045); }
+.r-admin--stat_card::before { width:4px; border-radius:4px 0 0 4px; }
+.r-admin--stat_card .r-admin--stat_icon_wrap { width:42px; height:42px; border-radius:11px; }
+.r-admin--chart_section { border-color:#e7ebf2; border-radius:16px; box-shadow:0 8px 25px rgba(39,55,82,.04); }
+.r-admin--section :deep(.el-table) { overflow:hidden; border:1px solid #e7ebf2; border-radius:14px; }
+.r-admin--section :deep(.el-table th.el-table__cell) { height:48px; background:#f7f9fc; color:#5f6b7d; font-weight:700; }
+.r-admin--section :deep(.el-table td.el-table__cell) { height:56px; }
+.r-admin--section :deep(.el-table__row:hover > td.el-table__cell) { background:#fffaf0; }
+.r-admin--pagination { padding-top:20px; }
+.r-admin--ops .el-button { border-radius:9px!important; }
+:deep(.el-drawer) { border-radius:22px 0 0 22px; overflow:hidden; }
+@media(max-width:900px){.r-admin--sidebar{width:76px;padding:8px}.r-admin--sidebar .r-admin--logo_text,.r-admin--sidebar :deep(.el-menu-item span),.r-admin--sidebar :deep(.el-sub-menu__title span){display:none}.r-admin--main{margin-left:76px;padding:16px}.r-admin--section{padding:18px}}
 </style>

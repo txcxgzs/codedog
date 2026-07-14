@@ -376,7 +376,7 @@ $border-color: #eee;
     background-size: cover;
     background-position: center;
     position: relative;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); /* 默认渐变底色 */
+    background-color: #6978dc; /* 仅作加载兜底，不能覆盖模板传入的 background-image */
 
     /* 工作室首字艺术字占位符 */
     .r-studio--cover_placeholder {
@@ -500,6 +500,7 @@ $border-color: #eee;
 .r-studio--header .r-studio--header_actions .r-studio--search_input :deep(.el-input-group__append .el-button) { width:52px; padding:0; border-radius:0!important; }
 .r-studio--header .el-button { height:44px; padding:0 19px; border:0; border-radius:12px!important; box-shadow:0 9px 22px rgba(220,159,24,.2); }
 .r-studio--tabs { display:inline-flex; margin-bottom:18px; padding:5px; border:1px solid rgba(255,255,255,.92); border-radius:14px; background:rgba(255,255,255,.72); backdrop-filter:blur(16px); box-shadow:0 10px 28px rgba(39,55,82,.06); }
+.r-studio--tabs :deep(.el-radio-group) { display:flex; gap:8px; }
 .r-studio--tabs :deep(.el-radio-button) { margin:0; }
 .r-studio--tabs :deep(.el-radio-button .el-radio-button__inner) { padding:9px 18px; border:0!important; border-radius:10px!important; background:transparent; color:#667085; font-weight:600; }
 .r-studio--tabs :deep(.el-radio-button.is-active .el-radio-button__inner) { color:#fff; background:#172033; box-shadow:0 6px 14px rgba(23,32,51,.16)!important; }

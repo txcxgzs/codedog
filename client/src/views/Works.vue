@@ -280,7 +280,7 @@ $white: #fff;
   z-index: 1;
   max-width: 1200px;
   margin: 0 auto;
-  padding: 28px 24px 72px;
+  padding: 28px 0 72px;
 }
 
 .work-grid {
@@ -367,6 +367,6 @@ $white: #fff;
   .page-header { margin-top: 14px; padding: 34px 18px; border-radius: 18px; }
   .filter-bar { position: relative; top: auto; }
   .filter-actions { width:100%; .search-input{flex:1;width:auto}.sort-select{max-width:120px} }
-  .works-container { padding: 20px 14px 52px; }
+  .works-container { width:calc(100% - 28px); padding:20px 0 52px; }
 }
 </style>

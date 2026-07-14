@@ -706,7 +706,7 @@ $border-color: #eee;
     border-radius: 6px;
     background-size: cover;
     background-position: center;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background-color: #6978dc;
     flex-shrink: 0;
     position: relative;
     overflow: hidden;

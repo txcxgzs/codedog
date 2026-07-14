@@ -170,7 +170,7 @@ const communityColorMap = {
 }
 const communityAnnStyle = (item) => {
   const theme = communityColorMap[item?.color] || communityColorMap.blue
-  return { background: theme.bg, borderLeft: `3px solid ${theme.border}` }
+  return { background: theme.bg, color: theme.border }
 }
 const loadCommunityAnnouncements = async () => {
   try {
@@ -644,6 +644,9 @@ $border-color: #eee;
 .r-community--sidebar { width: 292px; position: sticky; top: 82px; }
 .r-community--side_card { padding: 20px; border: 1px solid rgba(255,255,255,.9); border-radius: 18px; background: rgba(255,255,255,.76); backdrop-filter: blur(16px); box-shadow: 0 14px 40px rgba(39,55,82,.07); }
 .r-community--side_card:first-child { background: linear-gradient(145deg, rgba(255,250,232,.94), rgba(255,255,255,.82)); }
+.r-community--ann_item { padding:12px 14px; border:0!important; border-radius:11px; }
+.r-community--ann_title { color:#9f2f35; font-weight:700; }
+.r-community--ann_content { margin-top:3px; color:#8b4a4e; line-height:1.55; }
 .r-community--side_card .r-community--card_title { color: #1b2436; font-size: 16px; border-bottom-color: rgba(219,164,37,.18); }
 .r-community--side_card ul { padding-left: 18px; }
 .r-community--side_card ul li { color: #697386; line-height: 2.15; }
