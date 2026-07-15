@@ -424,6 +424,7 @@ async function startServer() {
         }
 
         await sequelize.sync(syncOptions);
+        require('./services/imStatusPush').startImStatusPush();
         if (sessionStore) await sessionStore.sync();
         console.log('Database models synchronized.');
 

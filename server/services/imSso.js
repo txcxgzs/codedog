@@ -52,6 +52,7 @@ function createImTicket(user, context = {}) {
     avatar: user.avatar || '',
     codemao_user_id: user.codemao_user_id || '',
     role: user.role,
+    status: user.status || 'active',
     token_version: user.token_version || 0,
     community_url: communityUrl,
     community_status_url: `${communityUrl}/api/users/im-status`,
@@ -77,9 +78,22 @@ function verifyImStatusToken(token) {
   return payload;
 }
 
+function createImStatusEvent(user) {
+  const userId = user.id || user.user_id;
+  return jwt.sign({
+    purpose: 'im_status_push',
+    status: user.status,
+    role: user.role,
+    token_version: user.token_version || 0
+  }, signingKey(), {
+    algorithm: 'RS256', issuer: 'codedog-community', audience: 'codedog-im-status-push',
+    subject: String(userId), jwtid: crypto.randomUUID(), expiresIn: '5m'
+  });
+}
+
 function getImPublicUrl() {
   const value = String(process.env.IM_PUBLIC_URL || '').trim().replace(/\/$/, '');
   return value || null;
 }
 
-module.exports = { createImTicket, getImPublicUrl, verifyImStatusToken };
+module.exports = { createImTicket, createImStatusEvent, getImPublicUrl, verifyImStatusToken };

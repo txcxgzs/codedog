@@ -4,7 +4,8 @@ const cookie = require('cookie');
 const config = require('./config');
 const { consumeOnce } = require('./replayStore');
 const crypto = require('crypto');
-const { verifyCommunityStatus } = require('./communityStatus');
+const { assertAccountActive } = require('./accountStatus');
+const { setAccountState } = require('./replayStore');
 
 function requestContext(req) {
   const header = name => String(req.headers?.[name] || '').trim().toLowerCase();
@@ -68,8 +69,7 @@ async function exchangeTicket(ticket, req) {
     status_token: payload.status_token || '', binding_nonce: payload.binding_nonce,
     client_ip_hash: payload.client_ip_hash, browser_hash: payload.browser_hash
   };
-  const current = await verifyCommunityStatus(user, true);
-  user.role = current.role || user.role;
+  await setAccountState(user.id, { status: payload.status || 'active', role: user.role, token_version: user.token_version, updated_at: Date.now() });
   const session = jwt.sign({ ...user, type: 'im_session' }, config.sessionSecret, {
     algorithm: 'HS256', issuer: 'codedog-im', audience: 'codedog-im-client', expiresIn: '30m'
   });
@@ -91,7 +91,7 @@ function parseSession(req) {
 async function requireSession(req, res, next) {
   const user = parseSession(req);
   if (!user) return res.status(401).json({ code: 401, msg: '会话已过期或登录环境已变化，请重新从编程狗进入', data: null });
-  try { const current = await verifyCommunityStatus(user); req.user = { ...user, role: current.role || user.role }; next(); }
+  try { req.user = await assertAccountActive(user); next(); }
   catch (error) { return res.status(error.statusCode || 401).json({ code: error.statusCode || 401, msg: error.message, data: null }); }
 }
 

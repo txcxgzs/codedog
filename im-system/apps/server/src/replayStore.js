@@ -2,6 +2,7 @@ const { createClient } = require('redis');
 const config = require('./config');
 
 const local = new Map();
+const localAccounts = new Map();
 let client = null;
 
 async function connectReplayStore() {
@@ -21,4 +22,18 @@ async function consumeOnce(jti, expiresAtMs) {
   return true;
 }
 
-module.exports = { connectReplayStore, consumeOnce };
+async function setAccountState(userId, state) {
+  const value = JSON.stringify(state);
+  if (client?.isReady) await client.set(`im:account:state:${Number(userId)}`, value);
+  localAccounts.set(Number(userId), state);
+}
+
+async function getAccountState(userId) {
+  if (client?.isReady) {
+    const value = await client.get(`im:account:state:${Number(userId)}`);
+    if (value) return JSON.parse(value);
+  }
+  return localAccounts.get(Number(userId)) || null;
+}
+
+module.exports = { connectReplayStore, consumeOnce, setAccountState, getAccountState };

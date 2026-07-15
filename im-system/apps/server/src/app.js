@@ -11,12 +11,13 @@ const { Op } = require('sequelize');
 const config = require('./config');
 const { exchangeTicket, parseSession, requireSession } = require('./auth');
 const { connectReplayStore } = require('./replayStore');
-const { verifyCommunityStatus } = require('./communityStatus');
+const { acceptStatusPush, assertAccountActive } = require('./accountStatus');
 const { sequelize, UserProfile, Conversation, ConversationMember, Message, Group, Image, AdminAudit, Report, connectDatabase } = require('./database');
 const { uploadImage } = require('./imageHost');
 const { sceneConfig, registerCaptcha, validateCaptcha, requireCaptcha } = require('./captcha');
 
 const app = express();
+const socketsByUser = new Map();
 app.disable('x-powered-by');
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(cors({ origin(origin, cb) {
@@ -31,6 +32,16 @@ const fail = (res, status, msg) => res.status(status).json({ code: status, msg, 
 app.get('/health', async (req, res) => {
   try { await sequelize.authenticate(); ok(res, { status: 'healthy', database: 'up', version: '0.1.0' }); }
   catch { fail(res, 503, 'database unavailable'); }
+});
+
+app.post('/api/internal/account-status', async (req, res) => {
+  try {
+    const { userId, state } = await acceptStatusPush(req.body?.token);
+    if (state.status !== 'active') {
+      for (const socket of socketsByUser.get(userId) || []) socket.close(4001, 'account disabled');
+    }
+    ok(res, { user_id: userId, status: state.status }, '账号状态已同步');
+  } catch (error) { fail(res, error.statusCode || 401, error.message); }
 });
 
 app.post('/api/auth/sso/exchange', async (req, res) => {
@@ -397,7 +408,6 @@ app.use((error, req, res, next) => {
 
 const server = http.createServer(app);
 const wss = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 });
-const socketsByUser = new Map();
 
 function broadcastConversation(conversationId, event, data) {
   ConversationMember.findAll({ where: { conversation_id: conversationId, state: 'active' }, attributes: ['user_id'] }).then(members => {
@@ -412,13 +422,12 @@ server.on('upgrade', async (req, socket, head) => {
   if (req.headers.origin && config.publicOrigins.length && !config.publicOrigins.includes(req.headers.origin)) return socket.destroy();
   const user = parseSession(req);
   if (!user) return socket.destroy();
-  try { await verifyCommunityStatus(user); } catch { return socket.destroy(); }
+  try { await assertAccountActive(user); } catch { return socket.destroy(); }
   wss.handleUpgrade(req, socket, head, ws => wss.emit('connection', ws, user));
 });
 wss.on('connection', (ws, user) => {
   const set = socketsByUser.get(Number(user.id)) || new Set(); set.add(ws); socketsByUser.set(Number(user.id), set);
   ws.send(JSON.stringify({ version: 1, event: 'auth.ok', data: { user_id: user.id } }));
-  const statusTimer = setInterval(() => verifyCommunityStatus(user, true).catch(() => ws.close(4001, 'account status invalid')), 60 * 1000);
   ws.on('message', async raw => {
     try {
       const frame = JSON.parse(raw.toString());
@@ -431,7 +440,7 @@ wss.on('connection', (ws, user) => {
       }
     } catch (error) { ws.send(JSON.stringify({ version: 1, event: 'message.error', data: { message: error.message } })); }
   });
-  ws.on('close', () => { clearInterval(statusTimer); set.delete(ws); if (!set.size) socketsByUser.delete(Number(user.id)); });
+  ws.on('close', () => { set.delete(ws); if (!set.size) socketsByUser.delete(Number(user.id)); });
 });
 
 async function start() {

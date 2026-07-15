@@ -720,6 +720,9 @@ async function updateUserStatus(req, res) {
         }
 
         await DbAdapter.update(User, { status }, { where: { id: userId } });
+        const refreshedUser = await DbAdapter.findByPk(User, userId, { attributes: ['id', 'status', 'role', 'token_version'] });
+        try { require('../services/imStatusPush').enqueueImStatus(refreshedUser); }
+        catch (pushError) { console.error('[IM status enqueue]', pushError.message); }
         
         logOperation(req, 'update_user_status', 'user', userId, { 
             username: user.username, 
