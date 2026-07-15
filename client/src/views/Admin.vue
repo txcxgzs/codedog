@@ -1908,35 +1908,6 @@
               </div>
             </el-dialog>
             
-            <!-- 极验验证码 -->
-            <div class="r-admin--config_section" id="config-geetest">
-              <div class="r-admin--config_section_title">
-                <span class="r-admin--config_section_icon">🔐</span>
-                <span>极验验证码</span>
-                <el-switch v-model="configForm.geetest_enabled" active-text="开启" inactive-text="关闭" active-value="true" inactive-value="false" class="r-admin--config_section_switch" />
-              </div>
-              <el-form :model="configForm" label-width="90px" class="r-admin--config_form">
-                <el-row :gutter="20">
-                  <el-col :span="8"><el-form-item label="极验 ID"><el-input v-model="configForm.geetest_id" placeholder="后台获取" /></el-form-item></el-col>
-                  <el-col :span="8"><el-form-item label="极验 KEY"><el-input v-model="configForm.geetest_key" show-password placeholder="后台获取" /></el-form-item></el-col>
-                  <el-col :span="8"><el-form-item label="展现形式"><el-select v-model="configForm.geetest_product" style="width:100%"><el-option label="弹出式" value="popup" /><el-option label="浮动式" value="float" /><el-option label="隐藏按钮式" value="bind" /></el-select></el-form-item></el-col>
-                </el-row>
-                <div class="r-admin--switch_grid">
-                  <div class="r-admin--switch_item" v-for="item in [
-                    {key:'geetest_login',label:'登录'},{key:'geetest_register',label:'注册'},{key:'geetest_like',label:'点赞'},
-                    {key:'geetest_comment',label:'评论'},{key:'geetest_reply',label:'回复'},{key:'geetest_report',label:'举报'},
-                    {key:'geetest_publish_work',label:'发布作品'},{key:'geetest_publish_post',label:'发布帖子'},{key:'geetest_favorite',label:'收藏'},
-                    {key:'geetest_update_profile',label:'修改资料'},{key:'geetest_create_studio',label:'创建工作室'},{key:'geetest_join_studio',label:'加入工作室'},
-                    {key:'geetest_submit_work',label:'投稿作品'},{key:'geetest_review_member',label:'审核成员'},
-                    {key:'geetest_developer_app',label:'申请开发者应用'}
-                  ]" :key="item.key">
-                    <span class="r-admin--switch_label">{{ item.label }}</span>
-                    <el-switch v-model="configForm[item.key]" active-value="true" inactive-value="false" />
-                  </div>
-                </div>
-              </el-form>
-            </div>
-
             <!-- 数据库配置 -->
             <div class="r-admin--config_section" id="config-db">
               <div class="r-admin--config_section_title">
@@ -2075,12 +2046,48 @@
           </div>
         </div>
         
-        <!-- hCaptcha配置 -->
-        <div v-if="activeMenu === 'security'" class="r-admin--section">
+        <!-- 安全验证配置：极验与 hCaptcha 统一在此管理 -->
+        <div v-if="activeMenu === 'security'" class="r-admin--section" v-loading="loadingConfigs">
           <div class="r-admin--header">
-            <h2 class="r-admin--title">hCaptcha 安全验证</h2>
-            <p class="r-admin--subtitle">开启后，用户访问社区需先通过hCaptcha验证，验证过期后需重新验证</p>
+            <h2 class="r-admin--title">安全验证</h2>
+            <p class="r-admin--subtitle">统一管理操作级极验验证码与全站访问 hCaptcha 验证</p>
           </div>
+
+          <!-- 极验验证码从“系统设置”迁移至“安全验证”，配置字段与场景开关保持不变。 -->
+          <div class="r-admin--config_section" id="config-geetest">
+            <div class="r-admin--config_section_title">
+              <span class="r-admin--config_section_icon">🔐</span>
+              <span>极验验证码</span>
+              <el-switch v-model="configForm.geetest_enabled" active-text="开启" inactive-text="关闭" active-value="true" inactive-value="false" class="r-admin--config_section_switch" />
+            </div>
+            <el-form :model="configForm" label-width="90px" class="r-admin--config_form">
+              <el-row :gutter="20">
+                <el-col :span="8"><el-form-item label="极验 ID"><el-input v-model="configForm.geetest_id" placeholder="后台获取" /></el-form-item></el-col>
+                <el-col :span="8"><el-form-item label="极验 KEY"><el-input v-model="configForm.geetest_key" show-password placeholder="后台获取" /></el-form-item></el-col>
+                <el-col :span="8"><el-form-item label="展现形式"><el-select v-model="configForm.geetest_product" style="width:100%"><el-option label="弹出式" value="popup" /><el-option label="浮动式" value="float" /><el-option label="隐藏按钮式" value="bind" /></el-select></el-form-item></el-col>
+              </el-row>
+              <div class="r-admin--switch_grid">
+                <div class="r-admin--switch_item" v-for="item in [
+                  {key:'geetest_login',label:'登录'},{key:'geetest_register',label:'注册'},{key:'geetest_like',label:'点赞'},
+                  {key:'geetest_comment',label:'评论'},{key:'geetest_reply',label:'回复'},{key:'geetest_report',label:'举报'},
+                  {key:'geetest_publish_work',label:'发布作品'},{key:'geetest_publish_post',label:'发布帖子'},{key:'geetest_favorite',label:'收藏'},
+                  {key:'geetest_update_profile',label:'修改资料'},{key:'geetest_create_studio',label:'创建工作室'},{key:'geetest_join_studio',label:'加入工作室'},
+                  {key:'geetest_submit_work',label:'投稿作品'},{key:'geetest_review_member',label:'审核成员'},
+                  {key:'geetest_developer_app',label:'申请开发者应用'}
+                ]" :key="item.key">
+                  <span class="r-admin--switch_label">{{ item.label }}</span>
+                  <el-switch v-model="configForm[item.key]" active-value="true" inactive-value="false" />
+                </div>
+              </div>
+            </el-form>
+          </div>
+
+          <div class="r-admin--config_section">
+            <div class="r-admin--config_section_title">
+              <span class="r-admin--config_section_icon">🛡️</span>
+              <span>hCaptcha 安全验证</span>
+            </div>
+            <p class="r-admin--subtitle">开启后，用户访问社区需先通过 hCaptcha 验证，验证过期后需重新验证</p>
           <el-form :model="configForm" label-width="120px" class="r-admin--form">
             <el-form-item label="启用hCaptcha">
               <el-switch v-model="configForm.hcaptcha_enabled" active-value="true" inactive-value="false" />
@@ -2096,9 +2103,10 @@
               <span style="margin-left: 10px; color: #999;">分钟（1-1440分钟，即最长24小时）</span>
             </el-form-item>
             <el-form-item>
-              <el-button type="primary" @click="saveConfig">保存配置</el-button>
+              <el-button type="primary" @click="saveSecurityConfig" :loading="savingConfigs">保存安全验证设置</el-button>
             </el-form-item>
           </el-form>
+          </div>
           
           <!-- 验证码统计 -->
           <div class="r-admin--captcha-stats">
@@ -3627,19 +3635,34 @@ const saveConfigs = async () => {
   finally { savingConfigs.value = false }
 }
 
-const saveConfig = async () => {
+const geetestConfigKeys = [
+  'geetest_enabled', 'geetest_id', 'geetest_key', 'geetest_product',
+  'geetest_login', 'geetest_register', 'geetest_like', 'geetest_comment',
+  'geetest_reply', 'geetest_report', 'geetest_publish_work', 'geetest_publish_post',
+  'geetest_favorite', 'geetest_update_profile', 'geetest_create_studio',
+  'geetest_join_studio', 'geetest_submit_work', 'geetest_review_member',
+  'geetest_developer_app'
+]
+
+const saveSecurityConfig = async () => {
   savingConfigs.value = true
   try {
     configForm.value.hcaptcha_expire_minutes = String(hcaptchaExpireMinutes.value)
-    const hcaptchaPayload = {
+    const securityPayload = Object.fromEntries(
+      geetestConfigKeys.map(key => [key, configForm.value[key]])
+    )
+    Object.assign(securityPayload, {
       hcaptcha_enabled: configForm.value.hcaptcha_enabled,
       hcaptcha_site_key: configForm.value.hcaptcha_site_key,
       hcaptcha_expire_minutes: configForm.value.hcaptcha_expire_minutes
+    })
+    if (MASKED_PLACEHOLDERS.includes(securityPayload.geetest_key)) {
+      delete securityPayload.geetest_key
     }
     if (!MASKED_PLACEHOLDERS.includes(configForm.value.hcaptcha_secret_key)) {
-      hcaptchaPayload.hcaptcha_secret_key = configForm.value.hcaptcha_secret_key
+      securityPayload.hcaptcha_secret_key = configForm.value.hcaptcha_secret_key
     }
-    const res = await adminApi.batchUpdateConfigs(hcaptchaPayload)
+    const res = await adminApi.batchUpdateConfigs(securityPayload)
     if (res.code === 200) {
       ElMessage.success('保存成功')
     } else {
