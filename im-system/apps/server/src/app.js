@@ -11,6 +11,7 @@ const { Op } = require('sequelize');
 const config = require('./config');
 const { exchangeTicket, parseSession, requireSession } = require('./auth');
 const { connectReplayStore } = require('./replayStore');
+const { verifyCommunityStatus } = require('./communityStatus');
 const { sequelize, UserProfile, Conversation, ConversationMember, Message, Group, Image, AdminAudit, Report, connectDatabase } = require('./database');
 const { uploadImage } = require('./imageHost');
 
@@ -33,11 +34,11 @@ app.get('/health', async (req, res) => {
 
 app.post('/api/auth/sso/exchange', async (req, res) => {
   try {
-    const { session, user, peer } = await exchangeTicket(String(req.body?.ticket || ''));
+    const { session, user, peer } = await exchangeTicket(String(req.body?.ticket || ''), req);
     await UserProfile.upsert({ id: user.id, username: user.username, nickname: user.nickname || null, avatar: user.avatar || null, codemao_user_id: user.codemao_user_id || null, role: user.role || 'user' });
     if (peer?.id) await UserProfile.upsert({ id: Number(peer.id), username: peer.username, nickname: peer.nickname || null, avatar: peer.avatar || null, codemao_user_id: peer.codemao_user_id || null, role: peer.role || 'user' });
     const secure = config.production ? '; Secure' : '';
-    res.append('Set-Cookie', `im_session=${session}; Path=/; HttpOnly; SameSite=Lax; Max-Age=43200${secure}`);
+    res.append('Set-Cookie', `im_session=${session}; Path=/; HttpOnly; SameSite=Lax; Max-Age=1800${secure}`);
     ok(res, user, '登录成功');
   } catch (error) { fail(res, error.statusCode || 401, error.message || 'SSO 登录失败'); }
 });
@@ -382,16 +383,18 @@ function broadcastConversation(conversationId, event, data) {
   }).catch(console.error);
 }
 
-server.on('upgrade', (req, socket, head) => {
+server.on('upgrade', async (req, socket, head) => {
   if (req.url !== '/ws') return socket.destroy();
   if (req.headers.origin && config.publicOrigins.length && !config.publicOrigins.includes(req.headers.origin)) return socket.destroy();
   const user = parseSession(req);
   if (!user) return socket.destroy();
+  try { await verifyCommunityStatus(user); } catch { return socket.destroy(); }
   wss.handleUpgrade(req, socket, head, ws => wss.emit('connection', ws, user));
 });
 wss.on('connection', (ws, user) => {
   const set = socketsByUser.get(Number(user.id)) || new Set(); set.add(ws); socketsByUser.set(Number(user.id), set);
   ws.send(JSON.stringify({ version: 1, event: 'auth.ok', data: { user_id: user.id } }));
+  const statusTimer = setInterval(() => verifyCommunityStatus(user, true).catch(() => ws.close(4001, 'account status invalid')), 60 * 1000);
   ws.on('message', async raw => {
     try {
       const frame = JSON.parse(raw.toString());
@@ -404,7 +407,7 @@ wss.on('connection', (ws, user) => {
       }
     } catch (error) { ws.send(JSON.stringify({ version: 1, event: 'message.error', data: { message: error.message } })); }
   });
-  ws.on('close', () => { set.delete(ws); if (!set.size) socketsByUser.delete(Number(user.id)); });
+  ws.on('close', () => { clearInterval(statusTimer); set.delete(ws); if (!set.size) socketsByUser.delete(Number(user.id)); });
 });
 
 async function start() {

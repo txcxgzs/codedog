@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node src/app.js",
     "dev": "node --watch src/app.js",
-    "check": "node --check src/app.js && node --check src/auth.js && node --check src/database.js && node --check src/imageHost.js && node --check src/replayStore.js && node --check ../../scripts/toolbox.js && node --check ../../scripts/update.js && node --check ../../scripts/bind-community.js",
+    "check": "node --check src/app.js && node --check src/auth.js && node --check src/communityStatus.js && node --check src/database.js && node --check src/imageHost.js && node --check src/replayStore.js && node --check ../../scripts/toolbox.js && node --check ../../scripts/update.js && node --check ../../scripts/bind-community.js",
     "test": "node --test test/*.test.js"
   },
   "dependencies": {

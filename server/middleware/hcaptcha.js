@@ -43,6 +43,9 @@ async function hcaptchaGuard(req, res, next) {
         '/api/users/logout',
         '/api/users/me',  // 修复: /users/me 用于 cookie 登录恢复,不能被 hCaptcha 拦截(否则已登录用户刷新后会永远显示未登录)
         '/api/users/restore-from-impersonate',
+        // IM uses a short-lived RSA-signed server credential for this callback.
+        // It cannot complete an interactive captcha and is verified by imSso.js.
+        '/api/users/im-status',
         '/api/health',
         '/api/hcaptcha',
         '/api/geetest',

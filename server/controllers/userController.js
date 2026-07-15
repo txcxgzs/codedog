@@ -718,12 +718,26 @@ async function createImSsoTicket(req, res) {
             if (!['admin', 'superadmin'].includes(user.role)) return errorResponse(res, '无权访问即时通讯后台', 403);
             params.set('action', 'admin');
         }
-        const ticket = createImTicket(user, { peer });
+        const ticket = createImTicket(user, { peer, req });
         params.set('ticket', ticket);
         return successResponse(res, { url: `${publicUrl}/sso?${params.toString()}` }, '正在进入即时通讯');
     } catch (error) {
         console.error('创建 IM SSO Ticket 失败:', error.message);
         return errorResponse(res, error.message || '即时通讯登录失败', error.statusCode || 500);
+    }
+}
+
+async function getImAccountStatus(req, res) {
+    try {
+        const token = String(req.get('authorization') || '').replace(/^Bearer\s+/i, '').trim();
+        if (!token) return errorResponse(res, '缺少 IM 状态凭证', 401);
+        const { verifyImStatusToken } = require('../services/imSso');
+        const payload = verifyImStatusToken(token);
+        const user = await DbAdapter.findByPk(User, Number(payload.sub), { attributes: ['id', 'status', 'role', 'token_version'] });
+        if (!user || user.status !== 'active' || Number(user.token_version || 0) !== Number(payload.token_version || 0)) return errorResponse(res, '账号已停用或登录状态已失效', 403);
+        return successResponse(res, { active: true, user_id: Number(user.id), role: user.role, token_version: user.token_version || 0 });
+    } catch (error) {
+        return errorResponse(res, 'IM 状态凭证无效或已过期', 401);
     }
 }
 
@@ -781,5 +795,6 @@ module.exports = {
     getCurrentUser,
     updateProfile,
     getUserById,
-    createImSsoTicket
+    createImSsoTicket,
+    getImAccountStatus
 };

@@ -60,6 +60,13 @@
       </section>
     </div>
     <div v-if="toast.message" :class="['toast', toast.type]">{{ toast.message }}</div>
+    <div v-if="sessionExpired" class="modal-mask session-expired">
+      <section class="report-dialog" role="alertdialog" aria-modal="true">
+        <header><div><small>安全会话</small><h2>请从编程狗重新进入</h2></div></header>
+        <p>即时通讯登录每 30 分钟失效一次，以防登录链接或会话被他人冒用。返回编程狗后再次点击“即时通讯”即可继续。</p>
+        <footer><a class="reauth-button" :href="communityUrl">返回编程狗</a></footer>
+      </section>
+    </div>
   </main>
 </template>
 
@@ -70,6 +77,7 @@ const me = ref(null), conversations = ref([]), requests = ref([]), selected = re
 const filter = ref(''), draft = ref(''), loading = ref(false), sending = ref(false), socketState = ref('正在连接'), timeline = ref(null)
 const createPanel = ref(false), peerId = ref(''), groupName = ref('')
 const avatarFailed = ref(false)
+const sessionExpired = ref(false)
 const reportDialog = reactive({ open: false, message: null, reason: '', error: '', submitting: false })
 const toast = reactive({ message: '', type: 'success' })
 let socket = null
@@ -85,7 +93,10 @@ const filteredConversations = computed(() => {
 })
 const api = async (url, options = {}) => {
   const response = await fetch(`/im/api${url}`, { credentials: 'include', headers: { 'Content-Type': 'application/json', ...(options.headers || {}) }, ...options })
-  const body = await response.json(); if (!response.ok) throw new Error(body.msg || '请求失败'); return body.data
+  const body = await response.json()
+  if (response.status === 401) sessionExpired.value = true
+  if (!response.ok) throw new Error(body.msg || '请求失败')
+  return body.data
 }
 const exchangeSso = async () => {
   const params = new URLSearchParams(location.search), ticket = params.get('ticket')
@@ -100,6 +111,8 @@ const load = async () => {
   const intent = await exchangeSso()
   if (intent?.action === 'admin') return location.replace('/im/admin/')
   me.value = await api('/me')
+  const expiresIn = Number(me.value?.exp || 0) * 1000 - Date.now()
+  if (expiresIn > 0) window.setTimeout(() => { sessionExpired.value = true; socket?.close() }, expiresIn)
   if (intent?.action === 'direct' && intent.userId) await api('/conversations/direct', { method:'POST', body:JSON.stringify({ user_id:intent.userId }) })
   if (intent?.action === 'group' && intent.groupId) await api(`/groups/${intent.groupId}/join`, { method:'POST' })
   await refreshSidebar(); connectSocket()
@@ -133,7 +146,14 @@ const connectSocket = () => {
   const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
   socket = new WebSocket(`${protocol}//${location.host}/im/ws`)
   socket.onopen = () => { socketState.value = '实时链路在线' }
-  socket.onclose = () => { socketState.value = '链路已断开'; setTimeout(connectSocket, 2000) }
+  socket.onclose = event => {
+    socketState.value = '链路已断开'
+    if (event.code === 4001 || Number(me.value?.exp || 0) * 1000 <= Date.now()) {
+      sessionExpired.value = true
+      return
+    }
+    if (!sessionExpired.value) setTimeout(connectSocket, 2000)
+  }
   socket.onmessage = async event => { const frame = JSON.parse(event.data); if (frame.event === 'message.new' && Number(frame.data.conversation_id) === Number(selected.value?.id) && !messages.value.some(item => String(item.id) === String(frame.data.id))) { messages.value.push(frame.data); await nextTick(); timeline.value?.scrollTo(0, timeline.value.scrollHeight) } }
 }
 const formatTime = value => value ? new Date(value).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) : ''
@@ -165,4 +185,5 @@ onUnmounted(() => socket?.close())
 .report-dialog header{display:flex;justify-content:space-between;align-items:flex-start}.report-dialog header small{color:#c88700}.report-dialog h2{margin:5px 0 0}.report-dialog header button{border:0;background:transparent;color:#8c929b;font-size:26px;cursor:pointer}.report-dialog>p{color:#7f858e;font-size:13px;line-height:1.7}
 .report-dialog label{display:grid;grid-template-columns:1fr auto;gap:8px;color:#4f555d;font-size:13px}.report-dialog label span{color:#a0a5ad}.report-dialog textarea{grid-column:1/-1;min-height:120px;resize:vertical;padding:12px;border:1px solid #dfe2e7;border-radius:10px;outline:none}.report-dialog textarea:focus{border-color:#fec433;box-shadow:0 0 0 3px #fff5d6}.report-dialog footer{display:flex;justify-content:flex-end;gap:10px;margin-top:18px}.report-dialog footer button{height:38px;padding:0 17px;border:0;border-radius:9px;background:#fec433;font-weight:700;cursor:pointer}.report-dialog footer button.ghost{border:1px solid #dfe2e7;background:#fff;color:#666}.report-dialog footer button:disabled{opacity:.5}.dialog-error{margin-top:10px;padding:9px 11px;border-radius:8px;background:#fff1f1;color:#d34b4b;font-size:12px}
 .toast{position:fixed;z-index:1100;top:24px;left:50%;transform:translateX(-50%);padding:11px 18px;border:1px solid #dce7d8;border-radius:10px;background:#f2fbef;color:#38823b;box-shadow:0 10px 30px rgba(31,35,41,.16)}.toast.error{border-color:#f3c1c1;background:#fff2f2;color:#c74343}.toast.warning{border-color:#f0d27c;background:#fff9e6;color:#a86f00}
+.session-expired{z-index:1200}.reauth-button{display:inline-flex;align-items:center;justify-content:center;height:38px;padding:0 18px;border-radius:9px;background:#fec433;color:#20242a;font-weight:700;text-decoration:none}
 </style>
