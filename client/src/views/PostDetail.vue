@@ -5,8 +5,10 @@
         <div class="r-post--header">
           <h1 class="r-post--title">{{ post.title }}</h1>
           <div class="r-post--meta">
-            <AppImage :src="post.author?.avatar || defaultAvatar" :fallback="defaultAvatar" class="r-post--author_avatar" />
-            <span class="r-post--author_name">{{ post.author?.nickname || post.author?.username }}</span>
+            <span class="r-post--author_link" role="link" tabindex="0" @click="goToAuthor" @keydown.enter="goToAuthor">
+              <AppImage :src="post.author?.avatar || defaultAvatar" :fallback="defaultAvatar" class="r-post--author_avatar" />
+              <span class="r-post--author_name">{{ post.author?.nickname || post.author?.username }}</span>
+            </span>
             <span class="r-post--time">{{ formatTime(post.created_at) }}</span>
             <span class="r-post--views">{{ post.view_count }} 阅读</span>
             <span class="r-post--tag" v-if="post.category">{{ getCategoryName(post.category) }}</span>
@@ -139,13 +141,13 @@
       
       <!-- 侧边栏 -->
       <aside class="r-post--sidebar">
-        <div class="r-post--author_card">
+        <div class="r-post--author_card" role="link" tabindex="0" @click="goToAuthor" @keydown.enter="goToAuthor">
           <AppImage :src="post.author?.avatar || defaultAvatar" :fallback="defaultAvatar" class="r-post--author_card_avatar" />
           <div class="r-post--author_card_info">
             <h4>{{ post.author?.nickname || post.author?.username }}</h4>
             <p>{{ post.author?.bio || '这个人很懒，什么都没写' }}</p>
           </div>
-          <el-button type="primary" size="small" @click="followAuthor" v-if="userStore.user?.id !== post.author?.id">
+          <el-button type="primary" size="small" @click.stop="followAuthor" v-if="userStore.user?.id !== post.author?.id">
             {{ following ? '已关注' : '关注' }}
           </el-button>
         </div>
@@ -302,6 +304,15 @@ const goToUser = (comment) => {
     return
   }
   router.push('/user/' + comment.user.codemao_user_id)
+}
+
+const goToAuthor = () => {
+  const codemaoUserId = post.value?.author?.codemao_user_id
+  if (!codemaoUserId) {
+    ElMessage.warning('该作者暂无可访问的个人主页')
+    return
+  }
+  router.push(`/user/${codemaoUserId}`)
 }
 
 const formatTime = (time) => {
@@ -1358,6 +1369,7 @@ $border-color: #eee;
     margin-top: 16px;
   }
 }
+
 .r-post--edit_form { padding:22px; border:1px solid #e5eaf1; border-radius:17px; background:linear-gradient(145deg,#fbfcff,#fffaf0); }
 .r-post--edit_form :deep(.el-form-item__label) { color:#344054; font-weight:700; }
 .r-post--edit_form :deep(.el-input__wrapper) { min-height:42px; border-radius:11px!important; }
@@ -1374,6 +1386,10 @@ $border-color: #eee;
 .r-post--header .r-post--meta .r-post--author_name { color:#344054; font-weight:700; }
 .r-post--header .r-post--meta .r-post--time::before, .r-post--header .r-post--meta .r-post--views::before { content:'·'; margin-right:10px; color:#c0c6d0; }
 .r-post--header .r-post--meta .r-post--tag { margin-left:4px; padding:4px 9px; border-radius:7px; background:#fff4d7; color:#9b6800; font-weight:700; }
+.r-post--author_link { display:inline-flex; align-items:center; gap:10px; border-radius:10px; cursor:pointer; outline:none; }
+.r-post--author_link:hover .r-post--author_name,
+.r-post--author_link:focus-visible .r-post--author_name { color:#b27700; }
+.r-post--author_link:focus-visible { box-shadow:0 0 0 3px rgba(254,196,51,.3); }
 .r-post--content { min-height:0; margin-bottom:28px; color:#2b3445; font-size:17px; line-height:1.95; }
 .r-post--content.markdown-body :deep(p) { margin-bottom:20px; }
 .r-post--content.markdown-body :deep(a) { color:#b27700; text-decoration:underline; text-decoration-color:rgba(178,119,0,.35); text-underline-offset:4px; }
@@ -1413,6 +1429,9 @@ $border-color: #eee;
 .r-post--sidebar { width:300px; position:static; align-self:flex-start; }
 .r-post--author_card, .r-post--related { border:1px solid rgba(255,255,255,.94); border-radius:18px; background:rgba(255,255,255,.78); backdrop-filter:blur(17px); box-shadow:0 15px 42px rgba(39,55,82,.075); }
 .r-post--author_card { padding:24px 20px; background:linear-gradient(145deg,rgba(255,250,235,.9),rgba(255,255,255,.82) 58%,rgba(240,248,255,.88)); }
+.r-post--author_card { cursor:pointer; outline:none; transition:transform .2s,box-shadow .2s; }
+.r-post--author_card:hover { transform:translateY(-2px); box-shadow:0 19px 48px rgba(39,55,82,.11); }
+.r-post--author_card:focus-visible { box-shadow:0 0 0 3px rgba(254,196,51,.35),0 15px 42px rgba(39,55,82,.075); }
 .r-post--author_card .r-post--author_card_avatar { width:72px; height:72px; box-shadow:0 0 0 4px #fff,0 10px 24px rgba(35,48,70,.15); }
 .r-post--author_card .r-post--author_card_info h4 { color:#172033; font-size:17px; font-weight:800; }
 .r-post--author_card .r-post--author_card_info p { color:#7a8495; line-height:1.6; }
