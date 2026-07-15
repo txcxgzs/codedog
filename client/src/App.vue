@@ -29,10 +29,10 @@
         <!-- 登录后的常用平台入口放在搜索框左侧。 -->
         <div v-if="userStore.isLoggedIn" class="c-navigator--platform_links" aria-label="平台快捷入口">
           <button type="button" :class="{ active: $route.path.startsWith('/developer') }" @click="$router.push('/developer')">
-            <el-icon><DataBoard /></el-icon><span>开发者平台</span>
+            <span>开发者平台</span>
           </button>
           <button type="button" @click="openIm">
-            <el-icon><ChatDotRound /></el-icon><span>即时通讯</span>
+            <span>即时通讯</span>
           </button>
         </div>
 
@@ -184,7 +184,7 @@ import HCaptchaDialog from '@/components/HCaptchaDialog.vue'
 import MobileBottomNav from '@/components/MobileBottomNav.vue'
 import { hcaptchaApi } from '@/api/hcaptcha'
 import { publicApi } from '@/api/public'
-import { Search, EditPen, Bell, CaretBottom, User, Monitor, Star, Setting, SwitchButton, DataBoard, ChatDotRound } from '@element-plus/icons-vue'
+import { Search, EditPen, Bell, CaretBottom, User, Monitor, Star, Setting, SwitchButton } from '@element-plus/icons-vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -725,11 +725,8 @@ $shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
 // 响应式
 @media (max-width: 1100px) {
   .c-navigator--platform_links button {
-    width: 34px;
-    padding: 0;
-    justify-content: center;
-
-    span { display: none; }
+    padding: 0 4px;
+    font-size: 12px;
   }
 }
 
@@ -749,14 +746,7 @@ $shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
 
   .c-navigator--platform_links {
     margin-left: auto;
-
-    button {
-      width: 34px;
-      padding: 0;
-      justify-content: center;
-
-      span { display: none; }
-    }
+    display: none;
   }
   
   .c-navigator--logo_text {
@@ -808,8 +798,6 @@ $shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
 .is-developer-shell .r-ann--top_stack,
 .is-developer-shell .c-footer--footer { display: none !important; }
 .is-developer-shell .r-index--main_content { min-height: 100vh; }
-.c-navigator--menu .el-dropdown-menu__item:nth-child(4)::before { content:''; display:inline-block; width:16px; height:16px; margin-right:8px; vertical-align:-3px; background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='1.7'%3E%3Crect x='4' y='3' width='16' height='18' rx='2'/%3E%3Cpath d='M8 7h8M8 11h8M8 15h5'/%3E%3C/svg%3E") center/contain no-repeat; }
-
 .r-ann--popup_content {
   white-space: pre-wrap;
   line-height: 1.7;
