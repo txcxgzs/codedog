@@ -50,8 +50,8 @@
         </div>
         
         <div class="r-post--actions">
-          <el-button :type="liked ? 'primary' : 'default'" :loading="likeLoading" @click="likePost">
-            <span class="r-post--action_icon r-post--action_icon_like"></span>
+          <el-button :class="{ 'is-liked': liked }" :aria-pressed="liked" :loading="likeLoading" @click="likePost">
+            <span class="r-post--action_icon r-post--action_icon_like" :class="{ 'is-liked': liked }"></span>
             点赞 {{ post.like_count }}
           </el-button>
           <el-button @click="scrollToComment">
@@ -109,7 +109,7 @@
                 </div>
                 <p class="r-post--comment_content">{{ comment.content }}</p>
                 <div class="r-post--comment_actions">
-                  <span @click="likeComment(comment)" :class="{ 'is-loading': likingComments.has(comment.id) }"><span class="r-post--comment_icon r-post--comment_icon_like"></span>{{ comment.like_count || 0 }}</span>
+                  <span class="r-post--like_action" @click="likeComment(comment)" :class="{ 'is-loading': likingComments.has(comment.id) }"><span class="r-post--comment_icon r-post--comment_icon_like" :class="{ 'is-liked': comment.liked }"></span>{{ comment.like_count || 0 }}</span>
                   <span @click="replyTo(comment)"><span class="r-post--comment_icon r-post--comment_icon_reply"></span>回复</span>
                   <span v-if="comment.user_id === userStore.user?.id" @click="deleteComment(comment)" class="r-post--comment_delete">删除</span>
                   <span v-else @click="reportComment(comment)" class="r-post--comment_report">举报</span>
@@ -122,7 +122,7 @@
                     <span class="r-post--reply_content">{{ reply.content }}</span>
                     <span class="r-post--reply_time">{{ formatTime(reply.created_at) }}</span>
                     <div class="r-post--reply_actions">
-                      <span @click="likeComment(reply)" :class="{ 'is-loading': likingComments.has(reply.id) }"><span class="r-post--comment_icon r-post--comment_icon_like"></span>{{ reply.like_count || 0 }}</span>
+                      <span class="r-post--like_action" @click="likeComment(reply)" :class="{ 'is-loading': likingComments.has(reply.id) }"><span class="r-post--comment_icon r-post--comment_icon_like" :class="{ 'is-liked': reply.liked }"></span>{{ reply.like_count || 0 }}</span>
                       <span @click="replyTo(reply)"><span class="r-post--comment_icon r-post--comment_icon_reply"></span>回复</span>
                       <span v-if="reply.user_id === userStore.user?.id" @click="deleteComment(reply)" class="r-post--comment_delete">删除</span>
                       <span v-else @click="reportComment(reply)" class="r-post--comment_report">举报</span>
@@ -1385,6 +1385,22 @@ $border-color: #eee;
 .r-post--actions { gap:9px; margin:0 -10px 28px; padding:14px 10px 26px; }
 .r-post--actions .el-button { height:38px; margin:0; padding:0 14px; border-color:#dfe4ec; border-radius:11px!important; background:rgba(255,255,255,.76); color:#586476; font-weight:600; }
 .r-post--actions .el-button:hover { transform:translateY(-2px); border-color:#fec433; box-shadow:0 7px 18px rgba(39,55,82,.08); }
+.r-post--actions .el-button.is-liked { border-color:#f2b8bd; background:#fff; color:#586476; }
+.r-post--action_icon_like.is-liked {
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23ef4f5f'%3E%3Cpath d='M1 21h4V9H1v12zm22-11c0-1.1-.9-2-2-2h-6.31l.95-4.57.03-.32c0-.41-.17-.79-.44-1.06L14.17 1 7.59 7.59C7.22 7.95 7 8.45 7 9v10c0 1.1.9 2 2 2h9c.83 0 1.54-.5 1.84-1.22l3.02-7.05c.09-.23.14-.47.14-.73v-2z'/%3E%3C/svg%3E")!important;
+}
+.r-post--comment_icon.r-post--comment_icon_like {
+  display:inline-block;
+  width:14px;
+  height:14px;
+  flex:0 0 14px;
+  background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23999'%3E%3Cpath d='M1 21h4V9H1v12zm22-11c0-1.1-.9-2-2-2h-6.31l.95-4.57.03-.32c0-.41-.17-.79-.44-1.06L14.17 1 7.59 7.59C7.22 7.95 7 8.45 7 9v10c0 1.1.9 2 2 2h9c.83 0 1.54-.5 1.84-1.22l3.02-7.05c.09-.23.14-.47.14-.73v-2z'/%3E%3C/svg%3E") no-repeat center/contain;
+}
+.r-post--comment_icon.r-post--comment_icon_like.is-liked {
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23ef4f5f'%3E%3Cpath d='M1 21h4V9H1v12zm22-11c0-1.1-.9-2-2-2h-6.31l.95-4.57.03-.32c0-.41-.17-.79-.44-1.06L14.17 1 7.59 7.59C7.22 7.95 7 8.45 7 9v10c0 1.1.9 2 2 2h9c.83 0 1.54-.5 1.84-1.22l3.02-7.05c.09-.23.14-.47.14-.73v-2z'/%3E%3C/svg%3E");
+}
+.r-post--comment_actions .r-post--like_action:hover,
+.r-post--reply_actions .r-post--like_action:hover { color:#999; }
 .r-post--comments .r-post--comments_title { color:#172033; font-size:21px; font-weight:800; }
 .r-post--comment_form { padding:16px; border:1px solid #e7ebf2; border-radius:16px; background:linear-gradient(145deg,#fbfcff,#fffaf0); }
 .r-post--comment_form :deep(.el-textarea__inner) { min-height:92px!important; padding:14px; border:0; border-radius:12px!important; background:#fff; box-shadow:0 0 0 1px #e2e7ef inset; }
