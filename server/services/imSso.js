@@ -22,7 +22,7 @@ function signingKey() {
 
 function clientContext(req) {
   const header = name => String(req.get(name) || '').trim().toLowerCase();
-  const ip = header('cf-connecting-ip') || header('x-real-ip') || String(req.ip || req.socket?.remoteAddress || '').trim();
+  const ip = (header('cf-connecting-ip') || header('x-real-ip') || String(req.ip || req.socket?.remoteAddress || '').trim()).replace(/^::ffff:/, '');
   // User-Agent is also sent by WebSocket handshakes. Avoid optional Client Hint
   // headers because browsers may send them on navigation but omit them on WS.
   const browser = header('user-agent');

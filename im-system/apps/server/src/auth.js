@@ -8,10 +8,18 @@ const { verifyCommunityStatus } = require('./communityStatus');
 
 function requestContext(req) {
   const header = name => String(req.headers?.[name] || '').trim().toLowerCase();
-  const ip = header('cf-connecting-ip') || header('x-real-ip') || String(req.socket?.remoteAddress || '').trim();
+  const normalizeIp = value => String(value || '').trim().toLowerCase().replace(/^::ffff:/, '');
+  // Host Nginx, Cloudflare and the inner IM Nginx do not always expose the
+  // same header as the first choice. Keep all independently supplied
+  // candidates and require at least one to match the signed CodeDog hash.
+  const ips = [...new Set([
+    header('cf-connecting-ip'),
+    header('x-real-ip'),
+    req.socket?.remoteAddress
+  ].map(normalizeIp).filter(Boolean))];
   // Available on navigation, fetch and WebSocket. Only its salted hash is kept.
   const browser = header('user-agent');
-  return { ip, browser };
+  return { ips, browser };
 }
 
 function boundHash(nonce, value) { return crypto.createHash('sha256').update(`${nonce}\n${value}`).digest('base64url'); }
@@ -22,7 +30,8 @@ function safeEqual(a, b) {
 function contextMatches(req, payload) {
   if (!payload.binding_nonce || !payload.client_ip_hash || !payload.browser_hash) return false;
   const context = requestContext(req);
-  return safeEqual(payload.client_ip_hash, boundHash(payload.binding_nonce, context.ip)) && safeEqual(payload.browser_hash, boundHash(payload.binding_nonce, context.browser));
+  const ipMatches = context.ips.some(ip => safeEqual(payload.client_ip_hash, boundHash(payload.binding_nonce, ip)));
+  return ipMatches && safeEqual(payload.browser_hash, boundHash(payload.binding_nonce, context.browser));
 }
 
 function readPublicKey() {

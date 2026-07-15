@@ -36,6 +36,7 @@
       <header><div><small>即时消息</small><h1>{{ selected ? (selected.title || `会话 #${selected.id}`) : '选择一个会话' }}</h1></div><div class="signal"><span></span><span></span><span></span></div></header>
       <div ref="timeline" class="timeline">
         <div v-if="loading" class="center-state">正在加载消息…</div>
+        <div v-else-if="initialLoginError" class="welcome auth-failure"><div class="orb">!</div><h2>无法完成安全登录</h2><p>{{ initialLoginError }}</p><a class="reauth-button" :href="communityUrl">返回编程狗重新进入</a></div>
         <div v-else-if="!selected" class="welcome"><div class="orb">聊</div><h2>欢迎使用编程狗消息</h2><p>选择左侧会话，开始安全、可靠的即时交流。</p></div>
         <article v-for="message in messages" :key="message.id" class="message" :class="{ mine: Number(message.sender_id) === Number(me?.id) }">
           <span class="avatar"><img v-if="message.sender?.avatar" :src="message.sender.avatar" alt="" referrerpolicy="no-referrer" @error="$event.currentTarget.remove()" />{{ Number(message.sender_id) === Number(me?.id) ? initials : avatarLetter(message.sender, '友') }}</span>
@@ -89,6 +90,7 @@ const filter = ref(''), draft = ref(''), loading = ref(false), sending = ref(fal
 const createPanel = ref(false), peerId = ref(''), groupName = ref('')
 const avatarFailed = ref(false)
 const sessionExpired = ref(false)
+const initialLoginError = ref('')
 const searchResults = ref([]), captchaBox = ref(null)
 const captchaDialog = reactive({ open: false, scene: '', error: '', resolve: null })
 const captchaGrants = new Map()
@@ -109,7 +111,9 @@ const api = async (url, options = {}) => {
   const { captchaGrant, ...requestOptions } = options
   const response = await fetch(`/im/api${url}`, { credentials: 'include', headers: { 'Content-Type': 'application/json', ...(captchaGrant ? { 'X-IM-Captcha-Grant': captchaGrant } : {}), ...(requestOptions.headers || {}) }, ...requestOptions })
   const body = await response.json()
-  if (response.status === 401) sessionExpired.value = true
+  // SSO exchange itself may return 401 for configuration or binding errors.
+  // Only an already established IM session should be presented as expired.
+  if (response.status === 401 && me.value) sessionExpired.value = true
   if (!response.ok) throw new Error(body.msg || '请求失败')
   return body.data
 }
@@ -207,7 +211,7 @@ const connectSocket = () => {
 }
 const formatTime = value => value ? new Date(value).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) : ''
 const imageData = message => { try { return JSON.parse(message.content) } catch { return { url: '' } } }
-onMounted(() => load().catch(error => { socketState.value = error.message }))
+onMounted(() => load().catch(error => { initialLoginError.value = error.message; socketState.value = error.message }))
 onUnmounted(() => socket?.close())
 </script>
 <style scoped>
@@ -237,4 +241,5 @@ onUnmounted(() => socket?.close())
 .toast{position:fixed;z-index:1100;top:24px;left:50%;transform:translateX(-50%);padding:11px 18px;border:1px solid #dce7d8;border-radius:10px;background:#f2fbef;color:#38823b;box-shadow:0 10px 30px rgba(31,35,41,.16)}.toast.error{border-color:#f3c1c1;background:#fff2f2;color:#c74343}.toast.warning{border-color:#f0d27c;background:#fff9e6;color:#a86f00}
 .session-expired{z-index:1200}.reauth-button{display:inline-flex;align-items:center;justify-content:center;height:38px;padding:0 18px;border-radius:9px;background:#fec433;color:#20242a;font-weight:700;text-decoration:none}
 .captcha-dialog{width:min(420px,100%)}.captcha-box{min-height:44px;margin-top:16px}
+.auth-failure .orb{background:#fff0f0;color:#d84b4b}.auth-failure p{max-width:520px}.auth-failure .reauth-button{margin-top:10px}
 </style>
