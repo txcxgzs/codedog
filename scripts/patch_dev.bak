@@ -1,0 +1,22 @@
+const fs=require('fs');
+const path=require('path');
+const root=path.resolve(__dirname,'..');
+function rp(p){return path.join(root,p);}
+function read(p){return fs.readFileSync(rp(p),'utf8');}
+function write(p,s){fs.writeFileSync(rp(p),s);console.log('wrote',s.length);}
+function rep(p,from,to){
+let s=read(p);
+if(!s.includes(from)){throw new Error('anchor not found in'+p+':'+from.slice(0,80));}
+s=s.replace(from,to);
+write(p,s);
+}
+
+rep('server/config/permissions.js',
+  "            'developer:review',
+            'config:manage',
+            'role:manage'",
+  "            'developer:review',
+            'developer:manage',
+            'config:manage',
+            'role:manage' 
+console.log('step1 ok');

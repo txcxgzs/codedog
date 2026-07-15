@@ -14,7 +14,19 @@
         <span class="conversation-copy"><b>{{ item.title || `会话 #${item.id}` }}</b><small>序列 {{ item.last_sequence || 0 }}</small></span>
       </button>
       <div v-if="!conversations.length" class="empty">还没有会话<br><small>从编程狗用户主页发起私聊</small></div>
-      <div class="account"><span class="avatar user">{{ initials }}</span><div><b>{{ me?.nickname || me?.username || '连接中' }}</b><small><em></em> 安全在线</small></div></div>
+      <div class="account">
+        <span class="avatar user">
+          <img
+            v-if="me?.avatar && !avatarFailed"
+            :src="me.avatar"
+            :alt="`${me?.nickname || me?.username || '当前用户'}的头像`"
+            referrerpolicy="no-referrer"
+            @error="avatarFailed = true"
+          />
+          <template v-else>{{ initials }}</template>
+        </span>
+        <div><b>{{ me?.nickname || me?.username || '连接中' }}</b><small><em></em> 安全在线</small></div>
+      </div>
     </aside>
 
     <section class="channel">
@@ -47,6 +59,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 const me = ref(null), conversations = ref([]), requests = ref([]), selected = ref(null), messages = ref([])
 const filter = ref(''), draft = ref(''), loading = ref(false), sending = ref(false), socketState = ref('正在连接'), timeline = ref(null)
 const createPanel = ref(false), peerId = ref(''), groupName = ref('')
+const avatarFailed = ref(false)
 let socket = null
 const initials = computed(() => String(me.value?.nickname || me.value?.username || '犬').slice(0, 1))
 const filteredConversations = computed(() => conversations.value.filter(item => String(item.id).includes(filter.value.trim())))
@@ -126,4 +139,6 @@ onUnmounted(() => socket?.close())
 .requests button { height:25px; font-size:10px; }
 .requests button.ghost { background:#fff; color:#7d828a; border:1px solid #dfe2e8; }
 .report-message { border:0; background:transparent; color:#a0a4ad; padding:0; font-size:11px; cursor:pointer; }.report-message:hover{color:#f56c6c}
+.account .avatar { overflow:hidden; }
+.account .avatar img { display:block; width:100%; height:100%; object-fit:cover; }
 </style>

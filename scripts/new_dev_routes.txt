@@ -1,0 +1,11 @@
+﻿
+/**
+ * Developer app management (developer:manage)
+ */
+router.put('/developer-apps/:id/rate-limit', requirePermission('developer:manage'), developerController.adminUpdateAppRateLimit);
+router.post('/developer-apps/:id/revoke-all-tokens', requirePermission('developer:manage'), developerController.adminRevokeAllTokens);
+router.post('/developer-apps/:id/regenerate-secret', requirePermission('developer:manage'), developerController.adminRegenerateSecret);
+router.delete('/developer-apps/:id', requirePermission('developer:manage'), developerController.adminDeleteApp);
+router.get('/developer-apps/:id/audit-logs', requirePermission('developer:review'), developerController.adminListAuditLogs);
+router.get('/developer-apps/:id/stats', requirePermission('developer:review'), developerController.adminCallLogStats);
+router.get('/developer-apps/:id/stats/detail', requirePermission('developer:review'), developerController.adminCallLogStatsDetail);
