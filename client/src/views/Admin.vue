@@ -1202,9 +1202,13 @@
                   </el-tag>
                   <el-tag type="info">成员: {{ studioDetail.studio.member_count }}</el-tag>
                   <el-tag type="info">作品: {{ studioDetail.studio.work_count }}</el-tag>
+                  <el-tag type="warning">管理积分: {{ studioDetail.studio.points || 0 }}</el-tag>
+                  <el-tag type="success">作品评分: {{ studioDetail.studio.total_score || 0 }}</el-tag>
                 </div>
               </div>
               <div class="r-admin--studio_detail_actions">
+                <el-button type="warning" @click="openStudioPointsDialog(studioDetail.studio)">调整积分</el-button>
+                <el-button @click="openStudioEditDialog(studioDetail.studio)">编辑资料</el-button>
                 <el-button :type="studioDetail.studio.status === 'active' ? 'danger' : 'success'" @click="handleStudioStatus(studioDetail.studio); studioDetailVisible = false;">
                   {{ studioDetail.studio.status === 'active' ? '禁用工作室' : '启用工作室' }}
                 </el-button>
@@ -1265,16 +1269,37 @@
                   <el-table-column prop="author.nickname" label="作者" width="100" />
                   <el-table-column prop="view_times" label="浏览" width="80" />
                   <el-table-column prop="praise_times" label="点赞" width="80" />
+                  <el-table-column prop="studio_score" label="作品评分" width="100" />
                   <el-table-column prop="created_at" label="添加时间" width="110">
                     <template #default="{ row }">{{ formatDate(row.created_at) }}</template>
                   </el-table-column>
-                  <el-table-column label="操作" width="80">
+                  <el-table-column label="操作" width="150">
                     <template #default="{ row }">
+                      <el-button size="small" type="warning" @click="setStudioWorkScore(row)">评分</el-button>
                       <el-button size="small" type="danger" @click="removeStudioWork(row)">移除</el-button>
                     </template>
                   </el-table-column>
                 </el-table>
                 <el-empty v-if="!studioDetail.works?.length" description="暂无作品" />
+              </el-tab-pane>
+              <el-tab-pane :label="`积分流水(${studioDetail.pointLogs?.length || 0})`">
+                <el-table :data="studioDetail.pointLogs || []" size="small" max-height="400">
+                  <el-table-column prop="created_at" label="时间" width="170">
+                    <template #default="{ row }">{{ formatDateTime(row.created_at) }}</template>
+                  </el-table-column>
+                  <el-table-column label="管理员" width="130">
+                    <template #default="{ row }">{{ row.admin?.nickname || row.admin?.username || `管理员#${row.admin?.id || '-'}` }}</template>
+                  </el-table-column>
+                  <el-table-column label="变动" width="90">
+                    <template #default="{ row }"><el-tag :type="row.delta >= 0 ? 'success' : 'danger'">{{ row.delta >= 0 ? '+' : '' }}{{ row.delta }}</el-tag></template>
+                  </el-table-column>
+                  <el-table-column label="变动前后" width="120">
+                    <template #default="{ row }">{{ row.points_before }} → {{ row.points_after }}</template>
+                  </el-table-column>
+                  <el-table-column prop="note" label="备注" min-width="220" />
+                  <el-table-column prop="ip_address" label="操作 IP" width="150" />
+                </el-table>
+                <el-empty v-if="!studioDetail.pointLogs?.length" description="暂无积分变动记录" />
               </el-tab-pane>
               <el-tab-pane label="基本信息">
                 <el-descriptions :column="2" border size="small">
@@ -1291,6 +1316,42 @@
               </el-tab-pane>
             </el-tabs>
           </div>
+        </el-dialog>
+
+        <el-dialog v-model="studioPointsDialogVisible" title="调整工作室管理积分" width="520px" class="r-admin--studio_points_dialog">
+          <el-form label-position="top">
+            <el-form-item label="工作室">
+              <el-input :model-value="studioPointsTarget?.name" disabled />
+            </el-form-item>
+            <el-form-item label="调整方式" required>
+              <el-radio-group v-model="studioPointsForm.action">
+                <el-radio-button label="add">加分</el-radio-button>
+                <el-radio-button label="subtract">扣分</el-radio-button>
+              </el-radio-group>
+            </el-form-item>
+            <el-form-item label="分值" required>
+              <el-input-number v-model="studioPointsForm.points" :min="1" :max="10000" controls-position="right" style="width:100%" />
+            </el-form-item>
+            <el-form-item label="操作备注（必填，将永久保留）" required>
+              <el-input v-model="studioPointsForm.note" type="textarea" :rows="4" maxlength="500" show-word-limit placeholder="请具体说明加分或扣分原因，至少 5 个字符" />
+            </el-form-item>
+          </el-form>
+          <template #footer>
+            <el-button @click="studioPointsDialogVisible = false">取消</el-button>
+            <el-button type="warning" :loading="studioPointsSubmitting" @click="submitStudioPoints">确认调整</el-button>
+          </template>
+        </el-dialog>
+
+        <el-dialog v-model="studioEditDialogVisible" title="编辑工作室资料" width="560px">
+          <el-form label-position="top">
+            <el-form-item label="工作室名称" required><el-input v-model="studioEditForm.name" maxlength="100" show-word-limit /></el-form-item>
+            <el-form-item label="工作室介绍"><el-input v-model="studioEditForm.description" type="textarea" :rows="4" maxlength="1000" show-word-limit /></el-form-item>
+            <el-form-item label="加入方式">
+              <el-select v-model="studioEditForm.join_type" style="width:100%"><el-option label="自由加入" value="public" /><el-option label="申请加入" value="apply" /><el-option label="仅限邀请" value="invite" /></el-select>
+            </el-form-item>
+            <el-form-item label="可见性"><el-switch v-model="studioEditForm.is_public" active-text="公开" inactive-text="私密" /></el-form-item>
+          </el-form>
+          <template #footer><el-button @click="studioEditDialogVisible = false">取消</el-button><el-button type="primary" :loading="studioEditSubmitting" @click="submitStudioEdit">保存修改</el-button></template>
         </el-dialog>
         
         <!-- 作品爬取 -->
@@ -2812,6 +2873,13 @@ const loadingStudios = ref(false)
 const studioDetailVisible = ref(false)
 const studioDetailLoading = ref(false)
 const studioDetail = ref(null)
+const studioPointsDialogVisible = ref(false)
+const studioPointsSubmitting = ref(false)
+const studioPointsTarget = ref(null)
+const studioPointsForm = ref({ action: 'add', points: 10, note: '' })
+const studioEditDialogVisible = ref(false)
+const studioEditSubmitting = ref(false)
+const studioEditForm = ref({ id: null, name: '', description: '', join_type: 'apply', is_public: true })
 const defaultStudioCover = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 260"%3E%3Cdefs%3E%3ClinearGradient id="g" x2="1" y2="1"%3E%3Cstop stop-color="%236879e6"/%3E%3Cstop offset="1" stop-color="%23845bb7"/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width="640" height="260" rx="28" fill="url(%23g)"/%3E%3Ccircle cx="550" cy="40" r="120" fill="white" opacity=".12"/%3E%3Cpath d="M80 180h210M80 140h130" stroke="white" stroke-width="18" stroke-linecap="round" opacity=".82"/%3E%3C/svg%3E'
 
 const banners = ref([])
@@ -5170,6 +5238,85 @@ onMounted(() => {
 const formatCallPayload = (value) => {
   if (value == null || value === '') return '无记录'
   try { return typeof value === 'string' ? JSON.stringify(JSON.parse(value), null, 2) : JSON.stringify(value, null, 2) } catch { return String(value) }
+}
+
+const openStudioPointsDialog = (studio) => {
+  studioPointsTarget.value = studio
+  studioPointsForm.value = { action: 'add', points: 10, note: '' }
+  studioPointsDialogVisible.value = true
+}
+
+const openStudioEditDialog = (studio) => {
+  studioEditForm.value = {
+    id: studio.id,
+    name: studio.name || '',
+    description: studio.description || '',
+    join_type: studio.join_type || 'apply',
+    is_public: studio.is_public !== false
+  }
+  studioEditDialogVisible.value = true
+}
+
+const submitStudioEdit = async () => {
+  const name = studioEditForm.value.name.trim()
+  if (!name) return ElMessage.warning('工作室名称不能为空')
+  studioEditSubmitting.value = true
+  try {
+    const res = await adminApi.updateStudio(studioEditForm.value.id, { ...studioEditForm.value, name })
+    if (res.code !== 200) throw new Error(res.msg || '保存失败')
+    ElMessage.success('工作室资料已更新')
+    studioEditDialogVisible.value = false
+    await showStudioDetail({ id: studioEditForm.value.id })
+    await fetchStudios()
+  } catch (error) {
+    ElMessage.error(error.response?.data?.msg || error.message || '保存失败')
+  } finally {
+    studioEditSubmitting.value = false
+  }
+}
+
+const submitStudioPoints = async () => {
+  const note = studioPointsForm.value.note.trim()
+  if (note.length < 5) {
+    ElMessage.warning('请填写至少 5 个字符的具体备注')
+    return
+  }
+  studioPointsSubmitting.value = true
+  try {
+    const res = await adminApi.updateStudioPoints(studioPointsTarget.value.id, {
+      action: studioPointsForm.value.action,
+      points: studioPointsForm.value.points,
+      note
+    })
+    if (res.code !== 200) throw new Error(res.msg || '积分调整失败')
+    ElMessage.success('积分已调整并写入永久流水')
+    studioPointsDialogVisible.value = false
+    await showStudioDetail({ id: studioPointsTarget.value.id })
+    await fetchStudios()
+  } catch (error) {
+    ElMessage.error(error.response?.data?.msg || error.message || '积分调整失败')
+  } finally {
+    studioPointsSubmitting.value = false
+  }
+}
+
+const setStudioWorkScore = async (work) => {
+  try {
+    const { value } = await ElMessageBox.prompt(`为《${work.name}》设置作品评分（0-10000）`, '作品评分', {
+      inputValue: String(work.studio_score || 0),
+      inputPattern: /^(?:0|[1-9]\d{0,3}|10000)$/,
+      inputErrorMessage: '请输入 0-10000 的整数',
+      confirmButtonText: '保存评分',
+      cancelButtonText: '取消'
+    })
+    const res = await adminApi.setWorkScore(work.studio_work_id, Number(value))
+    if (res.code !== 200) throw new Error(res.msg || '评分失败')
+    ElMessage.success('作品评分已更新，总分已自动重算')
+    await showStudioDetail({ id: studioDetail.value.studio.id })
+  } catch (error) {
+    if (error === 'cancel' || error === 'close') return
+    ElMessage.error(error.response?.data?.msg || error.message || '评分失败')
+  }
 }
 
 onBeforeUnmount(() => {

@@ -15,8 +15,8 @@
           <div class="r-studio-detail--stats">
             <span><i>👥</i> {{ studio.member_count }} 成员</span>
             <span><i>📁</i> {{ studio.work_count }} 作品</span>
-            <span><i>⭐</i> {{ studio.points || 0 }} 积分</span>
-            <span><i>🏆</i> {{ studio.total_score || 0 }} 作品总分</span>
+            <span><i>⭐</i> {{ studio.points || 0 }} 管理积分</span>
+            <span><i>🏆</i> {{ studio.total_score || 0 }} 作品评分</span>
           </div>
           <div class="r-studio-detail--actions">
             <template v-if="userStore.isLoggedIn">

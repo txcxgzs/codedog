@@ -213,6 +213,23 @@ const StudioWork = sequelize.define('StudioWork', {
     ]
 }, TIMESTAMP_OPTS));
 
+const StudioPointLog = sequelize.define('StudioPointLog', {
+    id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+    studio_id: { type: DataTypes.INTEGER, allowNull: false },
+    admin_id: { type: DataTypes.INTEGER, allowNull: false },
+    delta: { type: DataTypes.INTEGER, allowNull: false },
+    points_before: { type: DataTypes.INTEGER, allowNull: false },
+    points_after: { type: DataTypes.INTEGER, allowNull: false },
+    note: { type: DataTypes.STRING(500), allowNull: false },
+    ip_address: { type: DataTypes.STRING(50) }
+}, Object.assign({
+    tableName: 'studio_point_logs',
+    indexes: [
+        { fields: ['studio_id', 'created_at'] },
+        { fields: ['admin_id'] }
+    ]
+}, TIMESTAMP_OPTS));
+
 const Report = sequelize.define('Report', {
     id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
     type: { type: DataTypes.STRING(20), allowNull: false },
@@ -492,6 +509,9 @@ Studio.hasMany(StudioMember, { foreignKey: 'studio_id', as: 'members' });
 StudioWork.belongsTo(Studio, { foreignKey: 'studio_id', as: 'studio' });
 StudioWork.belongsTo(Work, { foreignKey: 'work_id', as: 'work' });
 StudioWork.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
+Studio.hasMany(StudioPointLog, { foreignKey: 'studio_id', as: 'point_logs', constraints: false });
+StudioPointLog.belongsTo(Studio, { foreignKey: 'studio_id', as: 'studio', constraints: false });
+StudioPointLog.belongsTo(User, { foreignKey: 'admin_id', as: 'admin', constraints: false });
 Report.belongsTo(User, { foreignKey: 'reporter_id', as: 'reporter' });
 Report.belongsTo(User, { foreignKey: 'handler_id', as: 'handler' });
 Report.hasMany(ReportAuditLog, { foreignKey: 'report_id', as: 'audit_logs' });
@@ -675,7 +695,7 @@ Comment.belongsTo(Comment, { foreignKey: 'parent_id', as: 'parent' });
 
 module.exports = {
     sequelize,
-    User, Work, Comment, Post, Studio, StudioMember, StudioWork,
+    User, Work, Comment, Post, Studio, StudioMember, StudioWork, StudioPointLog,
     Report, ReportAuditLog, DeveloperApp, DeveloperAppAuditLog, OAuthAuthCode, OAuthAccessToken, OAuthRefreshToken, UserAppAuthorization, Like, Favorite, Follow, Notification, Announcement, Banner, IpBan, CaptchaStats,
     SystemConfig, OperationLog, RolePermission, Statistics, SensitiveWord
 };

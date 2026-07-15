@@ -2,7 +2,7 @@
  * 后台管理控制器
  */
 
-const { User, Work, Comment, Post, Favorite, Follow, Banner, Report, ReportAuditLog, IpBan, Notification, Announcement, SystemConfig, OperationLog, SensitiveWord, RolePermission, CaptchaStats, Studio, StudioMember, StudioWork, Like, sequelize } = require('../models');
+const { User, Work, Comment, Post, Favorite, Follow, Banner, Report, ReportAuditLog, IpBan, Notification, Announcement, SystemConfig, OperationLog, SensitiveWord, RolePermission, CaptchaStats, Studio, StudioMember, StudioWork, StudioPointLog, Like, sequelize } = require('../models');
 const { successResponse, errorResponse, paginateResponse } = require('../middleware/response');
 const { getAllRoles, canManageUser, getRole, hasPermission, getAllPermissions, refreshRoleCache, DEFAULT_ROLES } = require('../config/permissions');
 const { logOperation } = require('../middleware/operationLog');
@@ -18,6 +18,7 @@ const { likeContains } = require('../utils/security');
 const aiReview = require('../services/aiReview');
 const proxyService = require('../services/proxyService');
 const { safeLog } = require('../utils/safeLog');
+const { buildCodemaoPlayerUrl } = require('../utils/codemaoPlayer');
 // 修复: token 写 httpOnly cookie 防止 XSS 偷
 const { setTokenCookie } = require('../middleware/auth');
 
@@ -1289,7 +1290,6 @@ async function crawlWork(req, res) {
 
         // 识别作品类型 (主类型
         let workType = workDetail.type || workDetail.ide_type || 'KITTEN';
-                if (/^neko$/i.test(String(workType))) workType = 'NEMO';
 
         // 修复: create Work + 重算 work_count 用事务包裹,与 workController.publishWork 保持一致
         const work = await sequelize.transaction(async (t) => {
@@ -1302,7 +1302,7 @@ async function crawlWork(req, res) {
                 // H8修复: 补充 ide_type 字段（与 crawlHotWorks 保持一致）
                 ide_type: workDetail.ide_type || 'KITTEN',
                 // 修复: player_url 为空时回退到标准播放器 URL,避免 work_url 落库为空
-                work_url: workDetail.player_url || `https://player.codemao.cn/new/${workDetail.id}`,
+                work_url: buildCodemaoPlayerUrl({ workId: workDetail.id, playerUrl: workDetail.player_url, type: workDetail.type, ideType: workDetail.ide_type }),
                 user_id: user ? DbAdapter.getId(user) : null,
                 codemao_author_id: codemaoUserId,
                 codemao_author_name: userInfo.nickname || '未知作者',
@@ -1493,7 +1493,7 @@ async function crawlHotWorks(req, res) {
                             preview: workDetail.preview || item.preview_url || '',
                             type: workDetail.type || workDetail.work_label_list?.[0]?.label_name || 'KITTEN',
                             ide_type: workDetail.ide_type || 'KITTEN',
-                            work_url: workDetail.player_url || `https://player.codemao.cn/new/${workId}`,
+                            work_url: buildCodemaoPlayerUrl({ workId, playerUrl: workDetail.player_url, type: workDetail.type, ideType: workDetail.ide_type }),
                             user_id: DbAdapter.getId(user),
                             // Bug-13 修复: 作者归属用详情接口的 user_info 而非 item.user_id
                             codemao_author_id: String(detailAuthorId || item.user_id),
@@ -1750,7 +1750,6 @@ async function crawlUserWorks(req, res) {
                 });
                 
                 let workType = workDetail.type || workDetail.ide_type || 'KITTEN';
-                if (/^neko$/i.test(String(workType))) workType = 'NEMO';
 
                 // (报告1 #1) 爬虫落库前对作品名+描述做内容审核，与 workController.publishWork 一致：
                 // delete→跳过，review→status:'pending'，pass→status:'published'
@@ -1778,7 +1777,7 @@ async function crawlUserWorks(req, res) {
                     // H8修复: 补充 ide_type 字段（与 crawlHotWorks 保持一致）
                     ide_type: workDetail.ide_type || 'KITTEN',
                     // H11修复: work_url 增加 fallback，避免 player_url 为空时作品无法播放
-                    work_url: workDetail.player_url || `https://player.codemao.cn/new/${workDetail.id}`,
+                    work_url: buildCodemaoPlayerUrl({ workId: workDetail.id, playerUrl: workDetail.player_url, type: workDetail.type, ideType: workDetail.ide_type }),
                     user_id: DbAdapter.getId(user),
                     codemao_author_id: String(userId),
                     codemao_author_name: workDetail.user_info?.nickname,
@@ -1913,7 +1912,7 @@ async function crawlPostWorks(req, res) {
                     // H8修复: 补充 ide_type 字段（与 crawlHotWorks 保持一致）
                     ide_type: workDetail.ide_type || 'KITTEN',
                     // H11修复: work_url 增加 fallback，避免 player_url 为空时作品无法播放
-                    work_url: workDetail.player_url || `https://player.codemao.cn/new/${workDetail.id}`,
+                    work_url: buildCodemaoPlayerUrl({ workId: workDetail.id, playerUrl: workDetail.player_url, type: workDetail.type, ideType: workDetail.ide_type }),
                     user_id: DbAdapter.getId(user),
                     codemao_author_id: String(workDetail.user_info?.id),
                     codemao_author_name: workDetail.user_info?.nickname,
@@ -4433,6 +4432,7 @@ async function deleteStudio(req, res) {
         // Bug-6: 同时清理 Notification 中 related_type='studio' 的记录,避免解散后死链
         await sequelize.transaction(async (t) => {
             await DbAdapter.destroy(Notification, { where: { related_id: Number(id), related_type: 'studio' }, transaction: t });
+            await DbAdapter.destroy(StudioPointLog, { where: { studio_id: id }, transaction: t });
             await DbAdapter.destroy(StudioMember, { where: { studio_id: id }, transaction: t });
             await DbAdapter.destroy(StudioWork, { where: { studio_id: id }, transaction: t });
             await DbAdapter.destroy(Studio, { where: { id: DbAdapter.getId(studio) }, transaction: t });
@@ -4476,6 +4476,13 @@ async function getStudioDetail(req, res) {
             order: [['added_at', 'DESC']],
             limit: 50
         });
+
+        const pointLogs = await DbAdapter.findAll(StudioPointLog, {
+            where: { studio_id: id },
+            include: [{ model: User, as: 'admin', attributes: ['id', 'username', 'nickname'] }],
+            order: [['created_at', 'DESC']],
+            limit: 100
+        });
         
         logOperation(req, 'view_studio_detail', 'studio', id, { name: studio.name });
         
@@ -4506,7 +4513,23 @@ async function getStudioDetail(req, res) {
                 joined_at: m.joined_at,
                 user: m.user.toJSON()
             })),
-            works: studioWorks.map(sw => sw.work).filter(w => w)
+            works: studioWorks.filter(sw => sw.work).map(sw => ({
+                ...sw.work.toJSON(),
+                studio_work_id: sw.id,
+                studio_score: sw.score || 0,
+                studio_work_status: sw.status,
+                added_at: sw.added_at
+            })),
+            pointLogs: pointLogs.map(log => ({
+                id: log.id,
+                delta: log.delta,
+                points_before: log.points_before,
+                points_after: log.points_after,
+                note: log.note,
+                ip_address: log.ip_address,
+                created_at: log.created_at,
+                admin: log.admin ? log.admin.toJSON() : null
+            }))
         });
     } catch (error) {
         console.error('获取工作室详情错误', error);
@@ -4803,11 +4826,18 @@ async function sendAllUsersNotification(req, res) {
 async function updateStudioPoints(req, res) {
     try {
         const { id } = req.params;
-        const { points, action, note } = req.body;
+        const { points, action = 'add', note } = req.body;
+        const cleanNote = String(note || '').trim();
         
         const parsedPoints = parseInt(points, 10);
-        if (!Number.isFinite(parsedPoints) || parsedPoints < -10000 || parsedPoints > 10000) {
+        if (!Number.isFinite(parsedPoints) || parsedPoints === 0 || parsedPoints < -10000 || parsedPoints > 10000) {
             return errorResponse(res, '积分必须是-10000 到 10000 之间的有效数字', 400);
+        }
+        if (!['add', 'subtract'].includes(action)) {
+            return errorResponse(res, '无效的积分操作', 400);
+        }
+        if (cleanNote.length < 5 || cleanNote.length > 500) {
+            return errorResponse(res, '积分备注必须为 5-500 个字符', 400);
         }
 
         // 修复: 使用事务 + SELECT FOR UPDATE 防止并发 read-modify-write 竞态
@@ -4824,20 +4854,28 @@ async function updateStudioPoints(req, res) {
                 throw err;
             }
             oldPoints = studio.points || 0;
-            if (action === 'add') {
-                newPoints = Math.max(0, oldPoints + parsedPoints);
-            } else {
-                newPoints = Math.max(0, parsedPoints);
-            }
+            const requestedDelta = action === 'subtract' ? -Math.abs(parsedPoints) : Math.abs(parsedPoints);
+            newPoints = Math.max(0, oldPoints + requestedDelta);
+            const actualDelta = newPoints - oldPoints;
             newLevel = Math.min(10, Math.floor(newPoints / 100) + 1);
             await DbAdapter.update(Studio, { points: newPoints, level: newLevel }, { where: { id }, transaction: t });
+            await DbAdapter.create(StudioPointLog, {
+                studio_id: Number(id),
+                admin_id: DbAdapter.getId(req.user),
+                delta: actualDelta,
+                points_before: oldPoints,
+                points_after: newPoints,
+                note: cleanNote,
+                ip_address: req.ip || req.socket?.remoteAddress || 'unknown'
+            }, { transaction: t });
         });
 
-        logOperation(req, 'update_studio_points', 'studio', id, {
+        await logOperation(req, 'update_studio_points', 'studio', id, {
             oldPoints,
             newPoints,
+            delta: newPoints - oldPoints,
             action,
-            note
+            note: cleanNote
         });
 
         const updatedStudio = await DbAdapter.findByPk(Studio, id);
@@ -4967,7 +5005,7 @@ async function recalibrateAllWorks(req, res) {
 
                 const updateData = {
                     ide_type: workDetail.ide_type || work.ide_type || 'KITTEN',
-                    work_url: workDetail.player_url || work.work_url
+                    work_url: buildCodemaoPlayerUrl({ workId: workDetail.id, playerUrl: workDetail.player_url, type: workDetail.type, ideType: workDetail.ide_type || work.ide_type })
                 };
 
                 await DbAdapter.update(Work, updateData, { where: { id: DbAdapter.getId(work) } });
