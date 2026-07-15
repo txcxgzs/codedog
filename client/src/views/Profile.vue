@@ -72,11 +72,15 @@
               <el-form-item label="收藏隐私">
                 <el-switch v-model="form.show_favorites" active-text="向其他用户展示我的收藏夹" inactive-text="仅自己可见" />
               </el-form-item>
-              <el-form-item>
-                <el-button type="primary" :loading="loading" @click="saveProfile">
-                  保存修改
-                </el-button>
-              </el-form-item>
+              <transition name="r-profile--save">
+                <el-form-item v-if="isProfileDirty" class="r-profile--save_row">
+                  <div class="r-profile--save_hint">检测到资料有改动</div>
+                  <el-button type="primary" :loading="loading" @click="saveProfile">
+                    保存修改
+                  </el-button>
+                  <el-button @click="resetProfileForm">撤销改动</el-button>
+                </el-form-item>
+              </transition>
             </el-form>
           </div>
         </el-tab-pane>
@@ -138,7 +142,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, watch } from 'vue'
+import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/user'
 import { userApi } from '@/api/user'
@@ -182,6 +186,15 @@ const form = reactive({
   profile_cover: '',
   show_favorites: false
 })
+const savedProfile = ref({ nickname: '', bio: '', profile_cover: '', show_favorites: false })
+const profileSnapshot = () => ({
+  nickname: String(form.nickname || '').trim(),
+  bio: String(form.bio || '').trim(),
+  profile_cover: String(form.profile_cover || '').trim(),
+  show_favorites: !!form.show_favorites
+})
+const isProfileDirty = computed(() => JSON.stringify(profileSnapshot()) !== JSON.stringify(savedProfile.value))
+const resetProfileForm = () => Object.assign(form, savedProfile.value)
 
 const handleCoverChange = async (event) => {
   const file = event.target.files?.[0]
@@ -321,6 +334,7 @@ const saveProfile = async () => {
       ...geetestData
     })
     if (res.code === 200) {
+      savedProfile.value = profileSnapshot()
       ElMessage.success('保存成功')
     } else {
       ElMessage.error(res.msg || '保存失败')
@@ -345,6 +359,7 @@ watch(() => userStore.user, (user) => {
     form.bio = user.bio || ''
     form.profile_cover = user.profile_cover || ''
     form.show_favorites = !!user.show_favorites
+    savedProfile.value = profileSnapshot()
   }
 }, { immediate: true })
 
@@ -614,5 +629,117 @@ $border-color: #eee;
   background: linear-gradient(120deg, #17243f, #617adb 55%, #7cd6e5);
   background-position: center;
   background-size: cover;
+}
+
+/* 新版资料中心：与公开主页共享轻盈的蓝金视觉体系。 */
+.r-profile--page {
+  min-height: calc(100vh - 56px);
+  padding: 34px 20px 80px;
+  align-items: flex-start;
+  background:
+    radial-gradient(circle at 8% 5%, rgba(254, 196, 51, .17), transparent 26%),
+    radial-gradient(circle at 92% 4%, rgba(91, 177, 255, .18), transparent 29%),
+    linear-gradient(135deg, #f8faff 0%, #f4f7fc 55%, #fffaf2 100%);
+}
+
+.r-profile--container { max-width: 1120px; }
+
+.r-profile--header {
+  position: relative;
+  align-items: center;
+  min-height: 150px;
+  padding: 30px 34px;
+  margin-bottom: 22px;
+  overflow: hidden;
+  border: 1px solid rgba(255,255,255,.92);
+  border-radius: 24px;
+  background:
+    radial-gradient(circle at 82% 20%, rgba(113, 211, 231, .22), transparent 24%),
+    linear-gradient(125deg, rgba(255,255,255,.98), rgba(244,248,255,.96));
+  box-shadow: 0 20px 55px rgba(30, 54, 92, .11);
+}
+
+.r-profile--header::after {
+  content: '';
+  position: absolute;
+  right: -55px;
+  bottom: -85px;
+  width: 260px;
+  height: 210px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, rgba(84,109,215,.08), rgba(104,211,228,.16));
+}
+
+.r-profile--header .r-profile--avatar_section,
+.r-profile--header .r-profile--info_section,
+.r-profile--header .r-profile--actions { position: relative; z-index: 1; }
+.r-profile--header .r-profile--avatar_section .r-profile--avatar {
+  width: 112px;
+  height: 112px;
+  border: 5px solid #fff;
+  box-shadow: 0 12px 28px rgba(28,45,75,.18);
+}
+.r-profile--header .r-profile--avatar_section .r-profile--avatar_overlay { width: 112px; height: 112px; }
+.r-profile--header .r-profile--info_section h2 { font-size: 28px; color: #152039; letter-spacing: -.5px; }
+.r-profile--header .r-profile--actions { flex-wrap: wrap; justify-content: flex-end; max-width: 390px; }
+.r-profile--header .r-profile--actions .el-button { height: 40px; margin-left: 0; padding: 0 17px; border-radius: 12px; }
+
+.r-profile--tabs {
+  padding: 10px 30px 36px;
+  border: 1px solid rgba(226,231,242,.92);
+  border-radius: 24px;
+  box-shadow: 0 20px 55px rgba(30,54,92,.09);
+}
+.r-profile--tabs :deep(.el-tabs__header) { margin-bottom: 30px; }
+.r-profile--tabs :deep(.el-tabs__nav-wrap) { padding-top: 8px; }
+.r-profile--tabs :deep(.el-tabs__item) { height: 52px; padding: 0 22px; font-weight: 600; color: #68748b; }
+.r-profile--tabs :deep(.el-tabs__item.is-active) { color: #172039; }
+.r-profile--tabs :deep(.el-tabs__active-bar) { height: 3px; border-radius: 3px; background: #fec433; }
+.r-profile--tabs .r-profile--tab_content { max-width: 760px; margin: 0 auto; }
+.r-profile--tabs .r-profile--tab_content_wide { max-width: none; }
+.r-profile--form :deep(.el-form-item) { margin-bottom: 24px; }
+.r-profile--form :deep(.el-form-item__label) { color: #435069; font-weight: 600; }
+.r-profile--form :deep(.el-input__wrapper),
+.r-profile--form :deep(.el-textarea__inner) {
+  border-radius: 12px;
+  box-shadow: 0 0 0 1px #dfe5ef inset;
+  transition: box-shadow .2s, background .2s;
+}
+.r-profile--form :deep(.el-input__wrapper) { min-height: 44px; padding: 0 14px; }
+.r-profile--form :deep(.el-input__wrapper.is-focus),
+.r-profile--form :deep(.el-textarea__inner:focus) { box-shadow: 0 0 0 2px rgba(254,196,51,.62) inset; }
+.r-profile--form :deep(.is-disabled .el-input__wrapper) { background: #f4f6fa; }
+.r-profile--cover_preview { aspect-ratio: 3.4 / 1; border-radius: 18px; box-shadow: inset 0 0 0 1px rgba(255,255,255,.2); }
+
+.r-profile--save_row {
+  position: sticky;
+  bottom: 18px;
+  z-index: 5;
+  margin: 10px 0 0 !important;
+  padding: 14px 16px;
+  border: 1px solid rgba(226,231,242,.95);
+  border-radius: 16px;
+  background: rgba(255,255,255,.94);
+  box-shadow: 0 16px 36px rgba(30,54,92,.16);
+  backdrop-filter: blur(12px);
+}
+.r-profile--save_row :deep(.el-form-item__content) { gap: 10px; }
+.r-profile--save_hint { margin-right: auto; color: #69758b; font-size: 13px; }
+.r-profile--save-enter-active, .r-profile--save-leave-active { transition: opacity .2s, transform .2s; }
+.r-profile--save-enter-from, .r-profile--save-leave-to { opacity: 0; transform: translateY(8px); }
+
+@media (max-width: 768px) {
+  .r-profile--page { padding: 14px 12px 94px; }
+  .r-profile--header { padding: 24px 18px; border-radius: 19px; }
+  .r-profile--header .r-profile--actions { max-width: none; }
+  .r-profile--header .r-profile--actions .el-button { flex: 1; min-width: 130px; }
+  .r-profile--tabs { padding: 8px 14px 26px; border-radius: 19px; }
+  .r-profile--tabs :deep(.el-tabs__nav-scroll) { overflow-x: auto; }
+  .r-profile--tabs :deep(.el-tabs__nav) { float: none; display: flex; width: max-content; }
+  .r-profile--tabs :deep(.el-tabs__item) { padding: 0 16px; }
+  .r-profile--form :deep(.el-form-item) { display: block; }
+  .r-profile--form :deep(.el-form-item__label) { display: block; width: 100% !important; height: 30px; line-height: 30px; text-align: left; }
+  .r-profile--form :deep(.el-form-item__content) { margin-left: 0 !important; }
+  .r-profile--save_hint { width: 100%; }
 }
 </style>
