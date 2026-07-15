@@ -1,18 +1,25 @@
 const DbAdapter = require('../utils/dbAdapter');
-const { Comment, User, Work, Post, Notification, sequelize } = require('../models');
+const { Comment, User, Work, Post, Studio, Notification, sequelize } = require('../models');
 const { successResponse, errorResponse, paginateResponse } = require('../middleware/response');
 const { isRoleAtLeast, canManageUser } = require('../config/permissions');
 // H12: 引入内容审核服务，落库前做敏感词检查
 const aiReview = require('../services/aiReview');
 const SOCIAL_CARD_PREFIX = '[[codedog-social-card]]';
 
-function buildSocialCard(input, userId) {
+async function buildSocialCard(input, userId) {
     if (!input) return null;
     if (input.type === 'user') return { type: 'user', target_id: Number(userId) };
     if (input.type === 'group') {
         const groupId = Number(input.target_id);
         if (!Number.isInteger(groupId) || groupId <= 0) return false;
         return { type: 'group', target_id: groupId };
+    }
+    if (input.type === 'studio') {
+        const studioId = Number(input.target_id);
+        if (!Number.isInteger(studioId) || studioId <= 0) return false;
+        const studio = await DbAdapter.findByPk(Studio, studioId, { attributes: ['id', 'name', 'status'] });
+        if (!studio || studio.status !== 'active') return false;
+        return { type: 'studio', target_id: studioId, target_name: studio.name };
     }
     return false;
 }
@@ -50,7 +57,7 @@ async function resolvePublishedPost(postId) {
 async function createComment(req, res) {
     try {
         const { content, work_id, post_id, parent_id, reply_to_user_id, social_card } = req.body;
-        const card = buildSocialCard(social_card, DbAdapter.getId(req.user));
+        const card = await buildSocialCard(social_card, DbAdapter.getId(req.user));
         if (card === false) return errorResponse(res, '社交卡片无效', 400);
 
         if ((!content || !String(content).trim()) && !card) {

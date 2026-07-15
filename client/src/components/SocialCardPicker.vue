@@ -16,18 +16,20 @@
         <small>发送聊天卡片</small>
         <button type="button" @click="choose('user')"><span>私</span><div><b>我的私聊卡片</b><em>别人可快速向我发起私聊</em></div></button>
         <button type="button" @click="choose('group')"><span>群</span><div><b>群聊邀请卡片</b><em>邀请其他用户加入群聊</em></div></button>
+        <button type="button" @click="choose('studio')"><span>室</span><div><b>工作室卡片</b><em>分享编程狗工作室主页</em></div></button>
       </div>
     </transition>
-    <span v-if="selected" class="social-picker__selected">{{ selected.type === 'user' ? '私聊名片' : `群聊 #${selected.target_id}` }}<button type="button" aria-label="移除卡片" @click="$emit('clear')">×</button></span>
+    <span v-if="selected" class="social-picker__selected">{{ selectedLabel }}<button type="button" aria-label="移除卡片" @click="$emit('clear')">×</button></span>
   </div>
 </template>
 
 <script setup>
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 
-defineProps({ selected: { type: Object, default: null } })
+const props = defineProps({ selected: { type: Object, default: null } })
 const emit = defineEmits(['select', 'clear'])
 const root = ref(null), open = ref(false)
+const selectedLabel = computed(() => props.selected?.type === 'user' ? '私聊名片' : props.selected?.type === 'studio' ? `工作室 #${props.selected.target_id}` : `群聊 #${props.selected?.target_id}`)
 const choose = type => { open.value = false; emit('select', type) }
 const closeOutside = event => { if (root.value && !root.value.contains(event.target)) open.value = false }
 onMounted(() => document.addEventListener('pointerdown', closeOutside))

@@ -792,9 +792,10 @@ onMounted(() => {
 const selectSocialCard = async type => {
   if (type === 'user') { selectedSocialCard.value = { type:'user' }; return }
   try {
-    const { value } = await ElMessageBox.prompt('请输入创建好的 IM 群聊 ID', '发送群聊邀请卡片', { inputPattern:/^\d+$/, inputErrorMessage:'请输入正确的群聊 ID' })
-    selectedSocialCard.value = { type:'group', target_id:Number(value) }
-  } catch (error) { if (!['cancel','close'].includes(error)) ElMessage.error('无法选择群聊卡片') }
+    const studio = type === 'studio'
+    const { value } = await ElMessageBox.prompt(studio ? '请输入要分享的编程狗工作室 ID' : '请输入创建好的 IM 群聊 ID', studio ? '发送工作室卡片' : '发送群聊邀请卡片', { inputPattern:/^\d+$/, inputErrorMessage:studio ? '请输入正确的工作室 ID' : '请输入正确的群聊 ID' })
+    selectedSocialCard.value = { type, target_id:Number(value) }
+  } catch (error) { if (!['cancel','close'].includes(error)) ElMessage.error('无法选择社交卡片') }
 }
 </script>
 

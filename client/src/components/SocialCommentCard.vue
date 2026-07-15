@@ -3,11 +3,11 @@
   <button v-else class="social-card" type="button" @click="openCard">
     <span class="social-card__mark">狗</span>
     <span class="social-card__body">
-      <small>{{ card.type === 'user' ? '编程狗私聊名片' : '编程狗群聊邀请' }}</small>
-      <b>{{ card.type === 'user' ? (author?.nickname || author?.username || `用户 ${card.target_id}`) : `群聊 #${card.target_id}` }}</b>
-      <span>{{ card.type === 'user' ? '点击卡片快速发起私聊' : '点击卡片加入群聊，一起交流吧' }}</span>
+      <small>{{ card.type === 'user' ? '编程狗私聊名片' : card.type === 'studio' ? '编程狗工作室' : '编程狗群聊邀请' }}</small>
+      <b>{{ card.type === 'user' ? (author?.nickname || author?.username || `用户 ${card.target_id}`) : card.type === 'studio' ? (card.target_name || `工作室 #${card.target_id}`) : `群聊 #${card.target_id}` }}</b>
+      <span>{{ card.type === 'user' ? '点击卡片快速发起私聊' : card.type === 'studio' ? '点击查看工作室主页和作品' : '点击卡片加入群聊，一起交流吧' }}</span>
     </span>
-    <strong>{{ card.type === 'user' ? '发起私聊' : '加入群聊' }} ›</strong>
+    <strong>{{ card.type === 'user' ? '发起私聊' : card.type === 'studio' ? '查看工作室' : '加入群聊' }} ›</strong>
   </button>
 </template>
 
@@ -19,9 +19,10 @@ const props = defineProps({ content: { type:String, default:'' }, author: { type
 const prefix = '[[codedog-social-card]]'
 const card = computed(() => {
   if (!props.content.startsWith(prefix)) return null
-  try { const value=JSON.parse(props.content.slice(prefix.length)); return ['user','group'].includes(value.type) && Number(value.target_id)>0 ? value : null } catch { return null }
+  try { const value=JSON.parse(props.content.slice(prefix.length)); return ['user','group','studio'].includes(value.type) && Number(value.target_id)>0 ? value : null } catch { return null }
 })
 const openCard = async () => {
+  if (card.value.type === 'studio') { window.open(`/studio/${Number(card.value.target_id)}`, '_blank', 'noopener,noreferrer'); return }
   const popup = window.open('about:blank', '_blank')
   try {
     const action = card.value.type === 'user' ? { action:'direct', user_id:Number(card.value.target_id) } : { action:'group', group_id:Number(card.value.target_id) }
