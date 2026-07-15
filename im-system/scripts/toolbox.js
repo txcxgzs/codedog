@@ -4,6 +4,16 @@ const path = require('path');
 const readline = require('readline');
 const root = path.resolve(__dirname, '..');
 
+const supportsColor = process.stdout.isTTY === true && !process.env.NO_COLOR;
+const ansi = {
+  reset: '\x1b[0m', bold: '\x1b[1m', dim: '\x1b[2m', red: '\x1b[31m',
+  green: '\x1b[32m', yellow: '\x1b[33m', cyan: '\x1b[36m'
+};
+const color = (name, value) => supportsColor ? `${ansi[name] || ''}${value}${ansi.reset}` : String(value);
+const clearScreen = () => {
+  if (process.stdout.isTTY === true) process.stdout.write('\x1b[2J\x1b[3J\x1b[H');
+};
+
 function run(command, args = []) {
   const result = spawnSync(command, args, { cwd: root, stdio: 'inherit', shell: process.platform === 'win32' });
   if (result.status !== 0) throw new Error(`${command} 执行失败 (${result.status})`);
@@ -32,7 +42,7 @@ function installGlobalCommand() {
   const target = '/usr/local/bin/codedogim';
   try { fs.unlinkSync(target); } catch (error) { if (error.code !== 'ENOENT') throw error; }
   fs.symlinkSync(entry, target);
-  console.log(`全局命令已安装：${target} -> ${entry}`);
+  console.log(color('green', `✓ 全局命令已安装：${target} -> ${entry}`));
 }
 const actions = {
   '1': () => compose(['up', '-d', '--build']),
@@ -50,8 +60,27 @@ const actions = {
 async function main() {
   if (process.argv[2]) { const action = actions[process.argv[2]]; if (!action) throw new Error('未知操作'); return action(); }
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-  console.log('\n======================================\n  CodeDog IM 管理工具箱 v0.1.0\n======================================');
-  console.log('1. 构建并启动\n2. 停止\n3. 重启\n4. 智能更新\n5. 查看日志\n6. 状态\n7. 检查与构建\n8. 生成 SSO 密钥\n9. 安装依赖\n10. 备份 MySQL\n11. 安装/修复全局 codedogim 命令\n0. 退出');
-  rl.question('\n请选择操作 [0-11]: ', answer => { rl.close(); if (answer === '0') return; Promise.resolve(actions[answer]?.()).catch(error => { console.error(error.message); process.exitCode = 1; }); });
+  clearScreen();
+  console.log(color('cyan', color('bold', '======================================')));
+  console.log(color('yellow', color('bold', '  CodeDog IM 管理工具箱 v0.1.0')));
+  console.log(color('cyan', color('bold', '======================================')));
+  console.log([
+    ['1', '构建并启动'], ['2', '停止'], ['3', '重启'], ['4', '智能更新'],
+    ['5', '查看日志'], ['6', '状态'], ['7', '检查与构建'], ['8', '生成 SSO 密钥'],
+    ['9', '安装依赖'], ['10', '备份 MySQL'], ['11', '安装/修复全局 codedogim 命令'], ['0', '退出']
+  ].map(([number, label]) => `${color('yellow', number.padStart(2))}. ${label}`).join('\n'));
+  rl.question(color('cyan', '\n请选择操作 [0-11]: '), answer => {
+    rl.close();
+    if (answer === '0') return;
+    const action = actions[answer];
+    if (!action) {
+      console.error(color('red', '✗ 无效操作，请输入 0-11'));
+      process.exitCode = 1;
+      return;
+    }
+    Promise.resolve().then(action)
+      .then(() => console.log(color('green', '\n✓ 操作执行完成')))
+      .catch(error => { console.error(color('red', `\n✗ ${error.message}`)); process.exitCode = 1; });
+  });
 }
-main().catch(error => { console.error(error.message); process.exit(1); });
+main().catch(error => { console.error(color('red', `✗ ${error.message}`)); process.exit(1); });
