@@ -162,7 +162,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted, computed } from 'vue'
+import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import { useUserStore } from '@/stores/user'
 import { useNotificationStore } from '@/stores/notification'
 import { useRouter } from 'vue-router'
@@ -189,6 +189,17 @@ const dismissedPopupIds = ref(loadDismissedIds('ann_popup_dismissed'))
 const popupQueue = ref([])
 const popupDialogVisible = ref(false)
 const currentPopupAnnouncement = ref(null)
+
+// App 通常早于登录页挂载；监听用户 ID 才能在登录完成后及时获取未读数。
+// 同时覆盖退出后切换账号，避免沿用上一账号的红点数量。
+watch(() => userStore.user?.id, (userId) => {
+  if (userId) notificationStore.fetchUnreadCount()
+  else notificationStore.unreadCount = 0
+}, { immediate: true })
+
+const refreshUnreadWhenVisible = () => {
+  if (!document.hidden && userStore.isLoggedIn) notificationStore.fetchUnreadCount()
+}
 
 const announcementColorMap = {
   blue: { bg: '#ecf5ff', border: '#409EFF', text: '#1f2d3d' },
@@ -350,11 +361,15 @@ onMounted(async () => {
 
   // 监听全局 hCaptcha 校验事件（由 request 拦截器在 403/HCAPTCHA_REQUIRED 时派发）
   window.addEventListener('hcaptcha-required', checkHCaptcha)
+  window.addEventListener('focus', refreshUnreadWhenVisible)
+  document.addEventListener('visibilitychange', refreshUnreadWhenVisible)
 })
 
 // 组件卸载时清理事件监听与定时器，避免内存泄漏
 onUnmounted(() => {
   window.removeEventListener('hcaptcha-required', checkHCaptcha)
+  window.removeEventListener('focus', refreshUnreadWhenVisible)
+  document.removeEventListener('visibilitychange', refreshUnreadWhenVisible)
   if (hcaptchaCheckInterval) {
     clearInterval(hcaptchaCheckInterval)
     hcaptchaCheckInterval = null

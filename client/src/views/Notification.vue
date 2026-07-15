@@ -113,6 +113,12 @@ const handleClick = async (item) => {
     await notificationStore.markAsRead(item.id)
   }
 
+  // 开发者应用使用控制台内的详情弹窗，没有 /developer_app/:id 页面。
+  if (item.type === 'developer_app_review' || item.related_type === 'developer_app') {
+    router.push('/developer')
+    return
+  }
+
   // 系统通知（如举报处理结果）不跳转
   if (item.type === 'system' && !item.related_type) {
     return

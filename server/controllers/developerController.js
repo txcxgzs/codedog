@@ -389,9 +389,31 @@ async function adminReviewApp(req, res) {
 
         logOperation(req, 'review_developer_app', 'developer_app', app.id, { action, note });
         await recordAppAudit(app.id, getOwnerId(req), { action: 'review_' + action, fromStatus: app.status, toStatus: map[action], reviewNote: note != null ? String(note).trim() : null });
-        if (action === 'reject') {
-            await createNotification({ user_id: app.owner_user_id, type: 'developer_app_review', title: '开发者应用审核未通过', content: `应用「${app.name}」未通过审核。整改建议：${cleanNote}`, related_id: app.id, related_type: 'developer_app', sender_id: getOwnerId(req), meta: JSON.stringify({ action: 'reject', app_id: app.id }) });
-        }
+        // 每一种审核结果都必须通知应用所有者，不能只有拒绝才发消息。
+        const reviewNotification = {
+            approve: {
+                title: '开发者应用审核通过',
+                content: `应用「${app.name}」已通过审核，现在可以在开发者平台中使用。`
+            },
+            reject: {
+                title: '开发者应用审核未通过',
+                content: `应用「${app.name}」未通过审核。整改建议：${cleanNote}`
+            },
+            suspend: {
+                title: '开发者应用已停用',
+                content: `应用「${app.name}」已被停用。${cleanNote ? `说明：${cleanNote}` : '如有疑问，请联系管理员。'}`
+            }
+        }[action];
+        await createNotification({
+            user_id: app.owner_user_id,
+            type: 'developer_app_review',
+            title: reviewNotification.title,
+            content: reviewNotification.content,
+            related_id: app.id,
+            related_type: 'developer_app',
+            sender_id: getOwnerId(req),
+            meta: JSON.stringify({ action, app_id: app.id })
+        });
         const updated = await DbAdapter.findByPk(DeveloperApp, app.id);
         return successResponse(res, serializeApp(updated), '审核完成');
     } catch (e) {
