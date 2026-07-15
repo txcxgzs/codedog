@@ -75,8 +75,8 @@
               </div>
               <template #dropdown>
                 <el-dropdown-menu class="c-navigator--menu">
-                <el-dropdown-item command="publicProfile"><el-icon><User /></el-icon>我的主页</el-dropdown-item>
-                <el-dropdown-item command="profile"><el-icon><Setting /></el-icon>编辑资料</el-dropdown-item>
+                  <el-dropdown-item command="publicProfile"><el-icon><User /></el-icon>我的主页</el-dropdown-item>
+                  <el-dropdown-item command="profile"><el-icon><Setting /></el-icon>编辑资料</el-dropdown-item>
                   <el-dropdown-item command="myWorks"><el-icon><Monitor /></el-icon>我的作品</el-dropdown-item>
                   <el-dropdown-item command="developer">开发者平台</el-dropdown-item>
                   <el-dropdown-item command="notifications"><el-icon><Bell /></el-icon>消息通知</el-dropdown-item>
