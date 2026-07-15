@@ -20,19 +20,16 @@ INSTALL_DIR="$(ask '安装目录' "$INSTALL_DIR")"
 PUBLIC_URL="$(ask 'IM 对外地址（含 /im）' 'http://服务器IP:8100/im')"
 HTTP_PORT="$(ask 'IM 对外端口' '8100')"
 
-if yesno '使用安装器内置的 MySQL（推荐）' Y; then
+if yesno '使用安装器内置的 MySQL + Redis（推荐，均不开放公网端口）' Y; then
   DB_MODE=builtin
+  REDIS_MODE=builtin
   DB_PASSWORD="$(secret 24)"; DB_ROOT_PASSWORD="$(secret 24)"
   DATABASE_URL="mysql://im_user:${DB_PASSWORD}@mysql:3306/codedog_im"
+  REDIS_URL='redis://redis:6379/0'
 else
   DB_MODE=external
-  DATABASE_URL="$(ask 'MySQL 连接地址' 'mysql://用户名:密码@127.0.0.1:3306/codedog_im')"
-fi
-
-if yesno '使用安装器内置的 Redis（推荐，不开放公网端口）' Y; then
-  REDIS_MODE=builtin; REDIS_URL='redis://redis:6379/0'
-else
   REDIS_MODE=external
+  DATABASE_URL="$(ask 'MySQL 连接地址' 'mysql://用户名:密码@127.0.0.1:3306/codedog_im')"
   REDIS_URL="$(ask 'Redis 连接地址' 'redis://:密码@127.0.0.1:6379/0')"
 fi
 
@@ -95,14 +92,6 @@ IMAGE_HOST_STORAGE_DESTINATION=telegram
 EOF
 [ -f secrets/im_sso_public.pem ] || node scripts/keygen.js
 chmod 600 .env secrets/im_sso_private.pem
-
-if [ "$COMPOSE_FILE" = docker-compose.external.yml ]; then
-  # Mixed mode keeps only the selected local dependencies in a generated file.
-  if [ "$DB_MODE" = builtin ] || [ "$REDIS_MODE" = builtin ]; then
-    echo '混合模式暂不支持；数据库与 Redis 请同时选择内置或同时选择外部。'
-    exit 1
-  fi
-fi
 
 npm ci
 npm run check
