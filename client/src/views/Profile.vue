@@ -20,6 +20,9 @@
           <p class="r-profile--bio">{{ userStore.user?.bio || '这个人很懒，什么都没写~' }}</p>
         </div>
         <div class="r-profile--actions">
+          <el-button v-if="userStore.user?.codemao_user_id" plain @click="viewPublicProfile">
+            查看我的主页
+          </el-button>
           <el-button type="primary" @click="$router.push('/publish')">
             <span class="r-profile--btn_icon r-profile--btn_icon_publish"></span>
             发布作品
@@ -136,6 +139,7 @@
 
 <script setup>
 import { ref, reactive, onMounted, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/user'
 import { userApi } from '@/api/user'
 import { uploadApi } from '@/api/upload'
@@ -146,6 +150,7 @@ import GeetestDialog from '@/components/GeetestDialog.vue'
 import AppImage from '@/components/AppImage.vue'
 
 const userStore = useUserStore()
+const router = useRouter()
 const activeTab = ref('info')
 const authorizations = ref([])
 const authLoading = ref(false)
@@ -159,6 +164,15 @@ const avatarInput = ref(null)
 const avatarLoading = ref(false)
 const coverInput = ref(null)
 const coverUploading = ref(false)
+
+const viewPublicProfile = () => {
+  const codemaoId = userStore.user?.codemao_user_id
+  if (!codemaoId) {
+    ElMessage.warning('当前账号暂无可用的公开主页 ID')
+    return
+  }
+  router.push(`/user/${codemaoId}`)
+}
 
 const defaultAvatar = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI0ZFQzQzMyIvPjx0ZXh0IHg9IjUwIiB5PSI2MCIgZm9udC1zaXplPSI0MCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZmlsbD0id2hpdGUiPuahijwvdGV4dD48L3N2Zz4='
 
