@@ -4,6 +4,7 @@ const path = require('path');
 const root = path.resolve(__dirname, '..');
 const repo = path.resolve(root, '..');
 const backupDir = path.join(root, 'backups', new Date().toISOString().replace(/[:.]/g, '-'));
+const deployedRevisionFile = path.join(root, 'data', 'deployed-revision');
 
 function exec(command, args, cwd = repo, capture = false) {
   const result = spawnSync(command, args, { cwd, encoding: 'utf8', stdio: capture ? 'pipe' : 'inherit', shell: process.platform === 'win32' });
@@ -43,10 +44,19 @@ if (process.platform !== 'win32') {
   fs.symlinkSync(entry, target);
 }
 const after = exec('git', ['rev-parse', 'HEAD'], repo, true);
-if (before === after) { console.log('代码已是最新版本，无需重建。'); process.exit(0); }
-const changed = exec('git', ['diff', '--name-only', before, after, '--', 'im-system'], repo, true).split(/\r?\n/).filter(Boolean);
-if (!changed.length) { console.log('本次更新不包含 IM 文件，无需重建。'); process.exit(0); }
+const deployedRevision = fs.existsSync(deployedRevisionFile) ? fs.readFileSync(deployedRevisionFile, 'utf8').trim() : '';
+const changed = before === after ? [] : exec('git', ['diff', '--name-only', before, after, '--', 'im-system'], repo, true).split(/\r?\n/).filter(Boolean);
+if (before === after && deployedRevision === after) { console.log('代码与当前运行版本均为最新，无需重建。'); process.exit(0); }
+if (before !== after && !changed.length && deployedRevision) {
+  fs.mkdirSync(path.dirname(deployedRevisionFile), { recursive: true });
+  fs.writeFileSync(deployedRevisionFile, `${after}\n`);
+  console.log('本次更新不包含 IM 文件，无需重建。');
+  process.exit(0);
+}
+if (before === after) console.log('代码已是最新，但运行版本未记录或落后，将重新构建部署。');
 if (changed.some(file => /package(-lock)?\.json$/.test(file))) exec('npm', ['ci'], root);
 exec('npm', ['run', 'check'], root);
 exec('docker', ['compose', 'up', '-d', '--build'], root);
+fs.mkdirSync(path.dirname(deployedRevisionFile), { recursive: true });
+fs.writeFileSync(deployedRevisionFile, `${after}\n`);
 console.log(`更新完成：${before.slice(0, 8)} -> ${after.slice(0, 8)}；备份目录：${backupDir}`);

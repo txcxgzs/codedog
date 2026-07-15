@@ -2,7 +2,7 @@ const { Sequelize, DataTypes, Op } = require('sequelize');
 const config = require('./config');
 
 function memoryDatabase() {
-  const state = { conversations: [], members: [], messages: [], groups: [], images: [], audits: [], reports: [], ids: { conversation: 0, message: 0, image: 0, audit: 0, report: 0 } };
+  const state = { users: [], conversations: [], members: [], messages: [], groups: [], images: [], audits: [], reports: [], ids: { conversation: 0, message: 0, image: 0, audit: 0, report: 0 } };
   const row = value => Object.assign(value, {
     toJSON() { const plain = { ...this }; delete plain.toJSON; delete plain.save; return plain; },
     async save() { this.updated_at = new Date(); return this; }
@@ -35,6 +35,16 @@ function memoryDatabase() {
     async findOrCreate({ where, defaults }) { let item = state.conversations.find(value => matches(value, where)); if (item) return [item, false]; item = row({ id: ++state.ids.conversation, last_sequence: 0, ...defaults, ...where, ...now() }); state.conversations.push(item); return [item, true]; },
     async create(data) { const item = row({ id: ++state.ids.conversation, last_sequence: 0, ...data, ...now() }); state.conversations.push(item); return item; }
   };
+  const UserProfile = {
+    async findAll(options) { return select(state.users, options); },
+    async findByPk(id) { return state.users.find(item => String(item.id) === String(id)) || null; },
+    async upsert(data) {
+      let item = state.users.find(value => String(value.id) === String(data.id));
+      if (item) Object.assign(item, data, { updated_at: new Date() });
+      else { item = row({ ...data, ...now() }); state.users.push(item); }
+      return [item, !state.users.includes(item)];
+    }
+  };
   const ConversationMember = {
     async findAll(options) { return select(state.members, options); },
     async findOne({ where }) { return state.members.find(item => matches(item, where)) || null; },
@@ -66,12 +76,19 @@ function memoryDatabase() {
     async authenticate() {}, async sync() {}, async close() {},
     async transaction(callback) { return callback({ LOCK: { UPDATE: 'UPDATE' } }); }
   };
-  return { sequelize, Conversation, ConversationMember, Message, Group, Image, AdminAudit, Report, async connectDatabase() {} };
+  return { sequelize, UserProfile, Conversation, ConversationMember, Message, Group, Image, AdminAudit, Report, async connectDatabase() {} };
 }
 
 function mysqlDatabase() {
   const sequelize = new Sequelize(config.databaseUrl, { logging: false, pool: { max: 40, min: 2, idle: 10000 } });
   const opts = { underscored: true, timestamps: true, createdAt: 'created_at', updatedAt: 'updated_at' };
+  const UserProfile = sequelize.define('ImUserProfile', {
+    id: { type: DataTypes.INTEGER, primaryKey: true },
+    username: { type: DataTypes.STRING(100), allowNull: false },
+    nickname: { type: DataTypes.STRING(100) },
+    avatar: { type: DataTypes.STRING(1000) },
+    role: { type: DataTypes.STRING(30), allowNull: false, defaultValue: 'user' }
+  }, { ...opts, tableName: 'im_user_profiles' });
   const Conversation = sequelize.define('ImConversation', {
     id: { type: DataTypes.BIGINT, primaryKey: true, autoIncrement: true },
     type: { type: DataTypes.ENUM('direct', 'group'), allowNull: false }, direct_key: { type: DataTypes.STRING(64), unique: true },
@@ -112,7 +129,7 @@ function mysqlDatabase() {
   const SchemaMigration = sequelize.define('ImSchemaMigration', {
     version: { type: DataTypes.STRING(40), primaryKey: true }, checksum: { type: DataTypes.STRING(64), allowNull: false }
   }, { ...opts, tableName: 'im_schema_migrations', updatedAt: false });
-  return { sequelize, Conversation, ConversationMember, Message, Group, Image, AdminAudit, Report, async connectDatabase() {
+  return { sequelize, UserProfile, Conversation, ConversationMember, Message, Group, Image, AdminAudit, Report, async connectDatabase() {
     await sequelize.authenticate();
     await SchemaMigration.sync();
     const version = '001_initial_im_schema';
@@ -135,6 +152,11 @@ function mysqlDatabase() {
     if (!await SchemaMigration.findByPk(reportsVersion)) {
       await Report.sync();
       await SchemaMigration.create({ version: reportsVersion, checksum: 'im-message-reports-v1' });
+    }
+    const userProfilesVersion = '005_im_user_profiles';
+    if (!await SchemaMigration.findByPk(userProfilesVersion)) {
+      await UserProfile.sync();
+      await SchemaMigration.create({ version: userProfilesVersion, checksum: 'im-sso-user-profile-cache-v1' });
     }
   } };
 }

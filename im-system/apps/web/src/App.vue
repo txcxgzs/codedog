@@ -8,9 +8,9 @@
         <form @submit.prevent="createDirect"><input v-model="peerId" inputmode="numeric" placeholder="对方用户 ID" /><button>私聊</button></form>
         <form @submit.prevent="createGroup"><input v-model="groupName" maxlength="50" placeholder="新群名称" /><button>建群</button></form>
       </div>
-      <div v-if="requests.length" class="requests"><small>私聊申请</small><div v-for="request in requests" :key="request.conversation_id"><span>用户 {{ request.from_user_id }}</span><button @click="handleRequest(request, 'accept')">接受</button><button class="ghost" @click="handleRequest(request, 'reject')">拒绝</button></div></div>
+      <div v-if="requests.length" class="requests"><small>私聊申请</small><div v-for="request in requests" :key="request.conversation_id"><span>{{ displayName(request.from_user, request.from_user_id) }}</span><button @click="handleRequest(request, 'accept')">接受</button><button class="ghost" @click="handleRequest(request, 'reject')">拒绝</button></div></div>
       <button v-for="item in filteredConversations" :key="item.id" class="conversation" :class="{ active: selected?.id === item.id }" @click="selectConversation(item)">
-        <span class="avatar">{{ item.type === 'group' ? '群' : '友' }}</span>
+        <span class="avatar"><img v-if="item.type === 'direct' && item.peer?.avatar" :src="item.peer.avatar" alt="" referrerpolicy="no-referrer" @error="$event.currentTarget.remove()" />{{ item.type === 'group' ? '群' : avatarLetter(item.peer, '友') }}</span>
         <span class="conversation-copy"><b>{{ item.title || `会话 #${item.id}` }}</b><small>序列 {{ item.last_sequence || 0 }}</small></span>
       </button>
       <div v-if="!conversations.length" class="empty">还没有会话<br><small>从编程狗用户主页发起私聊</small></div>
@@ -30,13 +30,13 @@
     </aside>
 
     <section class="channel">
-      <header><div><small>即时消息</small><h1>{{ selected ? (selected.type === 'group' ? `群组 #${selected.id}` : `私聊 #${selected.id}`) : '选择一个会话' }}</h1></div><div class="signal"><span></span><span></span><span></span></div></header>
+      <header><div><small>即时消息</small><h1>{{ selected ? (selected.title || `会话 #${selected.id}`) : '选择一个会话' }}</h1></div><div class="signal"><span></span><span></span><span></span></div></header>
       <div ref="timeline" class="timeline">
         <div v-if="loading" class="center-state">正在加载消息…</div>
         <div v-else-if="!selected" class="welcome"><div class="orb">聊</div><h2>欢迎使用编程狗消息</h2><p>选择左侧会话，开始安全、可靠的即时交流。</p></div>
         <article v-for="message in messages" :key="message.id" class="message" :class="{ mine: Number(message.sender_id) === Number(me?.id) }">
-          <span class="avatar">{{ Number(message.sender_id) === Number(me?.id) ? initials : '友' }}</span>
-          <div><div class="message-meta"><b>{{ Number(message.sender_id) === Number(me?.id) ? '我' : `用户 ${message.sender_id}` }}</b><time>{{ formatTime(message.created_at) }}</time><code>#{{ message.sequence }}</code><button v-if="Number(message.sender_id) !== Number(me?.id)" class="report-message" @click="reportMessage(message)">举报</button></div><a v-if="message.type === 'image'" :href="imageData(message).url" target="_blank" rel="noopener"><img class="message-image" :src="imageData(message).url" alt="聊天图片" referrerpolicy="no-referrer" /></a><p v-else>{{ message.content }}</p></div>
+          <span class="avatar"><img v-if="message.sender?.avatar" :src="message.sender.avatar" alt="" referrerpolicy="no-referrer" @error="$event.currentTarget.remove()" />{{ Number(message.sender_id) === Number(me?.id) ? initials : avatarLetter(message.sender, '友') }}</span>
+          <div><div class="message-meta"><b>{{ Number(message.sender_id) === Number(me?.id) ? '我' : displayName(message.sender, message.sender_id) }}</b><time>{{ formatTime(message.created_at) }}</time><code>#{{ message.sequence }}</code><button v-if="Number(message.sender_id) !== Number(me?.id)" class="report-message" @click="reportMessage(message)">举报</button></div><a v-if="message.type === 'image'" :href="imageData(message).url" target="_blank" rel="noopener"><img class="message-image" :src="imageData(message).url" alt="聊天图片" referrerpolicy="no-referrer" /></a><p v-else>{{ message.content }}</p></div>
         </article>
       </div>
       <form class="composer" @submit.prevent="sendMessage">
@@ -62,7 +62,12 @@ const createPanel = ref(false), peerId = ref(''), groupName = ref('')
 const avatarFailed = ref(false)
 let socket = null
 const initials = computed(() => String(me.value?.nickname || me.value?.username || '犬').slice(0, 1))
-const filteredConversations = computed(() => conversations.value.filter(item => String(item.id).includes(filter.value.trim())))
+const displayName = (user, fallbackId) => user?.nickname || user?.username || `用户 ${fallbackId}`
+const avatarLetter = (user, fallback = '友') => String(user?.nickname || user?.username || fallback).slice(0, 1)
+const filteredConversations = computed(() => {
+  const keyword = filter.value.trim().toLowerCase()
+  return conversations.value.filter(item => !keyword || String(item.id).includes(keyword) || String(item.title || '').toLowerCase().includes(keyword))
+})
 const api = async (url, options = {}) => {
   const response = await fetch(`/im/api${url}`, { credentials: 'include', headers: { 'Content-Type': 'application/json', ...(options.headers || {}) }, ...options })
   const body = await response.json(); if (!response.ok) throw new Error(body.msg || '请求失败'); return body.data
@@ -125,6 +130,7 @@ onMounted(() => load().catch(error => { socketState.value = error.message }))
 onUnmounted(() => socket?.close())
 </script>
 <style scoped>
+.timeline { padding:24px clamp(16px,2vw,28px); }
 .message-image { display:block; max-width:min(420px,60vw); max-height:360px; margin-top:8px; border:1px solid #e2e4e8; border-radius:5px 15px 15px 15px; object-fit:contain; background:#fff; }
 .composer footer > div { display:flex; gap:8px; }
 .image-button { display:inline-flex; align-items:center; border:1px solid #dfe2e8; border-radius:9px; padding:8px 12px; color:#666b73; background:#fafafa; cursor:pointer; }
@@ -139,6 +145,6 @@ onUnmounted(() => socket?.close())
 .requests button { height:25px; font-size:10px; }
 .requests button.ghost { background:#fff; color:#7d828a; border:1px solid #dfe2e8; }
 .report-message { border:0; background:transparent; color:#a0a4ad; padding:0; font-size:11px; cursor:pointer; }.report-message:hover{color:#f56c6c}
-.account .avatar { overflow:hidden; }
-.account .avatar img { display:block; width:100%; height:100%; object-fit:cover; }
+.avatar { position:relative; overflow:hidden; }
+.avatar img { position:absolute; inset:0; display:block; width:100%; height:100%; object-fit:cover; }
 </style>

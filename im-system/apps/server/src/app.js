@@ -11,7 +11,7 @@ const { Op } = require('sequelize');
 const config = require('./config');
 const { exchangeTicket, parseSession, requireSession } = require('./auth');
 const { connectReplayStore } = require('./replayStore');
-const { sequelize, Conversation, ConversationMember, Message, Group, Image, AdminAudit, Report, connectDatabase } = require('./database');
+const { sequelize, UserProfile, Conversation, ConversationMember, Message, Group, Image, AdminAudit, Report, connectDatabase } = require('./database');
 const { uploadImage } = require('./imageHost');
 
 const app = express();
@@ -34,6 +34,7 @@ app.get('/health', async (req, res) => {
 app.post('/api/auth/sso/exchange', async (req, res) => {
   try {
     const { session, user } = await exchangeTicket(String(req.body?.ticket || ''));
+    await UserProfile.upsert({ id: user.id, username: user.username, nickname: user.nickname || null, avatar: user.avatar || null, role: user.role || 'user' });
     const secure = config.production ? '; Secure' : '';
     res.append('Set-Cookie', `im_session=${session}; Path=/; HttpOnly; SameSite=Lax; Max-Age=43200${secure}`);
     ok(res, user, '登录成功');
@@ -46,6 +47,21 @@ app.post('/api/auth/logout', requireSession, (req, res) => {
   ok(res, null, '已退出');
 });
 app.get('/api/me', requireSession, (req, res) => ok(res, req.user));
+
+const publicUser = value => value ? {
+  id: Number(value.id), username: value.username, nickname: value.nickname,
+  avatar: value.avatar, role: value.role
+} : null;
+const usersById = async ids => {
+  const uniqueIds = [...new Set(ids.filter(Boolean).map(Number))];
+  if (!uniqueIds.length) return new Map();
+  const users = await UserProfile.findAll({ where: { id: { [Op.in]: uniqueIds } } });
+  return new Map(users.map(user => [Number(user.id), publicUser(user)]));
+};
+const enrichMessages = async rows => {
+  const profiles = await usersById(rows.map(row => row.sender_id));
+  return rows.map(row => ({ ...row.toJSON(), sender: profiles.get(Number(row.sender_id)) || null }));
+};
 
 const imageTempDir = path.join(config.root, 'data/image-temp');
 fs.mkdirSync(imageTempDir, { recursive: true });
@@ -69,11 +85,14 @@ app.get('/api/conversations', requireSession, async (req, res, next) => {
     const byId = new Map(conversations.map(item => [String(item.id), item.toJSON()]));
     const groups = await Promise.all(conversations.filter(item => item.type === 'group').map(item => Group.findOne({ where: { conversation_id: item.id } })));
     const groupById = new Map(groups.filter(Boolean).map(item => [String(item.conversation_id), item.toJSON()]));
+    const peerIds = conversations.filter(item => item.type === 'direct').map(item => String(item.direct_key).split(':').map(Number).find(id => id !== Number(req.user.id)));
+    const peers = await usersById(peerIds);
     ok(res, memberships.map(item => {
       const conversation = byId.get(String(item.conversation_id));
       if (!conversation) return null;
       const peerId = conversation.type === 'direct' ? String(conversation.direct_key).split(':').map(Number).find(id => id !== Number(req.user.id)) : null;
-      return { ...conversation, title: conversation.type === 'group' ? groupById.get(String(conversation.id))?.name : `用户 ${peerId}`, peer_id: peerId, group: groupById.get(String(conversation.id)), membership: item.toJSON() };
+      const peer = peers.get(Number(peerId)) || null;
+      return { ...conversation, title: conversation.type === 'group' ? groupById.get(String(conversation.id))?.name : (peer?.nickname || peer?.username || `用户 ${peerId}`), peer_id: peerId, peer, group: groupById.get(String(conversation.id)), membership: item.toJSON() };
     }).filter(Boolean));
   } catch (error) { next(error); }
 });
@@ -85,7 +104,8 @@ app.get('/api/conversation-requests', requireSession, async (req, res, next) => 
       const conversation = await Conversation.findByPk(membership.conversation_id);
       if (!conversation || conversation.type !== 'direct') return null;
       const fromUserId = String(conversation.direct_key).split(':').map(Number).find(id => id !== Number(req.user.id));
-      return { conversation_id: conversation.id, from_user_id: fromUserId, created_at: membership.created_at };
+      const profile = await UserProfile.findByPk(fromUserId);
+      return { conversation_id: conversation.id, from_user_id: fromUserId, from_user: publicUser(profile), created_at: membership.created_at };
     }));
     ok(res, rows.filter(Boolean));
   } catch (error) { next(error); }
@@ -238,7 +258,7 @@ app.get('/api/conversations/:id/messages', requireSession, async (req, res, next
     const after = Math.max(0, Number(req.query.after_sequence || 0));
     const limit = Math.min(100, Math.max(1, Number(req.query.limit || 50)));
     const rows = await Message.findAll({ where: { conversation_id: req.params.id, sequence: { [Op.gt]: after } }, order: [['sequence', 'ASC']], limit });
-    ok(res, rows);
+    ok(res, await enrichMessages(rows));
   } catch (error) { next(error); }
 });
 
@@ -287,7 +307,7 @@ app.post('/api/reports', requireSession, async (req, res, next) => {
 });
 
 app.post('/api/messages', requireSession, async (req, res, next) => {
-  try { const message = await createMessage(req.user, req.body || {}); broadcastConversation(message.conversation_id, 'message.new', message.toJSON()); ok(res, message, '消息已发送'); }
+  try { const message = await createMessage(req.user, req.body || {}); const [data] = await enrichMessages([message]); broadcastConversation(message.conversation_id, 'message.new', data); ok(res, data, '消息已发送'); }
   catch (error) { next(error); }
 });
 
@@ -349,8 +369,9 @@ wss.on('connection', (ws, user) => {
       if (frame.event === 'ping') return ws.send(JSON.stringify({ version: 1, event: 'pong', data: { at: Date.now() } }));
       if (frame.event === 'message.send') {
         const message = await createMessage(user, frame.data || {});
-        ws.send(JSON.stringify({ version: 1, event: 'message.ack', request_id: frame.request_id, data: message.toJSON() }));
-        broadcastConversation(message.conversation_id, 'message.new', message.toJSON());
+        const [data] = await enrichMessages([message]);
+        ws.send(JSON.stringify({ version: 1, event: 'message.ack', request_id: frame.request_id, data }));
+        broadcastConversation(message.conversation_id, 'message.new', data);
       }
     } catch (error) { ws.send(JSON.stringify({ version: 1, event: 'message.error', data: { message: error.message } })); }
   });
