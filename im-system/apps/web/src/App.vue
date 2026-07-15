@@ -1,17 +1,17 @@
 <template>
   <main class="terminal-shell">
     <aside class="rail">
-      <div class="brand"><span class="brand-mark">狗</span><div><b>编程狗消息</b><small>即时通讯</small></div></div>
+      <div class="brand"><span class="brand-mark">狗</span><div><b>编程狗消息</b><small>即时通讯</small></div><a class="back-link" :href="communityUrl">返回编程狗</a></div>
       <label class="search"><span>⌕</span><input v-model="filter" placeholder="搜索会话" /></label>
       <div class="rail-title"><span>消息列表</span><button title="新建会话" @click="createPanel = !createPanel">＋</button></div>
       <div v-if="createPanel" class="create-panel">
         <form @submit.prevent="createDirect"><input v-model="peerId" inputmode="numeric" placeholder="对方用户 ID" /><button>私聊</button></form>
         <form @submit.prevent="createGroup"><input v-model="groupName" maxlength="50" placeholder="新群名称" /><button>建群</button></form>
       </div>
-      <div v-if="requests.length" class="requests"><small>私聊申请</small><div v-for="request in requests" :key="request.conversation_id"><span>{{ displayName(request.from_user, request.from_user_id) }}</span><button @click="handleRequest(request, 'accept')">接受</button><button class="ghost" @click="handleRequest(request, 'reject')">拒绝</button></div></div>
+      <div v-if="requests.length" class="requests"><small>私聊申请</small><div v-for="request in requests" :key="request.conversation_id"><span class="user-link" @click="openUser(request.from_user)">{{ displayName(request.from_user, request.from_user_id) }}</span><button @click="handleRequest(request, 'accept')">接受</button><button class="ghost" @click="handleRequest(request, 'reject')">拒绝</button></div></div>
       <button v-for="item in filteredConversations" :key="item.id" class="conversation" :class="{ active: selected?.id === item.id }" @click="selectConversation(item)">
         <span class="avatar"><img v-if="item.type === 'direct' && item.peer?.avatar" :src="item.peer.avatar" alt="" referrerpolicy="no-referrer" @error="$event.currentTarget.remove()" />{{ item.type === 'group' ? '群' : avatarLetter(item.peer, '友') }}</span>
-        <span class="conversation-copy"><b>{{ item.title || `会话 #${item.id}` }}</b><small>序列 {{ item.last_sequence || 0 }}</small></span>
+        <span class="conversation-copy"><b :class="{ 'user-link': item.type === 'direct' }" @click.stop="item.type === 'direct' && openUser(item.peer)">{{ item.title || `会话 #${item.id}` }}</b><small>序列 {{ item.last_sequence || 0 }}</small></span>
       </button>
       <div v-if="!conversations.length" class="empty">还没有会话<br><small>从编程狗用户主页发起私聊</small></div>
       <div class="account">
@@ -25,7 +25,7 @@
           />
           <template v-else>{{ initials }}</template>
         </span>
-        <div><b>{{ me?.nickname || me?.username || '连接中' }}</b><small><em></em> 安全在线</small></div>
+        <div><b class="user-link" @click="openUser(me)">{{ me?.nickname || me?.username || '连接中' }}</b><small><em></em> 安全在线</small></div>
       </div>
     </aside>
 
@@ -36,7 +36,7 @@
         <div v-else-if="!selected" class="welcome"><div class="orb">聊</div><h2>欢迎使用编程狗消息</h2><p>选择左侧会话，开始安全、可靠的即时交流。</p></div>
         <article v-for="message in messages" :key="message.id" class="message" :class="{ mine: Number(message.sender_id) === Number(me?.id) }">
           <span class="avatar"><img v-if="message.sender?.avatar" :src="message.sender.avatar" alt="" referrerpolicy="no-referrer" @error="$event.currentTarget.remove()" />{{ Number(message.sender_id) === Number(me?.id) ? initials : avatarLetter(message.sender, '友') }}</span>
-          <div><div class="message-meta"><b>{{ Number(message.sender_id) === Number(me?.id) ? '我' : displayName(message.sender, message.sender_id) }}</b><time>{{ formatTime(message.created_at) }}</time><code>#{{ message.sequence }}</code><button v-if="Number(message.sender_id) !== Number(me?.id)" class="report-message" @click="reportMessage(message)">举报</button></div><a v-if="message.type === 'image'" :href="imageData(message).url" target="_blank" rel="noopener"><img class="message-image" :src="imageData(message).url" alt="聊天图片" referrerpolicy="no-referrer" /></a><p v-else>{{ message.content }}</p></div>
+          <div><div class="message-meta"><b class="user-link" @click="openUser(message.sender || (Number(message.sender_id) === Number(me?.id) ? me : null))">{{ Number(message.sender_id) === Number(me?.id) ? '我' : displayName(message.sender, message.sender_id) }}</b><time>{{ formatTime(message.created_at) }}</time><code>#{{ message.sequence }}</code><button v-if="Number(message.sender_id) !== Number(me?.id)" class="report-message" @click="openReport(message)">举报</button></div><a v-if="message.type === 'image'" :href="imageData(message).url" target="_blank" rel="noopener"><img class="message-image" :src="imageData(message).url" alt="聊天图片" referrerpolicy="no-referrer" /></a><p v-else>{{ message.content }}</p></div>
         </article>
       </div>
       <form class="composer" @submit.prevent="sendMessage">
@@ -50,20 +50,35 @@
       <dl><div><dt>安全传输</dt><dd>已开启</dd></div><div><dt>消息数量</dt><dd>{{ selected?.last_sequence || 0 }}</dd></div><div><dt>实时连接</dt><dd>正常</dd></div></dl>
       <div class="notice"><b>安全提示</b><p>请勿在聊天中发送密码、令牌或其他敏感凭据。</p></div>
     </aside>
+    <div v-if="reportDialog.open" class="modal-mask" @click.self="closeReport">
+      <section class="report-dialog" role="dialog" aria-modal="true" aria-labelledby="report-title">
+        <header><div><small>内容安全</small><h2 id="report-title">举报这条消息</h2></div><button aria-label="关闭" @click="closeReport">×</button></header>
+        <p>请说明举报原因，管理员会结合聊天上下文进行审核。请勿重复提交。</p>
+        <label>举报原因 <span>{{ reportDialog.reason.length }}/500</span><textarea v-model="reportDialog.reason" maxlength="500" autofocus placeholder="例如：包含辱骂、骚扰、诈骗或违规内容"></textarea></label>
+        <div v-if="reportDialog.error" class="dialog-error">{{ reportDialog.error }}</div>
+        <footer><button class="ghost" @click="closeReport">取消</button><button :disabled="reportDialog.reason.trim().length < 5 || reportDialog.submitting" @click="submitReport">{{ reportDialog.submitting ? '提交中' : '提交举报' }}</button></footer>
+      </section>
+    </div>
+    <div v-if="toast.message" :class="['toast', toast.type]">{{ toast.message }}</div>
   </main>
 </template>
 
 <script setup>
-import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
 
 const me = ref(null), conversations = ref([]), requests = ref([]), selected = ref(null), messages = ref([])
 const filter = ref(''), draft = ref(''), loading = ref(false), sending = ref(false), socketState = ref('正在连接'), timeline = ref(null)
 const createPanel = ref(false), peerId = ref(''), groupName = ref('')
 const avatarFailed = ref(false)
+const reportDialog = reactive({ open: false, message: null, reason: '', error: '', submitting: false })
+const toast = reactive({ message: '', type: 'success' })
 let socket = null
 const initials = computed(() => String(me.value?.nickname || me.value?.username || '犬').slice(0, 1))
+const communityUrl = computed(() => String(me.value?.community_url || 'https://54188.xyz').replace(/\/$/, ''))
 const displayName = (user, fallbackId) => user?.nickname || user?.username || `用户 ${fallbackId}`
 const avatarLetter = (user, fallback = '友') => String(user?.nickname || user?.username || fallback).slice(0, 1)
+const showToast = (message, type = 'success') => { toast.message = message; toast.type = type; window.clearTimeout(showToast.timer); showToast.timer = window.setTimeout(() => { toast.message = '' }, 3200) }
+const openUser = user => { if (!user?.codemao_user_id) return showToast('该用户的主页资料尚未同步，请稍后重试', 'warning'); window.open(`${communityUrl.value}/user/${encodeURIComponent(user.codemao_user_id)}`, '_blank', 'noopener') }
 const filteredConversations = computed(() => {
   const keyword = filter.value.trim().toLowerCase()
   return conversations.value.filter(item => !keyword || String(item.id).includes(keyword) || String(item.title || '').toLowerCase().includes(keyword))
@@ -99,7 +114,7 @@ const sendMessage = async () => {
   if (!selected.value || !draft.value.trim() || sending.value) return
   const content = draft.value.trim(); draft.value = ''; sending.value = true
   try { await api('/messages', { method: 'POST', body: JSON.stringify({ conversation_id: selected.value.id, client_message_id: crypto.randomUUID(), content }) }) }
-  catch (error) { draft.value = content; alert(error.message) } finally { sending.value = false }
+  catch (error) { draft.value = content; showToast(error.message, 'error') } finally { sending.value = false }
 }
 const sendImage = async event => {
   const file = event.target.files?.[0]; event.target.value = ''; if (!file || !selected.value || sending.value) return
@@ -109,14 +124,11 @@ const sendImage = async event => {
     const uploadResponse = await fetch('/im/api/images', { method: 'POST', credentials: 'include', body: data })
     const upload = await uploadResponse.json(); if (!uploadResponse.ok) throw new Error(upload.msg || '图片上传失败')
     await api('/messages', { method: 'POST', body: JSON.stringify({ conversation_id: selected.value.id, client_message_id: crypto.randomUUID(), type: 'image', image_id: upload.data.id }) })
-  } catch (error) { alert(error.message) } finally { sending.value = false }
+  } catch (error) { showToast(error.message, 'error') } finally { sending.value = false }
 }
-const reportMessage = async message => {
-  const reason = window.prompt('请填写举报原因（至少 5 个字）')
-  if (!reason) return
-  try { await api('/reports', { method:'POST', body:JSON.stringify({ message_id:message.id, reason:reason.trim() }) }); alert('举报已提交，管理员会尽快处理') }
-  catch (error) { alert(error.message) }
-}
+const openReport = message => { reportDialog.open = true; reportDialog.message = message; reportDialog.reason = ''; reportDialog.error = '' }
+const closeReport = () => { if (!reportDialog.submitting) reportDialog.open = false }
+const submitReport = async () => { reportDialog.error = ''; reportDialog.submitting = true; try { await api('/reports', { method:'POST', body:JSON.stringify({ message_id:reportDialog.message.id, reason:reportDialog.reason.trim() }) }); reportDialog.open = false; showToast('举报已提交，管理员会尽快处理') } catch (error) { reportDialog.error = error.message } finally { reportDialog.submitting = false } }
 const connectSocket = () => {
   const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
   socket = new WebSocket(`${protocol}//${location.host}/im/ws`)
@@ -147,4 +159,10 @@ onUnmounted(() => socket?.close())
 .report-message { border:0; background:transparent; color:#a0a4ad; padding:0; font-size:11px; cursor:pointer; }.report-message:hover{color:#f56c6c}
 .avatar { position:relative; overflow:hidden; }
 .avatar img { position:absolute; inset:0; display:block; width:100%; height:100%; object-fit:cover; }
+.back-link { margin-left:auto; color:#a86f00; font-size:11px; text-decoration:none; white-space:nowrap; }.back-link:hover,.user-link:hover{color:#d28c00;text-decoration:underline}.user-link{cursor:pointer}
+.modal-mask{position:fixed;inset:0;z-index:1000;display:grid;place-items:center;padding:20px;background:rgba(25,29,35,.42);backdrop-filter:blur(3px)}
+.report-dialog{width:min(500px,100%);padding:22px;border:1px solid #e3e5e9;border-radius:18px;background:#fff;box-shadow:0 24px 70px rgba(20,25,32,.22)}
+.report-dialog header{display:flex;justify-content:space-between;align-items:flex-start}.report-dialog header small{color:#c88700}.report-dialog h2{margin:5px 0 0}.report-dialog header button{border:0;background:transparent;color:#8c929b;font-size:26px;cursor:pointer}.report-dialog>p{color:#7f858e;font-size:13px;line-height:1.7}
+.report-dialog label{display:grid;grid-template-columns:1fr auto;gap:8px;color:#4f555d;font-size:13px}.report-dialog label span{color:#a0a5ad}.report-dialog textarea{grid-column:1/-1;min-height:120px;resize:vertical;padding:12px;border:1px solid #dfe2e7;border-radius:10px;outline:none}.report-dialog textarea:focus{border-color:#fec433;box-shadow:0 0 0 3px #fff5d6}.report-dialog footer{display:flex;justify-content:flex-end;gap:10px;margin-top:18px}.report-dialog footer button{height:38px;padding:0 17px;border:0;border-radius:9px;background:#fec433;font-weight:700;cursor:pointer}.report-dialog footer button.ghost{border:1px solid #dfe2e7;background:#fff;color:#666}.report-dialog footer button:disabled{opacity:.5}.dialog-error{margin-top:10px;padding:9px 11px;border-radius:8px;background:#fff1f1;color:#d34b4b;font-size:12px}
+.toast{position:fixed;z-index:1100;top:24px;left:50%;transform:translateX(-50%);padding:11px 18px;border:1px solid #dce7d8;border-radius:10px;background:#f2fbef;color:#38823b;box-shadow:0 10px 30px rgba(31,35,41,.16)}.toast.error{border-color:#f3c1c1;background:#fff2f2;color:#c74343}.toast.warning{border-color:#f0d27c;background:#fff9e6;color:#a86f00}
 </style>

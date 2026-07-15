@@ -33,8 +33,9 @@ app.get('/health', async (req, res) => {
 
 app.post('/api/auth/sso/exchange', async (req, res) => {
   try {
-    const { session, user } = await exchangeTicket(String(req.body?.ticket || ''));
-    await UserProfile.upsert({ id: user.id, username: user.username, nickname: user.nickname || null, avatar: user.avatar || null, role: user.role || 'user' });
+    const { session, user, peer } = await exchangeTicket(String(req.body?.ticket || ''));
+    await UserProfile.upsert({ id: user.id, username: user.username, nickname: user.nickname || null, avatar: user.avatar || null, codemao_user_id: user.codemao_user_id || null, role: user.role || 'user' });
+    if (peer?.id) await UserProfile.upsert({ id: Number(peer.id), username: peer.username, nickname: peer.nickname || null, avatar: peer.avatar || null, codemao_user_id: peer.codemao_user_id || null, role: peer.role || 'user' });
     const secure = config.production ? '; Secure' : '';
     res.append('Set-Cookie', `im_session=${session}; Path=/; HttpOnly; SameSite=Lax; Max-Age=43200${secure}`);
     ok(res, user, '登录成功');
@@ -50,7 +51,7 @@ app.get('/api/me', requireSession, (req, res) => ok(res, req.user));
 
 const publicUser = value => value ? {
   id: Number(value.id), username: value.username, nickname: value.nickname,
-  avatar: value.avatar, role: value.role
+  avatar: value.avatar, codemao_user_id: value.codemao_user_id, role: value.role
 } : null;
 const usersById = async ids => {
   const uniqueIds = [...new Set(ids.filter(Boolean).map(Number))];
@@ -332,6 +333,21 @@ app.get('/api/admin/reports', requireSession, async (req, res, next) => {
     if (!['admin', 'superadmin'].includes(req.user.role)) return fail(res, 403, '无举报查看权限');
     const rows = await Report.findAll({ where: req.query.status ? { status: req.query.status } : {}, order: [['created_at', 'DESC']], limit: 100 });
     ok(res, rows);
+  } catch (error) { next(error); }
+});
+
+app.patch('/api/admin/reports/:id', requireSession, async (req, res, next) => {
+  try {
+    if (!['admin', 'superadmin'].includes(req.user.role)) return fail(res, 403, '无举报处理权限');
+    const report = await Report.findOne({ where: { id: Number(req.params.id) } });
+    if (!report) return fail(res, 404, '举报不存在');
+    const status = req.body?.status, reason = String(req.body?.reason || '').trim();
+    if (!['resolved', 'rejected'].includes(status)) return fail(res, 400, '处理状态无效');
+    if (reason.length < 5 || reason.length > 500) return fail(res, 400, '处理意见应为 5-500 个字符');
+    report.status = status; report.resolution_reason = reason; report.resolved_by = req.user.id; report.resolved_at = new Date();
+    await report.save();
+    await AdminAudit.create({ admin_id: req.user.id, action: `report.${status}`, reason, filters: { report_id: Number(report.id), message_id: Number(report.message_id), conversation_id: Number(report.conversation_id) }, source_ip: req.ip });
+    ok(res, report, status === 'resolved' ? '举报已处理' : '举报已驳回');
   } catch (error) { next(error); }
 });
 

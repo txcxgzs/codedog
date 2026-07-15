@@ -9,7 +9,7 @@ function privateKeyPath() {
   return path.resolve(__dirname, '../../im-system/secrets/im_sso_private.pem');
 }
 
-function createImTicket(user) {
+function createImTicket(user, context = {}) {
   const file = privateKeyPath();
   const encodedKey = String(process.env.IM_SSO_PRIVATE_KEY_BASE64 || '').trim();
   if (!encodedKey && !fs.existsSync(file)) {
@@ -23,8 +23,16 @@ function createImTicket(user) {
     username: user.username,
     nickname: user.nickname || user.username,
     avatar: user.avatar || '',
+    codemao_user_id: user.codemao_user_id || '',
     role: user.role,
-    token_version: user.token_version || 0
+    token_version: user.token_version || 0,
+    community_url: String(process.env.PUBLIC_URL || process.env.CORS_ORIGIN || '').split(',')[0].replace(/\/$/, ''),
+    peer: context.peer ? {
+      id: Number(context.peer.id), username: context.peer.username,
+      nickname: context.peer.nickname || context.peer.username,
+      avatar: context.peer.avatar || '', codemao_user_id: context.peer.codemao_user_id || '',
+      role: context.peer.role || 'user'
+    } : undefined
   }, key, {
     algorithm: 'RS256', issuer: 'codedog-community', audience: 'codedog-im',
     subject: String(user.id), jwtid: crypto.randomUUID(), expiresIn: '60s'

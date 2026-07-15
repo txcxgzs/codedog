@@ -27,12 +27,14 @@ async function exchangeTicket(ticket) {
   }
   const user = {
     id: Number(payload.sub), username: payload.username, nickname: payload.nickname,
-    avatar: payload.avatar, role: payload.role, token_version: payload.token_version || 0
+    avatar: payload.avatar, codemao_user_id: payload.codemao_user_id || null,
+    role: payload.role, token_version: payload.token_version || 0,
+    community_url: payload.community_url || ''
   };
   const session = jwt.sign({ ...user, type: 'im_session' }, config.sessionSecret, {
     algorithm: 'HS256', issuer: 'codedog-im', audience: 'codedog-im-client', expiresIn: '12h'
   });
-  return { session, user };
+  return { session, user, peer: payload.peer || null };
 }
 
 function parseSession(req) {

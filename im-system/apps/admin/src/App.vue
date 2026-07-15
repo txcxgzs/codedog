@@ -11,7 +11,7 @@
     <main>
       <header>
         <div><h1>{{ currentSection.title }}</h1><p>{{ currentSection.description }}</p></div>
-        <div class="status"><i></i>{{ me?.nickname || me?.username || '验证身份中' }}</div>
+        <div class="header-actions"><a :href="communityAdminUrl">返回编程狗后台</a><div class="status"><i></i>{{ me?.nickname || me?.username || '验证身份中' }}</div></div>
       </header>
       <p v-if="error" class="error">{{ error }}</p>
 
@@ -29,8 +29,11 @@
       </template>
 
       <template v-else-if="section === 'reports'">
-        <RecordsTable title="待处理消息举报" :count="reports.length">
-          <table><thead><tr><th>时间</th><th>会话 / 消息</th><th>举报用户</th><th>原因</th><th>状态</th></tr></thead><tbody><tr v-for="row in reports" :key="row.id"><td>{{ formatDate(row.created_at) }}</td><td>#{{ row.conversation_id }} / #{{ row.message_id }}</td><td>用户 {{ row.reporter_id }}</td><td class="content">{{ row.reason }}</td><td><span class="tag">{{ row.status }}</span></td></tr><tr v-if="!reports.length"><td colspan="5" class="empty">暂无消息举报</td></tr></tbody></table>
+        <section class="report-toolbar"><label>举报状态<select v-model="reportStatus" @change="loadReports"><option value="pending">待处理</option><option value="resolved">已处理</option><option value="rejected">已驳回</option><option value="all">全部</option></select></label><span>点击列表中的举报可填写处理意见</span></section>
+        <section v-if="selectedReport" class="resolution-panel"><div><b>处理举报 #{{ selectedReport.id }}</b><small>会话 #{{ selectedReport.conversation_id }} · 消息 #{{ selectedReport.message_id }}</small></div><textarea v-model="resolutionReason" maxlength="500" placeholder="填写处理意见（至少 5 个字）"></textarea><button :disabled="resolving || resolutionReason.trim().length < 5" @click="resolveReport('resolved')">确认处理</button><button class="reject" :disabled="resolving || resolutionReason.trim().length < 5" @click="resolveReport('rejected')">驳回举报</button></section>
+        <p v-if="feedback" class="feedback">{{ feedback }}</p>
+        <RecordsTable title="消息举报" :count="reports.length">
+          <table><thead><tr><th>时间</th><th>会话 / 消息</th><th>举报用户</th><th>原因</th><th>状态</th><th>操作</th></tr></thead><tbody><tr v-for="row in reports" :key="row.id" :class="{ selected: selectedReport?.id === row.id }"><td>{{ formatDate(row.created_at) }}</td><td>#{{ row.conversation_id }} / #{{ row.message_id }}</td><td>用户 {{ row.reporter_id }}</td><td class="content">{{ row.reason }}<small v-if="row.resolution_reason">处理意见：{{ row.resolution_reason }}</small></td><td><span class="tag">{{ statusLabel(row.status) }}</span></td><td><button class="table-action" @click="selectReport(row)">{{ row.status === 'pending' ? '处理' : '查看' }}</button></td></tr><tr v-if="!reports.length"><td colspan="6" class="empty">当前筛选下暂无举报</td></tr></tbody></table>
         </RecordsTable>
       </template>
 
@@ -75,18 +78,23 @@ const navigation = [
   { key: 'settings', label: '系统设置', title: '系统设置', description: '查看 IM 数据与功能策略' }
 ]
 const section = ref('audit'), me = ref(null), rows = ref([]), reports = ref([]), groups = ref([])
-const reason = ref(''), loading = ref(false), savingLimit = ref(false), error = ref('')
+const reason = ref(''), loading = ref(false), savingLimit = ref(false), error = ref(''), feedback = ref('')
+const reportStatus = ref('pending'), selectedReport = ref(null), resolutionReason = ref(''), resolving = ref(false)
 const query = reactive({ conversation_id: '', user_id: '', keyword: '' })
 const groupLimit = reactive({ conversation_id: '', member_limit: '', reason: '' })
 const currentSection = computed(() => navigation.find(item => item.key === section.value) || navigation[0])
+const communityAdminUrl = computed(() => `${String(me.value?.community_url || 'https://54188.xyz').replace(/\/$/, '')}/admin`)
 const exceptionGroupCount = computed(() => groups.value.filter(group => Number(group.member_limit) > 100).length)
 const api = async (url, options = {}) => { const response = await fetch(`/im/api${url}`, { credentials: 'include', ...options, headers: { 'Content-Type': 'application/json', ...(options.headers || {}) } }); const body = await response.json(); if (!response.ok) throw new Error(body.msg); return body.data }
 const search = async () => { loading.value = true; error.value = ''; try { rows.value = await api('/admin/messages/search', { method: 'POST', body: JSON.stringify({ ...query, reason: reason.value.trim() }) }) } catch (e) { error.value = e.message } finally { loading.value = false } }
-const loadReports = async () => { reports.value = await api('/admin/reports?status=pending') }
+const loadReports = async () => { const query = reportStatus.value === 'all' ? '' : `?status=${reportStatus.value}`; reports.value = await api(`/admin/reports${query}`); selectedReport.value = null }
 const loadGroups = async () => { groups.value = await api('/admin/groups') }
 const openSection = async key => { section.value = key; error.value = ''; try { if (key === 'reports') await loadReports(); if (key === 'groups') await loadGroups() } catch (e) { error.value = e.message } }
 const editGroupLimit = group => { groupLimit.conversation_id = String(group.conversation_id); groupLimit.member_limit = String(group.member_limit); groupLimit.reason = ''; window.scrollTo({ top: 0, behavior: 'smooth' }) }
-const updateGroupLimit = async () => { error.value = ''; savingLimit.value = true; try { await api(`/groups/${groupLimit.conversation_id}`, { method: 'PATCH', body: JSON.stringify({ member_limit: Number(groupLimit.member_limit), reason: groupLimit.reason.trim() }) }); await loadGroups(); groupLimit.reason = ''; alert('群容量例外已保存并记录审计日志') } catch (e) { error.value = e.message } finally { savingLimit.value = false } }
+const updateGroupLimit = async () => { error.value = ''; feedback.value = ''; savingLimit.value = true; try { await api(`/groups/${groupLimit.conversation_id}`, { method: 'PATCH', body: JSON.stringify({ member_limit: Number(groupLimit.member_limit), reason: groupLimit.reason.trim() }) }); await loadGroups(); groupLimit.reason = ''; feedback.value = '群容量例外已保存并记录审计日志' } catch (e) { error.value = e.message } finally { savingLimit.value = false } }
+const selectReport = row => { selectedReport.value = row; resolutionReason.value = row.resolution_reason || '' }
+const resolveReport = async status => { resolving.value = true; error.value = ''; feedback.value = ''; try { await api(`/admin/reports/${selectedReport.value.id}`, { method:'PATCH', body:JSON.stringify({ status, reason:resolutionReason.value.trim() }) }); feedback.value = status === 'resolved' ? '举报已处理并写入审计日志' : '举报已驳回并写入审计日志'; await loadReports() } catch (e) { error.value = e.message } finally { resolving.value = false } }
+const statusLabel = status => ({ pending:'待处理', resolved:'已处理', rejected:'已驳回' }[status] || status)
 const displayName = (user, id) => user?.nickname || user?.username || `用户 ${id}`
 const formatDate = value => value ? new Date(value).toLocaleString('zh-CN') : '-'
 onMounted(() => api('/me').then(value => { me.value = value; if (!['admin', 'superadmin'].includes(value.role)) error.value = '当前账号无权访问 IM 后台' }).catch(e => { error.value = e.message }))
@@ -99,5 +107,8 @@ onMounted(() => api('/me').then(value => { me.value = value; if (!['admin', 'sup
 .group-limit { display:grid; grid-template-columns:1fr 130px 110px minmax(220px,1fr) auto; gap:10px; align-items:center; padding:16px 18px; border:1px solid #f0d27c; border-radius:12px; background:#fff9e6; box-shadow:0 8px 24px rgba(31,35,41,.04); }
 .group-limit div { display:grid; gap:4px; }.group-limit small { color:#93845e; }.group-limit input { height:37px; min-width:0; border:1px solid #e2d7b8; border-radius:8px; background:#fff; color:#30343a; padding:0 10px; }.group-limit button,.table-action { border:0; border-radius:8px; background:#ffc43d; color:#14181e; font-weight:800; cursor:pointer }.group-limit button{height:37px}.group-limit button:disabled{opacity:.5}.table-action{padding:7px 10px}
 .tag.exception{color:#c24141;background:#fff0f0}.info-card{padding:22px}.info-card h2{margin:0 0 8px}.setting-row{display:flex;justify-content:space-between;align-items:center;padding:16px 0;border-bottom:1px solid var(--border)}.setting-row:last-child{border-bottom:0}.setting-row span{display:grid;gap:5px}.setting-row strong{color:#a86f00}
+.header-actions{display:flex;align-items:center;gap:10px}.header-actions>a{padding:9px 13px;border:1px solid var(--border);border-radius:9px;background:#fff;color:#a86f00;text-decoration:none;font-size:12px}.header-actions>a:hover{border-color:var(--primary);background:var(--light)}
+.report-toolbar{display:flex;justify-content:space-between;align-items:end;padding:16px 18px;border:1px solid var(--border);border-radius:13px;background:#fff;box-shadow:0 8px 24px rgba(31,35,41,.04)}.report-toolbar label{display:grid;gap:6px;color:#7f858e;font-size:11px}.report-toolbar select{min-width:150px;height:38px;border:1px solid #dfe2e7;border-radius:8px;background:#fafafa;padding:0 10px}.report-toolbar span{color:#9a9fa7;font-size:12px}
+.resolution-panel{display:grid;grid-template-columns:minmax(180px,.7fr) minmax(260px,1.5fr) auto auto;gap:10px;align-items:center;margin-top:16px;padding:16px 18px;border:1px solid #f0d27c;border-radius:12px;background:#fff9e6}.resolution-panel div{display:grid;gap:5px}.resolution-panel small{color:#93845e}.resolution-panel textarea{height:64px;resize:vertical;border:1px solid #e2d7b8;border-radius:8px;padding:9px}.resolution-panel button{height:38px;border:0;border-radius:8px;background:#fec433;font-weight:700;cursor:pointer}.resolution-panel button.reject{background:#fff;border:1px solid #efb6b6;color:#c74343}.resolution-panel button:disabled{opacity:.5}.feedback{padding:11px 14px;border:1px solid #bee0b5;border-radius:9px;background:#f1faee;color:#39813d}.records tr.selected td{background:#fffaf0}
 @media(max-width:1050px){.group-limit{grid-template-columns:1fr 1fr}.group-limit div{grid-column:1/-1}}@media(max-width:850px){.summary-grid{grid-template-columns:1fr}}
 </style>

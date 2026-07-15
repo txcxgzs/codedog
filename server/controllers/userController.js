@@ -698,15 +698,17 @@ async function createImSsoTicket(req, res) {
         const publicUrl = getImPublicUrl();
         if (!publicUrl) return errorResponse(res, '即时通讯系统暂未启用', 503);
         const user = await DbAdapter.findByPk(User, req.user.id, {
-            attributes: ['id', 'username', 'nickname', 'avatar', 'role', 'status', 'token_version']
+            attributes: ['id', 'username', 'nickname', 'avatar', 'codemao_user_id', 'role', 'status', 'token_version']
         });
         if (!user || user.status !== 'active') return errorResponse(res, '账号不可用', 403);
-        const ticket = createImTicket(user);
-        const params = new URLSearchParams({ ticket });
+        const params = new URLSearchParams();
         const action = String(req.body?.action || '');
+        let peer = null;
         if (action === 'direct') {
             const userId = Number(req.body?.user_id);
             if (!Number.isInteger(userId) || userId <= 0 || userId === Number(req.user.id)) return errorResponse(res, '私聊目标无效', 400);
+            peer = await DbAdapter.findByPk(User, userId, { attributes: ['id', 'username', 'nickname', 'avatar', 'codemao_user_id', 'role', 'status'] });
+            if (!peer || peer.status !== 'active') return errorResponse(res, '私聊目标不存在或不可用', 404);
             params.set('action', 'direct'); params.set('user_id', String(userId));
         } else if (action === 'group') {
             const groupId = Number(req.body?.group_id);
@@ -716,6 +718,8 @@ async function createImSsoTicket(req, res) {
             if (!['admin', 'superadmin'].includes(user.role)) return errorResponse(res, '无权访问即时通讯后台', 403);
             params.set('action', 'admin');
         }
+        const ticket = createImTicket(user, { peer });
+        params.set('ticket', ticket);
         return successResponse(res, { url: `${publicUrl}/sso?${params.toString()}` }, '正在进入即时通讯');
     } catch (error) {
         console.error('创建 IM SSO Ticket 失败:', error.message);

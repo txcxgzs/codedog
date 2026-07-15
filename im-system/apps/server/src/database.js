@@ -88,6 +88,7 @@ function mysqlDatabase() {
     username: { type: DataTypes.STRING(100), allowNull: false },
     nickname: { type: DataTypes.STRING(100) },
     avatar: { type: DataTypes.STRING(1000) },
+    codemao_user_id: { type: DataTypes.STRING(40) },
     role: { type: DataTypes.STRING(30), allowNull: false, defaultValue: 'user' }
   }, { ...opts, tableName: 'im_user_profiles' });
   const Conversation = sequelize.define('ImConversation', {
@@ -125,7 +126,8 @@ function mysqlDatabase() {
   const Report = sequelize.define('ImReport', {
     id: { type: DataTypes.BIGINT, primaryKey: true, autoIncrement: true }, reporter_id: { type: DataTypes.INTEGER, allowNull: false },
     message_id: { type: DataTypes.BIGINT, allowNull: false }, conversation_id: { type: DataTypes.BIGINT, allowNull: false },
-    reason: { type: DataTypes.STRING(500), allowNull: false }, status: { type: DataTypes.ENUM('pending', 'resolved', 'rejected'), allowNull: false, defaultValue: 'pending' }
+    reason: { type: DataTypes.STRING(500), allowNull: false }, status: { type: DataTypes.ENUM('pending', 'resolved', 'rejected'), allowNull: false, defaultValue: 'pending' },
+    resolution_reason: { type: DataTypes.STRING(500) }, resolved_by: { type: DataTypes.INTEGER }, resolved_at: { type: DataTypes.DATE }
   }, { ...opts, tableName: 'im_reports', indexes: [{ unique: true, fields: ['reporter_id', 'message_id'] }, { fields: ['status', 'created_at'] }] });
   const SchemaMigration = sequelize.define('ImSchemaMigration', {
     version: { type: DataTypes.STRING(40), primaryKey: true }, checksum: { type: DataTypes.STRING(64), allowNull: false }
@@ -158,6 +160,20 @@ function mysqlDatabase() {
     if (!await SchemaMigration.findByPk(userProfilesVersion)) {
       await UserProfile.sync();
       await SchemaMigration.create({ version: userProfilesVersion, checksum: 'im-sso-user-profile-cache-v1' });
+    }
+    const codemaoProfileVersion = '006_im_profile_codemao_id';
+    if (!await SchemaMigration.findByPk(codemaoProfileVersion)) {
+      const columns = await sequelize.getQueryInterface().describeTable('im_user_profiles');
+      if (!columns.codemao_user_id) await sequelize.getQueryInterface().addColumn('im_user_profiles', 'codemao_user_id', { type: DataTypes.STRING(40) });
+      await SchemaMigration.create({ version: codemaoProfileVersion, checksum: 'im-profile-codemao-user-id-v1' });
+    }
+    const reportResolutionVersion = '007_im_report_resolution';
+    if (!await SchemaMigration.findByPk(reportResolutionVersion)) {
+      const columns = await sequelize.getQueryInterface().describeTable('im_reports');
+      if (!columns.resolution_reason) await sequelize.getQueryInterface().addColumn('im_reports', 'resolution_reason', { type: DataTypes.STRING(500) });
+      if (!columns.resolved_by) await sequelize.getQueryInterface().addColumn('im_reports', 'resolved_by', { type: DataTypes.INTEGER });
+      if (!columns.resolved_at) await sequelize.getQueryInterface().addColumn('im_reports', 'resolved_at', { type: DataTypes.DATE });
+      await SchemaMigration.create({ version: reportResolutionVersion, checksum: 'im-report-resolution-audit-v1' });
     }
   } };
 }
