@@ -44,7 +44,7 @@ router.get('/config', async (req, res) => {
             'geetest_publish_work', 'geetest_publish_post',
             'geetest_favorite', 'geetest_remove_favorite', 'geetest_update_profile',
             'geetest_create_studio', 'geetest_join_studio', 
-            'geetest_submit_work', 'geetest_review_member'
+            'geetest_submit_work', 'geetest_review_member', 'geetest_developer_app'
         ];
         
         const configs = await DbAdapter.findAll(SystemConfig, {
@@ -78,7 +78,8 @@ router.get('/config', async (req, res) => {
                 create_studio: configMap.geetest_create_studio === 'true',
                 join_studio: configMap.geetest_join_studio === 'true',
                 submit_work: configMap.geetest_submit_work === 'true',
-                review_member: configMap.geetest_review_member === 'true'
+                review_member: configMap.geetest_review_member === 'true',
+                developer_app: configMap.geetest_developer_app === 'true'
             }
         });
     } catch (error) {

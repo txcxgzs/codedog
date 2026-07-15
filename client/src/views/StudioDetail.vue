@@ -689,7 +689,10 @@ const handleSubmitWork = async (workId) => {
   }
 }
 
-onMounted(fetchStudio)
+onMounted(() => {
+  fetchGeetestConfig()
+  fetchStudio()
+})
 </script>
 
 <style lang="scss" scoped>

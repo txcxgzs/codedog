@@ -8,6 +8,7 @@ const path = require('path');
 const router = express.Router();
 const developerController = require('../controllers/developerController');
 const { authMiddleware } = require('../middleware/auth');
+const { geetestVerify } = require('../middleware/geetest');
 
 router.use(authMiddleware);
 const appIconDir = path.join(__dirname, '../uploads/app-icons');
@@ -16,7 +17,7 @@ const appIconUpload = multer({ storage: multer.diskStorage({ destination: appIco
 
 router.get('/docs/scopes', developerController.getScopeDocs);
 router.get('/apps', developerController.listMyApps);
-router.post('/apps', developerController.createApp);
+router.post('/apps', geetestVerify('developer_app'), developerController.createApp);
 router.get('/apps/:id', developerController.getMyApp);
 router.get('/apps/:id/calls', developerController.listMyAppCalls);
 router.patch('/apps/:id', developerController.updateApp);

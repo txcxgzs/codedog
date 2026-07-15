@@ -5,12 +5,12 @@
 import request from './request'
 
 export const favoriteApi = {
-  add(workId) {
-    return request.post('/favorites', { workId })
+  add(workId, geetestData = {}) {
+    return request.post('/favorites', { workId, ...geetestData })
   },
 
-  remove(workId) {
-    return request.delete(`/favorites/${workId}`)
+  remove(workId, geetestData = {}) {
+    return request.delete(`/favorites/${workId}`, { data: geetestData })
   },
 
   getMyFavorites(params = {}) {

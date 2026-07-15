@@ -141,7 +141,7 @@ const uploadStudioCover = async (event) => {
   finally { coverUploading.value = false }
 }
 
-const { geetestEnabled } = useGeetestConfig()
+const { geetestEnabled, fetchGeetestConfig } = useGeetestConfig()
 
 // 默认封面已改为模板中动态渲染首字艺术字
 const createForm = reactive({
@@ -232,7 +232,10 @@ const handleCreate = async () => {
   }
 }
 
-onMounted(fetchStudios)
+onMounted(() => {
+  fetchGeetestConfig()
+  fetchStudios()
+})
 </script>
 
 <style lang="scss" scoped>

@@ -573,8 +573,9 @@ const submitComment = async () => {
   commentLoading.value = true
   try {
     let geetestData = {}
-    if (geetestConfig.value?.enabled && geetestConfig.value?.scenes?.comment) {
-      geetestData = await geetestDialogRef.value.show('comment')
+    const commentScene = replyToCommentId.value ? 'reply' : 'comment'
+    if (geetestConfig.value?.enabled && geetestConfig.value?.scenes?.[commentScene]) {
+      geetestData = await geetestDialogRef.value.show(commentScene)
       if (!geetestData) { commentLoading.value = false; return }
     }
     const res = await commentApi.createComment({

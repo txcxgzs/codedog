@@ -21,7 +21,7 @@ const likeRateLimit = createRateLimiter({
 router.get('/work/:workId', optionalAuth, commentController.getWorkComments);
 
 // 需要登录的路由
-router.post('/', authMiddleware, geetestVerify('comment'), commentController.createComment);
+router.post('/', authMiddleware, geetestVerify(req => req.body?.parent_id ? 'reply' : 'comment'), commentController.createComment);
 router.delete('/:id', authMiddleware, commentController.deleteComment);
 // likeComment 内部 toggle(点赞/取消点赞),故对 like 路由统一加 likeRateLimit(30 req/min/IP)
 router.post('/:id/like', authMiddleware, likeRateLimit, geetestVerify('like'), commentController.likeComment);

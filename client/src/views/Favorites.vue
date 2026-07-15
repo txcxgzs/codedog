@@ -79,7 +79,7 @@ const geetestDialog = ref(null)
 
 // 修复: 删除本地未赋值的 geetestConfig,改用 composable 提供的 geetestEnabled
 const getGeetestForFavorite = async () => {
-  if (geetestEnabled.value) {
+  if (geetestEnabled('favorite')) {
     const data = await geetestDialog.value?.show('favorite')
     if (!data) return null
     return data
@@ -196,7 +196,9 @@ const doRemoveFavorite = async (item) => {
       if (geetestData === null) return
       res = await favoriteApi.unfavoritePost(item.id, geetestData)
     } else {
-      res = await favoriteApi.remove(item.codemao_work_id)
+      const geetestData = await getGeetestForFavorite()
+      if (geetestData === null) return
+      res = await favoriteApi.remove(item.codemao_work_id, geetestData)
     }
     if (res.code === 200) {
       ElMessage.success('已取消收藏')
@@ -230,10 +232,18 @@ const doBatchRemove = async () => {
     }
 
     // work 类型并发删除，提高批量操作效率
-    const workResults = await Promise.allSettled(
-      workItems.map(item => favoriteApi.remove(item.codemao_work_id))
-    )
-    let success = workResults.filter(r => r.status === 'fulfilled' && r.value.code === 200).length
+    let success = 0
+    // 极验票据不可在并发请求间复用，作品也必须逐条验证、逐条删除。
+    for (const item of workItems) {
+      const geetestData = await getGeetestForFavorite()
+      if (geetestData === null) continue
+      try {
+        const res = await favoriteApi.remove(item.codemao_work_id, geetestData)
+        if (res.code === 200) success++
+      } catch (e) {
+        // 单条失败继续下一条
+      }
+    }
 
     // post 类型串行删除（每次可能弹出验证码对话框，无法并发）
     for (const item of postItems) {

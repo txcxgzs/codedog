@@ -675,16 +675,24 @@ const toggleFavorite = async () => {
   if (favoriteLoading.value) return
 
   favoriteLoading.value = true
+  let geetestData = {}
+  if (geetestConfig.value?.enabled && geetestConfig.value?.scenes?.favorite) {
+    geetestData = await geetestDialogRef.value.show('favorite')
+    if (!geetestData) {
+      favoriteLoading.value = false
+      return
+    }
+  }
   try {
     if (isFavorited.value) {
-      const res = await favoriteApi.remove(work.value.codemao_work_id)
+      const res = await favoriteApi.remove(work.value.codemao_work_id, geetestData)
       if (res.code === 200) {
         isFavorited.value = false
         work.value.collection_times = res.data.collection_times
         ElMessage.success('已取消收藏')
       }
     } else {
-      const res = await favoriteApi.add(work.value.codemao_work_id)
+      const res = await favoriteApi.add(work.value.codemao_work_id, geetestData)
       if (res.code === 200) {
         isFavorited.value = true
         work.value.collection_times = res.data.collection_times
@@ -713,8 +721,9 @@ const submitComment = async () => {
   let geetestData = {}
   
   // 检查是否需要验证码
-  if (geetestConfig.value?.enabled && geetestConfig.value?.scenes?.comment) {
-    geetestData = await geetestDialogRef.value.show('comment')
+  const commentScene = replyingTo.value ? 'reply' : 'comment'
+  if (geetestConfig.value?.enabled && geetestConfig.value?.scenes?.[commentScene]) {
+    geetestData = await geetestDialogRef.value.show(commentScene)
     if (!geetestData) return
   }
   

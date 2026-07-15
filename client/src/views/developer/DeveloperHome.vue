@@ -150,6 +150,7 @@
           </el-table>
         </template>
       </el-drawer>
+      <GeetestDialog ref="geetestDialogRef" />
     </div>
   </div>
 </template>
@@ -158,6 +159,8 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { developerApi } from '@/api/developer'
+import GeetestDialog from '@/components/GeetestDialog.vue'
+import { useGeetestConfig } from '@/composables/useGeetestConfig'
 
 const apps = ref([])
 const loading = ref(false)
@@ -173,6 +176,8 @@ const calls = ref([])
 const callsLoading = ref(false)
 const logoInput = ref(null)
 const logoFile = ref(null)
+const geetestDialogRef = ref(null)
+const { geetestEnabled, fetchGeetestConfig } = useGeetestConfig()
 
 const form = reactive({
   name: '',
@@ -280,11 +285,17 @@ const submitForm = async () => {
   if (!redirectResult.ok) { ElMessage.warning(redirectResult.message); wizardStep.value = 1; return }
   const redirect_uris = redirectResult.uris
   if (!form.scopes.length) { ElMessage.warning('请至少选择一个权限'); return }
+  let geetestData = {}
+  // 新建应用属于“申请”操作；普通编辑不重复要求申请场景验证。
+  if (!editingId.value && geetestEnabled('developer_app')) {
+    geetestData = await geetestDialogRef.value?.show('developer_app')
+    if (!geetestData) return
+  }
   saving.value = true
   try {
     const payload = {
       name: form.name.trim(), description: form.description, homepage_url: form.homepage_url,
-      logo_url: form.logo_url, redirect_uris, scopes: form.scopes
+      logo_url: form.logo_url, redirect_uris, scopes: form.scopes, ...geetestData
     }
     let res
     if (editingId.value) res = await developerApi.updateApp(editingId.value, payload)
@@ -312,7 +323,7 @@ const handleRotate = async (row) => {
     } else { ElMessage.error(res.msg || '重置失败') }
   } catch (e) { if (e !== 'cancel') ElMessage.error(e.response?.data?.msg || '重置失败') }
 }
-onMounted(async () => { await loadScopes(); await loadApps() })
+onMounted(async () => { await fetchGeetestConfig(); await loadScopes(); await loadApps() })
 </script>
 
 <style scoped lang="scss">
