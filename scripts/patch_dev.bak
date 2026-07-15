@@ -18,5 +18,5 @@ rep('server/config/permissions.js',
   "            'developer:review',
             'developer:manage',
             'config:manage',
-            'role:manage' 
+            'role:manage'
 console.log('step1 ok');
