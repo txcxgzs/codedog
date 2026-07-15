@@ -39,7 +39,7 @@ WORKDIR /app
 # - curl:          healthcheck 探活
 # 注意:不再装 python3/make/g++,它们只在 backend-builder 阶段使用
 RUN sed -i 's|dl-cdn.alpinelinux.org|mirrors.tuna.tsinghua.edu.cn|g' /etc/apk/repositories && \
-    apk add --no-cache netcat-openbsd mysql-client curl
+    apk add --no-cache netcat-openbsd mysql-client curl font-noto-cjk
 
 # 从 backend-builder 复制已编译好的 node_modules(含 sqlite3/sharp 的 .node 二进制)
 COPY --from=backend-builder /app/server/node_modules ./server/node_modules

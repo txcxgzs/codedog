@@ -42,9 +42,23 @@ function renderPixelText(text, centerX, topY, scale, opacity = 1) {
   return `<g fill="#fff" opacity="${opacity}">${blocks}</g>`;
 }
 
+function escapeXml(value) {
+  return String(value).replace(/[<>&"']/g, (char) => ({
+    '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&apos;'
+  }[char]));
+}
+
+function fitStudioName(value) {
+  const name = String(value || '工作室').trim() || '工作室';
+  const chars = [...name];
+  return chars.length > 14 ? `${chars.slice(0, 13).join('')}…` : name;
+}
+
 async function createStudioCoverBuffer(studio) {
   const name = String(studio?.name || 'Studio').trim();
-  const studioNo = String(studio?.id || 0).padStart(3, '0');
+  const displayName = fitStudioName(name);
+  const nameLength = [...displayName].length;
+  const nameSize = nameLength > 10 ? 34 : nameLength > 7 ? 39 : 46;
   const hash = crypto.createHash('sha256').update(`${studio?.id || ''}:${name}`).digest();
   const [from, to] = palettes[hash[0] % palettes.length];
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="440" viewBox="0 0 1280 440">
@@ -54,15 +68,15 @@ async function createStudioCoverBuffer(studio) {
     <circle cx="1110" cy="50" r="250" fill="#fff" opacity=".09"/><circle cx="150" cy="400" r="180" fill="#fff" opacity=".06"/>
     ${renderPixelText('STUDIO', 640, 104, 18, 0.98)}
     <rect x="535" y="260" width="210" height="4" rx="2" fill="#fff" opacity=".32"/>
-    ${renderPixelText(`#${studioNo}`, 640, 292, 9, 0.72)}
+    <text x="640" y="330" text-anchor="middle" dominant-baseline="middle" fill="#fff" opacity=".82" font-size="${nameSize}" font-weight="700" letter-spacing="3" font-family="Noto Sans CJK SC, Microsoft YaHei, PingFang SC, sans-serif">${escapeXml(displayName)}</text>
   </svg>`;
   return sharp(Buffer.from(svg)).png({ quality: 92, compressionLevel: 9 }).toBuffer();
 }
 
 async function generateAndUploadStudioCover(studio) {
   const buffer = await createStudioCoverBuffer(studio);
-  const url = await uploadBufferToImageHost(buffer, `studio-${studio?.id || 'new'}-v3.png`, 'image/png');
-  return `${url}#codedog-studio-v3`;
+  const url = await uploadBufferToImageHost(buffer, `studio-${studio?.id || 'new'}-v4.png`, 'image/png');
+  return `${url}#codedog-studio-v4`;
 }
 
 module.exports = { createStudioCoverBuffer, generateAndUploadStudioCover };
