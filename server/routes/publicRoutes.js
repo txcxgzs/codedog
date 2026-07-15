@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const crypto = require('crypto');
-const { Announcement, Banner, User, Statistics } = require('../models');
+const { Announcement, Banner, User, sequelize } = require('../models');
 const { successResponse, errorResponse } = require('../middleware/response');
 const DbAdapter = require('../utils/dbAdapter');
 const { createRateLimiter } = require('../middleware/rateLimit');
@@ -31,6 +31,19 @@ function getDailyIpHash(req, dateKey) {
     return crypto.createHmac('sha256', secret).update(`${dateKey}:${ip}`).digest('hex');
 }
 
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+async function withBusyRetry(operation, attempts = 6) {
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
+        try { return await operation(); }
+        catch (error) {
+            const busy = /SQLITE_BUSY|SQLITE_LOCKED|database is locked/i.test(String(error?.message || ''));
+            if (!busy || attempt === attempts - 1) throw error;
+            // Small jitter prevents concurrent page views from retrying in lockstep.
+            await sleep((25 * (2 ** attempt)) + Math.floor(Math.random() * 30));
+        }
+    }
+}
+
 // 记录一次页面浏览。客户端不传 IP，避免伪造；同一 IP 当天仅生成一个 UV 键。
 router.post('/visit', visitRateLimiter, async (req, res) => {
     try {
@@ -39,20 +52,41 @@ router.post('/visit', visitRateLimiter, async (req, res) => {
         const pvKey = `site_pv:${dateKey}`;
         const uvKey = `site_uv:${dateKey}:${getDailyIpHash(req, dateKey)}`;
 
-        const [pv] = await Statistics.findOrCreate({
-            where: { stat_key: pvKey },
-            defaults: { stat_value: 0, stat_date: statDate }
-        });
-        await pv.increment('stat_value', { by: 1 });
-        await Statistics.findOrCreate({
-            where: { stat_key: uvKey },
-            defaults: { stat_value: 1, stat_date: statDate }
+        await withBusyRetry(async () => {
+            if (sequelize.getDialect() === 'sqlite') {
+                // Two atomic UPSERT statements replace findOrCreate + increment,
+                // substantially shortening SQLite's write-lock duration.
+                await sequelize.query(`
+                    INSERT INTO statistics (stat_key, stat_value, stat_date, created_at, updated_at)
+                    VALUES (:pvKey, 1, :statDate, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                    ON CONFLICT(stat_key) DO UPDATE SET
+                      stat_value = statistics.stat_value + 1,
+                      updated_at = CURRENT_TIMESTAMP
+                `, { replacements: { pvKey, statDate } });
+                await sequelize.query(`
+                    INSERT INTO statistics (stat_key, stat_value, stat_date, created_at, updated_at)
+                    VALUES (:uvKey, 1, :statDate, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                    ON CONFLICT(stat_key) DO NOTHING
+                `, { replacements: { uvKey, statDate } });
+            } else {
+                await sequelize.query(`
+                    INSERT INTO statistics (stat_key, stat_value, stat_date, created_at, updated_at)
+                    VALUES (:pvKey, 1, :statDate, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                    ON DUPLICATE KEY UPDATE stat_value = stat_value + 1, updated_at = CURRENT_TIMESTAMP
+                `, { replacements: { pvKey, statDate } });
+                await sequelize.query(`
+                    INSERT IGNORE INTO statistics (stat_key, stat_value, stat_date, created_at, updated_at)
+                    VALUES (:uvKey, 1, :statDate, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                `, { replacements: { uvKey, statDate } });
+            }
         });
 
         return successResponse(res, null);
     } catch (error) {
         console.error('记录网站访问统计失败:', error.message);
-        return errorResponse(res, '记录访问统计失败', 500);
+        // Analytics must never break the page for a visitor. Keep the warning
+        // in server logs and let the client continue normally.
+        return successResponse(res, { recorded: false }, '访问成功，统计稍后补偿');
     }
 });
 

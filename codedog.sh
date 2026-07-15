@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # CodeDog 管理工具箱
-VERSION="1.0.6"
+VERSION="1.0.7"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
@@ -519,7 +519,17 @@ do_update() {
         return 1
     fi
 
-    # 新镜像构建成功后再短暂切换端口，尽量缩小无监听窗口。
+    # 先在维护页仍占用 3001 时创建好容器。docker compose create 不启动
+    # 容器、不会绑定端口；这样切换阶段只剩 Node 启动时间，避免把容器
+    # 创建、网络准备等耗时暴露成 Nginx 500/502 空窗。
+    echo "  预创建新容器..."
+    if ! $COMPOSE_CMD create codedog; then
+        echo "[!!] 新容器预创建失败，维护页将继续保持在线"
+        wait_enter
+        return 1
+    fi
+
+    # 新镜像和容器均准备好后再短暂切换端口。
     if [ -f "$SCRIPT_DIR/scripts/maintenance-server.sh" ]; then
         bash "$SCRIPT_DIR/scripts/maintenance-server.sh" stop
     fi
@@ -527,7 +537,7 @@ do_update() {
         if ! ss -tln 2>/dev/null | grep -q ':3001 '; then break; fi
         sleep 1
     done
-    if ! $COMPOSE_CMD up -d; then
+    if ! $COMPOSE_CMD start codedog; then
         echo "[!!] 新容器启动失败，正在恢复维护页..."
         $COMPOSE_CMD down --remove-orphans 2>/dev/null || true
         for i in $(seq 1 15); do
