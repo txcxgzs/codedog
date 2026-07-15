@@ -109,20 +109,20 @@
         </el-tab-pane>
 
         <el-tab-pane label="已授权应用" name="authorizations">
-          <div class="r-profile--tab_content">
-            <el-table :data="authorizations" v-loading="authLoading" empty-text="暂无授权的第三方应用">
-              <el-table-column label="应用" min-width="160">
+          <div class="r-profile--tab_content r-profile--tab_content_wide">
+            <el-table class="r-profile--authorization_table" :data="authorizations" v-loading="authLoading" empty-text="暂无授权的第三方应用">
+              <el-table-column label="应用" min-width="150">
                 <template #default="{ row }">{{ row.app?.name || '-' }}</template>
               </el-table-column>
-              <el-table-column label="权限" min-width="180">
+              <el-table-column label="权限" min-width="170">
                 <template #default="{ row }">
                   <el-tag v-for="s in (row.scopes || [])" :key="s" size="small" style="margin:0 4px 4px 0">{{ s }}</el-tag>
                 </template>
               </el-table-column>
-              <el-table-column label="授权时间" width="160">
+              <el-table-column label="授权时间" width="170">
                 <template #default="{ row }">{{ formatAuthDate(row.authorized_at) }}</template>
               </el-table-column>
-              <el-table-column label="操作" width="120">
+              <el-table-column label="操作" width="96" fixed="right" align="center">
                 <template #default="{ row }">
                   <el-button size="small" type="danger" @click="revokeAuth(row)">撤销</el-button>
                 </template>
@@ -563,6 +563,15 @@ $border-color: #eee;
   
   .r-profile--tab_content {
     max-width: 500px;
+  }
+
+  .r-profile--tab_content_wide {
+    width: 100%;
+    max-width: none;
+  }
+
+  .r-profile--authorization_table {
+    width: 100%;
   }
   
   .r-profile--form {
