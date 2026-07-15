@@ -290,8 +290,9 @@ if %errorlevel% neq 0 (
 :: 重新构建 (仅 Docker 模式)
 docker --version >nul 2>&1
 if %errorlevel%==0 (
-    echo  正在重新构建...
-    docker compose -f "%SCRIPT_DIR%docker-compose.yml" build --no-cache
+    echo  正在重新构建（复用 Docker 缓存）...
+    rem 普通重建复用依赖层；缓存异常时再手动执行 build --no-cache。
+    docker compose -f "%SCRIPT_DIR%docker-compose.yml" build
     if %errorlevel% neq 0 (
         echo  [!!] Docker 构建失败
         echo.

@@ -54,8 +54,9 @@ if not exist uploads\avatars mkdir uploads\avatars
 if not exist uploads\works mkdir uploads\works
 
 :: 构建并启动
-echo 正在构建 Docker 镜像...
-docker compose build --no-cache
+echo 正在构建 Docker 镜像（复用 Docker 缓存）...
+:: 普通部署复用依赖层；缓存异常时再手动执行 build --no-cache。
+docker compose build
 if errorlevel 1 goto fail
 
 echo 正在启动服务...

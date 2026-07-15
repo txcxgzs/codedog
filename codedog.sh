@@ -509,9 +509,11 @@ do_update() {
 
     # ========== 步骤6: 重新构建 + 启动 ==========
     echo ""
-    echo "[6/8] 重新构建并启动..."
+    echo "[6/8] 重新构建并启动（复用 Docker 缓存）..."
     # 镜像构建不占用 3001，构建期间继续由维护服务器响应 Cloudflare。
-    if ! $COMPOSE_CMD build --no-cache; then
+    # 普通更新必须保留 Docker layer 缓存：依赖未变化时复用 apk/npm 层。
+    # 仅在缓存损坏或排障时由管理员手动执行 `$COMPOSE_CMD build --no-cache`。
+    if ! $COMPOSE_CMD build; then
         echo "[!!] 构建失败，维护页将继续保持在线，请修复后重新更新"
         wait_enter
         return 1

@@ -99,8 +99,9 @@ if errorlevel 1 (
 
 :: 重新构建并重启
 echo.
-echo 🔨 重新构建...
-!COMPOSE_CMD! build --no-cache
+echo 🔨 重新构建（复用 Docker 缓存）...
+:: 普通更新复用依赖层；缓存异常时再手动执行 build --no-cache。
+!COMPOSE_CMD! build
 if errorlevel 1 (
     echo ❌ Docker 构建失败
     pause
