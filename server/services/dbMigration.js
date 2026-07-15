@@ -3,16 +3,8 @@
  * 用于在SQLite和MySQL之间复制数据
  * 只有手动触发才会执行，系统不会自动迁移
  *
- * 修复说明（H3-H6/M14-M16/M26）：
- * - H3/H4: getSqlModels 补齐所有 indexes、validate、Post.tags get/set、RolePermission.permissions get/set
- *   （迁移模型用 STRING(20)+validate 替代 ENUM，避免源库旧数据被 ENUM 拒绝）
- * - H5: sync 策略改进——clearExisting=true 用 force（删表重建，索引齐全），否则用 alter（保留数据）
- * - H6: bulkCreate 前移除 id 字段，让目标库自增，配合唯一索引做 ignoreDuplicates
- *   （注意：移除 id 后，依赖自增 id 的外键关联可能错位，迁移建议配合 clearExisting=true 全量重建）
- * - M14: 分批 findAll（每批 500 条），避免全表读入内存 OOM
- * - M15: writeToTarget 用事务包裹，保证写入原子性
- * - M16: readFromSource 删除多余的 sync() 调用（源库表应已存在，不应有写副作用）
- * - M26: MySQL 连接添加 utf8mb4 字符集，支持 emoji 等 4 字节字符
+ * 可靠性约束：生产模型自动派生迁移 schema；模型清单缺失即失败；源库使用一致性快照；
+ * 目标库在同一事务中清空、分批写入并逐表核数，失败时完整回滚。
  */
 
 require('dotenv').config();
@@ -22,6 +14,17 @@ const path = require('path');
 // 批量读取大小（M14：分批读取避免 OOM）
 const BATCH_SIZE = 500;
 
+// 父表在前、关联/审计/token 表在后。写入按此顺序，清空时反向执行。
+// 该清单同时用于覆盖检查；models/index.js 新增模型后未加入这里会直接拒绝迁移。
+const MODEL_ORDER = [
+    'User', 'Work', 'Post', 'Comment', 'Notification', 'SystemConfig', 'Banner',
+    'Announcement', 'IpBan', 'Report', 'Studio', 'StudioMember', 'StudioWork',
+    'StudioPointLog', 'ReportAuditLog', 'Like', 'Favorite', 'Follow', 'CaptchaStats',
+    'OperationLog', 'RolePermission', 'Statistics', 'SensitiveWord', 'DeveloperApp',
+    'DeveloperAppAuditLog', 'OAuthAuthCode', 'OAuthAccessToken', 'OAuthRefreshToken',
+    'UserAppAuthorization'
+];
+
 class DatabaseMigration {
     constructor() {
         this.sourceDb = null;
@@ -29,6 +32,67 @@ class DatabaseMigration {
         this.sourceType = null;
         this.targetType = null;
         this.models = require('../models');
+    }
+
+    getCanonicalModelEntries() {
+        const entries = Object.entries(this.models)
+            .filter(([, model]) => model && model.rawAttributes && typeof model.getTableName === 'function');
+        const byName = new Map(entries.map(([name, model]) => [name, model]));
+        const missingFromOrder = entries.map(([name]) => name).filter(name => !MODEL_ORDER.includes(name));
+        const missingFromModels = MODEL_ORDER.filter(name => !byName.has(name));
+        if (missingFromOrder.length || missingFromModels.length) {
+            throw new Error(`迁移模型清单不一致: 未编排=${missingFromOrder.join(',') || '无'}, 不存在=${missingFromModels.join(',') || '无'}`);
+        }
+        return MODEL_ORDER.map(name => [name, byName.get(name)]);
+    }
+
+    /**
+     * 从生产模型动态复制字段定义，避免维护第二套易漂移的迁移 schema。
+     * 只复制定义模型所需的公开属性，连接和关联由目标 Sequelize 实例自行管理。
+     */
+    getCanonicalModels(sequelize) {
+        const result = {};
+        const entries = this.getCanonicalModelEntries();
+        for (const [name, sourceModel] of entries) {
+            const attributes = {};
+            for (const [attributeName, attribute] of Object.entries(sourceModel.rawAttributes)) {
+                const cloned = { type: attribute.type };
+                for (const key of [
+                    'allowNull', 'defaultValue', 'primaryKey', 'autoIncrement', 'unique',
+                    'field', 'get', 'set', 'validate', 'references', 'onUpdate', 'onDelete'
+                ]) {
+                    if (attribute[key] !== undefined) cloned[key] = attribute[key];
+                }
+                attributes[attributeName] = cloned;
+            }
+            result[name] = sequelize.define(name, attributes, {
+                tableName: sourceModel.getTableName(),
+                timestamps: sourceModel.options.timestamps,
+                underscored: sourceModel.options.underscored,
+                paranoid: sourceModel.options.paranoid,
+                createdAt: sourceModel.options.createdAt,
+                updatedAt: sourceModel.options.updatedAt,
+                deletedAt: sourceModel.options.deletedAt,
+                indexes: (sourceModel.options.indexes || []).map(index => ({ ...index }))
+            });
+        }
+
+        // 复制 belongsTo 关联即可恢复建表所需的外键；hasMany/hasOne 不重复定义约束。
+        const sourceNameByModel = new Map(entries.map(([name, model]) => [model, name]));
+        for (const [name, sourceModel] of entries) {
+            for (const association of Object.values(sourceModel.associations || {})) {
+                if (association.associationType !== 'BelongsTo') continue;
+                const targetName = sourceNameByModel.get(association.target);
+                if (!targetName) continue;
+                result[name].belongsTo(result[targetName], {
+                    as: association.as,
+                    foreignKey: association.foreignKey,
+                    targetKey: association.targetKey,
+                    constraints: association.options?.constraints !== false
+                });
+            }
+        }
+        return result;
     }
 
     /**
@@ -567,11 +631,14 @@ class DatabaseMigration {
      * @param {Transaction} [transaction] - 可选事务
      * @returns {Promise<Array>} 全部记录（raw 格式）
      */
-    async batchFindAll(model, transaction = null) {
+    async batchFindAll(model, transaction = null, attributes = null) {
         const allRows = [];
         let offset = 0;
+        const primaryKey = model.primaryKeyAttribute;
+        if (!primaryKey) throw new Error(`表 ${model.getTableName()} 缺少主键，无法稳定分页迁移`);
         while (true) {
-            const findOpts = { limit: BATCH_SIZE, offset, raw: true };
+            const findOpts = { limit: BATCH_SIZE, offset, raw: true, order: [[primaryKey, 'ASC']] };
+            if (attributes) findOpts.attributes = attributes;
             if (transaction) findOpts.transaction = transaction;
             const rows = await model.findAll(findOpts);
             if (rows.length === 0) break;
@@ -619,44 +686,49 @@ class DatabaseMigration {
 
         const { connection } = await this.getConnection(sourceType, sourceConfig);
         try {
-            const sqlModels = this.getSqlModels(connection);
+            const sqlModels = this.getCanonicalModels(connection);
             // M16: 已删除 connection.sync()，源库表应已存在，避免写副作用
 
-            // M14: 分批读取每张表，避免大表 OOM
-            data.users = await this.batchFindAll(sqlModels.User);
-            data.works = await this.batchFindAll(sqlModels.Work);
-            data.posts = await this.batchFindAll(sqlModels.Post);
-            data.comments = await this.batchFindAll(sqlModels.Comment);
-            data.notifications = await this.batchFindAll(sqlModels.Notification);
-            data.systemConfigs = await this.batchFindAll(sqlModels.SystemConfig);
-            data.banners = await this.batchFindAll(sqlModels.Banner);
-            data.announcements = await this.batchFindAll(sqlModels.Announcement);
-            data.ipBans = await this.batchFindAll(sqlModels.IpBan);
-            data.reports = await this.batchFindAll(sqlModels.Report);
-            data.studios = await this.batchFindAll(sqlModels.Studio);
-            data.studioMembers = await this.batchFindAll(sqlModels.StudioMember);
-            data.studioWorks = await this.batchFindAll(sqlModels.StudioWork);
-            data.likes = await this.batchFindAll(sqlModels.Like);
-            data.favorites = await this.batchFindAll(sqlModels.Favorite);
-            data.follows = await this.batchFindAll(sqlModels.Follow);
-            data.captchaStats = await this.batchFindAll(sqlModels.CaptchaStats);
-            data.operationLogs = await this.batchFindAll(sqlModels.OperationLog);
-            data.rolePermissions = await this.batchFindAll(sqlModels.RolePermission);
-            data.statistics = await this.batchFindAll(sqlModels.Statistics);
-            data.sensitiveWords = await this.batchFindAll(sqlModels.SensitiveWord);
+            // 每批固定 500 行并按主键排序，限制单次查询压力并保证分页稳定。
+            const transaction = await connection.transaction({
+                isolationLevel: Sequelize.Transaction.ISOLATION_LEVELS.REPEATABLE_READ,
+                readOnly: true
+            });
+            try {
+                const queryInterface = connection.getQueryInterface();
+                const existingTables = new Set((await queryInterface.showAllTables()).map(String));
+                for (const name of MODEL_ORDER) {
+                    const model = sqlModels[name];
+                    const tableName = String(model.getTableName());
+                    if (!existingTables.has(tableName)) {
+                        data[name] = [];
+                        continue;
+                    }
+                    const description = await queryInterface.describeTable(tableName);
+                    const readableAttributes = Object.entries(model.rawAttributes)
+                        .filter(([, attribute]) => description[attribute.field])
+                        .map(([attributeName]) => attributeName);
+                    if (!readableAttributes.includes(model.primaryKeyAttribute)) {
+                        throw new Error(`源表 ${tableName} 缺少主键 ${model.primaryKeyAttribute}`);
+                    }
+                    data[name] = await this.batchFindAll(model, transaction, readableAttributes);
+                }
+                await transaction.commit();
+            } catch (error) {
+                await transaction.rollback();
+                throw error;
+            }
         } finally {
             await connection.close();
         }
 
-        console.log(`✅ 读取完成: 用户 ${data.users.length}, 作品 ${data.works.length}, 评论 ${data.comments.length}`);
+        console.log(`✅ 读取完成: 用户 ${data.User.length}, 作品 ${data.Work.length}, 评论 ${data.Comment.length}`);
         return data;
     }
 
     /**
      * 写入数据到目标数据库
-     * H5: sync 策略改进——clearExisting=true 用 force（删表重建），否则用 alter（保留数据）
-     * H6: bulkCreate 前移除 id 字段，让目标库自增，配合唯一索引做 ignoreDuplicates
-     * M15: 整体用事务包裹，保证写入原子性
+     * clearExisting 也在写事务中执行，任一失败都会恢复目标库原数据。
      *
      * @param {string} targetType - 目标数据库类型
      * @param {object} targetConfig - 目标数据库配置
@@ -668,22 +740,33 @@ class DatabaseMigration {
 
         const { connection } = await this.getConnection(targetType, targetConfig);
         try {
-            const sqlModels = this.getSqlModels(connection);
+            const sqlModels = this.getCanonicalModels(connection);
 
-            // H5: sync 策略改进
-            // ⚠️ 警告：force:true 会删表重建，所有原有数据丢失！仅在确认全量重导时使用 clearExisting=true
-            // 非 clearExisting 时不使用 alter:true：SQLite 的 alter 会创建 *_backup 临时表并复制数据，
-            // 若中途失败会残留备份表导致启动死锁；且迁移目标库通常为空或已准备好 schema。
-            if (clearExisting) {
-                await connection.sync({ force: true });
-            } else {
-                await connection.sync();
+            // 只创建缺失表，绝不在事务外 force/alter 现有表。随后逐表校验 schema；
+            // 目标库结构过旧时直接中止，避免删完数据后才发现缺列。
+            await connection.sync();
+            const queryInterface = connection.getQueryInterface();
+            for (const name of MODEL_ORDER) {
+                const model = sqlModels[name];
+                const description = await queryInterface.describeTable(model.getTableName());
+                const missingColumns = Object.values(model.rawAttributes)
+                    .map(attribute => attribute.field)
+                    .filter(field => !description[field]);
+                if (missingColumns.length) {
+                    throw new Error(`目标表 ${model.getTableName()} 缺少字段: ${missingColumns.join(', ')}`);
+                }
             }
 
             // M15: 用事务包裹所有写入，保证原子性（全部成功或全部回滚）
             const t = await connection.transaction();
 
             try {
+                if (clearExisting) {
+                    for (const name of [...MODEL_ORDER].reverse()) {
+                        await sqlModels[name].destroy({ where: {}, force: true, transaction: t });
+                    }
+                }
+
                 // 辅助函数——批量写入数据
                 // Report4 #17: 必须「保留原始 id」,不能 delete r.id 后让目标库自增。
                 // 关系型外键(user_id / work_id / parent_id / studio_id / comment_id 等)存的是源库的 id,
@@ -720,33 +803,42 @@ class DatabaseMigration {
                         return r;
                     });
                     // 修复: 补充 validate:true,确保模型级校验不被跳过,避免无效数据入库
-                    await model.bulkCreate(cleanedRows, { ignoreDuplicates: true, validate: true, transaction: t });
+                    for (let offset = 0; offset < cleanedRows.length; offset += BATCH_SIZE) {
+                        await model.bulkCreate(cleanedRows.slice(offset, offset + BATCH_SIZE), {
+                            ignoreDuplicates: false,
+                            validate: true,
+                            transaction: t
+                        });
+                    }
                     console.log(`  ${name}: ${cleanedRows.length} 条`);
                 };
 
-                await bulkInsert(sqlModels.User, data.users, '用户');
-                await bulkInsert(sqlModels.Work, data.works, '作品');
-                await bulkInsert(sqlModels.Post, data.posts, '帖子');
-                await bulkInsert(sqlModels.Comment, data.comments, '评论');
-                await bulkInsert(sqlModels.Notification, data.notifications, '通知');
-                await bulkInsert(sqlModels.SystemConfig, data.systemConfigs, '系统配置');
-                await bulkInsert(sqlModels.Banner, data.banners, '轮播图');
-                await bulkInsert(sqlModels.Announcement, data.announcements, '公告');
-                await bulkInsert(sqlModels.IpBan, data.ipBans, 'IP封禁');
-                await bulkInsert(sqlModels.Report, data.reports, '举报');
-                await bulkInsert(sqlModels.Studio, data.studios, '工作室');
-                await bulkInsert(sqlModels.StudioMember, data.studioMembers, '工作室成员');
-                await bulkInsert(sqlModels.StudioWork, data.studioWorks, '工作室作品');
-                await bulkInsert(sqlModels.Like, data.likes, '点赞');
-                await bulkInsert(sqlModels.Favorite, data.favorites, '收藏');
-                await bulkInsert(sqlModels.Follow, data.follows, '关注');
-                await bulkInsert(sqlModels.CaptchaStats, data.captchaStats, '验证码统计');
-                await bulkInsert(sqlModels.OperationLog, data.operationLogs, '操作日志');
-                await bulkInsert(sqlModels.RolePermission, data.rolePermissions, '角色权限');
-                await bulkInsert(sqlModels.Statistics, data.statistics, '统计');
-                await bulkInsert(sqlModels.SensitiveWord, data.sensitiveWords, '敏感词');
+                for (const name of MODEL_ORDER) {
+                    await bulkInsert(sqlModels[name], data[name], sqlModels[name].getTableName());
+                }
+
+                // 在提交前逐表核对目标行数。任何静默丢行都会触发整体回滚。
+                const verifiedStats = {};
+                for (const name of MODEL_ORDER) {
+                    const sourceCount = data[name]?.length || 0;
+                    const targetCount = await sqlModels[name].count({ transaction: t });
+                    if (targetCount !== sourceCount) {
+                        throw new Error(`迁移校验失败: ${sqlModels[name].getTableName()} 源=${sourceCount}, 目标=${targetCount}`);
+                    }
+                    verifiedStats[name.charAt(0).toLowerCase() + name.slice(1)] = targetCount;
+                }
+                if (targetType === 'sqlite') {
+                    const foreignKeyErrors = await connection.query('PRAGMA foreign_key_check', {
+                        type: Sequelize.QueryTypes.SELECT,
+                        transaction: t
+                    });
+                    if (foreignKeyErrors.length) {
+                        throw new Error(`迁移外键校验失败: ${JSON.stringify(foreignKeyErrors.slice(0, 10))}`);
+                    }
+                }
 
                 await t.commit();
+                return verifiedStats;
             } catch (err) {
                 await t.rollback();
                 throw err;
@@ -783,30 +875,28 @@ class DatabaseMigration {
 
         // 修复: 非 clearExisting 时,检查目标库是否为空,防止外键错链污染数据
         if (!clearExisting) {
+            const { connection } = await this.getConnection(targetType, targetConfig);
             try {
-                const { connection } = await this.getConnection(targetType, targetConfig);
-                const sqlModels = this.getSqlModels(connection);
-                const tables = ['User', 'Work', 'Post', 'Comment', 'Report', 'Studio', 'Notification'];
-                for (const name of tables) {
+                const sqlModels = this.getCanonicalModels(connection);
+                const existingTables = new Set((await connection.getQueryInterface().showAllTables()).map(String));
+                for (const name of MODEL_ORDER) {
+                    if (!existingTables.has(String(sqlModels[name].getTableName()))) continue;
                     const count = await sqlModels[name].count();
                     if (count > 0) {
-                        await connection.close();
                         const msg = `目标库 ${name} 表已有 ${count} 条数据,迁移只允许到空目标库(clearExisting=true),防止外键错链`;
                         console.error(`❌ ${msg}`);
                         return { success: false, message: msg };
                     }
                 }
+            } finally {
                 await connection.close();
-            } catch (checkErr) {
-                // 表不存在等情况忽略,sync 会创建
-                console.warn('[迁移] 目标库预检跳过:', checkErr.message);
             }
         }
 
         try {
             const data = await this.readFromSource(sourceType, sourceConfig);
 
-            await this.writeToTarget(targetType, targetConfig, data, clearExisting);
+            const verifiedStats = await this.writeToTarget(targetType, targetConfig, data, clearExisting);
 
             console.log('=====================================');
             console.log('🎉 数据库迁移完成!');
@@ -814,29 +904,7 @@ class DatabaseMigration {
             return {
                 success: true,
                 message: '数据库迁移成功',
-                stats: {
-                    users: data.users.length,
-                    works: data.works.length,
-                    posts: data.posts.length,
-                    comments: data.comments.length,
-                    notifications: data.notifications.length,
-                    systemConfigs: data.systemConfigs.length,
-                    banners: data.banners.length,
-                    announcements: data.announcements.length,
-                    ipBans: data.ipBans.length,
-                    reports: data.reports.length,
-                    studios: data.studios.length,
-                    studioMembers: data.studioMembers.length,
-                    studioWorks: data.studioWorks.length,
-                    likes: data.likes.length,
-                    favorites: data.favorites.length,
-                    follows: data.follows.length,
-                    captchaStats: data.captchaStats.length,
-                    operationLogs: data.operationLogs.length,
-                    rolePermissions: data.rolePermissions.length,
-                    statistics: data.statistics.length,
-                    sensitiveWords: data.sensitiveWords.length
-                }
+                stats: verifiedStats
             };
         } catch (error) {
             console.error('❌ 数据库迁移失败:', error);
@@ -856,29 +924,10 @@ class DatabaseMigration {
             const data = await this.readFromSource(dbType, config);
             return {
                 success: true,
-                stats: {
-                    users: data.users.length,
-                    works: data.works.length,
-                    posts: data.posts.length,
-                    comments: data.comments.length,
-                    notifications: data.notifications.length,
-                    systemConfigs: data.systemConfigs.length,
-                    banners: data.banners.length,
-                    announcements: data.announcements.length,
-                    ipBans: data.ipBans.length,
-                    reports: data.reports.length,
-                    studios: data.studios.length,
-                    studioMembers: data.studioMembers.length,
-                    studioWorks: data.studioWorks.length,
-                    likes: data.likes.length,
-                    favorites: data.favorites.length,
-                    follows: data.follows.length,
-                    captchaStats: data.captchaStats.length,
-                    operationLogs: data.operationLogs.length,
-                    rolePermissions: data.rolePermissions.length,
-                    statistics: data.statistics.length,
-                    sensitiveWords: data.sensitiveWords.length
-                }
+                stats: Object.fromEntries(MODEL_ORDER.map(name => [
+                    name.charAt(0).toLowerCase() + name.slice(1),
+                    data[name].length
+                ]))
             };
         } catch (error) {
             return {
