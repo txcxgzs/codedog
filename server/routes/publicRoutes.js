@@ -1,8 +1,60 @@
 const express = require('express');
 const router = express.Router();
-const { Announcement, Banner, User } = require('../models');
+const crypto = require('crypto');
+const { Announcement, Banner, User, Statistics } = require('../models');
 const { successResponse, errorResponse } = require('../middleware/response');
 const DbAdapter = require('../utils/dbAdapter');
+const { createRateLimiter } = require('../middleware/rateLimit');
+const { JWT_SECRET } = require('../config/auth');
+
+const visitRateLimiter = createRateLimiter({
+    windowMs: 60 * 1000,
+    max: 120,
+    keyPrefix: 'site-visit'
+});
+
+function getChinaDateKey() {
+    const parts = new Intl.DateTimeFormat('en-US', {
+        timeZone: process.env.STAT_TIMEZONE || 'Asia/Shanghai',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+    }).formatToParts(new Date());
+    const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
+    return `${values.year}-${values.month}-${values.day}`;
+}
+
+// 只保存每日轮换的 IP 哈希，不保存原始 IP；IP 必须来自 Express 的 trust proxy 解析结果。
+function getDailyIpHash(req, dateKey) {
+    const ip = req.ip || req.socket?.remoteAddress || 'unknown';
+    const secret = process.env.VISIT_HASH_SECRET || JWT_SECRET;
+    return crypto.createHmac('sha256', secret).update(`${dateKey}:${ip}`).digest('hex');
+}
+
+// 记录一次页面浏览。客户端不传 IP，避免伪造；同一 IP 当天仅生成一个 UV 键。
+router.post('/visit', visitRateLimiter, async (req, res) => {
+    try {
+        const dateKey = getChinaDateKey();
+        const statDate = new Date(`${dateKey}T00:00:00+08:00`);
+        const pvKey = `site_pv:${dateKey}`;
+        const uvKey = `site_uv:${dateKey}:${getDailyIpHash(req, dateKey)}`;
+
+        const [pv] = await Statistics.findOrCreate({
+            where: { stat_key: pvKey },
+            defaults: { stat_value: 0, stat_date: statDate }
+        });
+        await pv.increment('stat_value', { by: 1 });
+        await Statistics.findOrCreate({
+            where: { stat_key: uvKey },
+            defaults: { stat_value: 1, stat_date: statDate }
+        });
+
+        return successResponse(res, null);
+    } catch (error) {
+        console.error('记录网站访问统计失败:', error.message);
+        return errorResponse(res, '记录访问统计失败', 500);
+    }
+});
 
 // 获取活跃用户列表
 router.get('/active-users', async (req, res) => {

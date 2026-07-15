@@ -165,7 +165,7 @@
 import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import { useUserStore } from '@/stores/user'
 import { useNotificationStore } from '@/stores/notification'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElConfigProvider } from 'element-plus'
 import zhCn from 'element-plus/dist/locale/zh-cn.mjs'
 import { storeToRefs } from 'pinia'
@@ -176,6 +176,7 @@ import { publicApi } from '@/api/public'
 import { Search, EditPen, Bell, CaretBottom, User, Monitor, Star, Setting, SwitchButton } from '@element-plus/icons-vue'
 
 const router = useRouter()
+const route = useRoute()
 const userStore = useUserStore()
 const notificationStore = useNotificationStore()
 const { unreadCount } = storeToRefs(notificationStore)
@@ -189,6 +190,11 @@ const dismissedPopupIds = ref(loadDismissedIds('ann_popup_dismissed'))
 const popupQueue = ref([])
 const popupDialogVisible = ref(false)
 const currentPopupAnnouncement = ref(null)
+
+// SPA 每次进入路由计一次 PV；服务端自行读取并匿名化 IP，前端不发送 IP。
+watch(() => route.fullPath, () => {
+  publicApi.recordVisit().catch(() => {})
+}, { immediate: true })
 
 // App 通常早于登录页挂载；监听用户 ID 才能在登录完成后及时获取未读数。
 // 同时覆盖退出后切换账号，避免沿用上一账号的红点数量。

@@ -149,6 +149,20 @@
                 <span class="r-admin--stat_label">本周新增</span>
               </div>
             </div>
+            <div class="r-admin--stat_card r-admin--stat_card_primary">
+              <div class="r-admin--stat_icon_wrap">👁️</div>
+              <div class="r-admin--stat_info">
+                <span class="r-admin--stat_num">{{ stats.todayVisits }}</span>
+                <span class="r-admin--stat_label">今日网站访问量</span>
+              </div>
+            </div>
+            <div class="r-admin--stat_card">
+              <div class="r-admin--stat_icon_wrap">🌐</div>
+              <div class="r-admin--stat_info">
+                <span class="r-admin--stat_num">{{ stats.todayUniqueIps }}</span>
+                <span class="r-admin--stat_label">今日独立 IP</span>
+              </div>
+            </div>
             <div class="r-admin--stat_card">
               <div class="r-admin--stat_icon_wrap">🔒</div>
               <div class="r-admin--stat_info">
@@ -2584,7 +2598,8 @@ const stats = ref({
   userCount: 0, workCount: 0, commentCount: 0, 
   todayUsers: 0, todayWorks: 0, todayComments: 0,
   pendingReports: 0, activeIpBans: 0, featuredWorks: 0, 
-  disabledUsers: 0, newUsersWeek: 0, newWorksWeek: 0 
+  disabledUsers: 0, newUsersWeek: 0, newWorksWeek: 0,
+  todayVisits: 0, todayUniqueIps: 0
 })
 
 const users = ref([])

@@ -2,7 +2,7 @@
  * 后台管理控制器
  */
 
-const { User, Work, Comment, Post, Favorite, Follow, Banner, Report, ReportAuditLog, IpBan, Notification, Announcement, SystemConfig, OperationLog, SensitiveWord, RolePermission, CaptchaStats, Studio, StudioMember, StudioWork, StudioPointLog, Like, sequelize } = require('../models');
+const { User, Work, Comment, Post, Favorite, Follow, Banner, Report, ReportAuditLog, IpBan, Notification, Announcement, SystemConfig, OperationLog, SensitiveWord, RolePermission, CaptchaStats, Statistics, Studio, StudioMember, StudioWork, StudioPointLog, Like, sequelize } = require('../models');
 const { successResponse, errorResponse, paginateResponse } = require('../middleware/response');
 const { getAllRoles, canManageUser, getRole, hasPermission, getAllPermissions, refreshRoleCache, DEFAULT_ROLES } = require('../config/permissions');
 const { logOperation } = require('../middleware/operationLog');
@@ -165,6 +165,12 @@ function clearCrawlLogs(taskId) {
  */
 async function getStats(req, res) {
     try {
+        const dateParts = new Intl.DateTimeFormat('en-US', {
+            timeZone: process.env.STAT_TIMEZONE || 'Asia/Shanghai',
+            year: 'numeric', month: '2-digit', day: '2-digit'
+        }).formatToParts(new Date());
+        const dateValues = Object.fromEntries(dateParts.map(part => [part.type, part.value]));
+        const todayKey = `${dateValues.year}-${dateValues.month}-${dateValues.day}`;
         // 修复: 统计数据排除 deleted/hidden/pending 等非活跃内容,避免后台统计虚高
         const userCount = await DbAdapter.count(User, { where: { status: 'active' } });
         const workCount = await DbAdapter.count(Work, { where: { status: 'published' } });
@@ -197,6 +203,14 @@ async function getStats(req, res) {
         const activeIpBans = await DbAdapter.count(IpBan, { where: { [Op.or]: [{ expires_at: null }, { expires_at: { [Op.gt]: new Date() } }] } });
         const featuredWorks = await DbAdapter.count(Work, { where: { is_featured: true, status: 'published' } });
         const disabledUsers = await DbAdapter.count(User, { where: { status: 'disabled' } });
+        const todayPvRow = await DbAdapter.findOne(Statistics, {
+            where: { stat_key: `site_pv:${todayKey}` },
+            attributes: ['stat_value']
+        });
+        const todayVisits = Number(todayPvRow?.stat_value || 0);
+        const todayUniqueIps = await DbAdapter.count(Statistics, {
+            where: { stat_key: { [Op.like]: `site_uv:${todayKey}:%` } }
+        });
 
         const sevenDaysAgo = new Date();
         sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
@@ -219,6 +233,8 @@ async function getStats(req, res) {
             activeIpBans,
             featuredWorks,
             disabledUsers,
+            todayVisits,
+            todayUniqueIps,
             newUsersWeek,
             newWorksWeek
         });
