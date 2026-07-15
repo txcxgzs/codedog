@@ -344,6 +344,10 @@ async function startServer() {
             // User 表新增字段
             await ensureColumn('users', 'token_version', { sqlite: 'INTEGER DEFAULT 0', mysql: 'INT DEFAULT 0' });
             await ensureColumn('users', 'password_changed_at', { sqlite: 'DATETIME', mysql: 'DATETIME NULL' });
+            // 个人主页封面和收藏公开设置。模型新增字段必须同步加入启动预检，
+            // 否则旧数据库在登录查询 User 全字段时会因 no such column 直接返回 500。
+            await ensureColumn('users', 'profile_cover', { sqlite: 'VARCHAR(500)', mysql: 'VARCHAR(500) NULL' });
+            await ensureColumn('users', 'show_favorites', { sqlite: 'INTEGER NOT NULL DEFAULT 0', mysql: 'TINYINT(1) NOT NULL DEFAULT 0' });
 
             // Post 表新增字段
             await ensureColumn('posts', 'hidden_reason', { sqlite: 'VARCHAR(50)', mysql: 'VARCHAR(50) NULL' });
