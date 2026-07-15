@@ -29,7 +29,8 @@ services:
     depends_on:
       mysql: { condition: service_healthy }
       redis: { condition: service_healthy }
-    healthcheck: { test: ["CMD", "wget", "-qO-", "http://localhost:3100/health"], interval: 15s, timeout: 5s, retries: 5 }
+    # Alpine 中 localhost 可能优先解析为 ::1，而 Node 当前监听 IPv4；固定回环 IPv4 防止误报 unhealthy。
+    healthcheck: { test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3100/health"], interval: 15s, timeout: 5s, retries: 5 }
   im-web:
     build: { context: ., target: frontend }
     restart: unless-stopped

@@ -8,7 +8,8 @@ services:
       IM_PORT: 3100
       IM_SSO_PUBLIC_KEY_FILE: /run/secrets/im_sso_public.pem
     volumes: ["./secrets/im_sso_public.pem:/run/secrets/im_sso_public.pem:ro"]
-    healthcheck: { test: ["CMD", "wget", "-qO-", "http://localhost:3100/health"], interval: 15s, timeout: 5s, retries: 5 }
+    # Alpine 中 localhost 可能优先解析为 ::1，而 Node 当前监听 IPv4；固定回环 IPv4 防止误报 unhealthy。
+    healthcheck: { test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3100/health"], interval: 15s, timeout: 5s, retries: 5 }
   im-web:
     build: { context: ., target: frontend }
     restart: unless-stopped
