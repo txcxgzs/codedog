@@ -2,7 +2,7 @@ const { Sequelize, DataTypes, Op } = require('sequelize');
 const config = require('./config');
 
 function memoryDatabase() {
-  const state = { conversations: [], members: [], messages: [], groups: [], images: [], audits: [], ids: { conversation: 0, message: 0, image: 0, audit: 0 } };
+  const state = { conversations: [], members: [], messages: [], groups: [], images: [], audits: [], reports: [], ids: { conversation: 0, message: 0, image: 0, audit: 0, report: 0 } };
   const row = value => Object.assign(value, {
     toJSON() { const plain = { ...this }; delete plain.toJSON; delete plain.save; return plain; },
     async save() { this.updated_at = new Date(); return this; }
@@ -57,11 +57,16 @@ function memoryDatabase() {
   const AdminAudit = {
     async create(data) { const item = row({ id: ++state.ids.audit, ...data, ...now() }); state.audits.push(item); return item; }
   };
+  const Report = {
+    async findAll(options) { return select(state.reports, options); },
+    async findOne({ where }) { return state.reports.find(item => matches(item, where)) || null; },
+    async create(data) { const item = row({ id: ++state.ids.report, status: 'pending', ...data, ...now() }); state.reports.push(item); return item; }
+  };
   const sequelize = {
     async authenticate() {}, async sync() {}, async close() {},
     async transaction(callback) { return callback({ LOCK: { UPDATE: 'UPDATE' } }); }
   };
-  return { sequelize, Conversation, ConversationMember, Message, Group, Image, AdminAudit, async connectDatabase() {} };
+  return { sequelize, Conversation, ConversationMember, Message, Group, Image, AdminAudit, Report, async connectDatabase() {} };
 }
 
 function mysqlDatabase() {
@@ -99,10 +104,15 @@ function mysqlDatabase() {
     action: { type: DataTypes.STRING(80), allowNull: false }, reason: { type: DataTypes.STRING(500), allowNull: false },
     filters: { type: DataTypes.JSON }, source_ip: { type: DataTypes.STRING(64) }
   }, { ...opts, tableName: 'im_admin_audits', updatedAt: false, indexes: [{ fields: ['admin_id', 'created_at'] }, { fields: ['action', 'created_at'] }] });
+  const Report = sequelize.define('ImReport', {
+    id: { type: DataTypes.BIGINT, primaryKey: true, autoIncrement: true }, reporter_id: { type: DataTypes.INTEGER, allowNull: false },
+    message_id: { type: DataTypes.BIGINT, allowNull: false }, conversation_id: { type: DataTypes.BIGINT, allowNull: false },
+    reason: { type: DataTypes.STRING(500), allowNull: false }, status: { type: DataTypes.ENUM('pending', 'resolved', 'rejected'), allowNull: false, defaultValue: 'pending' }
+  }, { ...opts, tableName: 'im_reports', indexes: [{ unique: true, fields: ['reporter_id', 'message_id'] }, { fields: ['status', 'created_at'] }] });
   const SchemaMigration = sequelize.define('ImSchemaMigration', {
     version: { type: DataTypes.STRING(40), primaryKey: true }, checksum: { type: DataTypes.STRING(64), allowNull: false }
   }, { ...opts, tableName: 'im_schema_migrations', updatedAt: false });
-  return { sequelize, Conversation, ConversationMember, Message, Group, Image, AdminAudit, async connectDatabase() {
+  return { sequelize, Conversation, ConversationMember, Message, Group, Image, AdminAudit, Report, async connectDatabase() {
     await sequelize.authenticate();
     await SchemaMigration.sync();
     const version = '001_initial_im_schema';
@@ -120,6 +130,11 @@ function mysqlDatabase() {
       const columns = await sequelize.getQueryInterface().describeTable('im_conversation_members');
       if (columns.last_read_sequence) await sequelize.getQueryInterface().removeColumn('im_conversation_members', 'last_read_sequence');
       await SchemaMigration.create({ version: noReceiptsVersion, checksum: 'remove-last-read-sequence-v1' });
+    }
+    const reportsVersion = '004_im_reports';
+    if (!await SchemaMigration.findByPk(reportsVersion)) {
+      await Report.sync();
+      await SchemaMigration.create({ version: reportsVersion, checksum: 'im-message-reports-v1' });
     }
   } };
 }

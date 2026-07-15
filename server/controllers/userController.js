@@ -702,7 +702,21 @@ async function createImSsoTicket(req, res) {
         });
         if (!user || user.status !== 'active') return errorResponse(res, '账号不可用', 403);
         const ticket = createImTicket(user);
-        return successResponse(res, { url: `${publicUrl}/sso?ticket=${encodeURIComponent(ticket)}` }, '正在进入即时通讯');
+        const params = new URLSearchParams({ ticket });
+        const action = String(req.body?.action || '');
+        if (action === 'direct') {
+            const userId = Number(req.body?.user_id);
+            if (!Number.isInteger(userId) || userId <= 0 || userId === Number(req.user.id)) return errorResponse(res, '私聊目标无效', 400);
+            params.set('action', 'direct'); params.set('user_id', String(userId));
+        } else if (action === 'group') {
+            const groupId = Number(req.body?.group_id);
+            if (!Number.isInteger(groupId) || groupId <= 0) return errorResponse(res, '群聊目标无效', 400);
+            params.set('action', 'group'); params.set('group_id', String(groupId));
+        } else if (action === 'admin') {
+            if (!['admin', 'superadmin'].includes(user.role)) return errorResponse(res, '无权访问即时通讯后台', 403);
+            params.set('action', 'admin');
+        }
+        return successResponse(res, { url: `${publicUrl}/sso?${params.toString()}` }, '正在进入即时通讯');
     } catch (error) {
         console.error('创建 IM SSO Ticket 失败:', error.message);
         return errorResponse(res, error.message || '即时通讯登录失败', error.statusCode || 500);

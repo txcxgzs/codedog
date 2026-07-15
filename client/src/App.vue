@@ -394,7 +394,7 @@ const handleSearch = () => {
 const openIm = async () => {
   try {
     const res = await imApi.createSsoTicket()
-    if (res.code === 200 && res.data?.url) window.location.assign(res.data.url)
+    if (res.code === 200 && res.data?.url) window.open(res.data.url, '_blank', 'noopener,noreferrer')
     else ElMessage.warning(res.msg || '即时通讯系统暂不可用')
   } catch (error) {
     ElMessage.error(error.response?.data?.msg || '无法进入即时通讯系统')

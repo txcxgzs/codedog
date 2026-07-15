@@ -12,6 +12,10 @@
             <el-icon><DataAnalysis /></el-icon>
             <span>数据大屏</span>
           </el-menu-item>
+          <el-menu-item index="im-admin" v-if="['admin', 'superadmin'].includes(userStore.user?.role)">
+            <el-icon><ChatDotRound /></el-icon>
+            <span>即时通讯后台</span>
+          </el-menu-item>
           <el-menu-item index="users">
             <el-icon><User /></el-icon>
             <span>用户管理</span>
@@ -2538,6 +2542,7 @@ import { ref, onMounted, onBeforeUnmount, nextTick, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/user'
 import { adminApi } from '@/api/admin'
+import { imApi } from '@/api/im'
 import request from '@/api/request'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { DataAnalysis, User, UserFilled, Document, Download, Search, Picture, ChatDotRound, Warning, Lock, Bell, Filter, Setting, List, Key, OfficeBuilding, Loading, Cpu, Postcard, Monitor, Check, CopyDocument, Plus, Delete, View, ArrowLeft, CaretBottom, ArrowDown, Back, EditPen, Star, SwitchButton } from '@element-plus/icons-vue'
@@ -4187,7 +4192,16 @@ const reviewDeveloperApp = async (row, action) => {
   }
 }
 
-const handleMenuSelect = (key) => {
+const handleMenuSelect = async (key) => {
+  if (key === 'im-admin') {
+    try {
+      const popup = window.open('about:blank', '_blank')
+      const res = await imApi.createSsoTicket({ action: 'admin' })
+      if (res.code === 200 && res.data?.url) popup ? (popup.location.href = res.data.url) : window.open(res.data.url, '_blank', 'noopener,noreferrer')
+      else { popup?.close(); ElMessage.warning(res.msg || '即时通讯后台暂不可用') }
+    } catch (error) { ElMessage.error(error.response?.data?.msg || '无法进入即时通讯后台') }
+    return
+  }
   activeMenu.value = key
   if (key === 'dashboard') { fetchStats(); fetchTrends() }
   if (key === 'users') fetchUsers()

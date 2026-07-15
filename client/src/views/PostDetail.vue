@@ -95,6 +95,11 @@
               <el-button text size="small" @click="replyToCommentId = null; replyToUserId = null; commentContent = ''">取消回复</el-button>
             </div>
             <el-input v-model="commentContent" type="textarea" :rows="3" placeholder="写下你的评论..." />
+            <div class="r-post--social_tools">
+              <el-button size="small" plain @click="selectSocialCard('user')">发送我的私聊卡片</el-button>
+              <el-button size="small" plain @click="selectSocialCard('group')">发送群聊邀请卡片</el-button>
+              <el-tag v-if="selectedSocialCard" closable @close="selectedSocialCard = null">{{ selectedSocialCard.type === 'user' ? '私聊名片' : `群聊 #${selectedSocialCard.target_id}` }}</el-tag>
+            </div>
             <el-button type="primary" :loading="commentLoading" @click="submitComment">发表评论</el-button>
           </div>
           <div class="r-post--login_tip" v-else>
@@ -109,7 +114,7 @@
                   <span class="r-post--comment_name" @click="goToUser(comment)" style="cursor: pointer;">{{ comment.user?.nickname || comment.user?.username }}</span>
                   <span class="r-post--comment_time">{{ formatTime(comment.created_at) }}</span>
                 </div>
-                <p class="r-post--comment_content">{{ comment.content }}</p>
+                <SocialCommentCard :content="comment.content" :author="comment.user" />
                 <div class="r-post--comment_actions">
                   <span class="r-post--like_action" @click="likeComment(comment)" :class="{ 'is-loading': likingComments.has(comment.id) }"><span class="r-post--comment_icon r-post--comment_icon_like" :class="{ 'is-liked': comment.liked }"></span>{{ comment.like_count || 0 }}</span>
                   <span @click="replyTo(comment)"><span class="r-post--comment_icon r-post--comment_icon_reply"></span>回复</span>
@@ -121,7 +126,7 @@
                 <div class="r-post--replies" v-if="comment.replies && comment.replies.length > 0">
                   <div v-for="reply in comment.replies" :key="reply.id" class="r-post--reply_item">
                     <span class="r-post--reply_name" @click="goToUser(reply)" style="cursor: pointer;">{{ reply.user?.nickname || reply.user?.username }}</span>
-                    <span class="r-post--reply_content">{{ reply.content }}</span>
+                    <SocialCommentCard :content="reply.content" :author="reply.user" />
                     <span class="r-post--reply_time">{{ formatTime(reply.created_at) }}</span>
                     <div class="r-post--reply_actions">
                       <span class="r-post--like_action" @click="likeComment(reply)" :class="{ 'is-loading': likingComments.has(reply.id) }"><span class="r-post--comment_icon r-post--comment_icon_like" :class="{ 'is-liked': reply.liked }"></span>{{ reply.like_count || 0 }}</span>
@@ -209,6 +214,7 @@ import DOMPurify from 'dompurify'
 import hljs from 'highlight.js'
 import 'highlight.js/styles/github.css'
 import AppImage from '@/components/AppImage.vue'
+import SocialCommentCard from '@/components/SocialCommentCard.vue'
 import WysiwygEditor from '@/components/WysiwygEditor.vue'
 import { EditPen } from '@element-plus/icons-vue'
 
@@ -243,6 +249,7 @@ const relatedPosts = ref([])
 const liked = ref(false)
 const following = ref(false)
 const commentContent = ref('')
+const selectedSocialCard = ref(null)
 const commentSection = ref(null)
 const showShareDialog = ref(false)
 const qrcodeUrl = ref('')
@@ -577,7 +584,7 @@ const replyToCommentId = ref(null)
 const replyToUserId = ref(null)
 
 const submitComment = async () => {
-  if (!commentContent.value.trim()) {
+  if (!commentContent.value.trim() && !selectedSocialCard.value) {
     ElMessage.warning('请输入评论内容')
     return
   }
@@ -594,6 +601,7 @@ const submitComment = async () => {
       post_id: post.value.id,
       parent_id: replyToCommentId.value || undefined,
       reply_to_user_id: replyToUserId.value || undefined,
+      social_card: selectedSocialCard.value,
       ...geetestData
     })
     if (res.code === 200) {
@@ -611,6 +619,7 @@ const submitComment = async () => {
         post.value.comment_count = (post.value.comment_count || 0) + 1
       }
       commentContent.value = ''
+      selectedSocialCard.value = null
       replyToCommentId.value = null
       replyToUserId.value = null
       ElMessage.success('评论成功')
@@ -783,6 +792,13 @@ onMounted(() => {
   fetchPost()
   fetchGeetestConfig()
 })
+const selectSocialCard = async type => {
+  if (type === 'user') { selectedSocialCard.value = { type:'user' }; return }
+  try {
+    const { value } = await ElMessageBox.prompt('请输入创建好的 IM 群聊 ID', '发送群聊邀请卡片', { inputPattern:/^\d+$/, inputErrorMessage:'请输入正确的群聊 ID' })
+    selectedSocialCard.value = { type:'group', target_id:Number(value) }
+  } catch (error) { if (!['cancel','close'].includes(error)) ElMessage.error('无法选择群聊卡片') }
+}
 </script>
 
 <style lang="scss" scoped>

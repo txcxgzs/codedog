@@ -1,7 +1,7 @@
 import request from './request'
 
 export const imApi = {
-  createSsoTicket() {
-    return request.post('/users/im-sso-ticket')
+  createSsoTicket(action = {}) {
+    return request.post('/users/im-sso-ticket', action)
   }
 }

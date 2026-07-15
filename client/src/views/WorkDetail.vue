@@ -116,6 +116,11 @@
                 maxlength="500"
                 show-word-limit
               />
+              <div class="r-work--social_tools">
+                <el-button size="small" plain @click="selectSocialCard('user')">发送我的私聊卡片</el-button>
+                <el-button size="small" plain @click="selectSocialCard('group')">发送群聊邀请卡片</el-button>
+                <el-tag v-if="selectedSocialCard" closable @close="selectedSocialCard = null">{{ selectedSocialCard.type === 'user' ? '私聊名片' : `群聊 #${selectedSocialCard.target_id}` }}</el-tag>
+              </div>
               <el-button type="primary" :loading="submitting" @click="submitComment">
                 {{ replyingTo ? '回复' : '发表评论' }}
               </el-button>
@@ -133,7 +138,7 @@
                     <span class="r-work--comment_name" @click="goUser(comment.user)" style="cursor: pointer;">{{ comment.user?.nickname || comment.user?.username }}</span>
                     <span class="r-work--comment_time">{{ formatTime(comment.created_at) }}</span>
                   </div>
-                  <p class="r-work--comment_content">{{ comment.content }}</p>
+                  <SocialCommentCard :content="comment.content" :author="comment.user" />
                   <div class="r-work--comment_actions">
                     <span @click="likeComment(comment)" :class="{ 'r-work--comment_liked': comment.liked }">
                       <span class="r-work--comment_icon r-work--comment_icon_like"></span>
@@ -161,12 +166,12 @@
                             <span class="r-work--reply_name" @click="goUser(reply.user)" style="cursor: pointer;">{{ reply.user?.nickname || reply.user?.username }}</span>
                             <span class="r-work--reply_time">{{ formatTime(reply.created_at) }}</span>
                           </div>
-                          <p class="r-work--reply_content">
+                          <div class="r-work--reply_content">
                             <span v-if="reply.reply_to_user_id" class="r-work--reply_to" @click="goUserById(reply.reply_to_user_id)" style="cursor: pointer;">
                               回复 @{{ getReplyToName(reply) }}：
                             </span>
-                            {{ reply.content }}
-                          </p>
+                            <SocialCommentCard :content="reply.content" :author="reply.user" />
+                          </div>
                           <div class="r-work--reply_actions">
                             <span @click="likeComment(reply)" :class="{ 'r-work--comment_liked': reply.liked }">
                               <span class="r-work--comment_icon r-work--comment_icon_like"></span>
@@ -333,6 +338,7 @@ import DOMPurify from 'dompurify'
 import hljs from 'highlight.js'
 import 'highlight.js/styles/github.css'
 import AppImage from '@/components/AppImage.vue'
+import SocialCommentCard from '@/components/SocialCommentCard.vue'
 
 // 配置 marked
 marked.setOptions({
@@ -439,6 +445,7 @@ const playerUrl = computed(() => {
 const relatedWorks = ref([])
 const comments = ref([])
 const commentContent = ref('')
+const selectedSocialCard = ref(null)
 const replyingTo = ref(null)
 const replyingComment = ref(null)
 const expandedComments = ref(new Set())
@@ -713,7 +720,7 @@ const goToAuthor = () => {
 }
 
 const submitComment = async () => {
-  if (!commentContent.value.trim()) {
+  if (!commentContent.value.trim() && !selectedSocialCard.value) {
     ElMessage.warning('请输入评论内容')
     return
   }
@@ -734,6 +741,7 @@ const submitComment = async () => {
       work_id: work.value.codemao_work_id,
       parent_id: replyingTo.value ? (replyingTo.value.parent_id || replyingTo.value.id) : null,
       reply_to_user_id: replyingTo.value?.user?.id || null,
+      social_card: selectedSocialCard.value,
       ...geetestData
     })
     if (res.code === 200) {
@@ -758,6 +766,7 @@ const submitComment = async () => {
         work.value.comment_count = (work.value.comment_count || 0) + 1
       }
       commentContent.value = ''
+      selectedSocialCard.value = null
       cancelReply()
       ElMessage.success('评论成功')
     } else {
@@ -1034,6 +1043,13 @@ onMounted(() => {
   fetchWork()
   fetchGeetestConfig()
 })
+const selectSocialCard = async type => {
+  if (type === 'user') { selectedSocialCard.value = { type:'user' }; return }
+  try {
+    const { value } = await ElMessageBox.prompt('请输入创建好的 IM 群聊 ID', '发送群聊邀请卡片', { inputPattern:/^\d+$/, inputErrorMessage:'请输入正确的群聊 ID' })
+    selectedSocialCard.value = { type:'group', target_id:Number(value) }
+  } catch (error) { if (!['cancel','close'].includes(error)) ElMessage.error('无法选择群聊卡片') }
+}
 </script>
 
 <style lang="scss" scoped>

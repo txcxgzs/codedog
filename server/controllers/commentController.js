@@ -4,6 +4,18 @@ const { successResponse, errorResponse, paginateResponse } = require('../middlew
 const { isRoleAtLeast, canManageUser } = require('../config/permissions');
 // H12: 引入内容审核服务，落库前做敏感词检查
 const aiReview = require('../services/aiReview');
+const SOCIAL_CARD_PREFIX = '[[codedog-social-card]]';
+
+function buildSocialCard(input, userId) {
+    if (!input) return null;
+    if (input.type === 'user') return { type: 'user', target_id: Number(userId) };
+    if (input.type === 'group') {
+        const groupId = Number(input.target_id);
+        if (!Number.isInteger(groupId) || groupId <= 0) return false;
+        return { type: 'group', target_id: groupId };
+    }
+    return false;
+}
 
 function sameId(a, b) {
     return String(a) === String(b);
@@ -37,9 +49,11 @@ async function resolvePublishedPost(postId) {
 
 async function createComment(req, res) {
     try {
-        const { content, work_id, post_id, parent_id, reply_to_user_id } = req.body;
+        const { content, work_id, post_id, parent_id, reply_to_user_id, social_card } = req.body;
+        const card = buildSocialCard(social_card, DbAdapter.getId(req.user));
+        if (card === false) return errorResponse(res, '社交卡片无效', 400);
 
-        if (!content || !String(content).trim()) {
+        if ((!content || !String(content).trim()) && !card) {
             return errorResponse(res, '请输入评论内容', 400);
         }
 
@@ -90,7 +104,9 @@ async function createComment(req, res) {
         // H12: 落库前进行内容审核（敏感词/违规检查）
         // fallbackReview 返回 recommendation: pass / review / delete
         // delete 表示严重违规应拒绝，review 表示需人工复核，pass 表示通过
-        const reviewResult = await aiReview.fallbackReview(String(content));
+        const rawContent = String(content || '').trim();
+        if (rawContent.startsWith(SOCIAL_CARD_PREFIX)) return errorResponse(res, '评论格式无效', 400);
+        const reviewResult = await aiReview.fallbackReview(rawContent || '分享即时通讯卡片');
         if (reviewResult.recommendation === 'delete') {
             return errorResponse(res, `内容包含违规信息:${reviewResult.reason}`, 400);
         }
@@ -103,7 +119,7 @@ async function createComment(req, res) {
         const isVisible = commentStatus === 'active';
         await sequelize.transaction(async (t) => {
             comment = await DbAdapter.create(Comment, {
-                content: String(content).trim(),
+                content: card ? `${SOCIAL_CARD_PREFIX}${JSON.stringify(card)}` : rawContent,
                 user_id: DbAdapter.getId(req.user),
                 work_id: localWorkId,
                 post_id: localPostId,
@@ -128,6 +144,7 @@ async function createComment(req, res) {
         // 通知创建放在事务外,失败不影响评论落库
         if (isVisible) {
             try {
+                const notificationContent = card ? (card.type === 'user' ? '分享了一张私聊名片' : `分享了群聊 #${card.target_id}`) : rawContent;
                 const notificationPromises = [];
                 // 作品顶层评论通知作品作者
                 if (work && !parent_id && work.user_id != null && !sameId(work.user_id, DbAdapter.getId(req.user))) {
@@ -135,7 +152,7 @@ async function createComment(req, res) {
                         user_id: work.user_id,
                         type: 'comment',
                         title: '评论了你的作品',
-                        content: String(content).substring(0, 100),
+                        content: notificationContent.substring(0, 100),
                         related_id: codemaoWorkId,
                         related_type: 'work',
                         sender_id: DbAdapter.getId(req.user)
@@ -147,7 +164,7 @@ async function createComment(req, res) {
                         user_id: post.user_id,
                         type: 'comment',
                         title: '评论了你的帖子',
-                        content: String(content).substring(0, 100),
+                        content: notificationContent.substring(0, 100),
                         related_id: codemaoPostId,
                         related_type: 'post',
                         sender_id: DbAdapter.getId(req.user)
@@ -159,7 +176,7 @@ async function createComment(req, res) {
                         user_id: replyToUserId,
                         type: 'reply',
                         title: '回复了你的评论',
-                        content: String(content).substring(0, 100),
+                        content: notificationContent.substring(0, 100),
                         related_id: codemaoWorkId || codemaoPostId,
                         related_type: codemaoWorkId ? 'work' : 'post',
                         sender_id: DbAdapter.getId(req.user)

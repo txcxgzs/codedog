@@ -12,20 +12,21 @@
       </section>
       <p v-if="error" class="error">{{ error }}</p>
       <section class="group-limit"><div><b>群容量例外</b><small>默认统一 100 人，仅管理员可调整并强制审计</small></div><input v-model="groupLimit.conversation_id" inputmode="numeric" placeholder="群会话 ID" /><input v-model="groupLimit.member_limit" inputmode="numeric" placeholder="新上限" /><input v-model="groupLimit.reason" placeholder="调整原因（至少5字）" /><button @click="updateGroupLimit">保存例外</button></section>
+      <section class="records"><div class="records-head"><b>待处理消息举报</b><span>{{ reports.length }} 条</span></div><table><thead><tr><th>时间</th><th>会话 / 消息</th><th>举报用户</th><th>原因</th><th>状态</th></tr></thead><tbody><tr v-for="row in reports" :key="row.id"><td>{{ formatDate(row.created_at) }}</td><td>#{{ row.conversation_id }} / #{{ row.message_id }}</td><td>用户 {{ row.reporter_id }}</td><td class="content">{{ row.reason }}</td><td><span class="tag">{{ row.status }}</span></td></tr><tr v-if="!reports.length"><td colspan="5" class="empty">暂无消息举报</td></tr></tbody></table></section>
       <section class="records"><div class="records-head"><b>检索结果</b><span>{{ rows.length }} 条</span></div><table><thead><tr><th>时间 / 序列</th><th>会话</th><th>发送者</th><th>内容</th><th>状态</th></tr></thead><tbody><tr v-for="row in rows" :key="row.id"><td>{{ formatDate(row.created_at) }}<small>#{{ row.sequence }}</small></td><td>{{ row.conversation_id }}</td><td>用户 {{ row.sender_id }}</td><td class="content">{{ row.content }}</td><td><span class="tag">{{ row.status }}</span></td></tr><tr v-if="!rows.length"><td colspan="5" class="empty">填写审计原因并执行检索</td></tr></tbody></table></section>
     </main>
   </div>
 </template>
 <script setup>
 import { onMounted, reactive, ref } from 'vue'
-const me = ref(null), rows = ref([]), reason = ref(''), loading = ref(false), error = ref('')
+const me = ref(null), rows = ref([]), reports = ref([]), reason = ref(''), loading = ref(false), error = ref('')
 const query = reactive({ conversation_id: '', user_id: '', keyword: '' })
 const groupLimit = reactive({ conversation_id: '', member_limit: '', reason: '' })
 const api = async (url, options={}) => { const response=await fetch(`/im/api${url}`,{credentials:'include',...options,headers:{'Content-Type':'application/json',...(options.headers||{})}}); const body=await response.json(); if(!response.ok) throw new Error(body.msg); return body.data }
 const search = async () => { loading.value=true; error.value=''; try { rows.value=await api('/admin/messages/search',{method:'POST',body:JSON.stringify({...query,reason:reason.value.trim()})}) } catch(e){ error.value=e.message } finally{ loading.value=false } }
 const updateGroupLimit = async () => { error.value=''; try { await api(`/groups/${groupLimit.conversation_id}`,{method:'PATCH',body:JSON.stringify({member_limit:Number(groupLimit.member_limit),reason:groupLimit.reason.trim()})}); alert('群容量例外已保存并记录审计日志') } catch(e){ error.value=e.message } }
 const formatDate=value=>value?new Date(value).toLocaleString('zh-CN'):'-'
-onMounted(()=>api('/me').then(value=>{me.value=value;if(!['admin','superadmin'].includes(value.role)) error.value='当前账号无权访问 IM 后台'}).catch(e=>error.value=e.message))
+onMounted(()=>api('/me').then(async value=>{me.value=value;if(!['admin','superadmin'].includes(value.role)) error.value='当前账号无权访问 IM 后台';else reports.value=await api('/admin/reports?status=pending')}).catch(e=>error.value=e.message))
 </script>
 <style scoped>
 .group-limit { display:grid; grid-template-columns:1fr 130px 110px minmax(220px,1fr) auto; gap:10px; align-items:center; margin-top:18px; padding:16px 18px; border:1px solid #f0d27c; border-radius:12px; background:#fff9e6; box-shadow:0 8px 24px rgba(31,35,41,.04); }

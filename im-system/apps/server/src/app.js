@@ -11,7 +11,7 @@ const { Op } = require('sequelize');
 const config = require('./config');
 const { exchangeTicket, parseSession, requireSession } = require('./auth');
 const { connectReplayStore } = require('./replayStore');
-const { sequelize, Conversation, ConversationMember, Message, Group, Image, AdminAudit, connectDatabase } = require('./database');
+const { sequelize, Conversation, ConversationMember, Message, Group, Image, AdminAudit, Report, connectDatabase } = require('./database');
 const { uploadImage } = require('./imageHost');
 
 const app = express();
@@ -149,6 +149,19 @@ app.get('/api/groups/:id', requireSession, async (req, res, next) => {
   } catch (error) { next(error); }
 });
 
+app.post('/api/groups/:id/join', requireSession, async (req, res, next) => {
+  try {
+    const group = await Group.findOne({ where: { conversation_id: req.params.id } });
+    if (!group) return fail(res, 404, '群聊不存在');
+    const members = await ConversationMember.findAll({ where: { conversation_id: req.params.id, state: 'active' } });
+    if (members.length >= Number(group.member_limit)) return fail(res, 409, `群成员已达到 ${group.member_limit} 人上限`);
+    const existing = await ConversationMember.findOne({ where: { conversation_id: req.params.id, user_id: req.user.id } });
+    if (existing) { existing.state = 'active'; if (existing.role !== 'owner') existing.role = 'member'; await existing.save(); }
+    else await ConversationMember.create({ conversation_id: req.params.id, user_id: req.user.id, role: 'member', state: 'active' });
+    ok(res, { conversation_id: Number(req.params.id), name: group.name }, '已加入群聊');
+  } catch (error) { next(error); }
+});
+
 app.post('/api/groups/:id/members', requireSession, async (req, res, next) => {
   try {
     const { group, actor } = await groupAndActor(req.params.id, req.user.id);
@@ -259,6 +272,20 @@ async function createMessage(user, input) {
   });
 }
 
+app.post('/api/reports', requireSession, async (req, res, next) => {
+  try {
+    const messageId = Number(req.body?.message_id), reason = String(req.body?.reason || '').trim();
+    if (!Number.isInteger(messageId) || messageId <= 0 || reason.length < 5 || reason.length > 500) return fail(res, 400, '请选择消息并填写 5-500 字举报原因');
+    const message = await Message.findOne({ where: { id: messageId } });
+    if (!message || !await requireMember(req.user.id, message.conversation_id)) return fail(res, 404, '消息不存在');
+    if (Number(message.sender_id) === Number(req.user.id)) return fail(res, 400, '不能举报自己的消息');
+    const existing = await Report.findOne({ where: { reporter_id: req.user.id, message_id: messageId } });
+    if (existing) return fail(res, 409, '你已举报过这条消息');
+    const report = await Report.create({ reporter_id: req.user.id, message_id: messageId, conversation_id: message.conversation_id, reason, status: 'pending' });
+    ok(res, report, '举报已提交');
+  } catch (error) { next(error); }
+});
+
 app.post('/api/messages', requireSession, async (req, res, next) => {
   try { const message = await createMessage(req.user, req.body || {}); broadcastConversation(message.conversation_id, 'message.new', message.toJSON()); ok(res, message, '消息已发送'); }
   catch (error) { next(error); }
@@ -276,6 +303,14 @@ app.post('/api/admin/messages/search', requireSession, async (req, res, next) =>
     const rows = await Message.findAll({ where, order: [['created_at', 'DESC']], limit: Math.min(100, Number(req.body?.limit || 50)) });
     const filters = { conversation_id: req.body?.conversation_id, user_id: req.body?.user_id, keyword: req.body?.keyword };
     await AdminAudit.create({ admin_id: req.user.id, action: 'messages.search', reason, filters, source_ip: req.ip });
+    ok(res, rows);
+  } catch (error) { next(error); }
+});
+
+app.get('/api/admin/reports', requireSession, async (req, res, next) => {
+  try {
+    if (!['admin', 'superadmin'].includes(req.user.role)) return fail(res, 403, '无举报查看权限');
+    const rows = await Report.findAll({ where: req.query.status ? { status: req.query.status } : {}, order: [['created_at', 'DESC']], limit: 100 });
     ok(res, rows);
   } catch (error) { next(error); }
 });

@@ -24,7 +24,7 @@
         <div v-else-if="!selected" class="welcome"><div class="orb">聊</div><h2>欢迎使用编程狗消息</h2><p>选择左侧会话，开始安全、可靠的即时交流。</p></div>
         <article v-for="message in messages" :key="message.id" class="message" :class="{ mine: Number(message.sender_id) === Number(me?.id) }">
           <span class="avatar">{{ Number(message.sender_id) === Number(me?.id) ? initials : '友' }}</span>
-          <div><div class="message-meta"><b>{{ Number(message.sender_id) === Number(me?.id) ? '我' : `用户 ${message.sender_id}` }}</b><time>{{ formatTime(message.created_at) }}</time><code>#{{ message.sequence }}</code></div><a v-if="message.type === 'image'" :href="imageData(message).url" target="_blank" rel="noopener"><img class="message-image" :src="imageData(message).url" alt="聊天图片" referrerpolicy="no-referrer" /></a><p v-else>{{ message.content }}</p></div>
+          <div><div class="message-meta"><b>{{ Number(message.sender_id) === Number(me?.id) ? '我' : `用户 ${message.sender_id}` }}</b><time>{{ formatTime(message.created_at) }}</time><code>#{{ message.sequence }}</code><button v-if="Number(message.sender_id) !== Number(me?.id)" class="report-message" @click="reportMessage(message)">举报</button></div><a v-if="message.type === 'image'" :href="imageData(message).url" target="_blank" rel="noopener"><img class="message-image" :src="imageData(message).url" alt="聊天图片" referrerpolicy="no-referrer" /></a><p v-else>{{ message.content }}</p></div>
         </article>
       </div>
       <form class="composer" @submit.prevent="sendMessage">
@@ -56,12 +56,23 @@ const api = async (url, options = {}) => {
 }
 const exchangeSso = async () => {
   const params = new URLSearchParams(location.search), ticket = params.get('ticket')
-  if (!ticket) return
+  if (!ticket) return null
+  const action = params.get('action'), userId = Number(params.get('user_id')), groupId = Number(params.get('group_id'))
   await api('/auth/sso/exchange', { method: 'POST', body: JSON.stringify({ ticket }) })
   history.replaceState({}, '', location.pathname)
+  return { action, userId, groupId }
 }
 const refreshSidebar = async () => { [conversations.value, requests.value] = await Promise.all([api('/conversations'), api('/conversation-requests')]) }
-const load = async () => { await exchangeSso(); me.value = await api('/me'); await refreshSidebar(); connectSocket() }
+const load = async () => {
+  const intent = await exchangeSso()
+  if (intent?.action === 'admin') return location.replace('/im/admin/')
+  me.value = await api('/me')
+  if (intent?.action === 'direct' && intent.userId) await api('/conversations/direct', { method:'POST', body:JSON.stringify({ user_id:intent.userId }) })
+  if (intent?.action === 'group' && intent.groupId) await api(`/groups/${intent.groupId}/join`, { method:'POST' })
+  await refreshSidebar(); connectSocket()
+  const target = intent?.action === 'direct' ? conversations.value.find(item => Number(item.peer_id) === intent.userId) : conversations.value.find(item => Number(item.id) === intent?.groupId)
+  if (target) await selectConversation(target)
+}
 const createDirect = async () => { if (!peerId.value) return; await api('/conversations/direct', { method:'POST', body:JSON.stringify({ user_id:Number(peerId.value) }) }); peerId.value=''; createPanel.value=false; await refreshSidebar() }
 const createGroup = async () => { if (!groupName.value.trim()) return; await api('/conversations/group', { method:'POST', body:JSON.stringify({ name:groupName.value.trim() }) }); groupName.value=''; createPanel.value=false; await refreshSidebar() }
 const handleRequest = async (request, action) => { await api(`/conversation-requests/${request.conversation_id}`, { method:'POST', body:JSON.stringify({ action }) }); await refreshSidebar() }
@@ -81,6 +92,12 @@ const sendImage = async event => {
     const upload = await uploadResponse.json(); if (!uploadResponse.ok) throw new Error(upload.msg || '图片上传失败')
     await api('/messages', { method: 'POST', body: JSON.stringify({ conversation_id: selected.value.id, client_message_id: crypto.randomUUID(), type: 'image', image_id: upload.data.id }) })
   } catch (error) { alert(error.message) } finally { sending.value = false }
+}
+const reportMessage = async message => {
+  const reason = window.prompt('请填写举报原因（至少 5 个字）')
+  if (!reason) return
+  try { await api('/reports', { method:'POST', body:JSON.stringify({ message_id:message.id, reason:reason.trim() }) }); alert('举报已提交，管理员会尽快处理') }
+  catch (error) { alert(error.message) }
 }
 const connectSocket = () => {
   const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
@@ -108,4 +125,5 @@ onUnmounted(() => socket?.close())
 .requests > div { display:grid; grid-template-columns:1fr auto auto; gap:5px; align-items:center; margin-top:8px; font-size:11px; }
 .requests button { height:25px; font-size:10px; }
 .requests button.ghost { background:#fff; color:#7d828a; border:1px solid #dfe2e8; }
+.report-message { border:0; background:transparent; color:#a0a4ad; padding:0; font-size:11px; cursor:pointer; }.report-message:hover{color:#f56c6c}
 </style>
