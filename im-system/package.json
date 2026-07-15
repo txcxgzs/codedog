@@ -12,6 +12,7 @@
     "check": "npm run check -w @codedog-im/server && npm run build",
     "test": "npm run test -w @codedog-im/server",
     "toolbox": "node scripts/toolbox.js",
+    "bind-community": "node scripts/bind-community.js",
     "update": "node scripts/update.js"
   },
   "engines": { "node": ">=20" }

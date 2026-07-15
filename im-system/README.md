@@ -65,6 +65,13 @@ server {
 
 编程狗与 IM 的绑定方式是一次性 RS256 登录票据：编程狗持有私钥并签发 60 秒票据，IM 持有公钥并验证；IM 不接触用户的编程猫密码，也不共享编程狗数据库。
 
+如果首次安装在绑定前中断，服务恢复健康后可安全补做绑定（命令会先备份编程狗 `.env`，不会操作数据库）：
+
+```bash
+cd /opt/codedog-im/im-system
+npm run bind-community -- --community-dir /root/codedog --public-url https://im.54188.xyz
+```
+
 ```bash
 cp .env.example .env
 node scripts/keygen.js
