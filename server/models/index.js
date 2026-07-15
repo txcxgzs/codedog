@@ -38,6 +38,8 @@ const User = sequelize.define('User', {
     password: { type: DataTypes.STRING(255), allowNull: false },
     nickname: { type: DataTypes.STRING(50) },
     avatar: { type: DataTypes.STRING(500) },
+    profile_cover: { type: DataTypes.STRING(500) },
+    show_favorites: { type: DataTypes.BOOLEAN, defaultValue: false },
     bio: { type: DataTypes.TEXT },
     doing: { type: DataTypes.STRING(200) },
     gender: { type: DataTypes.ENUM('m', 'f', 'unknown'), defaultValue: 'unknown' },

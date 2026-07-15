@@ -3,7 +3,7 @@
     <div class="r-user--container" v-if="user">
       <!-- 用户信息卡片 -->
       <div class="r-user--profile_card">
-        <div class="r-user--cover"></div>
+        <div class="r-user--cover" :class="{ 'has-image': user.profile_cover }" :style="user.profile_cover ? { backgroundImage: `url(${user.profile_cover})` } : {}"><div class="r-user--cover_glow"></div></div>
         <div class="r-user--profile_content">
           <AppImage :src="user.avatar || defaultAvatar" :fallback="defaultAvatar" class="r-user--avatar" />
           <div class="r-user--info">
@@ -79,7 +79,7 @@
             </div>
           </el-tab-pane>
           
-          <el-tab-pane label="收藏" name="favorites" v-if="isCurrentUser">
+          <el-tab-pane label="收藏" name="favorites" v-if="canViewFavorites">
             <div class="r-user--works" v-loading="loadingFavorites">
               <div class="r-user--works_grid" v-if="favorites.length > 0">
                 <div
@@ -176,6 +176,7 @@ const activeTab = ref('works')
 const defaultAvatar = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI0ZFQzQzMyIvPjx0ZXh0IHg9IjUwIiB5PSI2MCIgZm9udC1zaXplPSI0MCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZmlsbD0id2hpdGUiPuahijwvdGV4dD48L3N2Zz4='
 
 const isCurrentUser = computed(() => String(userStore.user?.codemao_user_id) === String(user.value?.codemao_user_id))
+const canViewFavorites = computed(() => isCurrentUser.value || !!user.value?.show_favorites)
 
 const formatTime = (time) => {
   if (!time) return '未知'
@@ -324,7 +325,7 @@ const fetchFollowing = async () => {
 
 // 切换 Tab 时自动加载对应数据
 watch(activeTab, (tab) => {
-  if (tab === 'favorites' && isCurrentUser.value && favorites.value.length === 0) {
+  if (tab === 'favorites' && canViewFavorites.value && favorites.value.length === 0) {
     fetchFavorites()
   } else if (tab === 'followers' && followers.value.length === 0) {
     fetchFollowers()
@@ -677,5 +678,88 @@ $border-color: #eee;
     font-size: 12px;
     color: $text-muted;
   }
+}
+
+/* 个人主页视觉统一：默认封面不再使用大块黄色，自定义封面保持完整可读。 */
+.r-user--page {
+  min-height: calc(100vh - 56px);
+  padding: 30px 20px 70px;
+  background:
+    radial-gradient(circle at 8% 8%, rgba(255, 196, 51, .15), transparent 27%),
+    radial-gradient(circle at 92% 10%, rgba(91, 177, 255, .18), transparent 30%),
+    linear-gradient(135deg, #f8faff 0%, #f5f7fc 52%, #fffaf2 100%);
+}
+
+.r-user--container { max-width: 1200px; margin: 0 auto; }
+
+.r-user--profile_card {
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, .9);
+  border-radius: 24px;
+  background: rgba(255, 255, 255, .94);
+  box-shadow: 0 22px 60px rgba(30, 54, 92, .12);
+}
+
+.r-user--cover {
+  position: relative;
+  height: 230px;
+  overflow: hidden;
+  background:
+    linear-gradient(115deg, rgba(23, 35, 63, .2), transparent 55%),
+    radial-gradient(circle at 72% 28%, rgba(255, 255, 255, .28), transparent 20%),
+    linear-gradient(120deg, #15223d 0%, #526fd5 48%, #79d5e8 100%);
+  background-position: center;
+  background-size: cover;
+}
+
+.r-user--cover:not(.has-image)::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  opacity: .32;
+  background-image: radial-gradient(rgba(255,255,255,.8) 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+
+.r-user--cover_glow {
+  position: absolute;
+  right: 6%;
+  bottom: -90px;
+  width: 330px;
+  height: 230px;
+  border-radius: 50%;
+  background: rgba(255,255,255,.15);
+  filter: blur(2px);
+}
+
+.r-user--profile_content { padding: 0 38px 30px; gap: 24px; }
+.r-user--avatar {
+  width: 124px;
+  height: 124px;
+  margin-top: -62px;
+  border: 5px solid #fff;
+  box-shadow: 0 12px 28px rgba(28, 45, 75, .2);
+}
+.r-user--info { padding-top: 18px; }
+.r-user--actions { padding-top: 24px; }
+.r-user--tabs {
+  margin-top: 22px;
+  padding: 22px 24px 30px;
+  border: 1px solid rgba(226, 231, 242, .9);
+  border-radius: 22px;
+  box-shadow: 0 18px 50px rgba(30, 54, 92, .09);
+}
+.r-user--works_grid { gap: 18px; }
+.r-user--work_card { border-radius: 16px; box-shadow: 0 8px 24px rgba(30,54,92,.06); }
+
+@media (max-width: 768px) {
+  .r-user--page { padding: 14px 12px 92px; }
+  .r-user--cover { height: 150px; }
+  .r-user--profile_content { padding: 0 16px 22px; }
+  .r-user--avatar { width: 92px; height: 92px; margin-top: -46px; }
+  .r-user--info { padding-top: 10px; }
+  .r-user--actions { width: 100%; padding-top: 4px; }
+  .r-user--actions .el-button { width: 100%; }
+  .r-user--tabs { padding: 14px 12px 22px; border-radius: 18px; }
 }
 </style>

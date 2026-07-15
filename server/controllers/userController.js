@@ -515,7 +515,7 @@ async function getCurrentUser(req, res) {
  */
 async function updateProfile(req, res) {
     try {
-        let { nickname, bio, doing, geetest_challenge, geetest_validate, geetest_seccode } = req.body;
+        let { nickname, bio, doing, profile_cover, show_favorites, geetest_challenge, geetest_validate, geetest_seccode } = req.body;
         
         const result = await GeetestService.verify(
             'update_profile', 
@@ -559,6 +559,11 @@ async function updateProfile(req, res) {
             return errorResponse(res, '正在做不能超过200字', 400);
         }
 
+        if (profile_cover !== undefined && profile_cover !== null && profile_cover !== '' && (!/^https?:\/\//i.test(String(profile_cover)) || String(profile_cover).length > 500)) {
+            cleanupUploadedFile(req.file);
+            return errorResponse(res, '主页封面地址无效', 400);
+        }
+
         let avatar = user.avatar;
         const oldAvatar = user.avatar; // (Report 1 #7) 记录旧头像，DB 更新后清理磁盘文件
         if (req.file) {
@@ -590,6 +595,10 @@ async function updateProfile(req, res) {
         const savedNickname = nickname ? nickname : user.nickname;
         const savedBio = bio !== undefined ? String(bio).trim() : user.bio;
         const savedDoing = doing !== undefined ? String(doing).trim() : user.doing;
+        const savedCover = profile_cover !== undefined ? String(profile_cover || '').trim() : user.profile_cover;
+        const savedShowFavorites = show_favorites !== undefined
+            ? (show_favorites === true || show_favorites === 'true' || show_favorites === 1 || show_favorites === '1')
+            : user.show_favorites;
 
         if (String(savedNickname).length > 50) {
             cleanupUploadedFile(req.file);
@@ -608,7 +617,9 @@ async function updateProfile(req, res) {
             nickname: savedNickname,
             avatar: avatar,
             bio: savedBio,
-            doing: savedDoing
+            doing: savedDoing,
+            profile_cover: savedCover || null,
+            show_favorites: savedShowFavorites
         }, { where: { id: DbAdapter.getId(user) } });
 
         // (Report 1 #7) 头像更新后清理旧头像文件，避免磁盘泄漏。
@@ -641,7 +652,9 @@ async function updateProfile(req, res) {
             nickname: updatedUser.nickname,
             avatar: updatedUser.avatar,
             bio: updatedUser.bio,
-            doing: updatedUser.doing
+            doing: updatedUser.doing,
+            profile_cover: updatedUser.profile_cover,
+            show_favorites: updatedUser.show_favorites
         }, '资料更新成功');
     } catch (error) {
         cleanupUploadedFile(req.file);
@@ -663,7 +676,7 @@ async function getUserById(req, res) {
         // 修复: 加上 status:'active' 过滤,封禁(disabled)用户不对外展示
         const user = await DbAdapter.findOne(User, {
             where: { codemao_user_id: String(codemaoId), status: 'active' },
-            attributes: ['codemao_user_id', 'username', 'nickname', 'avatar', 'bio', 'doing', 'level', 'follower_count', 'following_count', 'work_count', 'created_at']
+            attributes: ['codemao_user_id', 'username', 'nickname', 'avatar', 'profile_cover', 'show_favorites', 'bio', 'doing', 'level', 'follower_count', 'following_count', 'work_count', 'created_at']
         });
 
         if (!user) {

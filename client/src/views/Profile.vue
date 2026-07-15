@@ -59,6 +59,16 @@
                   placeholder="介绍一下自己吧~"
                 />
               </el-form-item>
+              <el-form-item label="主页封面">
+                <div class="r-profile--cover_setting">
+                  <div class="r-profile--cover_preview" :style="{ backgroundImage: form.profile_cover ? `url(${form.profile_cover})` : '' }"><span v-if="!form.profile_cover">默认渐变封面</span></div>
+                  <div><el-button :loading="coverUploading" @click="coverInput?.click()">上传封面图片</el-button><el-button v-if="form.profile_cover" text @click="form.profile_cover = ''">恢复默认</el-button></div>
+                  <input ref="coverInput" type="file" accept="image/jpeg,image/png,image/webp" hidden @change="handleCoverChange" />
+                </div>
+              </el-form-item>
+              <el-form-item label="收藏隐私">
+                <el-switch v-model="form.show_favorites" active-text="向其他用户展示我的收藏夹" inactive-text="仅自己可见" />
+              </el-form-item>
               <el-form-item>
                 <el-button type="primary" :loading="loading" @click="saveProfile">
                   保存修改
@@ -128,6 +138,7 @@
 import { ref, reactive, onMounted, watch } from 'vue'
 import { useUserStore } from '@/stores/user'
 import { userApi } from '@/api/user'
+import { uploadApi } from '@/api/upload'
 import { developerApi } from '@/api/developer'
 import { geetestApi } from '@/api/geetest'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -146,13 +157,39 @@ const geetestDialogRef = ref(null)
 const geetestConfig = ref(null)
 const avatarInput = ref(null)
 const avatarLoading = ref(false)
+const coverInput = ref(null)
+const coverUploading = ref(false)
 
 const defaultAvatar = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI0ZFQzQzMyIvPjx0ZXh0IHg9IjUwIiB5PSI2MCIgZm9udC1zaXplPSI0MCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZmlsbD0id2hpdGUiPuahijwvdGV4dD48L3N2Zz4='
 
 const form = reactive({
   nickname: '',
-  bio: ''
+  bio: '',
+  profile_cover: '',
+  show_favorites: false
 })
+
+const handleCoverChange = async (event) => {
+  const file = event.target.files?.[0]
+  if (!file) return
+  if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > 5 * 1024 * 1024) {
+    ElMessage.error('请选择不超过 5MB 的 JPG、PNG 或 WebP 图片')
+    event.target.value = ''
+    return
+  }
+  coverUploading.value = true
+  try {
+    const res = await uploadApi.image(file)
+    if (res.code !== 200 || !res.data?.url) throw new Error(res.msg || '上传失败')
+    form.profile_cover = res.data.url
+    ElMessage.success('封面已上传，保存资料后生效')
+  } catch (error) {
+    ElMessage.error(error.response?.data?.msg || error.message || '封面上传失败')
+  } finally {
+    coverUploading.value = false
+    event.target.value = ''
+  }
+}
 
 const rules = {
   nickname: [
@@ -265,6 +302,8 @@ const saveProfile = async () => {
     const res = await userStore.updateProfile({
       nickname: form.nickname,
       bio: form.bio,
+      profile_cover: form.profile_cover,
+      show_favorites: form.show_favorites,
       ...geetestData
     })
     if (res.code === 200) {
@@ -290,6 +329,8 @@ watch(() => userStore.user, (user) => {
   if (user) {
     form.nickname = user.nickname || ''
     form.bio = user.bio || ''
+    form.profile_cover = user.profile_cover || ''
+    form.show_favorites = !!user.show_favorites
   }
 }, { immediate: true })
 
@@ -532,5 +573,23 @@ $border-color: #eee;
       }
     }
   }
+}
+
+.r-profile--cover_setting { width: 100%; }
+.r-profile--cover_preview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  aspect-ratio: 3 / 1;
+  margin-bottom: 12px;
+  overflow: hidden;
+  border: 1px solid #e2e8f2;
+  border-radius: 14px;
+  color: #fff;
+  font-size: 13px;
+  background: linear-gradient(120deg, #17243f, #617adb 55%, #7cd6e5);
+  background-position: center;
+  background-size: cover;
 }
 </style>

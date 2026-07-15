@@ -259,18 +259,19 @@ async function getUserFavorites(req, res) {
     try {
         const { codemaoUserId } = req.params;
 
-        if (String(req.user.codemao_user_id) !== String(codemaoUserId)) {
-            return errorResponse(res, '无权查看其他用户收藏', 403);
-        }
-
         const user = await DbAdapter.findOne(User, {
             where: { codemao_user_id: String(codemaoUserId) },
-            attributes: ['id']
+            attributes: ['id', 'codemao_user_id', 'show_favorites']
         });
 
         if (!user) {
             const { page, pageSize } = DbAdapter.parsePagination(req.query);
             return paginateResponse(res, [], 0, page, pageSize);
+        }
+
+        const isOwner = req.user && String(req.user.codemao_user_id) === String(codemaoUserId);
+        if (!isOwner && !user.show_favorites) {
+            return errorResponse(res, '该用户未公开收藏夹', 403);
         }
 
         const { works, count, page, pageSize } = await favoriteWorksForUser(DbAdapter.getId(user), req.query);
