@@ -25,6 +25,15 @@ function backupDatabase() {
   if (result.status !== 0) throw new Error(`数据库备份失败：${String(result.stderr || '')}`);
   fs.writeFileSync(file, result.stdout); console.log(`数据库备份已保存：${file}`); return file;
 }
+function installGlobalCommand() {
+  if (process.platform === 'win32') throw new Error('全局 codedogim 命令仅用于 Linux 生产服务器');
+  const entry = path.join(root, 'im.sh');
+  fs.chmodSync(entry, 0o755);
+  const target = '/usr/local/bin/codedogim';
+  try { fs.unlinkSync(target); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+  fs.symlinkSync(entry, target);
+  console.log(`全局命令已安装：${target} -> ${entry}`);
+}
 const actions = {
   '1': () => compose(['up', '-d', '--build']),
   '2': () => compose(['stop']),
@@ -35,13 +44,14 @@ const actions = {
   '7': () => run('npm', ['run', 'check']),
   '8': () => run(process.execPath, ['scripts/keygen.js']),
   '9': () => run('npm', ['install']),
-  '10': backupDatabase
+  '10': backupDatabase,
+  '11': installGlobalCommand
 };
 async function main() {
   if (process.argv[2]) { const action = actions[process.argv[2]]; if (!action) throw new Error('未知操作'); return action(); }
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
   console.log('\n======================================\n  CodeDog IM 管理工具箱 v0.1.0\n======================================');
-  console.log('1. 构建并启动\n2. 停止\n3. 重启\n4. 智能更新\n5. 查看日志\n6. 状态\n7. 检查与构建\n8. 生成 SSO 密钥\n9. 安装依赖\n10. 备份 MySQL\n0. 退出');
-  rl.question('\n请选择操作 [0-10]: ', answer => { rl.close(); if (answer === '0') return; Promise.resolve(actions[answer]?.()).catch(error => { console.error(error.message); process.exitCode = 1; }); });
+  console.log('1. 构建并启动\n2. 停止\n3. 重启\n4. 智能更新\n5. 查看日志\n6. 状态\n7. 检查与构建\n8. 生成 SSO 密钥\n9. 安装依赖\n10. 备份 MySQL\n11. 安装/修复全局 codedogim 命令\n0. 退出');
+  rl.question('\n请选择操作 [0-11]: ', answer => { rl.close(); if (answer === '0') return; Promise.resolve(actions[answer]?.()).catch(error => { console.error(error.message); process.exitCode = 1; }); });
 }
 main().catch(error => { console.error(error.message); process.exit(1); });

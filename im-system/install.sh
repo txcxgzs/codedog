@@ -98,6 +98,8 @@ IMAGE_HOST_STORAGE_DESTINATION=telegram
 EOF
 [ -f secrets/im_sso_public.pem ] || node scripts/keygen.js
 chmod 600 .env secrets/im_sso_private.pem
+chmod +x im.sh
+ln -sfn "$IM_DIR/im.sh" /usr/local/bin/codedogim
 
 npm ci
 npm run check
@@ -124,3 +126,4 @@ say "部署完成
 本地代理上游：http://127.0.0.1:${HTTP_PORT}
 本地健康检查：http://127.0.0.1:${HTTP_PORT}/im/health
 管理工具：cd $IM_DIR && ./im.sh"
+say "以后可在任意目录执行：codedogim"

@@ -36,6 +36,12 @@ const before = exec('git', ['rev-parse', 'HEAD'], repo, true);
 const branch = exec('git', ['branch', '--show-current'], repo, true) || 'main';
 exec('git', ['fetch', '--prune', 'origin']);
 exec('git', ['merge', '--ff-only', `origin/${branch}`]);
+if (process.platform !== 'win32') {
+  const entry = path.join(root, 'im.sh'), target = '/usr/local/bin/codedogim';
+  fs.chmodSync(entry, 0o755);
+  try { fs.unlinkSync(target); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+  fs.symlinkSync(entry, target);
+}
 const after = exec('git', ['rev-parse', 'HEAD'], repo, true);
 if (before === after) { console.log('代码已是最新版本，无需重建。'); process.exit(0); }
 const changed = exec('git', ['diff', '--name-only', before, after, '--', 'im-system'], repo, true).split(/\r?\n/).filter(Boolean);

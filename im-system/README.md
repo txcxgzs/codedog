@@ -113,7 +113,8 @@ IM 服务器只部署 `im_sso_public.pem`；私钥只能留在编程狗服务器
 ## 工具箱和更新
 
 - Windows：双击 `im.bat`。
-- Linux：运行 `sh im.sh`。
+- Linux：安装后可在任意目录执行 `codedogim`；也可在项目目录运行 `./im.sh`。
+- 工具箱选项 11 可重新安装或修复 `/usr/local/bin/codedogim` 全局命令。
 - 独立更新：`update.bat` 或 `sh update.sh`。
 
 智能更新执行：工作区预检 -> 备份 `.env`/SSO 密钥 -> 在线 MySQL 热备份 -> `git fetch` + `ff-only` 更新 -> 仅在锁文件变化时安装依赖 -> 检查和构建 -> Compose 滚动重建。没有 IM 变更时不会重复下载依赖或重建。
