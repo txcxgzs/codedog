@@ -33,6 +33,18 @@ function boundHash(nonce, value) {
   return crypto.createHash('sha256').update(`${nonce}\n${value}`).digest('base64url');
 }
 
+function communityPublicUrl(req) {
+  const forwardedHost = String(req?.get?.('x-forwarded-host') || '').split(',')[0].trim();
+  const requestHost = forwardedHost || String(req?.get?.('host') || '').trim();
+  // Only accept a plain DNS name/IP with an optional port. This value is
+  // rendered into links in IM, so never trust arbitrary forwarded text.
+  const safeHost = /^[a-z0-9.-]+(?::\d{1,5})?$/i.test(requestHost) ? requestHost : '';
+  const forwardedProto = String(req?.get?.('x-forwarded-proto') || '').split(',')[0].trim().toLowerCase();
+  const protocol = ['http', 'https'].includes(forwardedProto) ? forwardedProto : (req?.secure ? 'https' : 'http');
+  if (safeHost && !/^(localhost|127\.0\.0\.1)(:\d+)?$/i.test(safeHost)) return `${protocol}://${safeHost}`;
+  return String(process.env.PUBLIC_URL || process.env.CORS_ORIGIN || '').split(',')[0].replace(/\/$/, '');
+}
+
 function createStatusToken(user, key) {
   return jwt.sign({ purpose: 'im_status', token_version: user.token_version || 0 }, key, {
     algorithm: 'RS256', issuer: 'codedog-community', audience: 'codedog-im-status',
@@ -44,7 +56,9 @@ function createImTicket(user, context = {}) {
   const key = signingKey();
   const nonce = crypto.randomBytes(18).toString('base64url');
   const requestContext = clientContext(context.req);
-  const communityUrl = String(process.env.PUBLIC_URL || process.env.CORS_ORIGIN || '').split(',')[0].replace(/\/$/, '');
+  // Use the public origin the browser actually used, not the container's
+  // localhost address. IM uses this for profile and return-to-community links.
+  const communityUrl = communityPublicUrl(context.req);
   return jwt.sign({
     purpose: 'im_sso',
     username: user.username,
