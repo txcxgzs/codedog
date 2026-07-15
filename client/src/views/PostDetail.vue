@@ -95,11 +95,7 @@
               <el-button text size="small" @click="replyToCommentId = null; replyToUserId = null; commentContent = ''">取消回复</el-button>
             </div>
             <el-input v-model="commentContent" type="textarea" :rows="3" placeholder="写下你的评论..." />
-            <div class="r-post--social_tools">
-              <el-button size="small" plain @click="selectSocialCard('user')">发送我的私聊卡片</el-button>
-              <el-button size="small" plain @click="selectSocialCard('group')">发送群聊邀请卡片</el-button>
-              <el-tag v-if="selectedSocialCard" closable @close="selectedSocialCard = null">{{ selectedSocialCard.type === 'user' ? '私聊名片' : `群聊 #${selectedSocialCard.target_id}` }}</el-tag>
-            </div>
+            <SocialCardPicker :selected="selectedSocialCard" @select="selectSocialCard" @clear="selectedSocialCard = null" />
             <el-button type="primary" :loading="commentLoading" @click="submitComment">发表评论</el-button>
           </div>
           <div class="r-post--login_tip" v-else>
@@ -215,6 +211,7 @@ import hljs from 'highlight.js'
 import 'highlight.js/styles/github.css'
 import AppImage from '@/components/AppImage.vue'
 import SocialCommentCard from '@/components/SocialCommentCard.vue'
+import SocialCardPicker from '@/components/SocialCardPicker.vue'
 import WysiwygEditor from '@/components/WysiwygEditor.vue'
 import { EditPen } from '@element-plus/icons-vue'
 
