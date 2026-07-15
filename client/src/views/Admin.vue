@@ -513,7 +513,7 @@
                 <el-option label="未精选" value="false" />
               </el-select>
               <el-button type="primary" @click="searchWorks">搜索</el-button>
-              <el-button type="warning" plain @click="recalibrateWorks" :loading="recalibrating">校准数据</el-button>
+              <el-button v-if="userStore.user?.role === 'superadmin'" type="warning" plain @click="recalibrateWorks" :loading="recalibrating">扫描并校准</el-button>
             </div>
           </div>
           <el-table :data="works" v-loading="loadingWorks" stripe>
@@ -642,6 +642,27 @@
                   </div>
                 </el-form-item>
                 <el-form-item label="作品名称"><el-input v-model="workEditForm.name" /></el-form-item>
+                <el-row :gutter="16">
+                  <el-col :span="12"><el-form-item label="具体类型">
+                    <el-select v-model="workEditForm.type" filterable allow-create default-first-option style="width: 100%" placeholder="如 KITTEN3、KITTEN4、NEKO">
+                      <el-option label="Kitten 3" value="KITTEN3" />
+                      <el-option label="Kitten 4" value="KITTEN4" />
+                      <el-option label="Nemo" value="NEMO" />
+                      <el-option label="Neko（KittenN）" value="NEKO" />
+                      <el-option label="CoCo" value="COCO" />
+                      <el-option label="Wood（Python）" value="WOOD" />
+                    </el-select>
+                  </el-form-item></el-col>
+                  <el-col :span="12"><el-form-item label="IDE 系列">
+                    <el-select v-model="workEditForm.ide_type" filterable allow-create default-first-option style="width: 100%" placeholder="API 返回的 ide_type">
+                      <el-option label="Kitten" value="KITTEN" />
+                      <el-option label="Nemo" value="NEMO" />
+                      <el-option label="Neko（KittenN）" value="NEKO" />
+                      <el-option label="CoCo" value="COCO" />
+                      <el-option label="Wood" value="WOOD" />
+                    </el-select>
+                  </el-form-item></el-col>
+                </el-row>
                 <el-row :gutter="16">
                   <el-col :span="8"><el-form-item label="浏览量"><el-input-number v-model="workEditForm.view_times" :min="0" style="width: 100%" /></el-form-item></el-col>
                   <el-col :span="8"><el-form-item label="点赞数"><el-input-number v-model="workEditForm.praise_times" :min="0" style="width: 100%" /></el-form-item></el-col>
@@ -2545,7 +2566,7 @@ const workDetail = ref(null)
 const workDetailSaving = ref(false)
 const workEditing = ref(false)
 const workEditReason = ref('')
-const workEditForm = ref({ name: '', preview: '', view_times: 0, praise_times: 0, collection_times: 0, status: 'published', is_featured: false })
+const workEditForm = ref({ name: '', preview: '', type: '', ide_type: '', view_times: 0, praise_times: 0, collection_times: 0, status: 'published', is_featured: false })
 const userDetail = ref(null)
 const passwordDialogVisible = ref(false)
 const passwordLoading = ref(false)
@@ -3861,6 +3882,8 @@ const getTypeName = (workType) => {
   const type = workType.toUpperCase()
   const typeMap = {
     'KITTEN': 'Kitten',
+    'KITTEN3': 'Kitten 3',
+    'KITTEN4': 'Kitten 4',
     'NEMO': 'Nemo',
     'COCO': 'Coco',
     'WOOD': 'Wood',
@@ -3869,7 +3892,9 @@ const getTypeName = (workType) => {
     'CODE_BLOCK': '代码岛',
     'PYTHON': 'Python',
     'SCRATCH': 'Scratch',
-    'NEKO': 'Nemo'
+    'NEKO': 'Neko（KittenN）',
+    'KITTENN': 'KittenN',
+    'KITTEN_N': 'KittenN'
   }
   return typeMap[type] || workType
 }
@@ -4440,6 +4465,8 @@ const enterWorkEdit = () => {
   workEditForm.value = {
     name: workDetail.value.name,
     preview: workDetail.value.preview || '',
+    type: workDetail.value.type || '',
+    ide_type: workDetail.value.ide_type || '',
     view_times: workDetail.value.view_times || 0,
     praise_times: workDetail.value.praise_times || 0,
     collection_times: workDetail.value.collection_times || 0,
@@ -4635,19 +4662,45 @@ const fetchWorks = async () => {
 
 const recalibrateWorks = async () => {
   try {
-    await ElMessageBox.confirm('确定要重新校准全站作品数据吗？这可能需要一些时间。', '提示', { type: 'warning' })
+    await ElMessageBox.confirm('第一阶段只扫描并生成差异预览，不会修改数据库。是否继续？', '只读扫描', { type: 'warning', confirmButtonText: '开始扫描' })
     recalibrating.value = true
     const res = await adminApi.recalibrateWorks()
-    if (res.code === 200) {
-      ElMessage.success(res.data?.msg || '校准完成')
-      fetchWorks()
-    } else {
-      ElMessage.error(res.msg || '校准失败')
+    if (res.code !== 200) throw new Error(res.msg || '启动扫描失败')
+    const jobId = res.data.id
+    let job = res.data
+    while (job.status === 'running') {
+      await new Promise(resolve => setTimeout(resolve, 1500))
+      const statusRes = await adminApi.getRecalibrationJob(jobId)
+      if (statusRes.code !== 200) throw new Error(statusRes.msg || '获取扫描进度失败')
+      job = statusRes.data
     }
+    if (job.status !== 'ready') throw new Error(job.failures?.[0]?.reason || '扫描失败')
+    if (!job.changedCount) return ElMessage.success('扫描完成，没有需要更新的数据')
+
+    const samples = (job.changes || []).slice(0, 8).map(item =>
+      `${item.name || item.codemaoWorkId}: ${item.oldValues?.type || '-'} → ${item.newValues?.type || '-'}`
+    ).join('\n')
+    await ElMessageBox.confirm(
+      `扫描 ${job.total} 个作品，发现 ${job.changedCount} 个需更新，${job.unchangedCount} 个无变化，${job.failedCount} 个读取失败。\n\n差异样例：\n${samples}\n\n确认后才会写入；扫描后被人工修改的记录会自动跳过。`,
+      '校准差异预览',
+      { type: 'warning', confirmButtonText: `确认更新 ${job.changedCount} 项`, cancelButtonText: '取消，不修改' }
+    )
+    const applyRes = await adminApi.applyRecalibrationJob(jobId)
+    if (applyRes.code !== 200) throw new Error(applyRes.msg || '启动应用失败')
+    job = applyRes.data
+    while (job.status === 'running') {
+      await new Promise(resolve => setTimeout(resolve, 1000))
+      const statusRes = await adminApi.getRecalibrationJob(jobId)
+      if (statusRes.code !== 200) throw new Error(statusRes.msg || '获取应用进度失败')
+      job = statusRes.data
+    }
+    if (job.status !== 'completed') throw new Error(job.failures?.[0]?.reason || '校准应用失败')
+    ElMessage.success(`校准完成：更新 ${job.appliedCount} 项，跳过冲突 ${job.conflictCount} 项，失败 ${job.failedCount} 项`)
+    fetchWorks()
   } catch (e) {
-    if (e !== 'cancel') {
+    if (e !== 'cancel' && e !== 'close') {
       console.error('Recalibrate Error:', e)
-      ElMessage.error('操作失败')
+      ElMessage.error(e?.message || e?.response?.data?.msg || '操作失败')
     }
   } finally {
     recalibrating.value = false

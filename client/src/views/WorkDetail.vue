@@ -50,8 +50,8 @@
             </div>
           </div>
           
-          <div class="r-work--tags" v-if="work.ide_type || work.type">
-            <el-tag class="r-work--tag" effect="dark">{{ getTypeName(work.ide_type || work.type) }}</el-tag>
+          <div class="r-work--tags" v-if="work.type || work.ide_type">
+            <el-tag class="r-work--tag" effect="dark">{{ getTypeName(work.type || work.ide_type) }}</el-tag>
           </div>
           
           <div class="r-work--actions">
@@ -214,7 +214,7 @@
               </li>
               <li>
                 <span class="r-work--info_label">作品类型</span>
-                <span class="r-work--info_value">{{ getTypeName(work.ide_type || work.type) }}</span>
+                <span class="r-work--info_value">{{ getTypeName(work.type || work.ide_type) }}</span>
               </li>
               <li>
                 <span class="r-work--info_label">来源</span>
@@ -374,6 +374,8 @@ const allowedPlayerHosts = new Set([
   'python.codemao.cn',
   'coco.codemao.cn',
   'block.codemao.cn',
+  'kn.codemao.cn',
+  'turtle.codemao.cn',
   'box.codemao.cn',
   'box2.codemao.cn'
 ])
@@ -396,18 +398,32 @@ const playerUrl = computed(() => {
   const workId = work.value.codemao_work_id
   if (!workId) return null
 
-  // 播放器类型优先使用 ide_type(作品对应的 IDE 类型),fallback 到 type(作品分类)
-  // 注意:type 是作品分类,并不一定能反映真实播放器类型,ide_type 才是正确的判定字段
-  const rawType = work.value.ide_type || work.value.type || ''
+  /**
+   * 编程猫播放器选择规则：
+   * Kitten3、Kitten4、Neko（KittenN）和 Wood（Python）都属于 Kitten 系列，
+   * 但具体 URL 取决于具体型号；Nemo 与 Neko 是两个不同的编辑器，不能混用。
+   * creation-tools/v1/works API 返回的 player_url 已由后端保存为 work_url，
+   * 必须优先使用 API 给出的地址，只有 API 未返回时才按型号兜底生成。
+   */
+  const safeWorkUrl = getSafePlayerUrl(work.value.work_url)
+  if (safeWorkUrl) return safeWorkUrl
+
+  // type 通常比 ide_type 更具体（例如 KITTEN3/KITTEN4，而 ide_type 可能只有 KITTEN）。
+  const rawType = work.value.type || work.value.ide_type || ''
   const type = rawType.toUpperCase()
 
-  // 核心播放器逻辑映射 (基于 ide_type/type 字段)
+  // 仅在 API 没有 player_url 时使用的兜底地址。
   const playerMap = {
+    'KITTEN3': `https://player.codemao.cn/old/${workId}`,
+    'KITTEN4': `https://player.codemao.cn/new/${workId}`,
     'KITTEN': `https://player.codemao.cn/new/${workId}`,
-    'NEMO': `https://nemo.codemao.cn/w/${workId}`,
-    'WOOD': `https://python.codemao.cn/player/${workId}`,
-    'PYTHON': `https://python.codemao.cn/player/${workId}`,
-    'COCO': `https://coco.codemao.cn/player/${workId}`,
+    'NEMO': `https://nemo.codemao.cn/player/${workId}`,
+    'NEKO': `https://kn.codemao.cn/editor/player/${workId}`,
+    'KITTENN': `https://kn.codemao.cn/editor/player/${workId}`,
+    'KITTEN_N': `https://kn.codemao.cn/editor/player/${workId}`,
+    'WOOD': `https://turtle.codemao.cn/player/h5/${workId}`,
+    'PYTHON': `https://turtle.codemao.cn/player/h5/${workId}`,
+    'COCO': `https://coco.codemao.cn/editor/player/${workId}`,
     'CODE_BLOCK': `https://block.codemao.cn/player/${workId}`,
     'BOX': `https://box.codemao.cn/w/${workId}`,
     'BOX2': `https://box2.codemao.cn/w/${workId}`
@@ -417,11 +433,7 @@ const playerUrl = computed(() => {
     return playerMap[type]
   }
   
-  // 如果有原始播放地址则优先使用
-  const safeWorkUrl = getSafePlayerUrl(work.value.work_url)
-  if (safeWorkUrl) return safeWorkUrl
-  
-  // 默认兜底使用 K4 播放器
+  // 无法识别的历史数据最后按 Kitten4 兜底。
   return `https://player.codemao.cn/new/${workId}`
 })
 const relatedWorks = ref([])
@@ -465,6 +477,8 @@ const getTypeName = (workType) => {
   const type = workType.toUpperCase()
   const typeMap = {
     'KITTEN': 'Kitten',
+    'KITTEN3': 'Kitten 3',
+    'KITTEN4': 'Kitten 4',
     'NEMO': 'Nemo',
     'COCO': 'Coco',
     'WOOD': 'Wood',
@@ -473,7 +487,9 @@ const getTypeName = (workType) => {
     'CODE_BLOCK': '代码岛',
     'PYTHON': 'Python',
     'SCRATCH': 'Scratch',
-    'NEKO': 'Nemo'
+    'NEKO': 'Neko（KittenN）',
+    'KITTENN': 'KittenN',
+    'KITTEN_N': 'KittenN'
   }
   return typeMap[type] || workType
 }

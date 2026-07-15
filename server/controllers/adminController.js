@@ -1074,7 +1074,7 @@ async function getWorks(req, res) {
 async function updateWork(req, res) {
     try {
         const { workId } = req.params;
-        const { name, preview, view_times, praise_times, collection_times, status, is_featured, _reason } = req.body;
+        const { name, preview, type, ide_type, view_times, praise_times, collection_times, status, is_featured, _reason } = req.body;
 
         const work = await DbAdapter.findByPk(Work, workId);
         if (!work) {
@@ -1099,6 +1099,24 @@ async function updateWork(req, res) {
             }
         }
         if (preview !== undefined && preview !== '') updateData.preview = String(preview).substring(0, 500);
+        // 管理员可纠正历史作品的具体型号与 IDE 系列；Nemo 和 Neko 必须保持为不同值。
+        const normalizeWorkType = (value, fieldName) => {
+            const normalized = String(value || '').trim().toUpperCase();
+            if (!normalized || normalized.length > 50 || !/^[A-Z0-9_-]+$/.test(normalized)) {
+                return { error: `${fieldName} 格式不正确` };
+            }
+            return { value: normalized };
+        };
+        if (type !== undefined) {
+            const result = normalizeWorkType(type, '作品类型');
+            if (result.error) return errorResponse(res, result.error, 400);
+            updateData.type = result.value;
+        }
+        if (ide_type !== undefined) {
+            const result = normalizeWorkType(ide_type, 'IDE 类型');
+            if (result.error) return errorResponse(res, result.error, 400);
+            updateData.ide_type = result.value;
+        }
         if (view_times !== undefined) updateData.view_times = Math.max(0, parseInt(view_times, 10) || 0);
         if (praise_times !== undefined) updateData.praise_times = Math.max(0, parseInt(praise_times, 10) || 0);
         if (collection_times !== undefined) updateData.collection_times = Math.max(0, parseInt(collection_times, 10) || 0);
@@ -1112,6 +1130,8 @@ async function updateWork(req, res) {
             old_values: {
                 name: work.name,
                 preview: work.preview,
+                type: work.type,
+                ide_type: work.ide_type,
                 view_times: work.view_times,
                 praise_times: work.praise_times,
                 collection_times: work.collection_times,
@@ -4977,59 +4997,168 @@ module.exports = {
     deletePost,
     setPostEssence,
     setPostTop,
-    recalibrateAllWorks
+    recalibrateAllWorks,
+    getRecalibrationJob,
+    applyRecalibrationJob
 };
 
 /**
- * 重新校准全站作品数据 (IDE 类型和播放器)
+ * 安全校准任务：先只读扫描并保存差异快照，确认后才应用。
+ * 任务保存在内存中且有过期时间；服务重启后自然失效，不会误应用旧计划。
  */
+const recalibrationJobs = new Map();
+const RECALIBRATION_JOB_TTL = 30 * 60 * 1000;
+let activeRecalibrationJobId = null;
+
+function publicRecalibrationJob(job) {
+    return {
+        id: job.id,
+        phase: job.phase,
+        status: job.status,
+        total: job.total,
+        processed: job.processed,
+        changedCount: job.changes.length,
+        unchangedCount: job.unchangedCount,
+        failedCount: job.failures.length,
+        conflictCount: job.conflictCount || 0,
+        appliedCount: job.appliedCount || 0,
+        createdAt: job.createdAt,
+        expiresAt: job.expiresAt,
+        // 只返回有限样例，避免大型站点把整个计划塞进响应。
+        changes: job.changes.slice(0, 100),
+        failures: job.failures.slice(0, 100)
+    };
+}
+
+function cleanExpiredRecalibrationJobs() {
+    const now = Date.now();
+    for (const [id, job] of recalibrationJobs) {
+        if (job.expiresAt <= now && job.status !== 'running') recalibrationJobs.delete(id);
+    }
+}
+
 async function recalibrateAllWorks(req, res) {
     try {
+        cleanExpiredRecalibrationJobs();
+        if (activeRecalibrationJobId) {
+            const active = recalibrationJobs.get(activeRecalibrationJobId);
+            if (active?.status === 'running') {
+                return errorResponse(res, '已有校准任务正在运行，请等待完成', 409);
+            }
+            activeRecalibrationJobId = null;
+        }
+
         const works = await DbAdapter.findAll(Work);
-        let updatedCount = 0;
-        let failedCount = 0;
+        const jobId = crypto.randomUUID();
+        const job = {
+            id: jobId,
+            ownerId: String(req.user.id),
+            phase: 'preview', status: 'running', total: works.length, processed: 0,
+            changes: [], failures: [], unchangedCount: 0, conflictCount: 0, appliedCount: 0,
+            createdAt: Date.now(), expiresAt: Date.now() + RECALIBRATION_JOB_TTL
+        };
+        recalibrationJobs.set(jobId, job);
+        activeRecalibrationJobId = jobId;
 
-        console.log(`开始重新校准 ${works.length} 个作品的数据...`);
-
-        // 使用异步循环，但控制并发或分批，避免被编程猫封禁
-        for (const work of works) {
+        // 脱离当前 HTTP 请求在后台扫描；此阶段绝不写数据库。
+        void (async () => {
+          try {
+            for (const work of works) {
             try {
-                if (!work.codemao_work_id) continue;
-
-                const workDetail = await codemaoApi.getWorkDetail(work.codemao_work_id);
-                if (!workDetail) {
-                    console.error(`无法获取作品详情: ${work.codemao_work_id}`);
-                    failedCount++;
+                if (!work.codemao_work_id) {
+                    job.failures.push({ id: DbAdapter.getId(work), reason: '缺少编程猫作品 ID' });
+                    job.processed++;
                     continue;
                 }
 
-                const updateData = {
+                const workDetail = await codemaoApi.getWorkDetail(work.codemao_work_id);
+                if (!workDetail?.id) {
+                    job.failures.push({ id: DbAdapter.getId(work), codemaoWorkId: work.codemao_work_id, reason: 'API 未返回有效作品' });
+                    job.processed++;
+                    continue;
+                }
+
+                const proposed = {
+                    type: workDetail.type || work.type || 'KITTEN',
                     ide_type: workDetail.ide_type || work.ide_type || 'KITTEN',
                     work_url: buildCodemaoPlayerUrl({ workId: workDetail.id, playerUrl: workDetail.player_url, type: workDetail.type, ideType: workDetail.ide_type || work.ide_type })
                 };
-
-                await DbAdapter.update(Work, updateData, { where: { id: DbAdapter.getId(work) } });
-                updatedCount++;
-                
-                if (updatedCount % 10 === 0) {
-                    console.log(`已校准: ${updatedCount}/${works.length} 个作品...`);
+                const oldValues = { type: work.type, ide_type: work.ide_type, work_url: work.work_url };
+                const changed = Object.keys(proposed).some(key => String(proposed[key] || '') !== String(oldValues[key] || ''));
+                if (changed) {
+                    job.changes.push({ id: DbAdapter.getId(work), codemaoWorkId: work.codemao_work_id, name: work.name, oldValues, newValues: proposed, apiPlayerUrl: Boolean(workDetail.player_url) });
+                } else {
+                    job.unchangedCount++;
                 }
-
-                // 稍微延迟，避免 API 请求过快
-                await new Promise(resolve => setTimeout(resolve, 100));
             } catch (e) {
-                console.error(`校准作品 ${work.codemao_work_id} 出错:`, e.message);
-                failedCount++;
+                job.failures.push({ id: DbAdapter.getId(work), codemaoWorkId: work.codemao_work_id, reason: e.message });
             }
-        }
+            job.processed++;
+            // 保守限速为每秒最多约 2 次请求。
+            await new Promise(resolve => setTimeout(resolve, 500));
+          }
+          job.status = 'ready';
+          job.expiresAt = Date.now() + RECALIBRATION_JOB_TTL;
+          } catch (error) {
+            job.status = 'failed';
+            job.failures.push({ reason: error.message });
+          } finally {
+            if (activeRecalibrationJobId === job.id) activeRecalibrationJobId = null;
+          }
+        })();
 
-        logOperation(req, 'recalibrate_works', 'work', 'all', { updatedCount, failedCount });
-        
-        return successResponse(res, { updatedCount, failedCount }, `校准完成，成功更新了 ${updatedCount} 个作品，失败 ${failedCount} 个`);
+        logOperation(req, 'preview_recalibrate_works', 'work', 'all', { jobId, total: works.length });
+        return successResponse(res, publicRecalibrationJob(job), '已开始只读扫描，不会修改数据库');
     } catch (error) {
         console.error('重新校准作品错误:', error);
         return errorResponse(res, '校准失败', 500);
     }
+}
+
+async function getRecalibrationJob(req, res) {
+    cleanExpiredRecalibrationJobs();
+    const job = recalibrationJobs.get(req.params.jobId);
+    if (!job || job.ownerId !== String(req.user.id)) return errorResponse(res, '校准任务不存在或已过期', 404);
+    return successResponse(res, publicRecalibrationJob(job));
+}
+
+async function applyRecalibrationJob(req, res) {
+    cleanExpiredRecalibrationJobs();
+    const job = recalibrationJobs.get(req.params.jobId);
+    if (!job || job.ownerId !== String(req.user.id)) return errorResponse(res, '校准任务不存在或已过期', 404);
+    if (job.phase !== 'preview' || job.status !== 'ready') return errorResponse(res, '扫描尚未完成或任务已应用', 409);
+    if (activeRecalibrationJobId) return errorResponse(res, '已有校准任务正在运行', 409);
+
+    job.phase = 'apply'; job.status = 'running'; job.processed = 0;
+    activeRecalibrationJobId = job.id;
+    void (async () => {
+      try {
+        for (const change of job.changes) {
+          try {
+            const current = await DbAdapter.findByPk(Work, change.id);
+            if (!current) { job.conflictCount++; job.processed++; continue; }
+            // 乐观并发检查：扫描后被人工修改过的数据绝不覆盖。
+            const stale = ['type', 'ide_type', 'work_url'].some(key => String(current[key] || '') !== String(change.oldValues[key] || ''));
+            if (stale) { job.conflictCount++; job.processed++; continue; }
+            await DbAdapter.update(Work, change.newValues, { where: { id: change.id } });
+            job.appliedCount++;
+          } catch (error) {
+            job.failures.push({ id: change.id, codemaoWorkId: change.codemaoWorkId, reason: `应用失败: ${error.message}` });
+          }
+          job.processed++;
+          await new Promise(resolve => setTimeout(resolve, 50));
+        }
+        job.status = 'completed';
+        job.expiresAt = Date.now() + RECALIBRATION_JOB_TTL;
+        logOperation(req, 'apply_recalibrate_works', 'work', 'all', { jobId: job.id, appliedCount: job.appliedCount, conflictCount: job.conflictCount, failedCount: job.failures.length });
+      } catch (error) {
+        job.status = 'failed';
+        job.failures.push({ reason: error.message });
+      } finally {
+        if (activeRecalibrationJobId === job.id) activeRecalibrationJobId = null;
+      }
+    })();
+    return successResponse(res, publicRecalibrationJob(job), '已开始应用确认过的校准计划');
 }
 
 /**

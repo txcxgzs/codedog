@@ -17,6 +17,7 @@ const GeetestService = require('../services/geetestService');
 // 引入内容审核服务,落库前做敏感词/违规检查(参照 commentController)
 const aiReview = require('../services/aiReview');
 const { safeLog } = require('../utils/safeLog');
+const { buildCodemaoPlayerUrl } = require('../utils/codemaoPlayer');
 // 修复: token 改用 httpOnly cookie 防止 XSS 偷取; 同时保留返回体字段兼容旧前端
 const { setTokenCookie, clearTokenCookie } = require('../middleware/auth');
 
@@ -376,9 +377,6 @@ async function syncUserWorks(codemaoUserId, localUserId) {
                 // 不要用 work_label_list 的中文标签(游戏/其他...)，否则首页角标会显示成「其他」
                 let type = workDetail.type || workDetail.ide_type || 'KITTEN';
                 let ideType = workDetail.ide_type || workDetail.type || 'KITTEN';
-                // 编程猫 Nemo 部分接口可能返回 Neko/NEKO，统一规范为 NEMO
-                if (/^neko$/i.test(String(type))) type = 'NEMO';
-                if (/^neko$/i.test(String(ideType))) ideType = 'NEMO';
                 
                 // (报告1 #2, Bug-20) 落库前对作品名称+描述做内容审核，参照 publishWork
                 // 违规/疑似违规内容设为 pending 待人工复核，避免登录同步直接 published 绕过本地审核
@@ -403,7 +401,7 @@ async function syncUserWorks(codemaoUserId, localUserId) {
                     preview: workDetail.preview,
                     type: type,
                     ide_type: ideType,
-                    work_url: workDetail.player_url || `https://player.codemao.cn/new/${workDetail.id}`,
+                    work_url: buildCodemaoPlayerUrl({ workId: workDetail.id, playerUrl: workDetail.player_url, type: workDetail.type, ideType }),
                     user_id: localUserId,
                     codemao_author_id: codemaoUserId,
                     codemao_author_name: workDetail.user_info?.nickname,
@@ -432,7 +430,7 @@ async function syncUserWorks(codemaoUserId, localUserId) {
                         preview: workDetail.preview || record.preview,
                         type: type,
                         ide_type: ideType,
-                        work_url: workDetail.player_url || record.work_url || `https://player.codemao.cn/new/${workDetail.id}`,
+                        work_url: buildCodemaoPlayerUrl({ workId: workDetail.id, playerUrl: workDetail.player_url, type: workDetail.type, ideType }),
                         codemao_author_name: workDetail.user_info?.nickname || record.codemao_author_name,
                         view_times: workDetail.view_times || record.view_times || 0
                     };

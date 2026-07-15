@@ -60,7 +60,10 @@ router.get('/works', requirePermission('work:review'), adminController.getWorks)
 router.put('/works/:workId', requirePermission('work:edit'), adminController.updateWork);
 router.put('/works/:workId/featured', requirePermission('work:feature'), adminController.setWorkFeatured);
 router.delete('/works/:workId', requirePermission('work:delete'), adminController.deleteWork);
-router.post('/works/recalibrate', requireRole('admin'), adminController.recalibrateAllWorks);
+// 全站校准属于高风险操作：仅超级管理员可先扫描预览，再显式确认应用。
+router.post('/works/recalibrate', requireRole('superadmin'), adminController.recalibrateAllWorks);
+router.get('/works/recalibrate/:jobId', requireRole('superadmin'), adminController.getRecalibrationJob);
+router.post('/works/recalibrate/:jobId/apply', requireRole('superadmin'), adminController.applyRecalibrationJob);
 
 /**
  * 评论管理

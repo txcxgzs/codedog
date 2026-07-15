@@ -131,6 +131,12 @@ export const adminApi = {
   recalibrateWorks() {
     return request.post('/admin/works/recalibrate')
   },
+  getRecalibrationJob(jobId) {
+    return request.get(`/admin/works/recalibrate/${jobId}`)
+  },
+  applyRecalibrationJob(jobId) {
+    return request.post(`/admin/works/recalibrate/${jobId}/apply`)
+  },
   
   /**
    * 评论管理

@@ -13,6 +13,7 @@ require('dotenv').config();
 const { Work, User, sequelize } = require('../models');
 const codemaoApi = require('./codemaoApi');
 const bcrypt = require('bcryptjs');
+const { buildCodemaoPlayerUrl } = require('../utils/codemaoPlayer');
 
 async function delay(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
@@ -62,8 +63,6 @@ async function fetchAndSaveWork(workId) {
 
             // 与后台 crawlWork 保持一致: 使用 IDE 类型，而非 work_label_list 中文标签
             let type = data.type || data.ide_type || 'KITTEN';
-            // 编程猫 Nemo 部分接口可能返回 Neko/NEKO，统一规范为 NEMO
-            if (/^neko$/i.test(String(type))) type = 'NEMO';
 
             const work = await Work.create({
                 codemao_work_id: String(data.id),
@@ -71,8 +70,8 @@ async function fetchAndSaveWork(workId) {
                 description: data.description,
                 preview: data.preview,
                 type: type,
-                ide_type: (/^neko$/i.test(String(data.ide_type || type)) ? 'NEMO' : (data.ide_type || type)),
-                work_url: data.player_url,
+                ide_type: data.ide_type || type,
+                work_url: buildCodemaoPlayerUrl({ workId: data.id, playerUrl: data.player_url, type: data.type, ideType: data.ide_type }),
                 user_id: user.id,
                 codemao_author_id: codemaoUserId,
                 codemao_author_name: data.user_info.nickname,

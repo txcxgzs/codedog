@@ -9,6 +9,7 @@ const DbAdapter = require('../utils/dbAdapter');
 const codemaoApi = require('../services/codemaoApi');
 const { isRoleAtLeast, canManageUser } = require('../config/permissions');
 const { likeContains } = require('../utils/security');
+const { buildCodemaoPlayerUrl } = require('../utils/codemaoPlayer');
 // H12: 引入内容审核服务，落库前做敏感词检查
 const aiReview = require('../services/aiReview');
 // P0: 与 adminController 保持一致，爬虫创建虚拟用户时使用合法的占位密码哈希
@@ -17,11 +18,6 @@ const aiReview = require('../services/aiReview');
 const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const PLACEHOLDER_PASSWORD_HASH = bcrypt.hashSync(crypto.randomBytes(32).toString('hex'), 10);
-// 修复: player_url 为空时使用的标准播放器回退 URL
-function buildCodemaoPlayerUrl(codemaoWorkId, playerUrl) {
-    return playerUrl || `https://player.codemao.cn/new/${codemaoWorkId}`;
-}
-
 /**
  * 从编程猫API获取作品信息
  */
@@ -72,7 +68,12 @@ function buildWorkCreateParams(workInfo, userId) {
         type: workInfo.type || '其他',
         ide_type: workInfo.ideType || 'KITTEN',
         // 修复: player_url 为空时回退到标准播放器 URL，避免 work_url 落库为空
-        work_url: buildCodemaoPlayerUrl(workInfo.codemaoWorkId, workInfo.playerUrl),
+        work_url: buildCodemaoPlayerUrl({
+            workId: workInfo.codemaoWorkId,
+            playerUrl: workInfo.playerUrl,
+            type: workInfo.type,
+            ideType: workInfo.ideType
+        }),
         user_id: userId,
         codemao_author_id: workInfo.codemaoAuthorId != null ? String(workInfo.codemaoAuthorId) : null,
         codemao_author_name: workInfo.codemaoAuthorName,
@@ -659,8 +660,6 @@ async function fetchOrCreateWork(workId) {
     
     // 与后台 crawlWork 保持一致: 使用 IDE 类型，而非 work_label_list 中文标签
     let type = workDetail.type || workDetail.ide_type || 'KITTEN';
-    // 编程猫 Nemo 部分接口可能返回 Neko/NEKO，统一规范为 NEMO
-    if (/^neko$/i.test(String(type))) type = 'NEMO';
     
     const workInfo = {
         codemaoWorkId: workDetail.id,
@@ -668,7 +667,7 @@ async function fetchOrCreateWork(workId) {
         description: workDetail.description || '',
         preview: workDetail.preview || '',
         type: type,
-        ideType: (/^neko$/i.test(String(workDetail.ide_type || type)) ? 'NEMO' : (workDetail.ide_type || type || 'KITTEN')),
+        ideType: workDetail.ide_type || type || 'KITTEN',
         playerUrl: workDetail.player_url || '',
         codemaoAuthorId: workDetail.user_info?.id,
         codemaoAuthorName: workDetail.user_info?.nickname || '未知作者',
