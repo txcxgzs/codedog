@@ -20,6 +20,7 @@ const { safeLog } = require('../utils/safeLog');
 const { buildCodemaoPlayerUrl } = require('../utils/codemaoPlayer');
 // 修复: token 改用 httpOnly cookie 防止 XSS 偷取; 同时保留返回体字段兼容旧前端
 const { setTokenCookie, clearTokenCookie } = require('../middleware/auth');
+const { logOperation } = require('../middleware/operationLog');
 
 // codemao 登录创建本地用户时使用的占位密码哈希（与 adminController 占位密码方案一致）
 // 使用 crypto.randomBytes 生成强随机串再 bcrypt 哈希，避免弱随机或非法哈希字符串
@@ -742,6 +743,41 @@ async function getImAccountStatus(req, res) {
 }
 
 /**
+ * IM 举报后台的受限账号处置入口。
+ * 仅接受编程狗自己签发给当前 IM 管理员的短期状态凭证；服务端会重新查询
+ * 操作者角色，不能依赖 IM 传来的角色，也不能越级禁用同级或更高级管理员。
+ */
+async function disableUserFromIm(req, res) {
+    try {
+        const token = String(req.get('authorization') || '').replace(/^Bearer\s+/i, '').trim();
+        const reason = String(req.body?.reason || '').trim();
+        const targetId = Number(req.params.userId);
+        if (!token) return errorResponse(res, '缺少 IM 管理凭证', 401);
+        if (!Number.isInteger(targetId) || targetId <= 0 || reason.length < 5 || reason.length > 500) return errorResponse(res, '禁用参数或原因无效', 400);
+        const { verifyImStatusToken } = require('../services/imSso');
+        const payload = verifyImStatusToken(token);
+        const operator = await DbAdapter.findByPk(User, Number(payload.sub), { attributes: ['id', 'username', 'nickname', 'role', 'status', 'token_version'] });
+        if (!operator || operator.status !== 'active' || Number(operator.token_version || 0) !== Number(payload.token_version || 0)) return errorResponse(res, 'IM 管理凭证已失效', 403);
+        if (!['admin', 'superadmin'].includes(operator.role)) return errorResponse(res, '当前账号无禁用用户权限', 403);
+        const target = await DbAdapter.findByPk(User, targetId, { attributes: ['id', 'username', 'nickname', 'role', 'status', 'token_version'] });
+        if (!target) return errorResponse(res, '目标用户不存在', 404);
+        const levels = { user: 0, reviewer: 1, moderator: 2, admin: 3, superadmin: 4 };
+        const operatorLevel = levels[operator.role] ?? -1;
+        const targetLevel = levels[target.role] ?? Number.POSITIVE_INFINITY;
+        if (Number(target.id) === Number(operator.id) || targetLevel >= operatorLevel) return errorResponse(res, '不能禁用自己或同级及更高权限账号', 403);
+        if (target.status !== 'disabled') await DbAdapter.update(User, { status: 'disabled' }, { where: { id: targetId } });
+        const refreshed = await DbAdapter.findByPk(User, targetId, { attributes: ['id', 'status', 'role', 'token_version'] });
+        require('../services/imStatusPush').enqueueImStatus(refreshed);
+        req.user = operator;
+        await logOperation(req, 'im_report_disable_user', 'user', targetId, { reason, im_report_id: Number(req.body?.report_id) || null, old_status: target.status, new_status: 'disabled' });
+        return successResponse(res, { user_id: targetId, status: 'disabled' }, '用户已由 IM 举报审核禁用');
+    } catch (error) {
+        console.error('IM 举报禁用用户失败:', error.message);
+        return errorResponse(res, 'IM 管理凭证无效或处置失败', error.name === 'JsonWebTokenError' ? 401 : 500);
+    }
+}
+
+/**
  * 根据编程猫API返回的错误信息生成友好的错误提示
  */
 function getLoginErrorMessage(codemaoRes) {
@@ -796,5 +832,6 @@ module.exports = {
     updateProfile,
     getUserById,
     createImSsoTicket,
-    getImAccountStatus
+    getImAccountStatus,
+    disableUserFromIm
 };

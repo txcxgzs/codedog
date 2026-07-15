@@ -1,5 +1,7 @@
 # IM 数据库迁移
 
+当前最新迁移 `008_im_report_actions` 为举报记录增加处置动作字段。启动 IM 服务时会自动、幂等执行；已有举报和聊天数据不会被清空。
+
 生产启动时 `apps/server/src/database.js` 会先连接 MySQL，再读取 `im_schema_migrations`。
 
 - `001_initial_im_schema` 创建会话、成员、消息、群资料和管理员审计表。

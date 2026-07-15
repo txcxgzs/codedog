@@ -127,7 +127,8 @@ function mysqlDatabase() {
     id: { type: DataTypes.BIGINT, primaryKey: true, autoIncrement: true }, reporter_id: { type: DataTypes.INTEGER, allowNull: false },
     message_id: { type: DataTypes.BIGINT, allowNull: false }, conversation_id: { type: DataTypes.BIGINT, allowNull: false },
     reason: { type: DataTypes.STRING(500), allowNull: false }, status: { type: DataTypes.ENUM('pending', 'resolved', 'rejected'), allowNull: false, defaultValue: 'pending' },
-    resolution_reason: { type: DataTypes.STRING(500) }, resolved_by: { type: DataTypes.INTEGER }, resolved_at: { type: DataTypes.DATE }
+    resolution_reason: { type: DataTypes.STRING(500) }, resolution_action: { type: DataTypes.STRING(40) },
+    resolved_by: { type: DataTypes.INTEGER }, resolved_at: { type: DataTypes.DATE }
   }, { ...opts, tableName: 'im_reports', indexes: [{ unique: true, fields: ['reporter_id', 'message_id'] }, { fields: ['status', 'created_at'] }] });
   const SchemaMigration = sequelize.define('ImSchemaMigration', {
     version: { type: DataTypes.STRING(40), primaryKey: true }, checksum: { type: DataTypes.STRING(64), allowNull: false }
@@ -174,6 +175,12 @@ function mysqlDatabase() {
       if (!columns.resolved_by) await sequelize.getQueryInterface().addColumn('im_reports', 'resolved_by', { type: DataTypes.INTEGER });
       if (!columns.resolved_at) await sequelize.getQueryInterface().addColumn('im_reports', 'resolved_at', { type: DataTypes.DATE });
       await SchemaMigration.create({ version: reportResolutionVersion, checksum: 'im-report-resolution-audit-v1' });
+    }
+    const reportActionsVersion = '008_im_report_actions';
+    if (!await SchemaMigration.findByPk(reportActionsVersion)) {
+      const columns = await sequelize.getQueryInterface().describeTable('im_reports');
+      if (!columns.resolution_action) await sequelize.getQueryInterface().addColumn('im_reports', 'resolution_action', { type: DataTypes.STRING(40) });
+      await SchemaMigration.create({ version: reportActionsVersion, checksum: 'im-report-moderation-actions-v1' });
     }
   } };
 }

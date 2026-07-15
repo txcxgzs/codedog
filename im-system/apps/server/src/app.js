@@ -6,6 +6,7 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const multer = require('multer');
+const axios = require('axios');
 const { WebSocketServer } = require('ws');
 const { Op } = require('sequelize');
 const config = require('./config');
@@ -83,8 +84,42 @@ const usersById = async ids => {
 };
 const enrichMessages = async rows => {
   const profiles = await usersById(rows.map(row => row.sender_id));
-  return rows.map(row => ({ ...row.toJSON(), sender: profiles.get(Number(row.sender_id)) || null }));
+  return rows.map(row => {
+    const data = row.toJSON();
+    if (data.status === 'hidden') {
+      data.content = '该消息因违规已被管理员删除';
+      data.type = 'system';
+    }
+    return { ...data, sender: profiles.get(Number(row.sender_id)) || null };
+  });
 };
+
+const requireImAdmin = (req, res) => ['admin', 'superadmin'].includes(req.user.role)
+  ? true : (fail(res, 403, '无 IM 管理权限'), false);
+
+async function communityRequest(user, method, route, data) {
+  const publicBase = String(user.community_url || '').replace(/\/$/, '');
+  if (!/^https?:\/\//i.test(publicBase) || !user.status_token) throw Object.assign(new Error('编程狗管理凭证不可用，请重新从编程狗进入'), { statusCode: 401 });
+  let lastError;
+  for (const base of [...new Set([config.communityInternalUrl, publicBase])]) {
+    try {
+      const response = await axios({ method, url: `${base}${route}`, data, timeout: 8000, maxRedirects: 0,
+        headers: { Authorization: `Bearer ${user.status_token}`, Host: new URL(publicBase).host }, validateStatus: () => true });
+      if (response.status !== 200 || response.data?.code !== 200) throw Object.assign(new Error(response.data?.msg || '编程狗拒绝执行该操作'), { statusCode: response.status || 502 });
+      return response.data.data;
+    } catch (error) { lastError = error; }
+  }
+  throw Object.assign(new Error(lastError?.message || '无法连接编程狗'), { statusCode: lastError?.statusCode || 502 });
+}
+
+async function enrichReports(rows) {
+  const messages = await Promise.all(rows.map(row => Message.findOne({ where: { id: row.message_id } })));
+  const profiles = await usersById(rows.flatMap((row, index) => [row.reporter_id, messages[index]?.sender_id, row.resolved_by]));
+  return rows.map((row, index) => ({ ...row.toJSON(), message: messages[index]?.toJSON() || null,
+    reporter: profiles.get(Number(row.reporter_id)) || null,
+    reported_user: profiles.get(Number(messages[index]?.sender_id)) || null,
+    handler: profiles.get(Number(row.resolved_by)) || null }));
+}
 
 const imageTempDir = path.join(config.root, 'data/image-temp');
 fs.mkdirSync(imageTempDir, { recursive: true });
@@ -366,24 +401,54 @@ app.post('/api/admin/messages/search', requireSession, async (req, res, next) =>
 
 app.get('/api/admin/reports', requireSession, async (req, res, next) => {
   try {
-    if (!['admin', 'superadmin'].includes(req.user.role)) return fail(res, 403, '无举报查看权限');
-    const rows = await Report.findAll({ where: req.query.status ? { status: req.query.status } : {}, order: [['created_at', 'DESC']], limit: 100 });
-    ok(res, rows);
+    if (!requireImAdmin(req, res)) return;
+    const status = String(req.query.status || '');
+    const where = ['pending', 'resolved', 'rejected'].includes(status) ? { status } : {};
+    const rows = await Report.findAll({ where, order: [['created_at', 'DESC']], limit: 100 });
+    ok(res, await enrichReports(rows));
+  } catch (error) { next(error); }
+});
+
+app.get('/api/admin/reports/:id', requireSession, async (req, res, next) => {
+  try {
+    if (!requireImAdmin(req, res)) return;
+    const report = await Report.findOne({ where: { id: Number(req.params.id) } });
+    if (!report) return fail(res, 404, '举报不存在');
+    const message = await Message.findOne({ where: { id: report.message_id } });
+    const context = message ? await Message.findAll({ where: { conversation_id: report.conversation_id,
+      sequence: { [Op.between]: [Math.max(1, Number(message.sequence) - 5), Number(message.sequence) + 5] } }, order: [['sequence', 'ASC']], limit: 11 }) : [];
+    const [detail] = await enrichReports([report]);
+    const profileMap = await usersById(context.map(item => item.sender_id));
+    ok(res, { ...detail, context: context.map(item => ({ ...item.toJSON(), sender: profileMap.get(Number(item.sender_id)) || null })) });
   } catch (error) { next(error); }
 });
 
 app.patch('/api/admin/reports/:id', requireSession, async (req, res, next) => {
   try {
-    if (!['admin', 'superadmin'].includes(req.user.role)) return fail(res, 403, '无举报处理权限');
+    if (!requireImAdmin(req, res)) return;
     const report = await Report.findOne({ where: { id: Number(req.params.id) } });
     if (!report) return fail(res, 404, '举报不存在');
-    const status = req.body?.status, reason = String(req.body?.reason || '').trim();
-    if (!['resolved', 'rejected'].includes(status)) return fail(res, 400, '处理状态无效');
+    if (report.status !== 'pending') return fail(res, 409, '该举报已经处理，不能重复处置');
+    const action = String(req.body?.action || ''), reason = String(req.body?.reason || '').trim();
+    const actions = new Set(['reject', 'confirm', 'delete_message', 'delete_and_disable']);
+    if (!actions.has(action)) return fail(res, 400, '处理动作无效');
     if (reason.length < 5 || reason.length > 500) return fail(res, 400, '处理意见应为 5-500 个字符');
-    report.status = status; report.resolution_reason = reason; report.resolved_by = req.user.id; report.resolved_at = new Date();
+    const message = await Message.findOne({ where: { id: report.message_id } });
+    if (!message) return fail(res, 409, '被举报消息已不存在，请先核查审计记录');
+    if (action === 'delete_and_disable') {
+      if (Number(message.sender_id) === Number(req.user.id)) return fail(res, 403, '不能禁用当前管理员账号');
+      await communityRequest(req.user, 'post', `/api/users/im-admin/users/${Number(message.sender_id)}/disable`, { reason, report_id: Number(report.id) });
+    }
+    if (['delete_message', 'delete_and_disable'].includes(action)) {
+      message.status = 'hidden';
+      await message.save();
+      broadcastConversation(message.conversation_id, 'message.moderated', { id: Number(message.id), status: 'hidden', content: '该消息因违规已被管理员删除' });
+    }
+    report.status = action === 'reject' ? 'rejected' : 'resolved';
+    report.resolution_reason = reason; report.resolution_action = action; report.resolved_by = req.user.id; report.resolved_at = new Date();
     await report.save();
-    await AdminAudit.create({ admin_id: req.user.id, action: `report.${status}`, reason, filters: { report_id: Number(report.id), message_id: Number(report.message_id), conversation_id: Number(report.conversation_id) }, source_ip: req.ip });
-    ok(res, report, status === 'resolved' ? '举报已处理' : '举报已驳回');
+    await AdminAudit.create({ admin_id: req.user.id, action: `report.${action}`, reason, filters: { report_id: Number(report.id), message_id: Number(report.message_id), conversation_id: Number(report.conversation_id), target_user_id: Number(message.sender_id) }, source_ip: req.ip });
+    ok(res, report, action === 'reject' ? '举报已驳回' : action === 'confirm' ? '已确认违规并完成记录' : action === 'delete_message' ? '违规消息已删除' : '违规消息已删除，用户已禁用');
   } catch (error) { next(error); }
 });
 

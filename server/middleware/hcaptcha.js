@@ -46,6 +46,7 @@ async function hcaptchaGuard(req, res, next) {
         // IM uses a short-lived RSA-signed server credential for this callback.
         // It cannot complete an interactive captcha and is verified by imSso.js.
         '/api/users/im-status',
+        '/api/users/im-admin',
         '/api/health',
         '/api/hcaptcha',
         '/api/geetest',

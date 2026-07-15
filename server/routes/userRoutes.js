@@ -166,6 +166,7 @@ router.post('/logout', authMiddleware, userController.logout);
 router.get('/me', authMiddleware, userController.getCurrentUser);
 router.post('/im-sso-ticket', authMiddleware, userController.createImSsoTicket);
 router.post('/im-status', userController.getImAccountStatus);
+router.post('/im-admin/users/:userId/disable', userController.disableUserFromIm);
 // 修复: restore-from-impersonate 放在 userRoutes(不走 adminMiddleware)
 // 原因: impersonate 后当前用户是被模拟的普通用户,通不过 adminMiddleware(reviewer+)
 // 内部通过 JWT.impersonatedBy 字段校验,只有 admin impersonate 生成的 token 才有此字段
