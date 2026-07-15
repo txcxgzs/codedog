@@ -26,6 +26,16 @@
           </li>
         </ul>
         
+        <!-- 登录后的常用平台入口放在搜索框左侧。 -->
+        <div v-if="userStore.isLoggedIn" class="c-navigator--platform_links" aria-label="平台快捷入口">
+          <button type="button" :class="{ active: $route.path.startsWith('/developer') }" @click="$router.push('/developer')">
+            <el-icon><DataBoard /></el-icon><span>开发者平台</span>
+          </button>
+          <button type="button" @click="openIm">
+            <el-icon><ChatDotRound /></el-icon><span>即时通讯</span>
+          </button>
+        </div>
+
         <!-- 搜索框 -->
         <form class="c-navigator--search_wrap" role="search" autocomplete="off" @submit.prevent="handleSearch">
           <el-input
@@ -44,16 +54,6 @@
             clearable
           />
         </form>
-
-        <!-- 登录后的常用平台入口直接展示在顶栏，避免藏在头像菜单中。 -->
-        <div v-if="userStore.isLoggedIn" class="c-navigator--platform_links" aria-label="平台快捷入口">
-          <button type="button" :class="{ active: $route.path.startsWith('/developer') }" @click="$router.push('/developer')">
-            <el-icon><DataBoard /></el-icon><span>开发者平台</span>
-          </button>
-          <button type="button" @click="openIm">
-            <el-icon><ChatDotRound /></el-icon><span>即时通讯</span>
-          </button>
-        </div>
         
         <!-- 用户区域 -->
         <div class="c-navigator--user_wrap">
@@ -480,7 +480,7 @@ $shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
     height: 64px;
     display: flex;
     align-items: center;
-    gap: 24px;
+    gap: 14px;
   }
 }
 
@@ -518,7 +518,7 @@ $shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
   .c-navigator--item {
     a {
       display: block;
-      padding: 8px 16px;
+      padding: 8px 13px;
       font-size: 16px;
       color: $text-secondary;
       text-decoration: none;
@@ -541,8 +541,10 @@ $shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
 }
 
 .c-navigator--search_wrap {
-  flex: 1;
-  max-width: 300px;
+  flex: 1 1 280px;
+  width: clamp(190px, 22vw, 340px);
+  min-width: 190px;
+  max-width: 340px;
   
   :deep(.el-input__wrapper) {
     border-radius: 20px;
@@ -572,7 +574,7 @@ $shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
     align-items: center;
     gap: 5px;
     height: 34px;
-    padding: 0 10px;
+    padding: 0 7px;
     border: 0;
     border-radius: 17px;
     background: transparent;
@@ -594,7 +596,7 @@ $shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
 .c-navigator--user_wrap {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 10px;
   flex-shrink: 0;
   
   .c-navigator--notification {
