@@ -22,8 +22,8 @@ services:
     environment:
       NODE_ENV: production
       IM_PORT: 3100
-      IM_DATABASE_URL: mysql://im_user:${IM_DB_PASSWORD}@mysql:3306/codedog_im
-      IM_REDIS_URL: redis://redis:6379/0
+      IM_DATABASE_URL: ${IM_DATABASE_URL:?set IM_DATABASE_URL in .env}
+      IM_REDIS_URL: ${IM_REDIS_URL:?set IM_REDIS_URL in .env}
       IM_SSO_PUBLIC_KEY_FILE: /run/secrets/im_sso_public.pem
     volumes: ["./secrets/im_sso_public.pem:/run/secrets/im_sso_public.pem:ro"]
     depends_on:

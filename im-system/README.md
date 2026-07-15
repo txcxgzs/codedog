@@ -31,24 +31,16 @@ node scripts/smoke-local.js
 
 ### Linux 从 GitHub 一键部署
 
-在服务器执行（将仓库地址和域名替换为你的实际值）：
+在 Linux 服务器执行，随后按中文提示选择即可：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/txcxgzs/codedog/main/im-system/install.sh \
-  | sudo bash -s -- \
-    --repo https://github.com/txcxgzs/codedog.git \
-    --dir /opt/codedog \
-    --public-url https://im.example.com/im \
-    --install-docker
+curl -fsSL https://raw.githubusercontent.com/txcxgzs/codedog/main/im-system/install.sh -o /tmp/codedog-im-install.sh
+sudo bash /tmp/codedog-im-install.sh
 ```
 
-若编程狗与 IM 在同一台 Linux 服务器，再增加：
+安装器采用中文交互向导，现场询问域名、端口、数据库、Redis 和编程狗目录，无需手写环境变量。可选内置 MySQL/Redis，也可填写外部连接地址。内置 Redis 只在 Docker 私有网络通过 `redis:6379` 访问，不映射公网端口。安装器会生成随机密码和会话密钥、生成 SSO RSA 密钥、构建容器、执行迁移和健康检查。联合部署时还会自动把 IM 地址与 SSO 私钥写入编程狗配置并重建社区服务。
 
-```bash
---community-dir /opt/codedog
-```
-
-安装器会生成随机数据库密码和会话密钥、生成 SSO RSA 密钥、构建容器、执行迁移和健康检查。联合部署时还会写入编程狗 `.env` 并重建社区服务。
+编程狗与 IM 的绑定方式是一次性 RS256 登录票据：编程狗持有私钥并签发 60 秒票据，IM 持有公钥并验证；IM 不接触用户的编程猫密码，也不共享编程狗数据库。
 
 ```bash
 cp .env.example .env
