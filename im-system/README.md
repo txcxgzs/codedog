@@ -38,7 +38,28 @@ curl -fsSL https://raw.githubusercontent.com/txcxgzs/codedog/main/im-system/inst
 sudo bash /tmp/codedog-im-install.sh
 ```
 
-安装器采用中文交互向导，现场询问域名、端口、数据库、Redis 和编程狗目录，无需手写环境变量。可选内置 MySQL/Redis，也可填写外部连接地址。内置 Redis 只在 Docker 私有网络通过 `redis:6379` 访问，不映射公网端口。安装器会生成随机密码和会话密钥、生成 SSO RSA 密钥、构建容器、执行迁移和健康检查。联合部署时还会自动把 IM 地址与 SSO 私钥写入编程狗配置并重建社区服务。
+安装器默认安装到 `/opt/codedog-im`，采用中文交互向导，现场询问域名、端口、数据库、Redis 和编程狗目录，无需手写环境变量。可选内置 MySQL/Redis，也可填写外部连接地址。内置 Redis 只在 Docker 私有网络通过 `redis:6379` 访问，不映射公网端口。安装器会生成随机密码和会话密钥、生成 SSO RSA 密钥、构建容器、执行迁移和健康检查。联合部署时还会自动把 IM 地址与 SSO 私钥写入编程狗配置并重建社区服务。
+
+IM Web 端口默认仅绑定 `127.0.0.1:8100`，不会直接开放公网。宿主机 Nginx/Caddy 应把公开域名反向代理到 `http://127.0.0.1:8100`；数据库和 Redis 同样不会开放公网端口。
+
+宿主机 Nginx 示例（证书可继续交给你现有的 HTTPS 配置管理）：
+
+```nginx
+server {
+    listen 80;
+    server_name im.example.com;
+
+    location / {
+        proxy_pass http://127.0.0.1:8100;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+}
+```
 
 编程狗与 IM 的绑定方式是一次性 RS256 登录票据：编程狗持有私钥并签发 60 秒票据，IM 持有公钥并验证；IM 不接触用户的编程猫密码，也不共享编程狗数据库。
 

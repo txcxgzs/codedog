@@ -4,7 +4,7 @@ set -Eeuo pipefail
 # CodeDog IM Linux interactive installer. Configuration is collected here so
 # administrators never need to edit .env by hand.
 REPO_URL="${CODEDOG_REPO_URL:-https://github.com/txcxgzs/codedog.git}"
-INSTALL_DIR="${CODEDOG_IM_DIR:-/opt/codedog}"
+INSTALL_DIR="${CODEDOG_IM_DIR:-/opt/codedog-im}"
 
 say() { printf '\n%s\n' "$*"; }
 ask() { local prompt="$1" default="${2:-}" value; read -r -p "$prompt${default:+ [$default]}: " value; printf '%s' "${value:-$default}"; }
@@ -17,8 +17,8 @@ say "======================================
   CodeDog IM 一键部署向导
 ======================================"
 INSTALL_DIR="$(ask '安装目录' "$INSTALL_DIR")"
-PUBLIC_URL="$(ask 'IM 对外地址（含 /im）' 'http://服务器IP:8100/im')"
-HTTP_PORT="$(ask 'IM 对外端口' '8100')"
+PUBLIC_URL="$(ask 'IM 对外访问地址（含 /im，由 Nginx/Caddy 反向代理）' 'https://im.example.com/im')"
+HTTP_PORT="$(ask 'IM 本地监听端口' '8100')"
 
 if yesno '使用安装器内置的 MySQL + Redis（推荐，均不开放公网端口）' Y; then
   DB_MODE=builtin
@@ -35,7 +35,7 @@ fi
 
 COMMUNITY_DIR=""
 if yesno '是否同时绑定本机的编程狗社区' Y; then
-  COMMUNITY_DIR="$(ask '编程狗项目目录' "$INSTALL_DIR")"
+  COMMUNITY_DIR="$(ask '编程狗项目目录（与 IM 目录分开）' '/opt/codedog')"
 fi
 
 say "即将安装依赖（已存在的软件和 Docker/npm 缓存会复用）"
@@ -75,6 +75,7 @@ cat > .env <<EOF
 NODE_ENV=production
 IM_PORT=3100
 IM_HTTP_PORT=$HTTP_PORT
+IM_BIND_HOST=127.0.0.1
 IM_PUBLIC_ORIGIN=$ORIGIN
 IM_ADMIN_ORIGIN=$ORIGIN
 IM_SESSION_SECRET=$(secret 32)
@@ -115,5 +116,6 @@ fi
 say "部署完成
 用户端：$PUBLIC_URL/
 管理后台：$PUBLIC_URL/admin/
-健康检查：${ORIGIN}:${HTTP_PORT}/im/health
+本地代理上游：http://127.0.0.1:${HTTP_PORT}
+本地健康检查：http://127.0.0.1:${HTTP_PORT}/im/health
 管理工具：cd $IM_DIR && ./im.sh"

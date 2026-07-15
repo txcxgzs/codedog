@@ -12,5 +12,6 @@ services:
   im-web:
     build: { context: ., target: frontend }
     restart: unless-stopped
-    ports: ["${IM_HTTP_PORT:-8100}:80"]
+    # 仅监听本机，必须由宿主机 Nginx/Caddy 对外反向代理，禁止直接暴露 IM 端口。
+    ports: ["${IM_BIND_HOST:-127.0.0.1}:${IM_HTTP_PORT:-8100}:80"]
     depends_on: { im-server: { condition: service_healthy } }
