@@ -24,6 +24,8 @@ module.exports = {
   publicOrigins: [process.env.IM_PUBLIC_ORIGIN, process.env.IM_ADMIN_ORIGIN].filter(Boolean),
   sessionSecret: configuredSessionSecret || crypto.createHash('sha256').update(`codedog-im-local:${root}`).digest('hex'),
   publicKeyFile: resolvePath(process.env.IM_SSO_PUBLIC_KEY_FILE, 'secrets/im_sso_public.pem'),
+  // 默认连接同机编程狗服务；高级部署仍可显式覆盖，但安装时无需询问。
+  communityInternalUrl: String(process.env.IM_COMMUNITY_INTERNAL_URL || 'http://host.docker.internal:3001').replace(/\/$/, ''),
   databaseUrl: process.env.IM_DATABASE_URL || 'memory:',
   redisUrl: process.env.IM_REDIS_URL || '',
   groupDefaultLimit: Number(process.env.IM_GROUP_DEFAULT_LIMIT || 100),

@@ -14,9 +14,16 @@ function communityBase(user) {
 }
 
 async function communityRequest(user, method, path, data) {
-  const response = await axios({ method, url: `${communityBase(user)}${path}`, data, timeout: 8000, maxRedirects: 0, validateStatus: () => true });
-  if (response.status !== 200 || response.data?.code !== 200) throw Object.assign(new Error(response.data?.msg || '编程狗极验服务不可用'), { statusCode: response.status || 503 });
-  return response.data.data;
+  const publicBase = communityBase(user);
+  let lastError;
+  for (const base of [...new Set([config.communityInternalUrl, publicBase])]) {
+    try {
+      const response = await axios({ method, url: `${base}${path}`, data, timeout: 8000, maxRedirects: 0, headers: { Host: new URL(publicBase).host }, validateStatus: () => true });
+      if (response.status !== 200 || response.data?.code !== 200) throw Object.assign(new Error(response.data?.msg || '编程狗极验服务不可用'), { statusCode: response.status || 503 });
+      return response.data.data;
+    } catch (error) { lastError = error; }
+  }
+  throw Object.assign(new Error(lastError?.message || '编程狗极验服务不可用'), { statusCode: lastError?.statusCode || 503 });
 }
 
 async function sceneConfig(user, scene, force = false) {
@@ -51,6 +58,13 @@ async function validateCaptcha(user, scene, payload) {
   return { required: true, grant: issueGrant(user, scene) };
 }
 
+async function registerCaptcha(user, scene) {
+  const current = await sceneConfig(user, scene);
+  if (!current.enabled) return { enabled: false };
+  const data = await communityRequest(user, 'get', '/api/geetest/register');
+  return { enabled: true, product: current.product, ...data };
+}
+
 function verifyGrant(user, scene, token) {
   try {
     const payload = jwt.verify(String(token || ''), config.sessionSecret, {
@@ -78,4 +92,4 @@ function requireCaptcha(scene) {
   };
 }
 
-module.exports = { sceneConfig, validateCaptcha, requireCaptcha };
+module.exports = { sceneConfig, registerCaptcha, validateCaptcha, requireCaptcha };

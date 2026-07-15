@@ -26,6 +26,8 @@ services:
       IM_REDIS_URL: ${IM_REDIS_URL:?set IM_REDIS_URL in .env}
       IM_SSO_PUBLIC_KEY_FILE: /run/secrets/im_sso_public.pem
     volumes: ["./secrets/im_sso_public.pem:/run/secrets/im_sso_public.pem:ro"]
+    # 编程狗与 IM 同机部署时直接访问宿主机 3001，避免账号状态确认绕行 Cloudflare。
+    extra_hosts: ["host.docker.internal:host-gateway"]
     depends_on:
       mysql: { condition: service_healthy }
       redis: { condition: service_healthy }

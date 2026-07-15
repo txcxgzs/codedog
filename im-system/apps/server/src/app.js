@@ -6,7 +6,6 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const multer = require('multer');
-const axios = require('axios');
 const { WebSocketServer } = require('ws');
 const { Op } = require('sequelize');
 const config = require('./config');
@@ -15,7 +14,7 @@ const { connectReplayStore } = require('./replayStore');
 const { verifyCommunityStatus } = require('./communityStatus');
 const { sequelize, UserProfile, Conversation, ConversationMember, Message, Group, Image, AdminAudit, Report, connectDatabase } = require('./database');
 const { uploadImage } = require('./imageHost');
-const { sceneConfig, validateCaptcha, requireCaptcha } = require('./captcha');
+const { sceneConfig, registerCaptcha, validateCaptcha, requireCaptcha } = require('./captcha');
 
 const app = express();
 app.disable('x-powered-by');
@@ -55,13 +54,7 @@ app.get('/api/captcha/config', requireSession, async (req, res, next) => {
   try { ok(res, await sceneConfig(req.user, String(req.query.scene || ''))); } catch (error) { next(error); }
 });
 app.get('/api/captcha/register', requireSession, async (req, res, next) => {
-  try {
-    const scene = String(req.query.scene || '');
-    const current = await sceneConfig(req.user, scene);
-    if (!current.enabled) return ok(res, { enabled: false });
-    const response = await axios.get(`${String(req.user.community_url).replace(/\/$/, '')}/api/geetest/register`, { timeout: 8000, maxRedirects: 0 });
-    ok(res, { enabled: true, product: current.product, ...response.data.data });
-  } catch (error) { next(error); }
+  try { ok(res, await registerCaptcha(req.user, String(req.query.scene || ''))); } catch (error) { next(error); }
 });
 app.post('/api/captcha/validate', requireSession, async (req, res, next) => {
   try { ok(res, await validateCaptcha(req.user, String(req.body?.scene || ''), req.body)); } catch (error) { next(error); }
