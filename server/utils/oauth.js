@@ -97,6 +97,91 @@ const ALL_SCOPES = {
         name: '发送应用通知',
         description: '由应用向当前授权用户发送站内通知',
         risk: 'write'
+    },
+    'openid': {
+        name: '读取应用内用户标识',
+        description: '读取仅在当前应用内稳定、不同应用之间不可关联的用户标识',
+        risk: 'read'
+    },
+    'users:public:read': {
+        name: '读取公开用户资料',
+        description: '读取社区用户主动公开的主页资料，不包含邮箱、账号绑定和隐私字段',
+        risk: 'read'
+    },
+    'works:public:read': {
+        name: '读取社区公开作品',
+        description: '读取已发布的公开作品列表与详情',
+        risk: 'read'
+    },
+    'posts:public:read': {
+        name: '读取社区公开帖子',
+        description: '读取已发布的公开帖子列表与详情',
+        risk: 'read'
+    },
+    'studios:public:read': {
+        name: '读取公开工作室',
+        description: '读取公开且正常运行的工作室列表与详情',
+        risk: 'read'
+    },
+    'search:read': {
+        name: '搜索社区公开内容',
+        description: '搜索公开用户、作品、帖子和工作室',
+        risk: 'read'
+    },
+    'community:feed:read': {
+        name: '读取社区内容流',
+        description: '读取社区最新、热门和精选公开内容',
+        risk: 'read'
+    },
+    'community:stats:read': {
+        name: '读取社区公开统计',
+        description: '读取公开用户、作品、帖子和工作室数量等聚合数据',
+        risk: 'read'
+    },
+    'works:analytics:read': {
+        name: '读取作品数据分析',
+        description: '读取当前授权用户作品的浏览、点赞、收藏和评论聚合数据',
+        risk: 'read'
+    },
+    'posts:analytics:read': {
+        name: '读取帖子数据分析',
+        description: '读取当前授权用户帖子的浏览、点赞、收藏和评论聚合数据',
+        risk: 'read'
+    },
+    'account:analytics:read': {
+        name: '读取账号创作分析',
+        description: '读取当前授权用户的公开创作数量与互动聚合数据',
+        risk: 'read'
+    },
+    'comments:received:read': {
+        name: '读取收到的评论',
+        description: '读取其他用户在当前授权用户作品和帖子下发表的有效评论',
+        risk: 'read'
+    },
+    'studios:applications:read': {
+        name: '读取工作室加入申请',
+        description: '工作室管理成员读取待处理加入申请，只读且仍需校验实际角色',
+        risk: 'read'
+    },
+    'studios:submissions:read': {
+        name: '读取工作室作品投稿',
+        description: '工作室管理成员读取作品投稿，只读且仍需校验实际角色',
+        risk: 'read'
+    },
+    'studios:analytics:read': {
+        name: '读取工作室数据分析',
+        description: '读取当前授权用户有权管理的工作室聚合统计',
+        risk: 'read'
+    },
+    'studios:logs:read': {
+        name: '读取工作室操作记录',
+        description: '读取当前授权用户有权管理的工作室相关操作日志',
+        risk: 'read'
+    },
+    'developer:usage:read': {
+        name: '读取应用调用统计',
+        description: '读取当前应用自己的接口调用量、状态码和路径分布',
+        risk: 'read'
     }
 };
 

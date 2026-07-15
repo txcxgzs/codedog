@@ -20,6 +20,7 @@ const workController = require('./workController');
 const adminController = require('./adminController');
 const { createNotification } = require('./notificationController');
 const fs = require('fs');
+const crypto = require('crypto');
 const { uploadToImageHost } = require('../services/imageHost');
 
 function getOwnerId(req) {
@@ -110,6 +111,7 @@ async function updateApp(req, res) {
         const updateData = {};
         let sensitiveChanged = false;
         let nextScopeList = null;
+        let addedScopes = [];
 
         if (name !== undefined) {
             const n = String(name).trim();
@@ -131,6 +133,8 @@ async function updateApp(req, res) {
             let scopeList = oauth.normalizeScopes(scopes);
             if (scopeList.length === 0) return errorResponse(res, '至少选择一个权限范围', 400);
             nextScopeList = scopeList;
+            const previousScopes = oauth.parseJsonField(app.scopes_requested, []);
+            addedScopes = scopeList.filter(key => !previousScopes.includes(key));
             updateData.scopes_requested = oauth.stringifyJsonField(scopeList);
             sensitiveChanged = true;
         }
@@ -182,7 +186,12 @@ async function updateApp(req, res) {
         });
         const updated = await DbAdapter.findByPk(DeveloperApp, app.id);
         logOperation(req, 'update_developer_app', 'developer_app', app.id, updateData);
-        return successResponse(res, serializeApp(updated), sensitiveChanged ? '已保存，敏感变更需重新审核' : '保存成功');
+        return successResponse(res, serializeApp(updated, {
+            added_scopes: addedScopes,
+            user_reauthorization_required: addedScopes.length > 0
+        }), addedScopes.length
+            ? '已提交新增权限审核；审核通过后，用户必须重新授权才会获得新权限'
+            : (sensitiveChanged ? '已保存，敏感变更需重新审核' : '保存成功'));
     } catch (e) {
         console.error('updateApp', e);
         return errorResponse(res, '更新应用失败', 500);
@@ -631,6 +640,17 @@ async function getAuthorizeInfo(req, res) {
         const allowed = oauth.intersectScopes(requested.length ? requested : oauth.parseJsonField(app.scopes_requested, []), oauth.parseJsonField(app.scopes_requested, []));
         if (allowed.length === 0) return errorResponse(res, '无效的 scope', 400);
 
+        let previouslyAuthorized = [];
+        if (req.user) {
+            const existingAuthorization = await DbAdapter.findOne(UserAppAuthorization, {
+                where: { user_id: getOwnerId(req), app_id: app.id, revoked_at: null }
+            });
+            previouslyAuthorized = existingAuthorization
+                ? oauth.intersectScopes(oauth.parseJsonField(existingAuthorization.scopes, []), allowed)
+                : [];
+        }
+        const newScopes = allowed.filter(key => !previouslyAuthorized.includes(key));
+
         return successResponse(res, {
             app: {
                 id: app.id,
@@ -642,8 +662,12 @@ async function getAuthorizeInfo(req, res) {
             },
             scopes: allowed.map(key => ({
                 key,
-                ...(oauth.ALL_SCOPES[key] || { name: key, description: '' })
+                ...(oauth.ALL_SCOPES[key] || { name: key, description: '' }),
+                is_new: newScopes.includes(key)
             })),
+            previously_authorized_scopes: previouslyAuthorized,
+            new_scopes: newScopes,
+            reauthorization_required: previouslyAuthorized.length > 0 && newScopes.length > 0,
             redirect_uri: String(redirect_uri),
             state: state || null
         });
@@ -1267,6 +1291,423 @@ async function openMyActivity(req, res) {
     }
 }
 
+// -------- Low-risk public data and analytics scopes --------
+const PUBLIC_USER_ATTRIBUTES = [
+    'id', 'codemao_user_id', 'username', 'nickname', 'avatar', 'profile_cover',
+    'bio', 'doing', 'level', 'follower_count', 'following_count', 'work_count', 'created_at'
+];
+const PUBLIC_WORK_ATTRIBUTES = [
+    'id', 'codemao_work_id', 'name', 'description', 'preview', 'type', 'ide_type',
+    'user_id', 'view_times', 'praise_times', 'collection_times', 'comment_count',
+    'is_featured', 'created_at', 'updated_at'
+];
+const PUBLIC_POST_ATTRIBUTES = [
+    'id', 'title', 'content', 'user_id', 'view_count', 'like_count', 'comment_count',
+    'collection_count', 'is_top', 'is_essence', 'category', 'cover', 'tags',
+    'created_at', 'updated_at'
+];
+const PUBLIC_STUDIO_ATTRIBUTES = [
+    'id', 'name', 'description', 'cover', 'cover_url', 'owner_id', 'member_count',
+    'work_count', 'level', 'join_type', 'created_at', 'updated_at'
+];
+const PUBLIC_AUTHOR_INCLUDE = [{
+    model: User,
+    as: 'author',
+    attributes: ['id', 'codemao_user_id', 'username', 'nickname', 'avatar', 'level']
+}];
+const PUBLIC_COMMENT_AUTHOR_INCLUDE = [{
+    model: User,
+    as: 'user',
+    attributes: ['id', 'codemao_user_id', 'username', 'nickname', 'avatar', 'level']
+}];
+
+async function openAppOpenId(req, res) {
+    const secret = process.env.JWT_SECRET || process.env.SESSION_SECRET;
+    if (!secret) return errorResponse(res, '服务器未配置用户标识密钥', 503);
+    const openid = crypto.createHmac('sha256', secret)
+        .update(`${req.oauth.appId}:${req.oauth.userId}`)
+        .digest('hex');
+    return successResponse(res, { openid });
+}
+
+async function openPublicUser(req, res) {
+    try {
+        const id = String(req.params.id);
+        const user = await DbAdapter.findOne(User, {
+            where: { status: 'active', [Op.or]: [{ id }, { codemao_user_id: id }, { username: id }] },
+            attributes: PUBLIC_USER_ATTRIBUTES
+        });
+        if (!user) return errorResponse(res, '用户不存在', 404);
+        return successResponse(res, user);
+    } catch (e) {
+        console.error('openPublicUser', e);
+        return errorResponse(res, '获取公开用户失败', 500);
+    }
+}
+
+async function openPublicWorks(req, res) {
+    try {
+        const { page, pageSize, offset } = DbAdapter.parsePagination(req.query);
+        const where = { status: 'published' };
+        if (req.query.user_id) where.user_id = req.query.user_id;
+        if (req.query.featured === 'true' || req.query.featured === '1') where.is_featured = true;
+        const order = req.query.sort === 'popular'
+            ? [['view_times', 'DESC'], ['created_at', 'DESC']]
+            : [['created_at', 'DESC']];
+        const { count, rows } = await DbAdapter.findAndCountAll(Work, {
+            where, attributes: PUBLIC_WORK_ATTRIBUTES, include: PUBLIC_AUTHOR_INCLUDE,
+            order, limit: pageSize, offset
+        });
+        return paginateResponse(res, rows, count, page, pageSize);
+    } catch (e) {
+        console.error('openPublicWorks', e);
+        return errorResponse(res, '获取公开作品失败', 500);
+    }
+}
+
+async function openPublicWorkDetail(req, res) {
+    try {
+        const id = String(req.params.id);
+        const work = await DbAdapter.findOne(Work, {
+            where: { status: 'published', [Op.or]: [{ id }, { codemao_work_id: id }] },
+            attributes: PUBLIC_WORK_ATTRIBUTES,
+            include: PUBLIC_AUTHOR_INCLUDE
+        });
+        if (!work) return errorResponse(res, '作品不存在', 404);
+        return successResponse(res, work);
+    } catch (e) {
+        console.error('openPublicWorkDetail', e);
+        return errorResponse(res, '获取公开作品失败', 500);
+    }
+}
+
+async function openPublicPosts(req, res) {
+    try {
+        const { page, pageSize, offset } = DbAdapter.parsePagination(req.query);
+        const where = { status: 'published' };
+        if (req.query.user_id) where.user_id = req.query.user_id;
+        if (req.query.category) where.category = String(req.query.category);
+        const order = req.query.sort === 'popular'
+            ? [['view_count', 'DESC'], ['created_at', 'DESC']]
+            : [['is_top', 'DESC'], ['created_at', 'DESC']];
+        const { count, rows } = await DbAdapter.findAndCountAll(Post, {
+            where, attributes: PUBLIC_POST_ATTRIBUTES, include: PUBLIC_AUTHOR_INCLUDE,
+            order, limit: pageSize, offset
+        });
+        return paginateResponse(res, rows, count, page, pageSize);
+    } catch (e) {
+        console.error('openPublicPosts', e);
+        return errorResponse(res, '获取公开帖子失败', 500);
+    }
+}
+
+async function openPublicPostDetail(req, res) {
+    try {
+        const post = await DbAdapter.findOne(Post, {
+            where: { id: req.params.id, status: 'published' },
+            attributes: PUBLIC_POST_ATTRIBUTES,
+            include: PUBLIC_AUTHOR_INCLUDE
+        });
+        if (!post) return errorResponse(res, '帖子不存在', 404);
+        return successResponse(res, post);
+    } catch (e) {
+        console.error('openPublicPostDetail', e);
+        return errorResponse(res, '获取公开帖子失败', 500);
+    }
+}
+
+async function openPublicStudios(req, res) {
+    try {
+        const { page, pageSize, offset } = DbAdapter.parsePagination(req.query);
+        const { count, rows } = await DbAdapter.findAndCountAll(Studio, {
+            where: { status: 'active', is_public: true },
+            attributes: PUBLIC_STUDIO_ATTRIBUTES,
+            include: [{ model: User, as: 'owner', attributes: ['id', 'username', 'nickname', 'avatar'] }],
+            order: [['created_at', 'DESC']], limit: pageSize, offset
+        });
+        return paginateResponse(res, rows, count, page, pageSize);
+    } catch (e) {
+        console.error('openPublicStudios', e);
+        return errorResponse(res, '获取公开工作室失败', 500);
+    }
+}
+
+async function openPublicStudioDetail(req, res) {
+    try {
+        const studio = await DbAdapter.findOne(Studio, {
+            where: { id: req.params.id, status: 'active', is_public: true },
+            attributes: PUBLIC_STUDIO_ATTRIBUTES,
+            include: [{ model: User, as: 'owner', attributes: ['id', 'username', 'nickname', 'avatar'] }]
+        });
+        if (!studio) return errorResponse(res, '工作室不存在', 404);
+        return successResponse(res, studio);
+    } catch (e) {
+        console.error('openPublicStudioDetail', e);
+        return errorResponse(res, '获取公开工作室失败', 500);
+    }
+}
+
+async function openSearch(req, res) {
+    try {
+        const q = String(req.query.q || '').trim();
+        if (q.replace(/[%_\\]/g, '').trim().length < 2) return errorResponse(res, '搜索关键词至少2个有效字符', 400);
+        const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 10, 1), 20);
+        const like = { [Op.like]: `%${q}%` };
+        const [users, works, posts, studios] = await Promise.all([
+            DbAdapter.findAll(User, { where: { status: 'active', [Op.or]: [{ nickname: like }, { username: like }] }, attributes: PUBLIC_USER_ATTRIBUTES, limit }),
+            DbAdapter.findAll(Work, { where: { status: 'published', name: like }, attributes: PUBLIC_WORK_ATTRIBUTES, limit }),
+            DbAdapter.findAll(Post, { where: { status: 'published', [Op.or]: [{ title: like }, { content: like }] }, attributes: PUBLIC_POST_ATTRIBUTES, limit }),
+            DbAdapter.findAll(Studio, { where: { status: 'active', is_public: true, name: like }, attributes: PUBLIC_STUDIO_ATTRIBUTES, limit })
+        ]);
+        return successResponse(res, { users, works, posts, studios });
+    } catch (e) {
+        console.error('openSearch', e);
+        return errorResponse(res, '搜索失败', 500);
+    }
+}
+
+async function openCommunityFeed(req, res) {
+    try {
+        const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 20, 1), 50);
+        const mode = ['latest', 'popular', 'featured'].includes(req.query.mode) ? req.query.mode : 'latest';
+        const workWhere = { status: 'published' };
+        const postWhere = { status: 'published' };
+        if (mode === 'featured') { workWhere.is_featured = true; postWhere.is_essence = true; }
+        const workOrder = mode === 'popular' ? [['view_times', 'DESC']] : [['created_at', 'DESC']];
+        const postOrder = mode === 'popular' ? [['view_count', 'DESC']] : [['created_at', 'DESC']];
+        const [works, posts] = await Promise.all([
+            DbAdapter.findAll(Work, { where: workWhere, attributes: PUBLIC_WORK_ATTRIBUTES, order: workOrder, limit }),
+            DbAdapter.findAll(Post, { where: postWhere, attributes: PUBLIC_POST_ATTRIBUTES, order: postOrder, limit })
+        ]);
+        const items = [
+            ...works.map(data => ({ type: 'work', created_at: data.created_at, data })),
+            ...posts.map(data => ({ type: 'post', created_at: data.created_at, data }))
+        ];
+        if (mode === 'latest') items.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+        return successResponse(res, items.slice(0, limit));
+    } catch (e) {
+        console.error('openCommunityFeed', e);
+        return errorResponse(res, '获取社区内容流失败', 500);
+    }
+}
+
+async function openCommunityStats(req, res) {
+    try {
+        const [users, works, posts, studios] = await Promise.all([
+            DbAdapter.count(User, { where: { status: 'active' } }),
+            DbAdapter.count(Work, { where: { status: 'published' } }),
+            DbAdapter.count(Post, { where: { status: 'published' } }),
+            DbAdapter.count(Studio, { where: { status: 'active', is_public: true } })
+        ]);
+        return successResponse(res, { users, works, posts, studios });
+    } catch (e) {
+        console.error('openCommunityStats', e);
+        return errorResponse(res, '获取社区统计失败', 500);
+    }
+}
+
+async function openMyWorksAnalytics(req, res) {
+    try {
+        const where = { user_id: req.oauth.userId, status: { [Op.ne]: 'deleted' } };
+        const fields = ['view_times', 'praise_times', 'collection_times', 'comment_count'];
+        const [total, rows, ...sums] = await Promise.all([
+            DbAdapter.count(Work, { where }),
+            DbAdapter.findAll(Work, {
+            where,
+            attributes: ['id', 'codemao_work_id', 'name', 'status', 'view_times', 'praise_times', 'collection_times', 'comment_count', 'created_at']
+            , order: [['created_at', 'DESC']], limit: 100
+            }),
+            ...fields.map(field => DbAdapter.sum(Work, field, { where }))
+        ]);
+        return successResponse(res, { total, totals: Object.fromEntries(fields.map((field, index) => [field, Number(sums[index] || 0)])), items: rows, items_limited: total > rows.length });
+    } catch (e) {
+        console.error('openMyWorksAnalytics', e);
+        return errorResponse(res, '获取作品分析失败', 500);
+    }
+}
+
+async function openMyPostsAnalytics(req, res) {
+    try {
+        const where = { user_id: req.oauth.userId, status: { [Op.ne]: 'deleted' } };
+        const fields = ['view_count', 'like_count', 'collection_count', 'comment_count'];
+        const [total, rows, ...sums] = await Promise.all([
+            DbAdapter.count(Post, { where }),
+            DbAdapter.findAll(Post, {
+            where,
+            attributes: ['id', 'title', 'status', 'view_count', 'like_count', 'collection_count', 'comment_count', 'created_at']
+            , order: [['created_at', 'DESC']], limit: 100
+            }),
+            ...fields.map(field => DbAdapter.sum(Post, field, { where }))
+        ]);
+        return successResponse(res, { total, totals: Object.fromEntries(fields.map((field, index) => [field, Number(sums[index] || 0)])), items: rows, items_limited: total > rows.length });
+    } catch (e) {
+        console.error('openMyPostsAnalytics', e);
+        return errorResponse(res, '获取帖子分析失败', 500);
+    }
+}
+
+async function openMyAccountAnalytics(req, res) {
+    try {
+        const workWhere = { user_id: req.oauth.userId, status: { [Op.ne]: 'deleted' } };
+        const postWhere = { user_id: req.oauth.userId, status: { [Op.ne]: 'deleted' } };
+        const workFields = ['view_times', 'praise_times', 'collection_times', 'comment_count'];
+        const postFields = ['view_count', 'like_count', 'collection_count', 'comment_count'];
+        const [workCount, postCount, comments, ...sums] = await Promise.all([
+            DbAdapter.count(Work, { where: workWhere }),
+            DbAdapter.count(Post, { where: postWhere }),
+            DbAdapter.count(Comment, { where: { user_id: req.oauth.userId, status: 'active' } }),
+            ...workFields.map(field => DbAdapter.sum(Work, field, { where: workWhere })),
+            ...postFields.map(field => DbAdapter.sum(Post, field, { where: postWhere }))
+        ]);
+        return successResponse(res, {
+            works: { count: workCount, ...Object.fromEntries(workFields.map((field, index) => [field, Number(sums[index] || 0)])) },
+            posts: { count: postCount, ...Object.fromEntries(postFields.map((field, index) => [field, Number(sums[workFields.length + index] || 0)])) },
+            comments: { count: comments },
+            followers: Number(req.oauth.user.follower_count || 0),
+            following: Number(req.oauth.user.following_count || 0)
+        });
+    } catch (e) {
+        console.error('openMyAccountAnalytics', e);
+        return errorResponse(res, '获取账号分析失败', 500);
+    }
+}
+
+async function openCommentsReceived(req, res) {
+    try {
+        const { page, pageSize, offset } = DbAdapter.parsePagination(req.query);
+        const [works, posts] = await Promise.all([
+            DbAdapter.findAll(Work, { where: { user_id: req.oauth.userId }, attributes: ['id'] }),
+            DbAdapter.findAll(Post, { where: { user_id: req.oauth.userId }, attributes: ['id'] })
+        ]);
+        const workIds = works.map(row => DbAdapter.getId(row));
+        const postIds = posts.map(row => DbAdapter.getId(row));
+        if (!workIds.length && !postIds.length) return paginateResponse(res, [], 0, page, pageSize);
+        const targets = [];
+        if (workIds.length) targets.push({ work_id: { [Op.in]: workIds } });
+        if (postIds.length) targets.push({ post_id: { [Op.in]: postIds } });
+        const { count, rows } = await DbAdapter.findAndCountAll(Comment, {
+            where: { status: 'active', user_id: { [Op.ne]: req.oauth.userId }, [Op.or]: targets },
+            attributes: ['id', 'content', 'work_id', 'post_id', 'parent_id', 'like_count', 'created_at'],
+            include: PUBLIC_COMMENT_AUTHOR_INCLUDE, order: [['created_at', 'DESC']], limit: pageSize, offset
+        });
+        return paginateResponse(res, rows, count, page, pageSize);
+    } catch (e) {
+        console.error('openCommentsReceived', e);
+        return errorResponse(res, '获取收到的评论失败', 500);
+    }
+}
+
+async function requireManagedStudio(req, res) {
+    const member = await DbAdapter.findOne(StudioMember, {
+        where: {
+            studio_id: req.params.id,
+            user_id: req.oauth.userId,
+            status: 'active',
+            role: { [Op.in]: ['owner', 'vice_owner', 'admin'] }
+        }
+    });
+    if (!member) {
+        errorResponse(res, '仅工作室管理成员可以读取此数据', 403, 'oauth_forbidden_studio_role');
+        return null;
+    }
+    return member;
+}
+
+async function openStudioApplications(req, res) {
+    try {
+        if (!await requireManagedStudio(req, res)) return;
+        const { page, pageSize, offset } = DbAdapter.parsePagination(req.query);
+        const { count, rows } = await DbAdapter.findAndCountAll(StudioMember, {
+            where: { studio_id: req.params.id, status: 'pending' },
+            attributes: ['id', 'role', 'status', 'created_at'],
+            include: [{ model: User, as: 'user', attributes: PUBLIC_USER_ATTRIBUTES }],
+            order: [['created_at', 'ASC']], limit: pageSize, offset
+        });
+        return paginateResponse(res, rows, count, page, pageSize);
+    } catch (e) {
+        console.error('openStudioApplications', e);
+        return errorResponse(res, '获取工作室申请失败', 500);
+    }
+}
+
+async function openStudioSubmissions(req, res) {
+    try {
+        if (!await requireManagedStudio(req, res)) return;
+        const { page, pageSize, offset } = DbAdapter.parsePagination(req.query);
+        const { count, rows } = await DbAdapter.findAndCountAll(StudioWork, {
+            where: { studio_id: req.params.id },
+            attributes: ['id', 'user_id', 'score', 'status', 'reviewed_by', 'reviewed_at', 'added_at'],
+            include: [{ model: Work, as: 'work', attributes: PUBLIC_WORK_ATTRIBUTES }],
+            order: [['added_at', 'DESC']], limit: pageSize, offset
+        });
+        return paginateResponse(res, rows, count, page, pageSize);
+    } catch (e) {
+        console.error('openStudioSubmissions', e);
+        return errorResponse(res, '获取工作室投稿失败', 500);
+    }
+}
+
+async function openStudioAnalytics(req, res) {
+    try {
+        if (!await requireManagedStudio(req, res)) return;
+        const [studio, activeMembers, pendingMembers, approvedWorks, pendingWorks] = await Promise.all([
+            DbAdapter.findByPk(Studio, req.params.id, { attributes: PUBLIC_STUDIO_ATTRIBUTES }),
+            DbAdapter.count(StudioMember, { where: { studio_id: req.params.id, status: 'active' } }),
+            DbAdapter.count(StudioMember, { where: { studio_id: req.params.id, status: 'pending' } }),
+            DbAdapter.count(StudioWork, { where: { studio_id: req.params.id, status: 'approved' } }),
+            DbAdapter.count(StudioWork, { where: { studio_id: req.params.id, status: 'pending' } })
+        ]);
+        return successResponse(res, { studio, members: { active: activeMembers, pending: pendingMembers }, works: { approved: approvedWorks, pending: pendingWorks } });
+    } catch (e) {
+        console.error('openStudioAnalytics', e);
+        return errorResponse(res, '获取工作室分析失败', 500);
+    }
+}
+
+async function openStudioLogs(req, res) {
+    try {
+        if (!await requireManagedStudio(req, res)) return;
+        const { page, pageSize, offset } = DbAdapter.parsePagination(req.query);
+        const { count, rows } = await DbAdapter.findAndCountAll(OperationLog, {
+            where: { target_type: 'studio', target_id: req.params.id },
+            // 操作详情可能包含管理备注或内部字段，开放平台仅返回必要的审计元数据。
+            attributes: ['id', 'user_id', 'action', 'created_at'],
+            order: [['created_at', 'DESC']], limit: pageSize, offset
+        });
+        return paginateResponse(res, rows, count, page, pageSize);
+    } catch (e) {
+        console.error('openStudioLogs', e);
+        return errorResponse(res, '获取工作室日志失败', 500);
+    }
+}
+
+async function openDeveloperUsage(req, res) {
+    try {
+        const days = Math.min(Math.max(parseInt(req.query.days, 10) || 7, 1), 30);
+        const since = new Date(Date.now() - days * 86400000);
+        const rows = await DbAdapter.findAll(OperationLog, {
+            where: { action: 'developer_api_call', target_type: 'developer_app', target_id: req.oauth.appId, created_at: { [Op.gte]: since } },
+            attributes: ['details', 'created_at'], order: [['created_at', 'DESC']], limit: 5000
+        });
+        const perDay = {}, perPath = {}, perStatus = {};
+        rows.forEach(row => {
+            const day = new Date(row.created_at).toISOString().slice(0, 10);
+            perDay[day] = (perDay[day] || 0) + 1;
+            try {
+                const details = typeof row.details === 'string' ? JSON.parse(row.details) : (row.details || {});
+                const path = details.path || '-';
+                const status = String(details.status || 0);
+                perPath[path] = (perPath[path] || 0) + 1;
+                perStatus[status] = (perStatus[status] || 0) + 1;
+            } catch (_) {}
+        });
+        return successResponse(res, { days, total: rows.length, truncated: rows.length === 5000, perDay, perPath, perStatus });
+    } catch (e) {
+        console.error('openDeveloperUsage', e);
+        return errorResponse(res, '获取应用调用统计失败', 500);
+    }
+}
+
 async function openMyStudioMembers(req, res) {
     try {
         const mine = await DbAdapter.findOne(StudioMember, {
@@ -1498,6 +1939,26 @@ module.exports = {
     openMyWorkStats,
     openMyActivity,
     openMyStudioMembers,
+    openAppOpenId,
+    openPublicUser,
+    openPublicWorks,
+    openPublicWorkDetail,
+    openPublicPosts,
+    openPublicPostDetail,
+    openPublicStudios,
+    openPublicStudioDetail,
+    openSearch,
+    openCommunityFeed,
+    openCommunityStats,
+    openMyWorksAnalytics,
+    openMyPostsAnalytics,
+    openMyAccountAnalytics,
+    openCommentsReceived,
+    openStudioApplications,
+    openStudioSubmissions,
+    openStudioAnalytics,
+    openStudioLogs,
+    openDeveloperUsage,
     openReports,
     openHandleReport,
     openCreateComment,

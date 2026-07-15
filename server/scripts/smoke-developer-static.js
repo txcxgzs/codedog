@@ -53,6 +53,9 @@ if (oauth) {
   for (const key of ['notifications:read','notifications:write','works:stats:read','community:activity:read','reports:read','reports:write','comments:write','posts:write','works:write']) {
     ok('extended scope ' + key, !!oauth.ALL_SCOPES[key]);
   }
+  for (const key of ['openid','users:public:read','works:public:read','posts:public:read','studios:public:read','search:read','community:feed:read','community:stats:read','works:analytics:read','posts:analytics:read','account:analytics:read','comments:received:read','studios:applications:read','studios:submissions:read','studios:analytics:read','studios:logs:read','developer:usage:read']) {
+    ok('low-risk scope ' + key, oauth.ALL_SCOPES[key]?.risk === 'read');
+  }
   ok('write/admin risk metadata', oauth.ALL_SCOPES['posts:write']?.risk === 'write' && oauth.ALL_SCOPES['reports:write']?.risk === 'admin');
 }
 
@@ -94,7 +97,7 @@ const appVue = fs.readFileSync(path.join(root, 'client/src/App.vue'), 'utf8');
 ok('nav developer entry', appVue.includes('command="developer"'));
 
 const ctrl = fs.readFileSync(path.join(serverRoot, 'controllers/developerController.js'), 'utf8');
-for (const name of ['listMyApps','createApp','tokenEndpoint','approveAuthorize','openMe','adminReviewApp','revokeMyAuthorization','openMyNotifications','openMyWorkStats','openMyActivity','openCreatePost','openCreateComment','openReports']) {
+for (const name of ['listMyApps','createApp','tokenEndpoint','approveAuthorize','openMe','adminReviewApp','revokeMyAuthorization','openMyNotifications','openMyWorkStats','openMyActivity','openCreatePost','openCreateComment','openReports','openSearch','openCommunityFeed','openMyAccountAnalytics','openStudioApplications','openDeveloperUsage']) {
   ok('controller exports ' + name, ctrl.includes(name));
 }
 
@@ -102,6 +105,14 @@ const openRoutes = fs.readFileSync(path.join(serverRoot, 'routes/openRoutes.js')
 for (const route of ['/me/notifications','/me/activity','/me/works/stats','/comments','/posts','/works','/reports']) {
   ok('extended open route ' + route, openRoutes.includes(route));
 }
+for (const route of ['/me/openid','/users/:id','/community/feed','/community/stats','/me/analytics/account','/me/comments/received','/applications','/submissions','/developer/usage']) {
+  ok('low-risk open route ' + route, openRoutes.includes(route));
+}
+const developerHome = fs.readFileSync(path.join(root, 'client/src/views/developer/DeveloperHome.vue'), 'utf8');
+ok('scope groups are collapsible', developerHome.includes('<el-collapse') && developerHome.includes('selectedScopeCount'));
+const authorizeVue = fs.readFileSync(path.join(root, 'client/src/views/OAuthAuthorize.vue'), 'utf8');
+ok('new scopes require visible reauthorization', authorizeVue.includes('reauthorization_required') && authorizeVue.includes('新增权限'));
+ok('scope upgrades revoke tokens and require consent', ctrl.includes('user_reauthorization_required') && ctrl.includes('addedScopes') && ctrl.includes('OAuthAccessToken'));
 
 const failed = results.filter(r => !r.pass);
 console.log('\nSUMMARY:', results.filter(r=>r.pass).length + '/' + results.length, 'passed');

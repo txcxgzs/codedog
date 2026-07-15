@@ -37,6 +37,7 @@ router.use(function (req, res, next) {
 router.use(perAppRateLimiter(models));
 
 router.get('/me', requireScopes('profile:read'), developerController.openMe);
+router.get('/me/openid', requireScopes('openid'), developerController.openAppOpenId);
 router.get('/me/works', requireScopes('works:read'), developerController.openMyWorks);
 router.get('/me/works/stats', requireScopes('works:stats:read'), developerController.openMyWorkStats);
 router.get('/me/works/:id/stats', requireScopes('works:stats:read'), developerController.openMyWorkStats);
@@ -55,6 +56,29 @@ router.get('/me/notifications', requireScopes('notifications:read'), developerCo
 router.post('/me/notifications', requireScopes('notifications:write'), developerController.openSendNotification);
 router.get('/me/activity', requireScopes('community:activity:read'), developerController.openMyActivity);
 router.get('/me/studios/:id/members', requireScopes('studios:members:read'), developerController.openMyStudioMembers);
+router.get('/me/analytics/works', requireScopes('works:analytics:read'), developerController.openMyWorksAnalytics);
+router.get('/me/analytics/posts', requireScopes('posts:analytics:read'), developerController.openMyPostsAnalytics);
+router.get('/me/analytics/account', requireScopes('account:analytics:read'), developerController.openMyAccountAnalytics);
+router.get('/me/comments/received', requireScopes('comments:received:read'), developerController.openCommentsReceived);
+
+router.get('/users/:id', requireScopes('users:public:read'), developerController.openPublicUser);
+router.get('/works', requireScopes('works:public:read'), developerController.openPublicWorks);
+router.get('/works/:id', requireScopes('works:public:read'), developerController.openPublicWorkDetail);
+router.get('/posts', requireScopes('posts:public:read'), developerController.openPublicPosts);
+router.get('/posts/:id', requireScopes('posts:public:read'), developerController.openPublicPostDetail);
+router.get('/studios/pending-review', requireScopes('studios:review'), developerController.openStudiosPendingReview);
+router.post('/studios/:id/review', requireScopes('studios:review'), developerController.openReviewStudio);
+router.get('/studios', requireScopes('studios:public:read'), developerController.openPublicStudios);
+router.get('/studios/:id', requireScopes('studios:public:read'), developerController.openPublicStudioDetail);
+router.get('/search', requireScopes('search:read'), developerController.openSearch);
+router.get('/community/feed', requireScopes('community:feed:read'), developerController.openCommunityFeed);
+router.get('/community/stats', requireScopes('community:stats:read'), developerController.openCommunityStats);
+
+router.get('/me/studios/:id/applications', requireScopes('studios:applications:read'), developerController.openStudioApplications);
+router.get('/me/studios/:id/submissions', requireScopes('studios:submissions:read'), developerController.openStudioSubmissions);
+router.get('/me/studios/:id/analytics', requireScopes('studios:analytics:read'), developerController.openStudioAnalytics);
+router.get('/me/studios/:id/logs', requireScopes('studios:logs:read'), developerController.openStudioLogs);
+router.get('/developer/usage', requireScopes('developer:usage:read'), developerController.openDeveloperUsage);
 
 router.post('/comments', requireScopes('comments:write'), developerController.openCreateComment);
 router.delete('/comments/:id', requireScopes('comments:write'), developerController.openDeleteComment);
@@ -67,9 +91,5 @@ router.delete('/works/:id', requireScopes('works:write'), developerController.op
 
 router.get('/reports', requireScopes('reports:read'), developerController.openReports);
 router.patch('/reports/:id', requireScopes('reports:write'), developerController.openHandleReport);
-
-router.get('/studios/pending-review', requireScopes('studios:review'), developerController.openStudiosPendingReview);
-router.post('/studios/:id/review', requireScopes('studios:review'), developerController.openReviewStudio);
-
 
 module.exports = router;

@@ -69,7 +69,7 @@
       </el-table>
       </div>
 
-      <el-dialog v-model="dialogVisible" :title="editingId ? '编辑应用' : '创建应用'" width="600px" destroy-on-close>
+      <el-dialog v-model="dialogVisible" :title="editingId ? '编辑应用' : '创建应用'" width="min(720px, 94vw)" destroy-on-close>
         <el-steps :active="wizardStep" finish-status="success" simple style="margin-bottom:24px"><el-step title="基本信息" /><el-step title="回调地址" /><el-step title="申请权限" /><el-step title="确认提交" /></el-steps>
         <el-form :model="form" class="r-dev--wizard_form" label-position="top">
           <el-form-item v-show="wizardStep === 0" label="应用名称" required>
@@ -95,12 +95,25 @@
             />
           </el-form-item>
           <el-form-item v-show="wizardStep === 2" label="申请权限" required>
-            <div v-for="group in scopeGroups" :key="group.key" class="r-dev--scope_group">
-              <div class="r-dev--scope_group_title"><b>{{ group.title }}</b><span>{{ group.description }}</span></div>
-              <el-checkbox-group v-model="form.scopes" class="r-dev--scope_grid">
-                <el-checkbox v-for="s in group.items" :key="s.key" :label="s.key"><span>{{ s.name }}</span><code>{{ s.key }}</code><el-tag v-if="s.risk === 'write'" size="small" type="warning">写入</el-tag><el-tag v-else-if="s.risk === 'admin'" size="small" type="danger">管理</el-tag></el-checkbox>
-              </el-checkbox-group>
-            </div>
+            <div class="r-dev--scope_summary">已选择 <b>{{ form.scopes.length }}</b> 项权限；点击分类标题展开选择</div>
+            <el-collapse v-model="expandedScopeGroups" class="r-dev--scope_collapse">
+              <el-collapse-item v-for="group in scopeGroups" :key="group.key" :name="group.key">
+                <template #title>
+                  <div class="r-dev--scope_group_title">
+                    <b>{{ group.title }}</b>
+                    <span>{{ group.description }}</span>
+                    <el-tag size="small" round>{{ selectedScopeCount(group) }}/{{ group.items.length }}</el-tag>
+                  </div>
+                </template>
+                <el-checkbox-group v-model="form.scopes" class="r-dev--scope_grid">
+                  <el-checkbox v-for="s in group.items" :key="s.key" :label="s.key">
+                    <span>{{ s.name }}</span><code>{{ s.key }}</code>
+                    <el-tag v-if="s.risk === 'write'" size="small" type="warning">写入</el-tag>
+                    <el-tag v-else-if="s.risk === 'admin'" size="small" type="danger">管理</el-tag>
+                  </el-checkbox>
+                </el-checkbox-group>
+              </el-collapse-item>
+            </el-collapse>
           </el-form-item>
           <div v-if="wizardStep === 3" class="r-dev--review_box">
             <h3>请确认申请信息</h3>
@@ -171,6 +184,7 @@ const detailApp = ref(null)
 const editingId = ref(null)
 const secretOnce = ref(null)
 const scopeOptions = ref([])
+const expandedScopeGroups = ref(['identity'])
 const wizardStep = ref(0)
 const calls = ref([])
 const callsLoading = ref(false)
@@ -188,11 +202,15 @@ const form = reactive({
   scopes: ['profile:read']
 })
 const scopeGroups = computed(() => [
-  { key: 'basic', title: '基础读取', description: '用户基础资料和通知', items: scopeOptions.value.filter(s => s.risk === 'read' && /profile|notifications/.test(s.key)) },
-  { key: 'content', title: '内容读取', description: '作品、评论、帖子和社区数据', items: scopeOptions.value.filter(s => s.risk === 'read' && !/profile|notifications/.test(s.key)) },
+  { key: 'identity', title: '身份与基础资料', description: '用户身份、公开资料和通知', items: scopeOptions.value.filter(s => s.risk === 'read' && /^(openid|profile|notifications)/.test(s.key)) },
+  { key: 'public', title: '社区公开数据', description: '公开用户、作品、帖子、工作室、搜索和内容流', items: scopeOptions.value.filter(s => s.risk === 'read' && /public:read$|^(search|community:feed|community:stats)/.test(s.key)) },
+  { key: 'analytics', title: '数据分析', description: '授权用户的作品、帖子、账号和应用调用统计', items: scopeOptions.value.filter(s => s.risk === 'read' && /analytics|developer:usage/.test(s.key)) },
+  { key: 'studio', title: '工作室只读', description: '工作室资料、成员、申请、投稿和日志', items: scopeOptions.value.filter(s => s.risk === 'read' && /^studios:/.test(s.key)) },
+  { key: 'content', title: '个人内容读取', description: '授权用户自己的作品、评论、帖子、收藏和动态', items: scopeOptions.value.filter(s => s.risk === 'read' && !/^(openid|profile|notifications|studios:)/.test(s.key) && !/public:read$|^(search|community:feed|community:stats)|analytics|developer:usage/.test(s.key)) },
   { key: 'write', title: '写入操作', description: '会修改用户数据，请谨慎申请', items: scopeOptions.value.filter(s => s.risk === 'write') },
   { key: 'admin', title: '管理权限', description: '高风险审核和管理能力', items: scopeOptions.value.filter(s => s.risk === 'admin') }
 ].filter(g => g.items.length))
+const selectedScopeCount = (group) => group.items.filter(item => form.scopes.includes(item.key)).length
 
 const statusText = (s) => ({
   pending: '待审核', active: '已通过', rejected: '已拒绝', suspended: '已停用'
@@ -345,9 +363,13 @@ onMounted(async () => { await fetchGeetestConfig(); await loadScopes(); await lo
 .r-dev--calls_head { display:flex; align-items:center; justify-content:space-between; margin: 8px 0; }
 .r-dev--payload { padding: 8px; background: #fafafa; }
 .r-dev--payload pre { white-space: pre-wrap; word-break: break-all; max-height: 160px; overflow:auto; background:#f1f3f5; padding:6px; border-radius:4px; font-size:11px; }
-.r-dev--scope_group { margin-bottom:16px; padding:12px; border:1px solid #ebeef5; border-radius:8px; background:#fafcff; }
-.r-dev--scope_group_title { display:flex; align-items:baseline; gap:10px; margin-bottom:10px; color:#303133; }
+.r-dev--scope_summary { margin-bottom:10px; padding:9px 12px; border-radius:8px; background:#fff8e6; color:#7a5a12; font-size:13px; }
+.r-dev--scope_collapse { width:100%; border:1px solid #e7ebf2; border-radius:10px; overflow:hidden; }
+.r-dev--scope_collapse :deep(.el-collapse-item__header) { min-height:52px; height:auto; padding:8px 14px; background:#fafcff; }
+.r-dev--scope_collapse :deep(.el-collapse-item__content) { padding:14px; }
+.r-dev--scope_group_title { display:flex; align-items:center; gap:10px; width:100%; padding-right:10px; color:#303133; }
 .r-dev--scope_group_title span { color:#909399; font-size:12px; }
+.r-dev--scope_group_title .el-tag { margin-left:auto; flex:none; }
 .r-dev--scope_grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px 12px; }
 .r-dev--scope_grid .el-checkbox { margin-right:0; min-height:30px; }
 .r-dev--scope_grid code { margin-left:4px; color:#909399; font-size:11px; }

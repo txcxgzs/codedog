@@ -127,6 +127,35 @@ GET  /api/open/v1/me/following?page=1&amp;pageSize=20
 GET  /api/open/v1/me/favorites?page=1&amp;pageSize=20
 GET  /api/open/v1/me/likes?page=1&amp;pageSize=20        (scope: favorites:read)</pre>
       </el-card>
+
+      <el-card shadow="never" class="r-devdocs--card">
+        <h2>9. 公开社区与搜索 API</h2>
+        <pre class="r-devdocs--pre">GET /api/open/v1/users/:id                 (users:public:read)
+GET /api/open/v1/works                     (works:public:read)
+GET /api/open/v1/works/:id                 (works:public:read)
+GET /api/open/v1/posts                     (posts:public:read)
+GET /api/open/v1/posts/:id                 (posts:public:read)
+GET /api/open/v1/studios                   (studios:public:read)
+GET /api/open/v1/studios/:id               (studios:public:read)
+GET /api/open/v1/search?q=关键词            (search:read)
+GET /api/open/v1/community/feed?mode=latest (community:feed:read)
+GET /api/open/v1/community/stats            (community:stats:read)</pre>
+      </el-card>
+
+      <el-card shadow="never" class="r-devdocs--card">
+        <h2>10. 分析与工作室只读 API</h2>
+        <pre class="r-devdocs--pre">GET /api/open/v1/me/openid                          (openid)
+GET /api/open/v1/me/analytics/works                 (works:analytics:read)
+GET /api/open/v1/me/analytics/posts                 (posts:analytics:read)
+GET /api/open/v1/me/analytics/account               (account:analytics:read)
+GET /api/open/v1/me/comments/received               (comments:received:read)
+GET /api/open/v1/me/studios/:id/applications        (studios:applications:read)
+GET /api/open/v1/me/studios/:id/submissions         (studios:submissions:read)
+GET /api/open/v1/me/studios/:id/analytics           (studios:analytics:read)
+GET /api/open/v1/me/studios/:id/logs                (studios:logs:read)
+GET /api/open/v1/developer/usage?days=7              (developer:usage:read)</pre>
+        <el-alert type="info" :closable="false" title="应用新增权限并重新审核通过后，历史令牌不会自动获得新权限，用户必须重新进入授权页确认。" />
+      </el-card>
     </div>
   </div>
 </template>

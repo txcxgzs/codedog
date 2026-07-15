@@ -24,6 +24,14 @@
           show-icon
           :title="riskAlertTitle"
         />
+        <el-alert
+          v-if="info.reauthorization_required"
+          class="r-oauth--reauthorize"
+          type="warning"
+          :closable="false"
+          show-icon
+          title="该应用申请了新的权限，需要你重新确认授权；未确认前不会获得新增权限。"
+        />
 
         <ul class="r-oauth--scopes">
           <li v-for="s in info.scopes" :key="s.key">
@@ -31,6 +39,7 @@
               {{ s.name || s.key }}
               <el-tag v-if="s.risk === 'write'" size="small" type="warning">可修改数据</el-tag>
               <el-tag v-else-if="s.risk === 'admin'" size="small" type="danger">管理权限</el-tag>
+              <el-tag v-if="s.is_new" size="small" type="warning">新增权限</el-tag>
             </b>
             <span>{{ s.description || s.key }}</span>
           </li>
@@ -163,6 +172,7 @@ onMounted(() => {
   display: flex; align-items: center; justify-content: center;
 }
 .r-oauth--desc { margin: 0; color: #888; font-size: 13px; }
+.r-oauth--reauthorize { margin-top: 12px; }
 .r-oauth--scopes {
   list-style: none; padding: 0; margin: 16px 0;
   li {
