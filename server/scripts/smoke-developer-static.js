@@ -51,13 +51,14 @@ if (oauth) {
   const scopes = oauth.scopeCatalog();
   ok('scopeCatalog matches ALL_SCOPES', Array.isArray(scopes) && scopes.length === Object.keys(oauth.ALL_SCOPES).length);
   ok('application scopes catalogued separately', oauth.APPLICATION_SCOPES.includes('search:read') && scopes.find(s => s.key === 'search:read')?.audience === 'application');
-  for (const key of ['notifications:read','notifications:write','works:stats:read','community:activity:read','reports:read','reports:write','comments:write','posts:write','works:write']) {
+  for (const key of ['notifications:read','notifications:write','works:stats:read','community:activity:read','comments:write','posts:write','works:write']) {
     ok('extended scope ' + key, !!oauth.ALL_SCOPES[key]);
   }
   for (const key of ['openid','users:public:read','works:public:read','posts:public:read','studios:public:read','search:read','community:feed:read','community:stats:read','works:analytics:read','posts:analytics:read','account:analytics:read','comments:received:read','studios:applications:read','studios:submissions:read','studios:analytics:read','studios:logs:read','developer:usage:read']) {
     ok('low-risk scope ' + key, oauth.ALL_SCOPES[key]?.risk === 'read');
   }
-  ok('write/admin risk metadata', oauth.ALL_SCOPES['posts:write']?.risk === 'write' && oauth.ALL_SCOPES['reports:write']?.risk === 'admin');
+  ok('management scopes are not exposed', !oauth.ALL_SCOPES['studios:review'] && !oauth.ALL_SCOPES['reports:read'] && !oauth.ALL_SCOPES['reports:write']);
+  ok('write risk metadata', oauth.ALL_SCOPES['posts:write']?.risk === 'write');
 }
 
 const appJs = fs.readFileSync(path.join(serverRoot, 'app.js'), 'utf8');
@@ -96,14 +97,17 @@ const adminVue = fs.readFileSync(path.join(root, 'client/src/views/Admin.vue'), 
 ok('admin developer UI', adminVue.includes("activeMenu === 'developer-apps'") && adminVue.includes('fetchDeveloperApps'));
 const appVue = fs.readFileSync(path.join(root, 'client/src/App.vue'), 'utf8');
 ok('nav developer entry', appVue.includes('command="developer"'));
+const developerHomeVue = fs.readFileSync(path.join(root, 'client/src/views/developer/DeveloperHome.vue'), 'utf8');
+ok('developer form auto-saves local draft', developerHomeVue.includes('codedog:developer-app-draft:') && developerHomeVue.includes('saveDraft'));
+ok('developer form guards dialog and page exit', developerHomeVue.includes(':before-close="handleDialogBeforeClose"') && developerHomeVue.includes('beforeunload'));
 
 const ctrl = fs.readFileSync(path.join(serverRoot, 'controllers/developerController.js'), 'utf8');
-for (const name of ['listMyApps','createApp','tokenEndpoint','approveAuthorize','openMe','adminReviewApp','revokeMyAuthorization','openMyNotifications','openMyWorkStats','openMyActivity','openCreatePost','openCreateComment','openReports','openSearch','openCommunityFeed','openMyAccountAnalytics','openStudioApplications','openDeveloperUsage']) {
+for (const name of ['listMyApps','createApp','tokenEndpoint','approveAuthorize','openMe','adminReviewApp','revokeMyAuthorization','openMyNotifications','openMyWorkStats','openMyActivity','openCreatePost','openCreateComment','openSearch','openCommunityFeed','openMyAccountAnalytics','openStudioApplications','openDeveloperUsage']) {
   ok('controller exports ' + name, ctrl.includes(name));
 }
 
 const openRoutes = fs.readFileSync(path.join(serverRoot, 'routes/openRoutes.js'), 'utf8');
-for (const route of ['/me/notifications','/me/activity','/me/works/stats','/comments','/posts','/works','/reports']) {
+for (const route of ['/me/notifications','/me/activity','/me/works/stats','/comments','/posts','/works']) {
   ok('extended open route ' + route, openRoutes.includes(route));
 }
 for (const route of ['/me/openid','/users/:id','/community/feed','/community/stats','/me/analytics/account','/me/comments/received','/applications','/submissions','/developer/usage']) {

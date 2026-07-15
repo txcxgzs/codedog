@@ -66,8 +66,6 @@ router.get('/works', requireApplicationToken, requireScopes('works:public:read')
 router.get('/works/:id', requireApplicationToken, requireScopes('works:public:read'), developerController.openPublicWorkDetail);
 router.get('/posts', requireApplicationToken, requireScopes('posts:public:read'), developerController.openPublicPosts);
 router.get('/posts/:id', requireApplicationToken, requireScopes('posts:public:read'), developerController.openPublicPostDetail);
-router.get('/studios/pending-review', requireScopes('studios:review'), developerController.openStudiosPendingReview);
-router.post('/studios/:id/review', requireScopes('studios:review'), developerController.openReviewStudio);
 router.get('/studios', requireApplicationToken, requireScopes('studios:public:read'), developerController.openPublicStudios);
 router.get('/studios/:id', requireApplicationToken, requireScopes('studios:public:read'), developerController.openPublicStudioDetail);
 router.get('/search', requireApplicationToken, requireScopes('search:read'), developerController.openSearch);
@@ -88,8 +86,5 @@ router.delete('/posts/:id', requireScopes('posts:write'), developerController.op
 router.post('/works', requireScopes('works:write'), developerController.openPublishWork);
 router.patch('/works/:id', requireScopes('works:write'), developerController.openUpdateWork);
 router.delete('/works/:id', requireScopes('works:write'), developerController.openDeleteWork);
-
-router.get('/reports', requireScopes('reports:read'), developerController.openReports);
-router.patch('/reports/:id', requireScopes('reports:write'), developerController.openHandleReport);
 
 module.exports = router;

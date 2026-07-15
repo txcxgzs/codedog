@@ -216,7 +216,7 @@ function pass(name, cond, detail) {
       scopes: [
         'profile:read','studios:read','follows:read','favorites:read',
         'notifications:read','notifications:write','works:stats:read','community:activity:read',
-        'posts:write','comments:write','works:write','reports:read','reports:write'
+        'posts:write','comments:write','works:write'
       ]
     }
   });
@@ -230,7 +230,7 @@ function pass(name, cond, detail) {
     body: {
       client_id: cid2,
       redirect_uri: 'http://localhost:9999/callback',
-      scope: 'profile:read studios:read follows:read favorites:read notifications:read notifications:write works:stats:read community:activity:read posts:write comments:write works:write reports:read reports:write',
+      scope: 'profile:read studios:read follows:read favorites:read notifications:read notifications:write works:stats:read community:activity:read posts:write comments:write works:write',
       state: 's2', approved: true
     }
   });
@@ -297,13 +297,6 @@ function pass(name, cond, detail) {
     headers: { Authorization: 'Bearer ' + access2 }, body: {}
   });
   if (!pass('open work write scope reaches validation', workWriteValidation.status === 400, JSON.stringify(workWriteValidation.data))) failed++;
-  const reports = await req('GET', '/api/open/v1/reports', { headers: { Authorization: 'Bearer ' + access2 } });
-  if (!pass('open reports read as superadmin', reports.status === 200, JSON.stringify(reports.data).slice(0, 200))) failed++;
-  const reportWriteValidation = await req('PATCH', '/api/open/v1/reports/999999', {
-    headers: { Authorization: 'Bearer ' + access2 },
-    body: { status: 'resolved', handleNote: 'not found smoke', takeAction: false }
-  });
-  if (!pass('open reports write reaches business validation', reportWriteValidation.status === 404, JSON.stringify(reportWriteValidation.data))) failed++;
   const studioMembersValidation = await req('GET', '/api/open/v1/me/studios/999999/members', { headers: { Authorization: 'Bearer ' + access2 } });
   if (!pass('studio members scope required', studioMembersValidation.status === 403, JSON.stringify(studioMembersValidation.data))) failed++;
   try { await user.destroy(); } catch {}

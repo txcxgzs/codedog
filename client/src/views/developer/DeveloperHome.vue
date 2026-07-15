@@ -69,7 +69,7 @@
       </el-table>
       </div>
 
-      <el-dialog v-model="dialogVisible" :title="editingId ? '编辑应用' : '创建应用'" width="min(720px, 94vw)" destroy-on-close>
+      <el-dialog v-model="dialogVisible" :title="editingId ? '编辑应用' : '创建应用'" width="min(720px, 94vw)" destroy-on-close :before-close="handleDialogBeforeClose">
         <el-steps :active="wizardStep" finish-status="success" simple style="margin-bottom:24px"><el-step title="基本信息" /><el-step title="回调地址" /><el-step title="申请权限" /><el-step title="确认提交" /></el-steps>
         <el-form :model="form" class="r-dev--wizard_form" label-position="top">
           <el-form-item v-show="wizardStep === 0" label="应用名称" required>
@@ -130,7 +130,8 @@
           />
         </el-form>
         <template #footer>
-          <el-button @click="dialogVisible = false">取消</el-button>
+          <span v-if="hasUnsavedChanges" class="r-dev--draft_hint">草稿已自动保存到本机</span>
+          <el-button @click="requestCloseDialog">取消</el-button>
           <el-button v-if="wizardStep > 0" @click="wizardStep--">上一步</el-button>
           <el-button v-if="wizardStep < 3" type="primary" @click="nextWizardStep">下一步</el-button>
           <el-button v-else type="primary" :loading="saving" @click="submitForm">确认提交</el-button>
@@ -170,7 +171,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { developerApi } from '@/api/developer'
 import GeetestDialog from '@/components/GeetestDialog.vue'
@@ -193,6 +194,9 @@ const logoInput = ref(null)
 const logoFile = ref(null)
 const geetestDialogRef = ref(null)
 const { geetestEnabled, fetchGeetestConfig } = useGeetestConfig()
+const DRAFT_PREFIX = 'codedog:developer-app-draft:'
+const initialFormSnapshot = ref('')
+let draftTimer = null
 
 const form = reactive({
   name: '',
@@ -214,6 +218,55 @@ const scopeGroups = computed(() => [
 const selectedScopeCount = (group) => group.items.filter(item => form.scopes.includes(item.key)).length
 const applicationScopeKeys = computed(() => new Set(scopeOptions.value.filter(item => item.audience === 'application').map(item => item.key)))
 const requiresUserAuthorization = computed(() => form.scopes.some(key => !applicationScopeKeys.value.has(key)))
+const serializeForm = () => JSON.stringify({
+  name: form.name,
+  description: form.description,
+  homepage_url: form.homepage_url,
+  logo_url: form.logo_url,
+  redirect_uris_text: form.redirect_uris_text,
+  scopes: [...form.scopes].sort()
+})
+const hasUnsavedChanges = computed(() => dialogVisible.value && serializeForm() !== initialFormSnapshot.value)
+const draftKey = () => `${DRAFT_PREFIX}${editingId.value ? `edit:${editingId.value}` : 'create'}`
+const saveDraft = () => {
+  if (!dialogVisible.value || !hasUnsavedChanges.value) return
+  try {
+    localStorage.setItem(draftKey(), JSON.stringify({ form: JSON.parse(serializeForm()), wizardStep: wizardStep.value, savedAt: Date.now() }))
+  } catch { /* localStorage may be disabled; exit confirmation still protects the form */ }
+}
+const clearDraft = () => {
+  try { localStorage.removeItem(draftKey()) } catch { /* ignore unavailable localStorage */ }
+}
+const restoreDraft = () => {
+  try {
+    const raw = localStorage.getItem(draftKey())
+    if (!raw) return false
+    const draft = JSON.parse(raw)
+    if (!draft?.form || !Array.isArray(draft.form.scopes)) return false
+    Object.assign(form, draft.form)
+    wizardStep.value = Math.min(3, Math.max(0, Number(draft.wizardStep) || 0))
+    ElMessage.info('已恢复上次未提交的草稿')
+    return true
+  } catch { return false }
+}
+const confirmCloseDialog = async () => {
+  if (!hasUnsavedChanges.value) return true
+  saveDraft()
+  try {
+    await ElMessageBox.confirm('内容尚未提交，草稿已自动保存。确定退出吗？', '退出编辑', {
+      confirmButtonText: '退出并保留草稿', cancelButtonText: '继续填写', type: 'warning'
+    })
+    return true
+  } catch { return false }
+}
+const handleDialogBeforeClose = async (done) => { if (await confirmCloseDialog()) done() }
+const requestCloseDialog = async () => { if (await confirmCloseDialog()) dialogVisible.value = false }
+const handleBeforeUnload = (event) => {
+  if (!hasUnsavedChanges.value) return
+  saveDraft()
+  event.preventDefault()
+  event.returnValue = ''
+}
 
 const statusText = (s) => ({
   pending: '待审核', active: '已通过', rejected: '已拒绝', suspended: '已停用'
@@ -247,7 +300,12 @@ const resetForm = () => {
   form.name = ''; form.description = ''; form.homepage_url = ''; form.logo_url = ''
   form.redirect_uris_text = ''; form.scopes = ['profile:read']; logoFile.value = null; editingId.value = null
 }
-const openCreate = () => { resetForm(); wizardStep.value = 0; dialogVisible.value = true }
+const openCreate = () => {
+  resetForm(); wizardStep.value = 0
+  initialFormSnapshot.value = serializeForm()
+  restoreDraft()
+  dialogVisible.value = true
+}
 const openEdit = (row) => {
   editingId.value = row.id
   form.name = row.name || ''; form.description = row.description || ''
@@ -255,7 +313,10 @@ const openEdit = (row) => {
   form.redirect_uris_text = (row.redirect_uris || []).join('\n')
   form.scopes = [...(row.scopes_requested || ['profile:read'])]
   logoFile.value = null
-  wizardStep.value = 0; detailVisible.value = false; dialogVisible.value = true
+  wizardStep.value = 0; detailVisible.value = false
+  initialFormSnapshot.value = serializeForm()
+  restoreDraft()
+  dialogVisible.value = true
 }
 const onLogoSelected = (event) => { const file = event.target.files?.[0]; if (!file) return; if (file.size > 2 * 1024 * 1024) return ElMessage.warning('图标不能超过2MB'); logoFile.value = file }
 const normalizeRedirectUris = () => form.redirect_uris_text.split(/\r?\n/).map(value => {
@@ -332,6 +393,8 @@ const submitForm = async () => {
         if (uploadRes.code !== 200) ElMessage.warning(uploadRes.msg || '图标上传失败')
       }
       if (res.data?.client_secret) secretOnce.value = { client_id: res.data.client_id, client_secret: res.data.client_secret }
+      clearDraft()
+      initialFormSnapshot.value = serializeForm()
       dialogVisible.value = false
       await loadApps()
     } else { ElMessage.error(res.msg || '保存失败') }
@@ -348,7 +411,18 @@ const handleRotate = async (row) => {
     } else { ElMessage.error(res.msg || '重置失败') }
   } catch (e) { if (e !== 'cancel') ElMessage.error(e.response?.data?.msg || '重置失败') }
 }
-onMounted(async () => { await fetchGeetestConfig(); await loadScopes(); await loadApps() })
+watch([() => serializeForm(), wizardStep, dialogVisible], () => {
+  clearTimeout(draftTimer)
+  draftTimer = setTimeout(saveDraft, 300)
+})
+onMounted(async () => {
+  window.addEventListener('beforeunload', handleBeforeUnload)
+  await fetchGeetestConfig(); await loadScopes(); await loadApps()
+})
+onBeforeUnmount(() => {
+  clearTimeout(draftTimer)
+  window.removeEventListener('beforeunload', handleBeforeUnload)
+})
 </script>
 
 <style scoped lang="scss">
@@ -384,6 +458,7 @@ onMounted(async () => { await fetchGeetestConfig(); await loadScopes(); await lo
 .r-dev--detail_actions { display:flex; gap:8px; margin:16px 0; padding-top:12px; border-top:1px solid #ebeef5; }
 .r-dev--detail_actions { padding:12px; border:1px solid #e7ebf2; border-radius:10px; background:#fff; }
 .r-dev--upload_hint { margin-left:8px; color:#909399; font-size:12px; }
+.r-dev--draft_hint { margin-right:12px; color:#909399; font-size:12px; }
 .r-dev--app_name { display:flex; align-items:center; gap:10px; font-weight:600; }
 .r-dev--detail_name { display:flex; align-items:center; gap:12px; font-size:20px; margin: -8px -4px 18px; padding:16px; border-radius:14px; background:linear-gradient(135deg,#f7f4ff,#eef8ff); color:#202938; box-shadow:inset 0 1px 0 rgba(255,255,255,.9); }
 .r-dev--wizard_form { max-width:100%; }

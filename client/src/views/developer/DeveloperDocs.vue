@@ -121,14 +121,6 @@ POST   /api/open/v1/me/notifications      (notifications:write)</pre>
       </el-card>
 
       <el-card shadow="never" class="r-devdocs--card">
-        <h2>6. 管理 API</h2>
-        <pre class="r-devdocs--pre">GET   /api/open/v1/reports                (reports:read + 后台 report:view)
-PATCH /api/open/v1/reports/:id            (reports:write + 后台 report:handle)
-GET   /api/open/v1/studios/pending-review (studios:review + 管理员身份)
-POST  /api/open/v1/studios/:id/review     (studios:review + 管理员身份)</pre>
-      </el-card>
-
-      <el-card shadow="never" class="r-devdocs--card">
         <h2>7. 撤销 token</h2>
         <pre class="r-devdocs--pre">POST /api/oauth/revoke
 { "token": "atk_... 或 rtk_..." }</pre>

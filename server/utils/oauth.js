@@ -43,11 +43,6 @@ const ALL_SCOPES = {
         description: '读取当前用户点赞过的作品、帖子记录',
         risk: 'read'
     },
-    'studios:review': {
-        name: '审核工作室',
-        description: '查看待审核工作室并通过/拒绝（需应用已授权且用户具备管理员身份）',
-        risk: 'admin'
-    },
     'notifications:read': {
         name: '读取通知',
         description: '读取用户的站内通知和未读状态',
@@ -67,16 +62,6 @@ const ALL_SCOPES = {
         name: '读取社区动态',
         description: '读取用户近期发布的作品、帖子和评论动态',
         risk: 'read'
-    },
-    'reports:read': {
-        name: '读取举报',
-        description: '读取后台举报记录（授权用户还需具备举报查看权限）',
-        risk: 'admin'
-    },
-    'reports:write': {
-        name: '处理举报',
-        description: '变更举报状态并执行处理动作（授权用户还需具备对应后台权限）',
-        risk: 'admin'
     },
     'comments:write': {
         name: '管理评论',
