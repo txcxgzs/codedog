@@ -335,6 +335,19 @@ app.get('/api/admin/reports', requireSession, async (req, res, next) => {
   } catch (error) { next(error); }
 });
 
+app.get('/api/admin/groups', requireSession, async (req, res, next) => {
+  try {
+    if (!['admin', 'superadmin'].includes(req.user.role)) return fail(res, 403, '无群聊管理权限');
+    const groups = await Group.findAll({ order: [['updated_at', 'DESC']] });
+    const rows = await Promise.all(groups.map(async group => {
+      const members = await ConversationMember.findAll({ where: { conversation_id: group.conversation_id, state: 'active' } });
+      const owner = await UserProfile.findByPk(group.owner_id);
+      return { ...group.toJSON(), member_count: members.length, owner: publicUser(owner) };
+    }));
+    ok(res, rows);
+  } catch (error) { next(error); }
+});
+
 app.use((error, req, res, next) => {
   console.error(error);
   if (error instanceof multer.MulterError) return fail(res, 400, error.code === 'LIMIT_FILE_SIZE' ? '图片不能超过 5 MB' : '图片上传请求无效');

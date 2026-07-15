@@ -57,6 +57,7 @@ function memoryDatabase() {
     async create(data) { const item = row({ id: ++state.ids.message, status: 'active', ...data, ...now() }); state.messages.push(item); return item; }
   };
   const Group = {
+    async findAll(options) { return select(state.groups, options); },
     async findOne({ where }) { return state.groups.find(item => matches(item, where)) || null; },
     async create(data) { const item = row({ member_limit: config.groupDefaultLimit, ...data, ...now() }); state.groups.push(item); return item; }
   };
