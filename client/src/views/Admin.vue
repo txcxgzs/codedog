@@ -2077,7 +2077,10 @@
                   {key:'geetest_publish_work',label:'发布作品'},{key:'geetest_publish_post',label:'发布帖子'},{key:'geetest_favorite',label:'收藏'},
                   {key:'geetest_update_profile',label:'修改资料'},{key:'geetest_create_studio',label:'创建工作室'},{key:'geetest_join_studio',label:'加入工作室'},
                   {key:'geetest_submit_work',label:'投稿作品'},{key:'geetest_review_member',label:'审核成员'},
-                  {key:'geetest_developer_app',label:'申请开发者应用'}
+                  {key:'geetest_developer_app',label:'申请开发者应用'},
+                  {key:'geetest_im_message',label:'IM 发消息（2分钟）'},
+                  {key:'geetest_im_search',label:'IM 搜索'},
+                  {key:'geetest_im_create_group',label:'IM 创建群聊'}
                 ]" :key="item.key">
                   <span class="r-admin--switch_label">{{ item.label }}</span>
                   <el-switch v-model="configForm[item.key]" active-value="true" inactive-value="false" />
@@ -3236,6 +3239,9 @@ const configForm = ref({
   geetest_submit_work: 'false',
   geetest_review_member: 'false',
   geetest_developer_app: 'false',
+  geetest_im_message: 'true',
+  geetest_im_search: 'true',
+  geetest_im_create_group: 'true',
   hcaptcha_enabled: 'false',
   hcaptcha_site_key: '',
   hcaptcha_secret_key: '',
@@ -3438,6 +3444,9 @@ const fetchConfigs = async () => {
       form.geetest_submit_work = String(data.geetest_submit_work ?? 'false')
       form.geetest_review_member = String(data.geetest_review_member ?? 'false')
       form.geetest_developer_app = String(data.geetest_developer_app ?? 'false')
+      form.geetest_im_message = String(data.geetest_im_message ?? 'true')
+      form.geetest_im_search = String(data.geetest_im_search ?? 'true')
+      form.geetest_im_create_group = String(data.geetest_im_create_group ?? 'true')
       form.hcaptcha_enabled = String(data.hcaptcha_enabled ?? 'false')
       form.hcaptcha_site_key = data.hcaptcha_site_key || ''
       form.hcaptcha_secret_key = data.hcaptcha_secret_key || ''
@@ -3646,7 +3655,8 @@ const geetestConfigKeys = [
   'geetest_reply', 'geetest_report', 'geetest_publish_work', 'geetest_publish_post',
   'geetest_favorite', 'geetest_update_profile', 'geetest_create_studio',
   'geetest_join_studio', 'geetest_submit_work', 'geetest_review_member',
-  'geetest_developer_app'
+  'geetest_developer_app', 'geetest_im_message', 'geetest_im_search',
+  'geetest_im_create_group'
 ]
 
 const saveSecurityConfig = async () => {

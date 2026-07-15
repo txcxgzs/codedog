@@ -2,7 +2,10 @@
   <main class="terminal-shell">
     <aside class="rail">
       <div class="brand"><span class="brand-mark">狗</span><div><b>编程狗消息</b><small>即时通讯</small></div><a class="back-link" :href="communityUrl">返回编程狗</a></div>
-      <label class="search"><span>⌕</span><input v-model="filter" placeholder="搜索会话" /></label>
+      <form class="search" @submit.prevent="searchUsers"><span>⌕</span><input v-model="filter" placeholder="搜索用户或会话" /><button title="搜索">搜索</button></form>
+      <div v-if="searchResults.length" class="search-results">
+        <button v-for="user in searchResults" :key="user.id" @click="startDirect(user)"><span class="avatar">{{ avatarLetter(user) }}</span><span><b>{{ displayName(user, user.id) }}</b><small>发起私聊</small></span></button>
+      </div>
       <div class="rail-title"><span>消息列表</span><button title="新建会话" @click="createPanel = !createPanel">＋</button></div>
       <div v-if="createPanel" class="create-panel">
         <form @submit.prevent="createDirect"><input v-model="peerId" inputmode="numeric" placeholder="对方用户 ID" /><button>私聊</button></form>
@@ -59,6 +62,14 @@
         <footer><button class="ghost" @click="closeReport">取消</button><button :disabled="reportDialog.reason.trim().length < 5 || reportDialog.submitting" @click="submitReport">{{ reportDialog.submitting ? '提交中' : '提交举报' }}</button></footer>
       </section>
     </div>
+    <div v-if="captchaDialog.open" class="modal-mask">
+      <section class="report-dialog captcha-dialog" role="dialog" aria-modal="true">
+        <header><div><small>防刷验证</small><h2>请完成极验安全验证</h2></div><button aria-label="关闭" @click="cancelCaptcha">×</button></header>
+        <p>{{ captchaDialog.scene === 'im_message' ? '验证通过后 2 分钟内发送消息无需重复验证。' : '本次操作完成验证后才会继续。' }}</p>
+        <div ref="captchaBox" class="captcha-box"></div>
+        <div v-if="captchaDialog.error" class="dialog-error">{{ captchaDialog.error }}</div>
+      </section>
+    </div>
     <div v-if="toast.message" :class="['toast', toast.type]">{{ toast.message }}</div>
     <div v-if="sessionExpired" class="modal-mask session-expired">
       <section class="report-dialog" role="alertdialog" aria-modal="true">
@@ -78,6 +89,9 @@ const filter = ref(''), draft = ref(''), loading = ref(false), sending = ref(fal
 const createPanel = ref(false), peerId = ref(''), groupName = ref('')
 const avatarFailed = ref(false)
 const sessionExpired = ref(false)
+const searchResults = ref([]), captchaBox = ref(null)
+const captchaDialog = reactive({ open: false, scene: '', error: '', resolve: null })
+const captchaGrants = new Map()
 const reportDialog = reactive({ open: false, message: null, reason: '', error: '', submitting: false })
 const toast = reactive({ message: '', type: 'success' })
 let socket = null
@@ -92,7 +106,8 @@ const filteredConversations = computed(() => {
   return conversations.value.filter(item => !keyword || String(item.id).includes(keyword) || String(item.title || '').toLowerCase().includes(keyword))
 })
 const api = async (url, options = {}) => {
-  const response = await fetch(`/im/api${url}`, { credentials: 'include', headers: { 'Content-Type': 'application/json', ...(options.headers || {}) }, ...options })
+  const { captchaGrant, ...requestOptions } = options
+  const response = await fetch(`/im/api${url}`, { credentials: 'include', headers: { 'Content-Type': 'application/json', ...(captchaGrant ? { 'X-IM-Captcha-Grant': captchaGrant } : {}), ...(requestOptions.headers || {}) }, ...requestOptions })
   const body = await response.json()
   if (response.status === 401) sessionExpired.value = true
   if (!response.ok) throw new Error(body.msg || '请求失败')
@@ -107,6 +122,37 @@ const exchangeSso = async () => {
   return { action, userId, groupId }
 }
 const refreshSidebar = async () => { [conversations.value, requests.value] = await Promise.all([api('/conversations'), api('/conversation-requests')]) }
+const loadGeetestScript = () => new Promise((resolve, reject) => {
+  if (window.initGeetest) return resolve()
+  const existing = document.querySelector('script[data-codedog-geetest]')
+  if (existing) { existing.addEventListener('load', resolve, { once:true }); existing.addEventListener('error', reject, { once:true }); return }
+  const script = document.createElement('script'); script.dataset.codedogGeetest = '1'; script.src = 'https://static.geetest.com/static/js/gt.0.5.0.js'; script.onload = resolve; script.onerror = reject; document.head.appendChild(script)
+})
+const cancelCaptcha = () => { const resolve = captchaDialog.resolve; captchaDialog.open = false; captchaDialog.resolve = null; resolve?.(null) }
+const getCaptchaGrant = async scene => {
+  const cached = captchaGrants.get(scene)
+  if (scene === 'im_message' && cached?.expiresAt > Date.now()) return cached.token
+  const config = await api(`/captcha/config?scene=${encodeURIComponent(scene)}`)
+  if (!config.enabled) return ''
+  const registration = await api(`/captcha/register?scene=${encodeURIComponent(scene)}`)
+  await loadGeetestScript()
+  const validation = await new Promise(async resolve => {
+    captchaDialog.open = true; captchaDialog.scene = scene; captchaDialog.error = ''; captchaDialog.resolve = resolve
+    await nextTick()
+    window.initGeetest({ gt:registration.gt, challenge:registration.challenge, offline:!registration.success, new_captcha:registration.new_captcha, product:registration.product || 'popup', width:'100%' }, captcha => {
+      captcha.appendTo(captchaBox.value)
+      captcha.onReady(() => { if ((registration.product || 'popup') === 'bind') captcha.verify() })
+      captcha.onSuccess(() => resolve(captcha.getValidate()))
+      captcha.onError(() => { captchaDialog.error = '极验加载失败，请重试' })
+    })
+  })
+  captchaDialog.open = false; captchaDialog.resolve = null
+  if (!validation) throw new Error('已取消安全验证')
+  const result = await api('/captcha/validate', { method:'POST', body:JSON.stringify({ scene, ...validation }) })
+  const token = result.grant || ''
+  if (scene === 'im_message' && token) captchaGrants.set(scene, { token, expiresAt:Date.now() + 115000 })
+  return token
+}
 const load = async () => {
   const intent = await exchangeSso()
   if (intent?.action === 'admin') return location.replace('/im/admin/')
@@ -120,13 +166,15 @@ const load = async () => {
   if (target) await selectConversation(target)
 }
 const createDirect = async () => { if (!peerId.value) return; await api('/conversations/direct', { method:'POST', body:JSON.stringify({ user_id:Number(peerId.value) }) }); peerId.value=''; createPanel.value=false; await refreshSidebar() }
-const createGroup = async () => { if (!groupName.value.trim()) return; await api('/conversations/group', { method:'POST', body:JSON.stringify({ name:groupName.value.trim() }) }); groupName.value=''; createPanel.value=false; await refreshSidebar() }
+const createGroup = async () => { if (!groupName.value.trim()) return; try { const captchaGrant = await getCaptchaGrant('im_create_group'); await api('/conversations/group', { method:'POST', captchaGrant, body:JSON.stringify({ name:groupName.value.trim() }) }); groupName.value=''; createPanel.value=false; await refreshSidebar() } catch (error) { showToast(error.message, 'error') } }
+const searchUsers = async () => { const keyword = filter.value.trim(); if (!keyword) { searchResults.value = []; return } try { const captchaGrant = await getCaptchaGrant('im_search'); searchResults.value = await api('/search', { method:'POST', captchaGrant, body:JSON.stringify({ keyword }) }) } catch (error) { showToast(error.message, 'error') } }
+const startDirect = async user => { peerId.value = String(user.id); searchResults.value = []; await createDirect() }
 const handleRequest = async (request, action) => { await api(`/conversation-requests/${request.conversation_id}`, { method:'POST', body:JSON.stringify({ action }) }); await refreshSidebar() }
 const selectConversation = async item => { selected.value = item; loading.value = true; try { messages.value = await api(`/conversations/${item.id}/messages`); await nextTick(); timeline.value?.scrollTo(0, timeline.value.scrollHeight) } finally { loading.value = false } }
 const sendMessage = async () => {
   if (!selected.value || !draft.value.trim() || sending.value) return
   const content = draft.value.trim(); draft.value = ''; sending.value = true
-  try { await api('/messages', { method: 'POST', body: JSON.stringify({ conversation_id: selected.value.id, client_message_id: crypto.randomUUID(), content }) }) }
+  try { const captchaGrant = await getCaptchaGrant('im_message'); await api('/messages', { method: 'POST', captchaGrant, body: JSON.stringify({ conversation_id: selected.value.id, client_message_id: crypto.randomUUID(), content }) }) }
   catch (error) { draft.value = content; showToast(error.message, 'error') } finally { sending.value = false }
 }
 const sendImage = async event => {
@@ -136,7 +184,8 @@ const sendImage = async event => {
     const data = new FormData(); data.append('image', file)
     const uploadResponse = await fetch('/im/api/images', { method: 'POST', credentials: 'include', body: data })
     const upload = await uploadResponse.json(); if (!uploadResponse.ok) throw new Error(upload.msg || '图片上传失败')
-    await api('/messages', { method: 'POST', body: JSON.stringify({ conversation_id: selected.value.id, client_message_id: crypto.randomUUID(), type: 'image', image_id: upload.data.id }) })
+    const captchaGrant = await getCaptchaGrant('im_message')
+    await api('/messages', { method: 'POST', captchaGrant, body: JSON.stringify({ conversation_id: selected.value.id, client_message_id: crypto.randomUUID(), type: 'image', image_id: upload.data.id }) })
   } catch (error) { showToast(error.message, 'error') } finally { sending.value = false }
 }
 const openReport = message => { reportDialog.open = true; reportDialog.message = message; reportDialog.reason = ''; reportDialog.error = '' }
@@ -171,6 +220,7 @@ onUnmounted(() => socket?.close())
 .create-panel form { display:flex; gap:6px; }
 .create-panel input { min-width:0; flex:1; height:32px; border:1px solid #dfe2e8; border-radius:7px; background:#fafafa; color:#30343a; padding:0 9px; }
 .create-panel button,.requests button { border:0; border-radius:7px; background:#ffc43d; color:#111820; font-weight:700; padding:0 9px; cursor:pointer; }
+.search button{border:0;background:transparent;color:#b47b00;font-size:11px;cursor:pointer}.search-results{display:grid;gap:4px;margin:0 6px 10px}.search-results>button{display:flex;align-items:center;gap:8px;padding:7px;border:0;border-radius:9px;background:#fff9e8;text-align:left;cursor:pointer}.search-results .avatar{width:28px;height:28px}.search-results b,.search-results small{display:block}.search-results small{color:#979ca5;font-size:10px}
 .requests { margin:4px 6px 10px; padding:10px; border:1px solid #f0d27c; border-radius:9px; background:#fff9e6; }
 .requests > small { color:#b77a00; }
 .requests > div { display:grid; grid-template-columns:1fr auto auto; gap:5px; align-items:center; margin-top:8px; font-size:11px; }
@@ -186,4 +236,5 @@ onUnmounted(() => socket?.close())
 .report-dialog label{display:grid;grid-template-columns:1fr auto;gap:8px;color:#4f555d;font-size:13px}.report-dialog label span{color:#a0a5ad}.report-dialog textarea{grid-column:1/-1;min-height:120px;resize:vertical;padding:12px;border:1px solid #dfe2e7;border-radius:10px;outline:none}.report-dialog textarea:focus{border-color:#fec433;box-shadow:0 0 0 3px #fff5d6}.report-dialog footer{display:flex;justify-content:flex-end;gap:10px;margin-top:18px}.report-dialog footer button{height:38px;padding:0 17px;border:0;border-radius:9px;background:#fec433;font-weight:700;cursor:pointer}.report-dialog footer button.ghost{border:1px solid #dfe2e7;background:#fff;color:#666}.report-dialog footer button:disabled{opacity:.5}.dialog-error{margin-top:10px;padding:9px 11px;border-radius:8px;background:#fff1f1;color:#d34b4b;font-size:12px}
 .toast{position:fixed;z-index:1100;top:24px;left:50%;transform:translateX(-50%);padding:11px 18px;border:1px solid #dce7d8;border-radius:10px;background:#f2fbef;color:#38823b;box-shadow:0 10px 30px rgba(31,35,41,.16)}.toast.error{border-color:#f3c1c1;background:#fff2f2;color:#c74343}.toast.warning{border-color:#f0d27c;background:#fff9e6;color:#a86f00}
 .session-expired{z-index:1200}.reauth-button{display:inline-flex;align-items:center;justify-content:center;height:38px;padding:0 18px;border-radius:9px;background:#fec433;color:#20242a;font-weight:700;text-decoration:none}
+.captcha-dialog{width:min(420px,100%)}.captcha-box{min-height:44px;margin-top:16px}
 </style>

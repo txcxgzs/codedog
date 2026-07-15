@@ -6,6 +6,7 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const multer = require('multer');
+const axios = require('axios');
 const { WebSocketServer } = require('ws');
 const { Op } = require('sequelize');
 const config = require('./config');
@@ -14,6 +15,7 @@ const { connectReplayStore } = require('./replayStore');
 const { verifyCommunityStatus } = require('./communityStatus');
 const { sequelize, UserProfile, Conversation, ConversationMember, Message, Group, Image, AdminAudit, Report, connectDatabase } = require('./database');
 const { uploadImage } = require('./imageHost');
+const { sceneConfig, validateCaptcha, requireCaptcha } = require('./captcha');
 
 const app = express();
 app.disable('x-powered-by');
@@ -49,6 +51,21 @@ app.post('/api/auth/logout', requireSession, (req, res) => {
   ok(res, null, '已退出');
 });
 app.get('/api/me', requireSession, (req, res) => ok(res, req.user));
+app.get('/api/captcha/config', requireSession, async (req, res, next) => {
+  try { ok(res, await sceneConfig(req.user, String(req.query.scene || ''))); } catch (error) { next(error); }
+});
+app.get('/api/captcha/register', requireSession, async (req, res, next) => {
+  try {
+    const scene = String(req.query.scene || '');
+    const current = await sceneConfig(req.user, scene);
+    if (!current.enabled) return ok(res, { enabled: false });
+    const response = await axios.get(`${String(req.user.community_url).replace(/\/$/, '')}/api/geetest/register`, { timeout: 8000, maxRedirects: 0 });
+    ok(res, { enabled: true, product: current.product, ...response.data.data });
+  } catch (error) { next(error); }
+});
+app.post('/api/captcha/validate', requireSession, async (req, res, next) => {
+  try { ok(res, await validateCaptcha(req.user, String(req.body?.scene || ''), req.body)); } catch (error) { next(error); }
+});
 
 const publicUser = value => value ? {
   id: Number(value.id), username: value.username, nickname: value.nickname,
@@ -99,6 +116,20 @@ app.get('/api/conversations', requireSession, async (req, res, next) => {
   } catch (error) { next(error); }
 });
 
+app.post('/api/search', requireSession, requireCaptcha('im_search'), async (req, res, next) => {
+  try {
+    const keyword = String(req.body?.keyword || '').trim().slice(0, 50);
+    if (!keyword) return ok(res, []);
+    const where = { [Op.or]: [
+      { username: { [Op.like]: `%${keyword}%` } },
+      { nickname: { [Op.like]: `%${keyword}%` } },
+      { codemao_user_id: { [Op.like]: `%${keyword}%` } }
+    ] };
+    const users = await UserProfile.findAll({ where, order: [['updated_at', 'DESC']], limit: 20 });
+    ok(res, users.filter(user => Number(user.id) !== Number(req.user.id)).map(publicUser));
+  } catch (error) { next(error); }
+});
+
 app.get('/api/conversation-requests', requireSession, async (req, res, next) => {
   try {
     const memberships = await ConversationMember.findAll({ where: { user_id: req.user.id, state: 'pending' }, order: [['created_at', 'DESC']] });
@@ -140,7 +171,7 @@ app.post('/api/conversations/direct', requireSession, async (req, res, next) => 
   } catch (error) { next(error); }
 });
 
-app.post('/api/conversations/group', requireSession, async (req, res, next) => {
+app.post('/api/conversations/group', requireSession, requireCaptcha('im_create_group'), async (req, res, next) => {
   try {
     const name = String(req.body?.name || '').trim();
     if (!name || name.length > 50) return fail(res, 400, '群名称长度应为 1-50 个字符');
@@ -308,7 +339,7 @@ app.post('/api/reports', requireSession, async (req, res, next) => {
   } catch (error) { next(error); }
 });
 
-app.post('/api/messages', requireSession, async (req, res, next) => {
+app.post('/api/messages', requireSession, requireCaptcha('im_message'), async (req, res, next) => {
   try { const message = await createMessage(req.user, req.body || {}); const [data] = await enrichMessages([message]); broadcastConversation(message.conversation_id, 'message.new', data); ok(res, data, '消息已发送'); }
   catch (error) { next(error); }
 });

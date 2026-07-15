@@ -44,7 +44,8 @@ router.get('/config', async (req, res) => {
             'geetest_publish_work', 'geetest_publish_post',
             'geetest_favorite', 'geetest_remove_favorite', 'geetest_update_profile',
             'geetest_create_studio', 'geetest_join_studio', 
-            'geetest_submit_work', 'geetest_review_member', 'geetest_developer_app'
+            'geetest_submit_work', 'geetest_review_member', 'geetest_developer_app',
+            'geetest_im_message', 'geetest_im_search', 'geetest_im_create_group'
         ];
         
         const configs = await DbAdapter.findAll(SystemConfig, {
@@ -79,7 +80,11 @@ router.get('/config', async (req, res) => {
                 join_studio: configMap.geetest_join_studio === 'true',
                 submit_work: configMap.geetest_submit_work === 'true',
                 review_member: configMap.geetest_review_member === 'true',
-                developer_app: configMap.geetest_developer_app === 'true'
+                developer_app: configMap.geetest_developer_app === 'true',
+                // 新增 IM 场景在未保存过配置时默认开启；管理员仍可显式关闭。
+                im_message: configMap.geetest_im_message !== 'false',
+                im_search: configMap.geetest_im_search !== 'false',
+                im_create_group: configMap.geetest_im_create_group !== 'false'
             }
         });
     } catch (error) {
