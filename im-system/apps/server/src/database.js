@@ -38,8 +38,8 @@ function memoryDatabase() {
   const ConversationMember = {
     async findAll(options) { return select(state.members, options); },
     async findOne({ where }) { return state.members.find(item => matches(item, where)) || null; },
-    async findOrCreate({ where, defaults }) { let item = state.members.find(value => matches(value, where)); if (item) return [item, false]; item = row({ last_read_sequence: 0, ...defaults, ...where, ...now() }); state.members.push(item); return [item, true]; },
-    async create(data) { const item = row({ last_read_sequence: 0, ...data, ...now() }); state.members.push(item); return item; }
+    async findOrCreate({ where, defaults }) { let item = state.members.find(value => matches(value, where)); if (item) return [item, false]; item = row({ ...defaults, ...where, ...now() }); state.members.push(item); return [item, true]; },
+    async create(data) { const item = row({ ...data, ...now() }); state.members.push(item); return item; }
   };
   const Message = {
     async findAll(options) { return select(state.messages, options); },
@@ -75,8 +75,7 @@ function mysqlDatabase() {
   const ConversationMember = sequelize.define('ImConversationMember', {
     conversation_id: { type: DataTypes.BIGINT, allowNull: false, primaryKey: true }, user_id: { type: DataTypes.INTEGER, allowNull: false, primaryKey: true },
     role: { type: DataTypes.ENUM('owner', 'admin', 'member'), allowNull: false, defaultValue: 'member' },
-    state: { type: DataTypes.ENUM('active', 'pending', 'left', 'removed', 'banned'), allowNull: false, defaultValue: 'active' },
-    last_read_sequence: { type: DataTypes.BIGINT, allowNull: false, defaultValue: 0 }
+    state: { type: DataTypes.ENUM('active', 'pending', 'left', 'removed', 'banned'), allowNull: false, defaultValue: 'active' }
   }, { ...opts, tableName: 'im_conversation_members', indexes: [{ fields: ['user_id', 'state'] }] });
   const Message = sequelize.define('ImMessage', {
     id: { type: DataTypes.BIGINT, primaryKey: true, autoIncrement: true }, conversation_id: { type: DataTypes.BIGINT, allowNull: false },
@@ -115,6 +114,12 @@ function mysqlDatabase() {
     if (!await SchemaMigration.findByPk(imageVersion)) {
       await Image.sync();
       await SchemaMigration.create({ version: imageVersion, checksum: 'image-url-mime-size-sha-status-v1' });
+    }
+    const noReceiptsVersion = '003_remove_read_receipts';
+    if (!await SchemaMigration.findByPk(noReceiptsVersion)) {
+      const columns = await sequelize.getQueryInterface().describeTable('im_conversation_members');
+      if (columns.last_read_sequence) await sequelize.getQueryInterface().removeColumn('im_conversation_members', 'last_read_sequence');
+      await SchemaMigration.create({ version: noReceiptsVersion, checksum: 'remove-last-read-sequence-v1' });
     }
   } };
 }

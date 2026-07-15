@@ -13,7 +13,7 @@
 - 独立 Docker Compose、MySQL、Redis、健康检查。
 - Windows/Linux 终端工具箱、更新前配置/密钥/数据库备份、按变更智能重建。
 
-图片、完整群成员管理、已读回执、账号事件同步、Redis 跨节点总线和正式压测将在后续里程碑继续实现。
+图片消息、私聊申请和基础群成员管理已经可用；账号事件同步、更多群管理能力和正式压测将在后续里程碑继续实现。产品明确不提供已读回执，当前单节点部署也不实现跨节点总线。
 
 ## 本地命令行测试（无需浏览器）
 
@@ -28,6 +28,27 @@ node scripts/smoke-local.js
 默认使用进程内存储，服务重启后测试数据会清空。生产环境强制使用 Docker Compose 中的 MySQL 和 Redis。
 
 ## 独立生产部署
+
+### Linux 从 GitHub 一键部署
+
+在服务器执行（将仓库地址和域名替换为你的实际值）：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/txcxgzs/codedog/main/im-system/install.sh \
+  | sudo bash -s -- \
+    --repo https://github.com/txcxgzs/codedog.git \
+    --dir /opt/codedog \
+    --public-url https://im.example.com/im \
+    --install-docker
+```
+
+若编程狗与 IM 在同一台 Linux 服务器，再增加：
+
+```bash
+--community-dir /opt/codedog
+```
+
+安装器会生成随机数据库密码和会话密钥、生成 SSO RSA 密钥、构建容器、执行迁移和健康检查。联合部署时还会写入编程狗 `.env` 并重建社区服务。
 
 ```bash
 cp .env.example .env

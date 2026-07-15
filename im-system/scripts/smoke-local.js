@@ -3,6 +3,9 @@ const WebSocket = require('ws');
 const { createImTicket } = require('../../server/services/imSso');
 
 const base = process.env.IM_SMOKE_URL || 'http://127.0.0.1:3100';
+const user1 = 900000 + Math.floor(Math.random() * 50000) * 10;
+const user2 = user1 + 1;
+const user3 = user1 + 2;
 let failed = 0;
 function pass(name, condition, detail = '') { console.log(`${condition ? 'PASS' : 'FAIL'} - ${name}${detail ? `: ${detail}` : ''}`); if (!condition) failed++; }
 function ticket(id, role = 'admin') {
@@ -14,19 +17,38 @@ async function request(pathname, options = {}) {
 }
 async function main() {
   const health = await request('/health'); pass('health', health.response.status === 200 && health.body.data?.database === 'up');
-  const ssoTicket = ticket(900001);
+  const ssoTicket = ticket(user1);
   const exchange = await request('/api/auth/sso/exchange', { method: 'POST', body: JSON.stringify({ ticket: ssoTicket }) });
   pass('SSO exchange', exchange.response.status === 200 && exchange.cookie.startsWith('im_session='));
   const replay = await request('/api/auth/sso/exchange', { method: 'POST', body: JSON.stringify({ ticket: ssoTicket }) });
   pass('SSO replay rejected', replay.response.status === 409);
   const cookie = exchange.cookie;
-  const me = await request('/api/me', { headers: { Cookie: cookie } }); pass('session profile', me.body.data?.id === 900001);
+  const me = await request('/api/me', { headers: { Cookie: cookie } }); pass('session profile', me.body.data?.id === user1);
+  const peerExchange = await request('/api/auth/sso/exchange', { method: 'POST', body: JSON.stringify({ ticket: ticket(user2, 'user') }) });
+  const peerCookie = peerExchange.cookie;
+  const direct = await request('/api/conversations/direct', { method: 'POST', headers: { Cookie: cookie }, body: JSON.stringify({ user_id: user2 }) });
+  const pending = await request('/api/conversation-requests', { headers: { Cookie: peerCookie } });
+  pass('direct request visible', pending.body.data?.some(item => String(item.conversation_id) === String(direct.body.data?.id)), JSON.stringify({ direct: direct.body, pending: pending.body }).slice(0, 500));
+  const accepted = await request(`/api/conversation-requests/${direct.body.data.id}`, { method: 'POST', headers: { Cookie: peerCookie }, body: JSON.stringify({ action: 'accept' }) });
+  pass('direct request accepted', accepted.body.data?.state === 'active', JSON.stringify(accepted.body).slice(0, 300));
   const badImageForm = new FormData(); badImageForm.append('image', new Blob([Buffer.from('not-an-image')], { type: 'image/jpeg' }), 'bad.jpg');
   const badImageResponse = await fetch(`${base}/api/images`, { method: 'POST', headers: { Cookie: cookie }, body: badImageForm });
   pass('invalid image signature rejected', badImageResponse.status === 400);
   const group = await request('/api/conversations/group', { method: 'POST', headers: { Cookie: cookie }, body: JSON.stringify({ name: '本地测试群' }) });
   pass('create group default 100', group.response.status === 200 && group.body.data?.member_limit === 100);
   const conversationId = group.body.data.id;
+  const addMember = await request(`/api/groups/${conversationId}/members`, { method: 'POST', headers: { Cookie: cookie }, body: JSON.stringify({ user_id: user2 }) });
+  pass('group member invited', addMember.response.status === 200);
+  const groupDetail = await request(`/api/groups/${conversationId}`, { headers: { Cookie: peerCookie } });
+  pass('group member can view details', groupDetail.body.data?.members?.length === 2);
+  const promote = await request(`/api/groups/${conversationId}/members/${user2}`, { method: 'PATCH', headers: { Cookie: cookie }, body: JSON.stringify({ role: 'admin' }) });
+  pass('group owner promotes admin', promote.body.data?.role === 'admin');
+  const adminInvite = await request(`/api/groups/${conversationId}/members`, { method: 'POST', headers: { Cookie: peerCookie }, body: JSON.stringify({ user_id: user3 }) });
+  pass('group admin can invite member', adminInvite.response.status === 200);
+  const resize = await request(`/api/groups/${conversationId}`, { method: 'PATCH', headers: { Cookie: cookie }, body: JSON.stringify({ member_limit: 101, reason: '本地群容量例外测试' }) });
+  pass('community admin group limit exception', resize.body.data?.member_limit === 101);
+  const deniedResize = await request(`/api/groups/${conversationId}`, { method: 'PATCH', headers: { Cookie: peerCookie }, body: JSON.stringify({ member_limit: 102, reason: '普通用户不应成功' }) });
+  pass('normal user group limit denied', deniedResize.response.status === 403);
   const wsUrl = base.replace(/^http/, 'ws') + '/ws';
   const ws = new WebSocket(wsUrl, { headers: { Cookie: cookie } });
   await new Promise((resolve, reject) => { ws.once('open', resolve); ws.once('error', reject); });

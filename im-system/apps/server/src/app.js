@@ -67,7 +67,39 @@ app.get('/api/conversations', requireSession, async (req, res, next) => {
     const ids = memberships.map(item => item.conversation_id);
     const conversations = ids.length ? await Conversation.findAll({ where: { id: { [Op.in]: ids } } }) : [];
     const byId = new Map(conversations.map(item => [String(item.id), item.toJSON()]));
-    ok(res, memberships.map(item => ({ ...byId.get(String(item.conversation_id)), membership: item.toJSON() })).filter(item => item.id));
+    const groups = await Promise.all(conversations.filter(item => item.type === 'group').map(item => Group.findOne({ where: { conversation_id: item.id } })));
+    const groupById = new Map(groups.filter(Boolean).map(item => [String(item.conversation_id), item.toJSON()]));
+    ok(res, memberships.map(item => {
+      const conversation = byId.get(String(item.conversation_id));
+      if (!conversation) return null;
+      const peerId = conversation.type === 'direct' ? String(conversation.direct_key).split(':').map(Number).find(id => id !== Number(req.user.id)) : null;
+      return { ...conversation, title: conversation.type === 'group' ? groupById.get(String(conversation.id))?.name : `用户 ${peerId}`, peer_id: peerId, group: groupById.get(String(conversation.id)), membership: item.toJSON() };
+    }).filter(Boolean));
+  } catch (error) { next(error); }
+});
+
+app.get('/api/conversation-requests', requireSession, async (req, res, next) => {
+  try {
+    const memberships = await ConversationMember.findAll({ where: { user_id: req.user.id, state: 'pending' }, order: [['created_at', 'DESC']] });
+    const rows = await Promise.all(memberships.map(async membership => {
+      const conversation = await Conversation.findByPk(membership.conversation_id);
+      if (!conversation || conversation.type !== 'direct') return null;
+      const fromUserId = String(conversation.direct_key).split(':').map(Number).find(id => id !== Number(req.user.id));
+      return { conversation_id: conversation.id, from_user_id: fromUserId, created_at: membership.created_at };
+    }));
+    ok(res, rows.filter(Boolean));
+  } catch (error) { next(error); }
+});
+
+app.post('/api/conversation-requests/:id', requireSession, async (req, res, next) => {
+  try {
+    const membership = await ConversationMember.findOne({ where: { conversation_id: req.params.id, user_id: req.user.id, state: 'pending' } });
+    if (!membership) return fail(res, 404, '会话申请不存在或已处理');
+    const action = req.body?.action;
+    if (!['accept', 'reject'].includes(action)) return fail(res, 400, 'action 必须是 accept 或 reject');
+    membership.state = action === 'accept' ? 'active' : 'removed';
+    await membership.save();
+    ok(res, { conversation_id: membership.conversation_id, state: membership.state }, action === 'accept' ? '已接受私聊申请' : '已拒绝私聊申请');
   } catch (error) { next(error); }
 });
 
@@ -97,6 +129,89 @@ app.post('/api/conversations/group', requireSession, async (req, res, next) => {
       return row;
     });
     ok(res, { ...conversation.toJSON(), name, member_limit: config.groupDefaultLimit }, '群聊已创建');
+  } catch (error) { next(error); }
+});
+
+async function groupAndActor(conversationId, userId) {
+  const [group, actor] = await Promise.all([
+    Group.findOne({ where: { conversation_id: conversationId } }),
+    ConversationMember.findOne({ where: { conversation_id: conversationId, user_id: userId, state: 'active' } })
+  ]);
+  return { group, actor };
+}
+
+app.get('/api/groups/:id', requireSession, async (req, res, next) => {
+  try {
+    const { group, actor } = await groupAndActor(req.params.id, req.user.id);
+    if (!group || !actor) return fail(res, 404, '群聊不存在或你不是群成员');
+    const members = await ConversationMember.findAll({ where: { conversation_id: req.params.id, state: 'active' }, order: [['created_at', 'ASC']] });
+    ok(res, { ...group.toJSON(), members: members.map(item => item.toJSON()) });
+  } catch (error) { next(error); }
+});
+
+app.post('/api/groups/:id/members', requireSession, async (req, res, next) => {
+  try {
+    const { group, actor } = await groupAndActor(req.params.id, req.user.id);
+    if (!group || !actor) return fail(res, 404, '群聊不存在');
+    if (!['owner', 'admin'].includes(actor.role)) return fail(res, 403, '只有群主或管理员可以邀请成员');
+    const userId = Number(req.body?.user_id);
+    if (!Number.isInteger(userId) || userId <= 0) return fail(res, 400, '无效用户 ID');
+    const members = await ConversationMember.findAll({ where: { conversation_id: req.params.id, state: 'active' } });
+    if (members.length >= Number(group.member_limit)) return fail(res, 409, `群成员已达到 ${group.member_limit} 人上限`);
+    const existing = await ConversationMember.findOne({ where: { conversation_id: req.params.id, user_id: userId } });
+    if (existing) { existing.state = 'active'; existing.role = existing.role === 'owner' ? 'owner' : 'member'; await existing.save(); }
+    else await ConversationMember.create({ conversation_id: req.params.id, user_id: userId, role: 'member', state: 'active' });
+    broadcastConversation(req.params.id, 'member.updated', { user_id: userId, state: 'active' });
+    ok(res, { user_id: userId }, '成员已加入群聊');
+  } catch (error) { next(error); }
+});
+
+app.delete('/api/groups/:id/members/:userId', requireSession, async (req, res, next) => {
+  try {
+    const { group, actor } = await groupAndActor(req.params.id, req.user.id);
+    if (!group || !actor) return fail(res, 404, '群聊不存在');
+    const target = await ConversationMember.findOne({ where: { conversation_id: req.params.id, user_id: req.params.userId, state: 'active' } });
+    if (!target) return fail(res, 404, '成员不存在');
+    const selfLeave = Number(req.params.userId) === Number(req.user.id);
+    if (!selfLeave && !['owner', 'admin'].includes(actor.role)) return fail(res, 403, '没有移除成员权限');
+    if (target.role === 'owner') return fail(res, 409, '群主必须先转让群聊，不能直接退出或被移除');
+    if (actor.role === 'admin' && target.role === 'admin') return fail(res, 403, '管理员不能移除其他管理员');
+    target.state = selfLeave ? 'left' : 'removed'; await target.save();
+    broadcastConversation(req.params.id, 'member.updated', { user_id: Number(req.params.userId), state: target.state });
+    ok(res, null, selfLeave ? '已退出群聊' : '成员已移除');
+  } catch (error) { next(error); }
+});
+
+app.patch('/api/groups/:id/members/:userId', requireSession, async (req, res, next) => {
+  try {
+    const { group, actor } = await groupAndActor(req.params.id, req.user.id);
+    if (!group || !actor) return fail(res, 404, '群聊不存在');
+    if (actor.role !== 'owner') return fail(res, 403, '只有群主可以设置管理员');
+    const target = await ConversationMember.findOne({ where: { conversation_id: req.params.id, user_id: req.params.userId, state: 'active' } });
+    if (!target || target.role === 'owner') return fail(res, 400, '目标成员不可修改');
+    const role = req.body?.role; if (!['admin', 'member'].includes(role)) return fail(res, 400, 'role 必须是 admin 或 member');
+    target.role = role; await target.save();
+    broadcastConversation(req.params.id, 'member.updated', { user_id: Number(req.params.userId), role });
+    ok(res, target, role === 'admin' ? '已设为群管理员' : '已取消群管理员');
+  } catch (error) { next(error); }
+});
+
+app.patch('/api/groups/:id', requireSession, async (req, res, next) => {
+  try {
+    const { group, actor } = await groupAndActor(req.params.id, req.user.id);
+    if (!group || !actor) return fail(res, 404, '群聊不存在');
+    if (req.body?.name !== undefined) {
+      if (!['owner', 'admin'].includes(actor.role)) return fail(res, 403, '没有修改群资料权限');
+      const name = String(req.body.name).trim(); if (!name || name.length > 50) return fail(res, 400, '群名称长度应为 1-50 个字符'); group.name = name;
+    }
+    if (req.body?.member_limit !== undefined) {
+      if (!['admin', 'superadmin'].includes(req.user.role)) return fail(res, 403, '只有编程狗管理员可以设置群容量例外');
+      const reason = String(req.body.reason || '').trim(); if (reason.length < 5) return fail(res, 400, '设置容量例外必须填写至少 5 个字符的原因');
+      const limit = Number(req.body.member_limit); if (!Number.isInteger(limit) || limit < config.groupDefaultLimit || limit > config.groupHardLimit) return fail(res, 400, `群容量必须在 ${config.groupDefaultLimit}-${config.groupHardLimit} 之间`);
+      const oldLimit = Number(group.member_limit); group.member_limit = limit;
+      await AdminAudit.create({ admin_id: req.user.id, action: 'group.member_limit.update', reason, filters: { conversation_id: Number(req.params.id), old_limit: oldLimit, new_limit: limit }, source_ip: req.ip });
+    }
+    await group.save(); broadcastConversation(req.params.id, 'conversation.updated', group.toJSON()); ok(res, group, '群资料已更新');
   } catch (error) { next(error); }
 });
 
@@ -167,6 +282,7 @@ app.post('/api/admin/messages/search', requireSession, async (req, res, next) =>
 
 app.use((error, req, res, next) => {
   console.error(error);
+  if (error instanceof multer.MulterError) return fail(res, 400, error.code === 'LIMIT_FILE_SIZE' ? '图片不能超过 5 MB' : '图片上传请求无效');
   fail(res, error.statusCode || 500, error.statusCode ? error.message : 'IM 服务内部错误');
 });
 

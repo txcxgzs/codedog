@@ -3,11 +3,15 @@
     <aside class="rail">
       <div class="brand"><span class="brand-mark">CD</span><div><b>编程狗通讯</b><small>ORBIT LINK</small></div></div>
       <label class="search"><span>⌕</span><input v-model="filter" placeholder="搜索会话" /></label>
-      <div class="rail-title"><span>通讯频道</span><button title="新建会话">＋</button></div>
+      <div class="rail-title"><span>通讯频道</span><button title="新建会话" @click="createPanel = !createPanel">＋</button></div>
+      <div v-if="createPanel" class="create-panel">
+        <form @submit.prevent="createDirect"><input v-model="peerId" inputmode="numeric" placeholder="对方用户 ID" /><button>私聊</button></form>
+        <form @submit.prevent="createGroup"><input v-model="groupName" maxlength="50" placeholder="新群名称" /><button>建群</button></form>
+      </div>
+      <div v-if="requests.length" class="requests"><small>私聊申请</small><div v-for="request in requests" :key="request.conversation_id"><span>用户 {{ request.from_user_id }}</span><button @click="handleRequest(request, 'accept')">接受</button><button class="ghost" @click="handleRequest(request, 'reject')">拒绝</button></div></div>
       <button v-for="item in filteredConversations" :key="item.id" class="conversation" :class="{ active: selected?.id === item.id }" @click="selectConversation(item)">
         <span class="avatar">{{ item.type === 'group' ? '群' : '友' }}</span>
-        <span class="conversation-copy"><b>{{ item.type === 'group' ? `群组 #${item.id}` : `私聊 #${item.id}` }}</b><small>序列 {{ item.last_sequence || 0 }}</small></span>
-        <i v-if="Number(item.last_sequence) > Number(item.membership?.last_read_sequence || 0)"></i>
+        <span class="conversation-copy"><b>{{ item.title || `会话 #${item.id}` }}</b><small>序列 {{ item.last_sequence || 0 }}</small></span>
       </button>
       <div v-if="!conversations.length" class="empty">还没有会话<br><small>从编程狗用户主页发起私聊</small></div>
       <div class="account"><span class="avatar user">{{ initials }}</span><div><b>{{ me?.nickname || me?.username || '连接中' }}</b><small><em></em> 安全在线</small></div></div>
@@ -40,8 +44,9 @@
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 
-const me = ref(null), conversations = ref([]), selected = ref(null), messages = ref([])
+const me = ref(null), conversations = ref([]), requests = ref([]), selected = ref(null), messages = ref([])
 const filter = ref(''), draft = ref(''), loading = ref(false), sending = ref(false), socketState = ref('正在连接'), timeline = ref(null)
+const createPanel = ref(false), peerId = ref(''), groupName = ref('')
 let socket = null
 const initials = computed(() => String(me.value?.nickname || me.value?.username || '犬').slice(0, 1))
 const filteredConversations = computed(() => conversations.value.filter(item => String(item.id).includes(filter.value.trim())))
@@ -55,7 +60,11 @@ const exchangeSso = async () => {
   await api('/auth/sso/exchange', { method: 'POST', body: JSON.stringify({ ticket }) })
   history.replaceState({}, '', location.pathname)
 }
-const load = async () => { await exchangeSso(); me.value = await api('/me'); conversations.value = await api('/conversations'); connectSocket() }
+const refreshSidebar = async () => { [conversations.value, requests.value] = await Promise.all([api('/conversations'), api('/conversation-requests')]) }
+const load = async () => { await exchangeSso(); me.value = await api('/me'); await refreshSidebar(); connectSocket() }
+const createDirect = async () => { if (!peerId.value) return; await api('/conversations/direct', { method:'POST', body:JSON.stringify({ user_id:Number(peerId.value) }) }); peerId.value=''; createPanel.value=false; await refreshSidebar() }
+const createGroup = async () => { if (!groupName.value.trim()) return; await api('/conversations/group', { method:'POST', body:JSON.stringify({ name:groupName.value.trim() }) }); groupName.value=''; createPanel.value=false; await refreshSidebar() }
+const handleRequest = async (request, action) => { await api(`/conversation-requests/${request.conversation_id}`, { method:'POST', body:JSON.stringify({ action }) }); await refreshSidebar() }
 const selectConversation = async item => { selected.value = item; loading.value = true; try { messages.value = await api(`/conversations/${item.id}/messages`); await nextTick(); timeline.value?.scrollTo(0, timeline.value.scrollHeight) } finally { loading.value = false } }
 const sendMessage = async () => {
   if (!selected.value || !draft.value.trim() || sending.value) return
@@ -90,4 +99,13 @@ onUnmounted(() => socket?.close())
 .composer footer > div { display:flex; gap:8px; }
 .image-button { display:inline-flex; align-items:center; border:1px solid #24516c; border-radius:9px; padding:8px 12px; color:#67ddf7; cursor:pointer; }
 .image-button input { display:none; }
+.create-panel { display:grid; gap:8px; padding:0 6px 10px; }
+.create-panel form { display:flex; gap:6px; }
+.create-panel input { min-width:0; flex:1; height:32px; border:1px solid #234b66; border-radius:7px; background:#071625; color:#dff6ff; padding:0 9px; }
+.create-panel button,.requests button { border:0; border-radius:7px; background:#ffc43d; color:#111820; font-weight:700; padding:0 9px; cursor:pointer; }
+.requests { margin:4px 6px 10px; padding:10px; border:1px solid #31506a; border-radius:9px; background:#0a1b2c; }
+.requests > small { color:#57dcf7; }
+.requests > div { display:grid; grid-template-columns:1fr auto auto; gap:5px; align-items:center; margin-top:8px; font-size:11px; }
+.requests button { height:25px; font-size:10px; }
+.requests button.ghost { background:transparent; color:#8aa5b8; border:1px solid #2a465b; }
 </style>

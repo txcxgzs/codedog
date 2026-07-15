@@ -33,8 +33,9 @@ try {
   console.warn('未检测到 Docker，跳过容器数据库备份。');
 }
 const before = exec('git', ['rev-parse', 'HEAD'], repo, true);
+const branch = exec('git', ['branch', '--show-current'], repo, true) || 'main';
 exec('git', ['fetch', '--prune', 'origin']);
-exec('git', ['merge', '--ff-only', 'origin/main']);
+exec('git', ['merge', '--ff-only', `origin/${branch}`]);
 const after = exec('git', ['rev-parse', 'HEAD'], repo, true);
 if (before === after) { console.log('代码已是最新版本，无需重建。'); process.exit(0); }
 const changed = exec('git', ['diff', '--name-only', before, after, '--', 'im-system'], repo, true).split(/\r?\n/).filter(Boolean);

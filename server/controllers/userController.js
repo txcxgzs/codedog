@@ -87,12 +87,16 @@ function constantTimeEquals(a, b) {
 }
 
 function shouldPromoteInitialAdmin(req, codemaoUserId, userCount) {
-    // 第一个注册的用户（userCount === 1）自动提升为超级管理员
-    // 后续用户不再自动提升，仍可通过后台管理员手动授权
     if (userCount !== 1) return false;
-
-    console.log(`[InitialAdmin] 检测到首个用户(编程猫ID: ${codemaoUserId})，将自动提升为超级管理员`);
-    return true;
+    const expectedId = String(process.env.INITIAL_ADMIN_CODEMAO_ID || '').trim();
+    if (expectedId && expectedId === String(codemaoUserId)) return true;
+    const configuredToken = String(process.env.INITIAL_ADMIN_BOOTSTRAP_TOKEN || '');
+    const suppliedToken = String(req.headers['x-initial-admin-token'] || '');
+    if (configuredToken.length >= 32 && suppliedToken.length === configuredToken.length) {
+        return crypto.timingSafeEqual(Buffer.from(configuredToken), Buffer.from(suppliedToken));
+    }
+    // 仅开发环境允许显式开启“首用户成为超级管理员”，生产环境永不使用此便捷开关。
+    return process.env.NODE_ENV !== 'production' && process.env.ALLOW_FIRST_USER_SUPERADMIN === 'true';
 }
 
 /**

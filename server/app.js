@@ -90,23 +90,13 @@ function setSecurityHeaders(res) {
 // isValidSessionSecret 仍保留用于其他校验场景
 
 async function ensureInitialSuperadmin() {
-    // 启动时检查：如果数据库只有1个用户且不是超级管理员，自动提升
-    // 与 userController.js 的 shouldPromoteInitialAdmin 配合，双重保险
     const userCount = await DbAdapter.count(User, {});
     if (userCount === 0) {
-        console.log('No users exist. The first logged-in user will become superadmin automatically.');
+        console.log('No users exist. Configure INITIAL_ADMIN_CODEMAO_ID or a bootstrap token before the first login.');
         return;
     }
-
-    if (userCount !== 1) return;
-
-    const firstUser = await User.findOne({ order: [['id', 'ASC']] });
-    if (!firstUser) return;
-
-    if (firstUser.role !== 'superadmin') {
-        await firstUser.update({ role: 'superadmin' });
-        console.log(`Initial administrator auto-promoted: ${firstUser.nickname || firstUser.username || firstUser.id}`);
-    }
+    const superadminCount = await DbAdapter.count(User, { where: { role: 'superadmin' } });
+    if (superadminCount === 0) console.warn('No superadmin exists. Use the documented explicit bootstrap configuration; automatic promotion is disabled.');
 }
 
 // CORS 配置：默认不允许任意来源，只放行 CORS_ORIGIN 环境变量中配置的域名
@@ -197,6 +187,9 @@ app.use((req, res, next) => {
 });
 
 const sessionSecret = resolveSessionSecret();
+if (isProduction && !isValidSessionSecret(sessionSecret)) {
+    throw new Error('SESSION_SECRET is missing or too short');
+}
 const sessionStore = isProduction ? createSequelizeSessionStore(session, sequelize) : null;
 
 const sessionOptions = {

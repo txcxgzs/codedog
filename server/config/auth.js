@@ -128,7 +128,7 @@ function resolveSessionSecret() {
         return configuredSessionSecret;
     }
 
-    const message = 'SESSION_SECRET is missing, too short, or uses an insecure default. Set a random secret with at least 32 characters.';
+    const message = 'SESSION_SECRET is missing or too short, or uses an insecure default. Set a random secret with at least 32 characters.';
     if (process.env.NODE_ENV === 'production') {
         console.error(message);
         process.exit(1);
