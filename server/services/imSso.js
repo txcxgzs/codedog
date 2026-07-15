@@ -34,6 +34,15 @@ function boundHash(nonce, value) {
 }
 
 function communityPublicUrl(req) {
+  const browserOrigins = [req?.get?.('origin'), req?.get?.('referer')];
+  for (const value of browserOrigins) {
+    try {
+      const parsed = new URL(String(value || ''));
+      if (['http:', 'https:'].includes(parsed.protocol) && !/^(localhost|127\.0\.0\.1)$/i.test(parsed.hostname)) {
+        return parsed.origin;
+      }
+    } catch { /* Missing or malformed browser origin; continue to proxy headers. */ }
+  }
   const forwardedHost = String(req?.get?.('x-forwarded-host') || '').split(',')[0].trim();
   const requestHost = forwardedHost || String(req?.get?.('host') || '').trim();
   // Only accept a plain DNS name/IP with an optional port. This value is
