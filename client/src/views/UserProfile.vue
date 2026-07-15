@@ -380,34 +380,6 @@ $border-color: #eee;
   width: 100%;
   box-sizing: border-box;
   
-  .r-user--cover {
-    height: 120px;
-    background: linear-gradient(135deg, $primary-color 0%, $primary-hover 100%);
-  }
-  
-  .r-user--profile_content {
-    display: flex;
-    align-items: flex-start;
-    gap: 24px;
-    padding: 0 32px 24px;
-    margin-top: -40px;
-    
-    @media (max-width: 768px) {
-      flex-direction: column;
-      align-items: center;
-      text-align: center;
-    }
-  }
-  
-  .r-user--avatar {
-    width: 100px;
-    height: 100px;
-    border-radius: 50%;
-    border: 4px solid $white;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-    flex-shrink: 0;
-  }
-  
   .r-user--info {
     flex: 1;
     padding-top: 48px;
@@ -736,14 +708,25 @@ $border-color: #eee;
 .r-user--profile_card > .r-user--profile_content {
   position: relative;
   z-index: 1;
+  display: flex;
+  align-items: flex-start;
   padding: 0 38px 30px;
+  margin-top: -40px;
   gap: 24px;
 }
-.r-user--profile_card .r-user--avatar {
+.r-user--profile_card > .r-user--profile_content > .r-user--avatar {
+  position: relative;
+  z-index: 2;
   display: block;
   width: 124px;
+  min-width: 124px;
   height: 124px;
+  min-height: 124px;
   margin-top: -62px;
+  flex: 0 0 124px;
+  opacity: 1;
+  visibility: visible;
+  border-radius: 50%;
   border: 5px solid #fff;
   box-shadow: 0 12px 28px rgba(28, 45, 75, .2);
   background: #fff;
@@ -764,8 +747,20 @@ $border-color: #eee;
 @media (max-width: 768px) {
   .r-user--page { padding: 14px 12px 92px; }
   .r-user--profile_card > .r-user--cover { height: 150px; }
-  .r-user--profile_card > .r-user--profile_content { padding: 0 16px 22px; }
-  .r-user--profile_card .r-user--avatar { width: 92px; height: 92px; margin-top: -46px; }
+  .r-user--profile_card > .r-user--profile_content {
+    flex-direction: column;
+    align-items: center;
+    padding: 0 16px 22px;
+    text-align: center;
+  }
+  .r-user--profile_card > .r-user--profile_content > .r-user--avatar {
+    width: 92px;
+    min-width: 92px;
+    height: 92px;
+    min-height: 92px;
+    margin-top: -46px;
+    flex-basis: 92px;
+  }
   .r-user--info { padding-top: 10px; }
   .r-user--actions { width: 100%; padding-top: 4px; }
   .r-user--actions .el-button { width: 100%; }
