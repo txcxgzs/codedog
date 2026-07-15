@@ -8,7 +8,7 @@
 
       <el-card shadow="never" class="r-devdocs--card">
         <h2>概述</h2>
-        <p>编程狗开发者平台提供 OAuth2 授权码模式。应用可申请只读、写入或管理权限；写入和管理权限会在授权页明确警示。</p>
+        <p>平台同时支持用户授权码模式和应用级 client_credentials 模式。公开社区数据由应用自身访问，不需要用户授权。</p>
         <ul>
           <li>Token：access_token 2 小时，refresh_token 30 天</li>
           <li>仅支持机密客户端（backend 保管 client_secret）</li>
@@ -21,6 +21,9 @@
         <el-table :data="scopes" size="small">
           <el-table-column prop="key" label="Scope" width="160" />
           <el-table-column prop="name" label="名称" width="140" />
+          <el-table-column label="授权主体" width="100">
+            <template #default="{ row }"><el-tag size="small" :type="row.audience === 'application' ? 'success' : 'info'">{{ row.audience === 'application' ? '应用' : '用户' }}</el-tag></template>
+          </el-table-column>
           <el-table-column label="风险" width="90">
             <template #default="{ row }">
               <el-tag :type="row.risk === 'admin' ? 'danger' : (row.risk === 'write' ? 'warning' : 'info')" size="small">
@@ -30,6 +33,18 @@
           </el-table-column>
           <el-table-column prop="description" label="说明" />
         </el-table>
+      </el-card>
+
+      <el-card shadow="never" class="r-devdocs--card">
+        <h2>应用级公开数据令牌（无需用户授权）</h2>
+        <pre class="r-devdocs--pre">POST /api/oauth/token
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=client_credentials
+&amp;client_id=YOUR_CLIENT_ID
+&amp;client_secret=YOUR_CLIENT_SECRET
+&amp;scope=search:read works:public:read</pre>
+        <p>也支持 HTTP Basic。返回以 <code>aat_</code> 开头的短期应用令牌，不签发 refresh_token，且只能调用应用级公开接口。</p>
       </el-card>
 
       <el-card shadow="never" class="r-devdocs--card">
@@ -130,6 +145,7 @@ GET  /api/open/v1/me/likes?page=1&amp;pageSize=20        (scope: favorites:read)
 
       <el-card shadow="never" class="r-devdocs--card">
         <h2>9. 公开社区与搜索 API</h2>
+        <p>以下接口使用 <code>client_credentials</code> 获取的应用令牌，不需要跳转用户授权页：</p>
         <pre class="r-devdocs--pre">GET /api/open/v1/users/:id                 (users:public:read)
 GET /api/open/v1/works                     (works:public:read)
 GET /api/open/v1/works/:id                 (works:public:read)

@@ -4,7 +4,7 @@
 const { DeveloperApp, OAuthAccessToken, User } = require('../models');
 const DbAdapter = require('../utils/dbAdapter');
 const { errorResponse } = require('./response');
-const { hashToken, parseJsonField, hasScope, normalizeScopes } = require('../utils/oauth');
+const { hashToken, parseJsonField, hasScope, APPLICATION_TOKEN_MARKER } = require('../utils/oauth');
 const { Op } = require('sequelize');
 
 function getBearerToken(req) {
@@ -38,11 +38,13 @@ async function oauthAuth(req, res, next) {
         }
 
         const app = record.app;
-        const user = record.user;
+        const storedScopes = parseJsonField(record.scopes, []);
+        const isApplicationToken = storedScopes.includes(APPLICATION_TOKEN_MARKER);
+        const user = isApplicationToken ? null : record.user;
         if (!app || app.status !== 'active') {
             return errorResponse(res, '应用不可用或未审核通过', 403, 'oauth_app_inactive');
         }
-        if (!user || user.status !== 'active') {
+        if (!isApplicationToken && (!user || user.status !== 'active')) {
             return errorResponse(res, '授权用户不可用', 403, 'oauth_user_inactive');
         }
 
@@ -50,15 +52,23 @@ async function oauthAuth(req, res, next) {
             token: record,
             app,
             user,
-            scopes: parseJsonField(record.scopes, []),
+            scopes: storedScopes.filter(scope => scope !== APPLICATION_TOKEN_MARKER),
             appId: DbAdapter.getId(app),
-            userId: DbAdapter.getId(user)
+            userId: DbAdapter.getId(user),
+            tokenKind: isApplicationToken ? 'application' : 'user'
         };
         next();
     } catch (error) {
         console.error('oauthAuth error:', error);
         return errorResponse(res, '鉴权失败', 500);
     }
+}
+
+function requireApplicationToken(req, res, next) {
+    if (req.oauth?.tokenKind !== 'application') {
+        return errorResponse(res, '此接口需要应用级 access_token', 403, 'oauth_application_token_required');
+    }
+    next();
 }
 
 function requireScopes(...needed) {
@@ -81,4 +91,4 @@ function requireAnyScopes(...scopes) {
     };
 }
 
-module.exports = { oauthAuth, requireScopes, requireAnyScopes, getBearerToken };
+module.exports = { oauthAuth, requireScopes, requireAnyScopes, requireApplicationToken, getBearerToken };

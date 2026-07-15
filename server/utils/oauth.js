@@ -186,6 +186,12 @@ const ALL_SCOPES = {
 };
 
 const DEFAULT_SCOPES = ['profile:read'];
+const APPLICATION_SCOPES = [
+    'users:public:read', 'works:public:read', 'posts:public:read',
+    'studios:public:read', 'search:read', 'community:feed:read',
+    'community:stats:read', 'developer:usage:read'
+];
+const APPLICATION_TOKEN_MARKER = '__application_token__';
 const ACCESS_TOKEN_TTL_MS = 2 * 60 * 60 * 1000;
 const REFRESH_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const AUTH_CODE_TTL_MS = 10 * 60 * 1000;
@@ -335,13 +341,16 @@ function scopeCatalog() {
         key,
         name: meta.name,
         description: meta.description,
-        risk: meta.risk || 'read'
+        risk: meta.risk || 'read',
+        audience: APPLICATION_SCOPES.includes(key) ? 'application' : 'user'
     }));
 }
 
 module.exports = {
     ALL_SCOPES,
     DEFAULT_SCOPES,
+    APPLICATION_SCOPES,
+    APPLICATION_TOKEN_MARKER,
     ACCESS_TOKEN_TTL_MS,
     REFRESH_TOKEN_TTL_MS,
     AUTH_CODE_TTL_MS,

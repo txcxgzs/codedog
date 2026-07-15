@@ -50,6 +50,7 @@ if (oauth) {
   ok('normalizeRedirectUris ok', uris.ok && uris.list.length === 2, JSON.stringify(uris));
   const scopes = oauth.scopeCatalog();
   ok('scopeCatalog matches ALL_SCOPES', Array.isArray(scopes) && scopes.length === Object.keys(oauth.ALL_SCOPES).length);
+  ok('application scopes catalogued separately', oauth.APPLICATION_SCOPES.includes('search:read') && scopes.find(s => s.key === 'search:read')?.audience === 'application');
   for (const key of ['notifications:read','notifications:write','works:stats:read','community:activity:read','reports:read','reports:write','comments:write','posts:write','works:write']) {
     ok('extended scope ' + key, !!oauth.ALL_SCOPES[key]);
   }
@@ -113,6 +114,9 @@ ok('scope groups are collapsible', developerHome.includes('<el-collapse') && dev
 const authorizeVue = fs.readFileSync(path.join(root, 'client/src/views/OAuthAuthorize.vue'), 'utf8');
 ok('new scopes require visible reauthorization', authorizeVue.includes('reauthorization_required') && authorizeVue.includes('新增权限'));
 ok('scope upgrades revoke tokens and require consent', ctrl.includes('user_reauthorization_required') && ctrl.includes('addedScopes') && ctrl.includes('OAuthAccessToken'));
+ok('client credentials grant supported', ctrl.includes("grantType === 'client_credentials'") && ctrl.includes("randomToken('aat_'"));
+ok('user consent excludes application scopes', ctrl.includes('!oauth.APPLICATION_SCOPES.includes(key)'));
+ok('public routes require application token', openRoutes.includes('requireApplicationToken') && openRoutes.includes("requireScopes('search:read')"));
 
 const failed = results.filter(r => !r.pass);
 console.log('\nSUMMARY:', results.filter(r=>r.pass).length + '/' + results.length, 'passed');

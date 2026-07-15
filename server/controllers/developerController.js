@@ -64,11 +64,13 @@ async function createApp(req, res) {
         if (!trimmedName) return errorResponse(res, '应用名称不能为空', 400);
         if (trimmedName.length > 100) return errorResponse(res, '应用名称不能超过100字', 400);
 
-        const uris = oauth.normalizeRedirectUris(redirect_uris);
-        if (!uris.ok) return errorResponse(res, uris.msg, 400);
-
         let scopeList = oauth.normalizeScopes(scopes);
         if (scopeList.length === 0) scopeList = [...oauth.DEFAULT_SCOPES];
+        const hasUserScopes = scopeList.some(key => !oauth.APPLICATION_SCOPES.includes(key));
+        const uris = hasUserScopes || (Array.isArray(redirect_uris) && redirect_uris.length)
+            ? oauth.normalizeRedirectUris(redirect_uris)
+            : { ok: true, list: [] };
+        if (!uris.ok) return errorResponse(res, uris.msg, 400);
 
         const clientId = oauth.randomToken('app_', 16);
         const clientSecret = oauth.randomToken('sk_', 24);
@@ -110,8 +112,11 @@ async function updateApp(req, res) {
         const { name, description, homepage_url, logo_url, redirect_uris, scopes } = req.body || {};
         const updateData = {};
         let sensitiveChanged = false;
+        let userAuthorizationChanged = false;
+        let applicationAuthorizationChanged = false;
         let nextScopeList = null;
         let addedScopes = [];
+        let addedUserScopes = [];
 
         if (name !== undefined) {
             const n = String(name).trim();
@@ -124,10 +129,20 @@ async function updateApp(req, res) {
         if (logo_url !== undefined) updateData.logo_url = logo_url == null ? null : String(logo_url).trim();
 
         if (redirect_uris !== undefined) {
-            const uris = oauth.normalizeRedirectUris(redirect_uris);
+            const effectiveScopes = scopes !== undefined
+                ? oauth.normalizeScopes(scopes)
+                : oauth.parseJsonField(app.scopes_requested, []);
+            const hasUserScopes = effectiveScopes.some(key => !oauth.APPLICATION_SCOPES.includes(key));
+            const uris = hasUserScopes || (Array.isArray(redirect_uris) && redirect_uris.length)
+                ? oauth.normalizeRedirectUris(redirect_uris)
+                : { ok: true, list: [] };
             if (!uris.ok) return errorResponse(res, uris.msg, 400);
-            updateData.redirect_uris = oauth.stringifyJsonField(uris.list);
-            sensitiveChanged = true;
+            const previousUris = oauth.parseJsonField(app.redirect_uris, []);
+            if (JSON.stringify(previousUris) !== JSON.stringify(uris.list)) {
+                updateData.redirect_uris = oauth.stringifyJsonField(uris.list);
+                sensitiveChanged = true;
+                userAuthorizationChanged = true;
+            }
         }
         if (scopes !== undefined) {
             let scopeList = oauth.normalizeScopes(scopes);
@@ -135,8 +150,18 @@ async function updateApp(req, res) {
             nextScopeList = scopeList;
             const previousScopes = oauth.parseJsonField(app.scopes_requested, []);
             addedScopes = scopeList.filter(key => !previousScopes.includes(key));
-            updateData.scopes_requested = oauth.stringifyJsonField(scopeList);
-            sensitiveChanged = true;
+            addedUserScopes = addedScopes.filter(key => !oauth.APPLICATION_SCOPES.includes(key));
+            const previousUserScopes = previousScopes.filter(key => !oauth.APPLICATION_SCOPES.includes(key)).sort();
+            const nextUserScopes = scopeList.filter(key => !oauth.APPLICATION_SCOPES.includes(key)).sort();
+            const previousApplicationScopes = previousScopes.filter(key => oauth.APPLICATION_SCOPES.includes(key)).sort();
+            const nextApplicationScopes = scopeList.filter(key => oauth.APPLICATION_SCOPES.includes(key)).sort();
+            const userScopesChanged = JSON.stringify(previousUserScopes) !== JSON.stringify(nextUserScopes);
+            userAuthorizationChanged = userAuthorizationChanged || userScopesChanged;
+            applicationAuthorizationChanged = JSON.stringify(previousApplicationScopes) !== JSON.stringify(nextApplicationScopes);
+            if (userAuthorizationChanged || applicationAuthorizationChanged) {
+                updateData.scopes_requested = oauth.stringifyJsonField(scopeList);
+                sensitiveChanged = true;
+            }
         }
 
         if (sensitiveChanged && (app.status === 'active' || app.status === 'rejected')) {
@@ -149,7 +174,7 @@ async function updateApp(req, res) {
         await sequelize.transaction(async (t) => {
             await DbAdapter.update(DeveloperApp, updateData, { where: { id: app.id }, transaction: t });
 
-            if (sensitiveChanged) {
+            if (userAuthorizationChanged) {
                 const now = new Date();
                 // 回调地址或权限发生变化后，旧授权码/令牌不能在重新审核通过后恢复使用。
                 await DbAdapter.destroy(OAuthAuthCode, { where: { app_id: app.id }, transaction: t });
@@ -169,7 +194,7 @@ async function updateApp(req, res) {
                         const narrowed = oauth.intersectScopes(
                             oauth.parseJsonField(authorization.scopes, []),
                             nextScopeList
-                        );
+                        ).filter(key => !oauth.APPLICATION_SCOPES.includes(key));
                         const authorizationId = DbAdapter.getId(authorization);
                         if (narrowed.length === 0) {
                             await DbAdapter.update(UserAppAuthorization, { revoked_at: now }, {
@@ -182,16 +207,29 @@ async function updateApp(req, res) {
                         }
                     }
                 }
+            } else if (applicationAuthorizationChanged) {
+                // 应用级 Scope 变化只撤销应用令牌，不影响已经由用户同意的用户令牌。
+                const activeTokens = await DbAdapter.findAll(OAuthAccessToken, {
+                    where: { app_id: app.id, revoked_at: null }, transaction: t
+                });
+                const applicationTokenIds = activeTokens
+                    .filter(token => oauth.parseJsonField(token.scopes, []).includes(oauth.APPLICATION_TOKEN_MARKER))
+                    .map(token => DbAdapter.getId(token));
+                if (applicationTokenIds.length) {
+                    await DbAdapter.update(OAuthAccessToken, { revoked_at: new Date() }, {
+                        where: { id: { [Op.in]: applicationTokenIds } }, transaction: t
+                    });
+                }
             }
         });
         const updated = await DbAdapter.findByPk(DeveloperApp, app.id);
         logOperation(req, 'update_developer_app', 'developer_app', app.id, updateData);
         return successResponse(res, serializeApp(updated, {
             added_scopes: addedScopes,
-            user_reauthorization_required: addedScopes.length > 0
-        }), addedScopes.length
+            user_reauthorization_required: addedUserScopes.length > 0
+        }), addedUserScopes.length
             ? '已提交新增权限审核；审核通过后，用户必须重新授权才会获得新权限'
-            : (sensitiveChanged ? '已保存，敏感变更需重新审核' : '保存成功'));
+            : (addedScopes.length ? '已提交应用级权限审核；公开数据权限不需要用户授权' : (sensitiveChanged ? '已保存，敏感变更需重新审核' : '保存成功')));
     } catch (e) {
         console.error('updateApp', e);
         return errorResponse(res, '更新应用失败', 500);
@@ -636,8 +674,10 @@ async function getAuthorizeInfo(req, res) {
             return errorResponse(res, 'redirect_uri 未登记', 400);
         }
 
-        const requested = oauth.normalizeScopes(scope);
-        const allowed = oauth.intersectScopes(requested.length ? requested : oauth.parseJsonField(app.scopes_requested, []), oauth.parseJsonField(app.scopes_requested, []));
+        const normalizedRequested = oauth.normalizeScopes(scope);
+        const requested = normalizedRequested.filter(key => !oauth.APPLICATION_SCOPES.includes(key));
+        const appUserScopes = oauth.parseJsonField(app.scopes_requested, []).filter(key => !oauth.APPLICATION_SCOPES.includes(key));
+        const allowed = oauth.intersectScopes(normalizedRequested.length ? requested : appUserScopes, appUserScopes);
         if (allowed.length === 0) return errorResponse(res, '无效的 scope', 400);
 
         let previouslyAuthorized = [];
@@ -697,8 +737,10 @@ async function approveAuthorize(req, res) {
             return successResponse(res, { redirect_to: denyUrl }, '已拒绝');
         }
 
-        const requested = oauth.normalizeScopes(scope);
-        const allowed = oauth.intersectScopes(requested.length ? requested : oauth.parseJsonField(app.scopes_requested, []), oauth.parseJsonField(app.scopes_requested, []));
+        const normalizedRequested = oauth.normalizeScopes(scope);
+        const requested = normalizedRequested.filter(key => !oauth.APPLICATION_SCOPES.includes(key));
+        const appUserScopes = oauth.parseJsonField(app.scopes_requested, []).filter(key => !oauth.APPLICATION_SCOPES.includes(key));
+        const allowed = oauth.intersectScopes(normalizedRequested.length ? requested : appUserScopes, appUserScopes);
         if (allowed.length === 0) return errorResponse(res, '无效的 scope', 400);
 
         const userId = getOwnerId(req);
@@ -721,7 +763,7 @@ async function approveAuthorize(req, res) {
             });
             if (existing) {
                 const merged = oauth.intersectScopes(oauth.normalizeScopes([
-                    ...oauth.parseJsonField(existing.scopes, []),
+                    ...oauth.parseJsonField(existing.scopes, []).filter(key => !oauth.APPLICATION_SCOPES.includes(key)),
                     ...allowed
                 ]), oauth.parseJsonField(app.scopes_requested, []));
                 await DbAdapter.update(UserAppAuthorization, {
@@ -807,6 +849,36 @@ async function tokenEndpoint(req, res) {
         if (!app || app.status !== 'active') return errorResponse(res, '客户端无效', 401, 'invalid_client');
         const secretOk = await oauth.verifySecret(client_secret, app.client_secret_hash);
         if (!secretOk) return errorResponse(res, '客户端密钥错误', 401, 'invalid_client');
+
+        if (grantType === 'client_credentials') {
+            const approvedApplicationScopes = oauth.intersectScopes(
+                oauth.parseJsonField(app.scopes_requested, []),
+                oauth.APPLICATION_SCOPES
+            );
+            const requestedScopes = oauth.normalizeScopes(req.body?.scope);
+            const scopes = oauth.intersectScopes(
+                requestedScopes.length ? requestedScopes : approvedApplicationScopes,
+                approvedApplicationScopes
+            );
+            if (scopes.length === 0) {
+                return errorResponse(res, '应用未获批所请求的应用级 scope', 400, 'invalid_scope');
+            }
+            const accessToken = oauth.randomToken('aat_', 24);
+            await DbAdapter.create(OAuthAccessToken, {
+                token_hash: oauth.hashToken(accessToken),
+                app_id: app.id,
+                // 兼容现有数据库非空约束；应用令牌通过内部 marker 与用户令牌严格区分。
+                user_id: app.owner_user_id,
+                scopes: oauth.stringifyJsonField([oauth.APPLICATION_TOKEN_MARKER, ...scopes]),
+                expires_at: new Date(Date.now() + oauth.ACCESS_TOKEN_TTL_MS)
+            });
+            return successResponse(res, {
+                access_token: accessToken,
+                token_type: 'Bearer',
+                expires_in: Math.floor(oauth.ACCESS_TOKEN_TTL_MS / 1000),
+                scope: scopes.join(' ')
+            }, 'ok');
+        }
 
         if (grantType === 'authorization_code') {
             const { code, redirect_uri } = req.body || {};
@@ -1850,7 +1922,7 @@ async function listMyAuthorizations(req, res) {
             const json = r.toJSON ? r.toJSON() : r;
             return {
                 id: json.id,
-                scopes: oauth.parseJsonField(json.scopes, []),
+                scopes: oauth.parseJsonField(json.scopes, []).filter(key => !oauth.APPLICATION_SCOPES.includes(key)),
                 authorized_at: json.authorized_at,
                 app: json.app ? {
                     id: json.app.id,

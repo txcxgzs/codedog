@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const developerController = require('../controllers/developerController');
 const { StudioMember, Studio, Follow, Favorite, Like, Work, Post, User, DeveloperApp } = require('../models');
-const { oauthAuth, requireScopes, requireAnyScopes } = require('../middleware/oauthAuth');
+const { oauthAuth, requireScopes, requireAnyScopes, requireApplicationToken } = require('../middleware/oauthAuth');
 const { perAppRateLimiter, failLogMiddleware, captureRequest, installResponseCapture, redact } = require('../middleware/developerOpenApi');
 
 const models = { DeveloperApp };
@@ -61,24 +61,24 @@ router.get('/me/analytics/posts', requireScopes('posts:analytics:read'), develop
 router.get('/me/analytics/account', requireScopes('account:analytics:read'), developerController.openMyAccountAnalytics);
 router.get('/me/comments/received', requireScopes('comments:received:read'), developerController.openCommentsReceived);
 
-router.get('/users/:id', requireScopes('users:public:read'), developerController.openPublicUser);
-router.get('/works', requireScopes('works:public:read'), developerController.openPublicWorks);
-router.get('/works/:id', requireScopes('works:public:read'), developerController.openPublicWorkDetail);
-router.get('/posts', requireScopes('posts:public:read'), developerController.openPublicPosts);
-router.get('/posts/:id', requireScopes('posts:public:read'), developerController.openPublicPostDetail);
+router.get('/users/:id', requireApplicationToken, requireScopes('users:public:read'), developerController.openPublicUser);
+router.get('/works', requireApplicationToken, requireScopes('works:public:read'), developerController.openPublicWorks);
+router.get('/works/:id', requireApplicationToken, requireScopes('works:public:read'), developerController.openPublicWorkDetail);
+router.get('/posts', requireApplicationToken, requireScopes('posts:public:read'), developerController.openPublicPosts);
+router.get('/posts/:id', requireApplicationToken, requireScopes('posts:public:read'), developerController.openPublicPostDetail);
 router.get('/studios/pending-review', requireScopes('studios:review'), developerController.openStudiosPendingReview);
 router.post('/studios/:id/review', requireScopes('studios:review'), developerController.openReviewStudio);
-router.get('/studios', requireScopes('studios:public:read'), developerController.openPublicStudios);
-router.get('/studios/:id', requireScopes('studios:public:read'), developerController.openPublicStudioDetail);
-router.get('/search', requireScopes('search:read'), developerController.openSearch);
-router.get('/community/feed', requireScopes('community:feed:read'), developerController.openCommunityFeed);
-router.get('/community/stats', requireScopes('community:stats:read'), developerController.openCommunityStats);
+router.get('/studios', requireApplicationToken, requireScopes('studios:public:read'), developerController.openPublicStudios);
+router.get('/studios/:id', requireApplicationToken, requireScopes('studios:public:read'), developerController.openPublicStudioDetail);
+router.get('/search', requireApplicationToken, requireScopes('search:read'), developerController.openSearch);
+router.get('/community/feed', requireApplicationToken, requireScopes('community:feed:read'), developerController.openCommunityFeed);
+router.get('/community/stats', requireApplicationToken, requireScopes('community:stats:read'), developerController.openCommunityStats);
 
 router.get('/me/studios/:id/applications', requireScopes('studios:applications:read'), developerController.openStudioApplications);
 router.get('/me/studios/:id/submissions', requireScopes('studios:submissions:read'), developerController.openStudioSubmissions);
 router.get('/me/studios/:id/analytics', requireScopes('studios:analytics:read'), developerController.openStudioAnalytics);
 router.get('/me/studios/:id/logs', requireScopes('studios:logs:read'), developerController.openStudioLogs);
-router.get('/developer/usage', requireScopes('developer:usage:read'), developerController.openDeveloperUsage);
+router.get('/developer/usage', requireApplicationToken, requireScopes('developer:usage:read'), developerController.openDeveloperUsage);
 
 router.post('/comments', requireScopes('comments:write'), developerController.openCreateComment);
 router.delete('/comments/:id', requireScopes('comments:write'), developerController.openDeleteComment);
