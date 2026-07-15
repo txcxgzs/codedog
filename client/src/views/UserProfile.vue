@@ -722,7 +722,8 @@ $border-color: #eee;
   min-width: 124px;
   height: 124px;
   min-height: 124px;
-  margin-top: -62px;
+  /* 资料容器本身已上移 40px；头像只再上移 22px，避免两层负偏移叠加后悬得过高。 */
+  margin-top: -22px;
   flex: 0 0 124px;
   opacity: 1;
   visibility: visible;
@@ -758,7 +759,8 @@ $border-color: #eee;
     min-width: 92px;
     height: 92px;
     min-height: 92px;
-    margin-top: -46px;
+    /* 移动端同样只保留轻微跨越封面边界的效果。 */
+    margin-top: -12px;
     flex-basis: 92px;
   }
   .r-user--info { padding-top: 10px; }
