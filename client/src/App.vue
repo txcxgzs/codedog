@@ -44,6 +44,16 @@
             clearable
           />
         </form>
+
+        <!-- 登录后的常用平台入口直接展示在顶栏，避免藏在头像菜单中。 -->
+        <div v-if="userStore.isLoggedIn" class="c-navigator--platform_links" aria-label="平台快捷入口">
+          <button type="button" :class="{ active: $route.path.startsWith('/developer') }" @click="$router.push('/developer')">
+            <el-icon><DataBoard /></el-icon><span>开发者平台</span>
+          </button>
+          <button type="button" @click="openIm">
+            <el-icon><ChatDotRound /></el-icon><span>即时通讯</span>
+          </button>
+        </div>
         
         <!-- 用户区域 -->
         <div class="c-navigator--user_wrap">
@@ -78,8 +88,6 @@
                   <el-dropdown-item command="publicProfile"><el-icon><User /></el-icon>我的主页</el-dropdown-item>
                   <el-dropdown-item command="profile"><el-icon><Setting /></el-icon>编辑资料</el-dropdown-item>
                   <el-dropdown-item command="myWorks"><el-icon><Monitor /></el-icon>我的作品</el-dropdown-item>
-                  <el-dropdown-item command="developer">开发者平台</el-dropdown-item>
-                  <el-dropdown-item command="im">即时通讯</el-dropdown-item>
                   <el-dropdown-item command="notifications"><el-icon><Bell /></el-icon>消息通知</el-dropdown-item>
                   <el-dropdown-item command="favorites"><el-icon><Star /></el-icon>我的收藏</el-dropdown-item>
                   <el-dropdown-item v-if="userStore.isAdmin" command="admin" divided><el-icon><Setting /></el-icon>后台管理</el-dropdown-item>
@@ -176,7 +184,7 @@ import HCaptchaDialog from '@/components/HCaptchaDialog.vue'
 import MobileBottomNav from '@/components/MobileBottomNav.vue'
 import { hcaptchaApi } from '@/api/hcaptcha'
 import { publicApi } from '@/api/public'
-import { Search, EditPen, Bell, CaretBottom, User, Monitor, Star, Setting, SwitchButton } from '@element-plus/icons-vue'
+import { Search, EditPen, Bell, CaretBottom, User, Monitor, Star, Setting, SwitchButton, DataBoard, ChatDotRound } from '@element-plus/icons-vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -409,8 +417,6 @@ const handleCommand = (command) => {
       break
     case 'profile': router.push('/profile'); break
     case 'myWorks': router.push('/my-works'); break
-    case 'developer': router.push('/developer'); break
-    case 'im': openIm(); break
     case 'notifications': router.push('/notifications'); break
     case 'favorites': router.push('/favorites'); break
     case 'admin': router.push('/admin'); break
@@ -555,6 +561,36 @@ $shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
   }
 }
 
+.c-navigator--platform_links {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+
+  button {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    height: 34px;
+    padding: 0 10px;
+    border: 0;
+    border-radius: 17px;
+    background: transparent;
+    color: $text-secondary;
+    font: inherit;
+    font-size: 13px;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: color .2s, background .2s;
+
+    &:hover,
+    &.active {
+      color: $text-color;
+      background: $primary-light;
+    }
+  }
+}
+
 .c-navigator--user_wrap {
   display: flex;
   align-items: center;
@@ -685,6 +721,16 @@ $shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
 }
 
 // 响应式
+@media (max-width: 1100px) {
+  .c-navigator--platform_links button {
+    width: 34px;
+    padding: 0;
+    justify-content: center;
+
+    span { display: none; }
+  }
+}
+
 @media (max-width: 768px) {
   .c-navigator--header-content {
     gap: 12px;
@@ -697,6 +743,18 @@ $shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
   
   .c-navigator--search_wrap {
     display: none;
+  }
+
+  .c-navigator--platform_links {
+    margin-left: auto;
+
+    button {
+      width: 34px;
+      padding: 0;
+      justify-content: center;
+
+      span { display: none; }
+    }
   }
   
   .c-navigator--logo_text {
