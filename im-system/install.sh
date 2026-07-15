@@ -18,6 +18,11 @@ say "======================================
 ======================================"
 INSTALL_DIR="$(ask '安装目录' "$INSTALL_DIR")"
 PUBLIC_URL="$(ask 'IM 对外访问地址（含 /im，由 Nginx/Caddy 反向代理）' 'https://im.example.com/im')"
+PUBLIC_URL="${PUBLIC_URL%/}"
+case "$PUBLIC_URL" in
+  */im) ;;
+  *) PUBLIC_URL="${PUBLIC_URL}/im" ;;
+esac
 HTTP_PORT="$(ask 'IM 本地监听端口' '8100')"
 
 if yesno '使用安装器内置的 MySQL + Redis（推荐，均不开放公网端口）' Y; then
