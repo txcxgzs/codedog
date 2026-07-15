@@ -688,6 +688,23 @@ async function getUserById(req, res) {
     }
 }
 
+async function createImSsoTicket(req, res) {
+    try {
+        const { createImTicket, getImPublicUrl } = require('../services/imSso');
+        const publicUrl = getImPublicUrl();
+        if (!publicUrl) return errorResponse(res, '即时通讯系统暂未启用', 503);
+        const user = await DbAdapter.findByPk(User, req.user.id, {
+            attributes: ['id', 'username', 'nickname', 'avatar', 'role', 'status', 'token_version']
+        });
+        if (!user || user.status !== 'active') return errorResponse(res, '账号不可用', 403);
+        const ticket = createImTicket(user);
+        return successResponse(res, { url: `${publicUrl}/sso?ticket=${encodeURIComponent(ticket)}` }, '正在进入即时通讯');
+    } catch (error) {
+        console.error('创建 IM SSO Ticket 失败:', error.message);
+        return errorResponse(res, error.message || '即时通讯登录失败', error.statusCode || 500);
+    }
+}
+
 /**
  * 根据编程猫API返回的错误信息生成友好的错误提示
  */
@@ -741,5 +758,6 @@ module.exports = {
     logout,
     getCurrentUser,
     updateProfile,
-    getUserById
+    getUserById,
+    createImSsoTicket
 };

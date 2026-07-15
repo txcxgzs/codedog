@@ -79,6 +79,7 @@
                   <el-dropdown-item command="profile"><el-icon><Setting /></el-icon>编辑资料</el-dropdown-item>
                   <el-dropdown-item command="myWorks"><el-icon><Monitor /></el-icon>我的作品</el-dropdown-item>
                   <el-dropdown-item command="developer">开发者平台</el-dropdown-item>
+                  <el-dropdown-item command="im">即时通讯</el-dropdown-item>
                   <el-dropdown-item command="notifications"><el-icon><Bell /></el-icon>消息通知</el-dropdown-item>
                   <el-dropdown-item command="favorites"><el-icon><Star /></el-icon>我的收藏</el-dropdown-item>
                   <el-dropdown-item v-if="userStore.isAdmin" command="admin" divided><el-icon><Setting /></el-icon>后台管理</el-dropdown-item>
@@ -165,6 +166,7 @@
 <script setup>
 import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import { useUserStore } from '@/stores/user'
+import { imApi } from '@/api/im'
 import { useNotificationStore } from '@/stores/notification'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElConfigProvider } from 'element-plus'
@@ -389,6 +391,16 @@ const handleSearch = () => {
   }
 }
 
+const openIm = async () => {
+  try {
+    const res = await imApi.createSsoTicket()
+    if (res.code === 200 && res.data?.url) window.location.assign(res.data.url)
+    else ElMessage.warning(res.msg || '即时通讯系统暂不可用')
+  } catch (error) {
+    ElMessage.error(error.response?.data?.msg || '无法进入即时通讯系统')
+  }
+}
+
 const handleCommand = (command) => {
   switch (command) {
     case 'publicProfile':
@@ -398,6 +410,7 @@ const handleCommand = (command) => {
     case 'profile': router.push('/profile'); break
     case 'myWorks': router.push('/my-works'); break
     case 'developer': router.push('/developer'); break
+    case 'im': openIm(); break
     case 'notifications': router.push('/notifications'); break
     case 'favorites': router.push('/favorites'); break
     case 'admin': router.push('/admin'); break

@@ -1,0 +1,8 @@
+node_modules/
+apps/*/dist/
+data/
+logs/
+backups/
+secrets/*.pem
+.env
+*.log

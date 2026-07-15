@@ -1,0 +1,41 @@
+services:
+  mysql:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: codedog_im
+      MYSQL_USER: im_user
+      MYSQL_PASSWORD: ${IM_DB_PASSWORD:?set IM_DB_PASSWORD in .env}
+      MYSQL_ROOT_PASSWORD: ${IM_DB_ROOT_PASSWORD:?set IM_DB_ROOT_PASSWORD in .env}
+    volumes: ["im_mysql:/var/lib/mysql"]
+    healthcheck: { test: ["CMD", "mysqladmin", "ping", "-h", "localhost"], interval: 10s, timeout: 5s, retries: 10 }
+  redis:
+    image: redis:7.4-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    restart: unless-stopped
+    volumes: ["im_redis:/data"]
+    healthcheck: { test: ["CMD", "redis-cli", "ping"], interval: 10s, timeout: 3s, retries: 10 }
+  im-server:
+    build: { context: ., target: server }
+    restart: unless-stopped
+    env_file: [.env]
+    environment:
+      NODE_ENV: production
+      IM_PORT: 3100
+      IM_DATABASE_URL: mysql://im_user:${IM_DB_PASSWORD}@mysql:3306/codedog_im
+      IM_REDIS_URL: redis://redis:6379/0
+      IM_SSO_PUBLIC_KEY_FILE: /run/secrets/im_sso_public.pem
+    volumes: ["./secrets/im_sso_public.pem:/run/secrets/im_sso_public.pem:ro"]
+    depends_on:
+      mysql: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    healthcheck: { test: ["CMD", "wget", "-qO-", "http://localhost:3100/health"], interval: 15s, timeout: 5s, retries: 5 }
+  im-web:
+    build: { context: ., target: frontend }
+    restart: unless-stopped
+    ports: ["${IM_HTTP_PORT:-8100}:80"]
+    depends_on: { im-server: { condition: service_healthy } }
+
+volumes:
+  im_mysql:
+  im_redis:

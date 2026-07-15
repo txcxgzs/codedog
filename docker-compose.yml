@@ -26,6 +26,8 @@ services:
       - SESSION_SECRET=${SESSION_SECRET}
       - CORS_ORIGIN=${CORS_ORIGIN:-}
       - TRUST_PROXY=${TRUST_PROXY:-}
+      - IM_PUBLIC_URL=${IM_PUBLIC_URL:-}
+      - IM_SSO_PRIVATE_KEY_BASE64=${IM_SSO_PRIVATE_KEY_BASE64:-}
     restart: unless-stopped
     mem_limit: 512m
     cpus: '1.0'

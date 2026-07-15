@@ -1,0 +1,18 @@
+{
+  "name": "codedog-im-system",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": ["apps/*", "packages/*"],
+  "scripts": {
+    "dev:server": "npm run dev -w @codedog-im/server",
+    "dev:web": "npm run dev -w @codedog-im/web",
+    "dev:admin": "npm run dev -w @codedog-im/admin",
+    "start": "npm run start -w @codedog-im/server",
+    "build": "npm run build -w @codedog-im/web && npm run build -w @codedog-im/admin",
+    "check": "npm run check -w @codedog-im/server && npm run build",
+    "test": "npm run test -w @codedog-im/server",
+    "toolbox": "node scripts/toolbox.js",
+    "update": "node scripts/update.js"
+  },
+  "engines": { "node": ">=20" }
+}

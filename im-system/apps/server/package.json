@@ -1,0 +1,27 @@
+{
+  "name": "@codedog-im/server",
+  "version": "0.1.0",
+  "private": true,
+  "main": "src/app.js",
+  "scripts": {
+    "start": "node src/app.js",
+    "dev": "node --watch src/app.js",
+    "check": "node --check src/app.js && node --check src/auth.js && node --check src/database.js && node --check src/imageHost.js && node --check src/replayStore.js && node --check ../../scripts/toolbox.js && node --check ../../scripts/update.js",
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "axios": "^1.7.9",
+    "cookie": "^1.0.2",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "helmet": "^8.0.0",
+    "jsonwebtoken": "^9.0.2",
+    "mysql2": "^3.12.0",
+    "form-data": "^4.0.1",
+    "multer": "^2.0.2",
+    "redis": "^4.7.0",
+    "sequelize": "^6.37.5",
+    "ws": "^8.18.0"
+  }
+}
