@@ -523,11 +523,11 @@ $shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
 
 // 顶栏使用极浅的暖白毛玻璃，与页面两侧淡黄、浅蓝渐变自然衔接。
 .c-navigator--navigator {
-  background: linear-gradient(90deg, rgba(255, 251, 240, .6), rgba(255, 255, 255, .72) 48%, rgba(240, 248, 255, .6));
-  border-bottom: 1px solid rgba(255, 255, 255, .6);
-  box-shadow: 0 7px 26px rgba(43, 58, 86, .065), inset 0 1px 0 rgba(255, 255, 255, .72);
-  -webkit-backdrop-filter: blur(22px) saturate(145%);
-  backdrop-filter: blur(22px) saturate(145%);
+  background: linear-gradient(90deg, rgba(255, 251, 240, .42), rgba(255, 255, 255, .56) 48%, rgba(240, 248, 255, .42));
+  border-bottom: 1px solid rgba(255, 255, 255, .5);
+  box-shadow: 0 7px 26px rgba(43, 58, 86, .055), inset 0 1px 0 rgba(255, 255, 255, .64);
+  -webkit-backdrop-filter: blur(24px) saturate(150%);
+  backdrop-filter: blur(24px) saturate(150%);
   position: sticky;
   top: 0;
   z-index: 1000;
@@ -691,17 +691,75 @@ $shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
     }
   }
   
-  .c-navigator--publish_btn {
-    padding: 10px 20px;
-    font-weight: 600;
-    border: none;
-    box-shadow: 0 2px 6px rgba(254, 196, 51, 0.4);
-    
-    &:hover {
-      opacity: 0.9;
-      transform: translateY(-1px);
-      box-shadow: 0 4px 10px rgba(254, 196, 51, 0.5);
+  // 独立的液态玻璃发布按钮。边缘负责折射与膨胀，中部保持清晰高透；
+  // 样式仅绑定该类，若实机观感不合适可单独回滚，不影响其他按钮。
+  .c-navigator--publish_btn.el-button {
+    --el-button-bg-color: transparent;
+    --el-button-border-color: transparent;
+    --el-button-hover-bg-color: transparent;
+    --el-button-hover-border-color: transparent;
+    position: relative;
+    isolation: isolate;
+    overflow: hidden;
+    min-width: 122px;
+    height: 40px;
+    padding: 0 20px;
+    border: 1px solid rgba(255,255,255,.78) !important;
+    border-radius: 999px;
+    color: #594000;
+    font-weight: 750;
+    background: linear-gradient(180deg, rgba(255,255,255,.4), rgba(255,214,93,.24) 54%, rgba(255,189,36,.3)) !important;
+    box-shadow:
+      0 9px 18px rgba(141,102,0,.18),
+      0 2px 5px rgba(52,42,10,.1),
+      inset 0 1px 1px rgba(255,255,255,.98),
+      inset 0 -2px 4px rgba(221,157,0,.13);
+    -webkit-backdrop-filter: blur(14px) saturate(165%);
+    backdrop-filter: blur(14px) saturate(165%);
+    transform: translateZ(0);
+    transition: transform .28s cubic-bezier(.2,.8,.2,1), box-shadow .28s ease, background .28s ease, backdrop-filter .28s ease;
+
+    &::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      z-index: 0;
+      padding: 1.5px;
+      border-radius: inherit;
+      background: linear-gradient(145deg, rgba(255,255,255,.98), rgba(255,255,255,.18) 34%, rgba(255,203,55,.55) 67%, rgba(255,255,255,.9));
+      -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+      -webkit-mask-composite: xor;
+      mask-composite: exclude;
+      filter: drop-shadow(0 1px 1px rgba(255,255,255,.7));
     }
+
+    &::after {
+      content: '';
+      position: absolute;
+      z-index: 0;
+      top: -90%;
+      left: -22%;
+      width: 46%;
+      height: 270%;
+      border-radius: 50%;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,.72), transparent);
+      opacity: .6;
+      transform: rotate(18deg);
+      transition: left .55s cubic-bezier(.2,.8,.2,1), opacity .3s ease;
+    }
+
+    &:hover {
+      color: #4e3700;
+      background: linear-gradient(180deg, rgba(255,255,255,.34), rgba(255,211,76,.18) 55%, rgba(255,184,19,.24)) !important;
+      box-shadow: 0 12px 24px rgba(141,102,0,.2), 0 3px 7px rgba(52,42,10,.12), inset 0 1px 2px rgba(255,255,255,1), inset 0 -2px 5px rgba(221,157,0,.1);
+      -webkit-backdrop-filter: blur(5px) saturate(175%);
+      backdrop-filter: blur(5px) saturate(175%);
+      transform: translateY(-1px) scale(1.035);
+    }
+
+    &:hover::after { left: 80%; opacity: .82; }
+    &:active { transform: translateY(1px) scale(.98); box-shadow: 0 4px 10px rgba(141,102,0,.16), inset 0 2px 5px rgba(190,139,13,.15); }
+    > span { position:relative; z-index:1; }
   }
   
   .c-navigator--user_info {
