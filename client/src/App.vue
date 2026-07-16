@@ -6,7 +6,6 @@
       <div class="c-navigator--header-content">
         <!-- Logo -->
         <a href="/" class="c-navigator--logo_wrap">
-          <img src="https://static.codemao.cn/community/shequ_logo.png" alt="编程狗社区" class="c-navigator--logo_img" referrerpolicy="no-referrer">
           <span class="c-navigator--logo_text">编程狗社区</span>
         </a>
         
@@ -491,13 +490,6 @@ $shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
   cursor: pointer;
   flex-shrink: 0;
   text-decoration: none;
-  
-  .c-navigator--logo_img {
-    height: 38px;
-    width: auto;
-    flex-shrink: 0;
-    display: block;
-  }
   
   .c-navigator--logo_text {
     font-size: 20px;
