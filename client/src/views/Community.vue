@@ -35,13 +35,16 @@
                   <AppImage :src="post.author?.avatar || defaultAvatar" :fallback="defaultAvatar" class="r-community--item_avatar" />
                   <div class="r-community--item_author">
                     <span class="r-community--item_name">{{ post.author?.nickname || post.author?.username }}</span>
-                    <span class="r-community--item_time">{{ formatTime(post.created_at) }}</span>
+                    <span class="r-community--author_meta">
+                      <span class="r-community--item_time">{{ formatTime(post.created_at) }}</span>
+                      <span v-if="post.board" class="r-community--topic_meta" :style="{ color: post.board.color }">{{ post.board.icon }} {{ post.board.name }}</span>
+                      <span v-if="post.post_type === 'question'" :class="['r-community--question_state', { solved: post.accepted_comment_id }]">{{ post.accepted_comment_id ? '已解决' : '待解决' }}</span>
+                    </span>
                   </div>
                   <el-tag v-if="post.is_top" type="danger" size="small">置顶</el-tag>
                   <el-tag v-if="post.is_essence" type="warning" size="small">精华</el-tag>
                   <el-tag v-if="post.is_locked" type="info" size="small">已锁定</el-tag>
                 </div>
-                <div class="r-community--topic_meta"><span v-if="post.board" :style="{ color: post.board.color }">{{ post.board.icon }} {{ post.board.name }}</span><span v-if="post.post_type === 'question'" :class="['r-community--question_state', { solved: post.accepted_comment_id }]">{{ post.accepted_comment_id ? '已解决' : '待解决' }}</span></div>
                 <h4 class="r-community--item_title">{{ post.title }}</h4>
                 <p class="r-community--item_content">{{ stripMarkdown(post.content) }}...</p>
                 <div v-if="post.tags?.length" class="r-community--item_tags"><button v-for="tag in post.tags.slice(0, 4)" :key="tag" @click.stop="selectTag(tag)">#{{ tag }}</button></div>
@@ -71,6 +74,22 @@
         
         <!-- 右侧边栏 -->
         <aside class="r-community--sidebar">
+          <div class="r-community--side_card r-community--announcement_card">
+            <h4 class="r-community--card_title">社区公告</h4>
+            <div v-if="communityAnnouncements.length" class="r-community--ann_list">
+              <div v-for="item in communityAnnouncements" :key="item.id" class="r-community--ann_item" :style="communityAnnStyle(item)">
+                <div class="r-community--ann_title">{{ item.title }}</div>
+                <div class="r-community--ann_content">{{ item.content }}</div>
+              </div>
+            </div>
+            <p v-else>欢迎来到编程狗社区！请遵守社区规范，文明交流。</p>
+          </div>
+
+          <div class="r-community--side_card r-community--rules_card">
+            <h4 class="r-community--card_title">发帖须知</h4>
+            <ul><li>禁止发布违法违规内容</li><li>禁止恶意攻击他人</li><li>鼓励分享原创内容</li><li>提问前请先搜索</li></ul>
+          </div>
+
           <div class="r-community--side_card r-community--boards_card">
             <div class="r-community--side_heading"><h4 class="r-community--card_title">论坛版块</h4><button v-if="activeBoardId" @click="selectBoard(null)">查看全部</button></div>
             <div v-for="board in boards" :key="board.id" class="r-community--board_row">
@@ -99,31 +118,6 @@
             <el-empty v-if="!forumLeaderboard.length" description="暂无贡献记录" :image-size="48" />
           </div>
 
-          <div class="r-community--side_card">
-            <h4 class="r-community--card_title">社区公告</h4>
-            <div v-if="communityAnnouncements.length" class="r-community--ann_list">
-              <div
-                v-for="item in communityAnnouncements"
-                :key="item.id"
-                class="r-community--ann_item"
-                :style="communityAnnStyle(item)"
-              >
-                <div class="r-community--ann_title">{{ item.title }}</div>
-                <div class="r-community--ann_content">{{ item.content }}</div>
-              </div>
-            </div>
-            <p v-else>欢迎来到编程狗社区！请遵守社区规范，文明交流。</p>
-          </div>
-          
-          <div class="r-community--side_card">
-            <h4 class="r-community--card_title">发帖须知</h4>
-            <ul>
-              <li>禁止发布违法违规内容</li>
-              <li>禁止恶意攻击他人</li>
-              <li>鼓励分享原创内容</li>
-              <li>提问前请先搜索</li>
-            </ul>
-          </div>
         </aside>
       </div>
     </div>
@@ -899,7 +893,7 @@ $border-color: #eee;
 .r-community--item .r-community--item_cover { width: 148px; height: 96px; border-radius: 13px; box-shadow: 0 7px 18px rgba(35,48,70,.12); }
 .r-community--sidebar { width: 292px; position: sticky; top: 82px; }
 .r-community--side_card { padding: 20px; border: 1px solid rgba(255,255,255,.9); border-radius: 18px; background: rgba(255,255,255,.76); backdrop-filter: blur(16px); box-shadow: 0 14px 40px rgba(39,55,82,.07); }
-.r-community--side_card:first-child { background: linear-gradient(145deg, rgba(255,250,232,.94), rgba(255,255,255,.82)); }
+.r-community--boards_card { background: linear-gradient(145deg, rgba(255,250,232,.94), rgba(255,255,255,.82)); }
 .r-community--ann_item { padding:12px 14px; border:0!important; border-radius:11px; }
 .r-community--ann_title { color:#9f2f35; font-weight:700; }
 .r-community--ann_content { margin-top:3px; color:#8b4a4e; line-height:1.55; }
@@ -954,7 +948,8 @@ $border-color: #eee;
 .r-community--subscription_board > span { width:34px; font-size:20px; text-align:center; }
 .r-community--subscription_board b { min-width:100px; color:#273247; }
 .r-community--subscription_board small { flex:1; }
-.r-community--topic_meta { display:flex; align-items:center; gap:8px; margin:0 0 7px 50px; font-size:12px; font-weight:700; }
+.r-community--author_meta { display:flex; align-items:center; flex-wrap:wrap; gap:5px 10px; }
+.r-community--topic_meta { flex:none; font-size:12px; font-weight:700; white-space:nowrap; }
 .r-community--question_state { padding:2px 7px; border-radius:999px; color:#b54708; background:#fff3df; }
 .r-community--question_state.solved { color:#087443; background:#e9f8ef; }
 .r-community--item_tags { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:11px; color:#8a6a1c; font-size:12px; }
@@ -976,7 +971,6 @@ $border-color: #eee;
 @media (max-width: 768px) {
   .r-community--tabs :deep(.el-radio-group) { display:flex; width:100%; overflow-x:auto; padding-bottom:3px; }
   .r-community--forum_search { width:100%; }
-  .r-community--topic_meta { margin-left:0; }
   .r-community--item_footer .r-community--last_reply { display:none; }
 }
 </style>
