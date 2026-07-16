@@ -16,13 +16,13 @@
         <!-- 左侧内容 -->
         <div class="r-community--content">
           <div class="r-community--tabs">
-            <span class="r-community--tabs_label">浏览话题</span>
-            <el-radio-group v-model="activeCategory" @change="fetchPosts">
-              <el-radio-button label="">全部</el-radio-button>
-              <el-radio-button label="discussion">讨论</el-radio-button>
-              <el-radio-button label="question">问答</el-radio-button>
-              <el-radio-button label="share">分享</el-radio-button>
-              <el-radio-button label="tutorial">教程</el-radio-button>
+            <span class="r-community--tabs_label">{{ activeBoard ? activeBoard.name : '全部帖子' }}</span>
+            <el-radio-group v-model="sortBy" @change="changeSort">
+              <el-radio-button label="active">最新回复</el-radio-button>
+              <el-radio-button label="latest">最新发布</el-radio-button>
+              <el-radio-button label="hot">热门</el-radio-button>
+              <el-radio-button label="essence">精华</el-radio-button>
+              <el-radio-button label="unanswered">待解决</el-radio-button>
             </el-radio-group>
           </div>
           
@@ -37,13 +37,17 @@
                   </div>
                   <el-tag v-if="post.is_top" type="danger" size="small">置顶</el-tag>
                   <el-tag v-if="post.is_essence" type="warning" size="small">精华</el-tag>
+                  <el-tag v-if="post.is_locked" type="info" size="small">已锁定</el-tag>
                 </div>
+                <div class="r-community--topic_meta"><span v-if="post.board" :style="{ color: post.board.color }">{{ post.board.icon }} {{ post.board.name }}</span><span v-if="post.post_type === 'question'" :class="['r-community--question_state', { solved: post.accepted_comment_id }]">{{ post.accepted_comment_id ? '已解决' : '待解决' }}</span></div>
                 <h4 class="r-community--item_title">{{ post.title }}</h4>
                 <p class="r-community--item_content">{{ stripMarkdown(post.content) }}...</p>
+                <div v-if="post.tags?.length" class="r-community--item_tags"><span v-for="tag in post.tags.slice(0, 4)" :key="tag">#{{ tag }}</span></div>
                 <div class="r-community--item_footer">
                   <span><span class="r-community--stat_icon r-community--stat_icon_view"></span>{{ post.view_count }}</span>
                   <span><span class="r-community--stat_icon r-community--stat_icon_like"></span>{{ post.like_count }}</span>
-                  <span><span class="r-community--stat_icon r-community--stat_icon_comment"></span>{{ post.comment_count }}</span>
+                  <span><span class="r-community--stat_icon r-community--stat_icon_comment"></span>{{ post.reply_count || post.comment_count }}</span>
+                  <span class="r-community--last_reply" v-if="post.last_reply_user">最后回复 {{ post.last_reply_user.nickname || post.last_reply_user.username }} · {{ formatTime(post.last_reply_at) }}</span>
                 </div>
               </div>
               <img v-if="post.cover" :src="post.cover" class="r-community--item_cover" referrerpolicy="no-referrer" />
@@ -65,6 +69,15 @@
         
         <!-- 右侧边栏 -->
         <aside class="r-community--sidebar">
+          <div class="r-community--side_card r-community--boards_card">
+            <div class="r-community--side_heading"><h4 class="r-community--card_title">论坛版块</h4><button v-if="activeBoardId" @click="selectBoard(null)">查看全部</button></div>
+            <button v-for="board in boards" :key="board.id" :class="['r-community--board_item', { active: Number(activeBoardId) === Number(board.id) }]" @click="selectBoard(board)">
+              <span class="r-community--board_icon" :style="{ background: `${board.color}18`, color: board.color }">{{ board.icon }}</span>
+              <span><b>{{ board.name }}</b><small>{{ board.description }}</small></span>
+              <em>{{ board.post_count }}</em>
+            </button>
+          </div>
+
           <div class="r-community--side_card">
             <h4 class="r-community--card_title">社区公告</h4>
             <div v-if="communityAnnouncements.length" class="r-community--ann_list">
@@ -102,11 +115,15 @@
           <el-input v-model="postForm.title" placeholder="请输入标题" maxlength="100" show-word-limit />
         </el-form-item>
         <el-form-item label="分类" prop="category">
-          <el-radio-group v-model="postForm.category">
-            <el-radio label="discussion">讨论</el-radio>
-            <el-radio label="question">问答</el-radio>
-            <el-radio label="share">分享</el-radio>
-            <el-radio label="tutorial">教程</el-radio>
+          <el-select v-model="postForm.board_id" placeholder="选择发布版块" style="width: 100%">
+            <el-option v-for="board in boards" :key="board.id" :label="`${board.icon} ${board.name}`" :value="board.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="帖子类型" prop="post_type">
+          <el-radio-group v-model="postForm.post_type">
+            <el-radio label="discussion">普通讨论</el-radio>
+            <el-radio label="question">问答求助</el-radio>
+            <el-radio label="tutorial">教程文章</el-radio>
           </el-radio-group>
         </el-form-item>
         <el-form-item label="内容" prop="content">
@@ -189,7 +206,10 @@ const loadCommunityAnnouncements = async () => {
   } catch (e) {}
 }
 
-const activeCategory = ref('')
+const boards = ref([])
+const activeBoardId = ref(null)
+const sortBy = ref('active')
+const activeBoard = computed(() => boards.value.find(board => Number(board.id) === Number(activeBoardId.value)) || null)
 const posts = ref([])
 const currentPage = ref(1)
 const pageSize = ref(10)
@@ -222,7 +242,8 @@ const defaultAvatar = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy5
 const postForm = reactive({
   title: '',
   content: '',
-  category: 'discussion',
+  board_id: null,
+  post_type: 'discussion',
   cover: '',
   tags: ''
 })
@@ -265,7 +286,8 @@ const fetchPosts = async () => {
     const res = await postApi.getPosts({
       page: currentPage.value,
       pageSize: pageSize.value,
-      category: activeCategory.value
+      board_id: activeBoardId.value || undefined,
+      sortBy: sortBy.value
     })
     if (res.code === 200) {
       posts.value = res.data.list
@@ -276,6 +298,29 @@ const fetchPosts = async () => {
   } finally {
     loading.value = false
   }
+}
+
+const loadBoards = async () => {
+  try {
+    const res = await postApi.getBoards()
+    if (res.code === 200) {
+      boards.value = Array.isArray(res.data) ? res.data : []
+      if (!postForm.board_id && boards.value.length) postForm.board_id = boards.value[0].id
+    }
+  } catch (e) {
+    console.error('获取论坛板块失败:', e)
+  }
+}
+
+const selectBoard = (board) => {
+  activeBoardId.value = board?.id || null
+  currentPage.value = 1
+  fetchPosts()
+}
+
+const changeSort = () => {
+  currentPage.value = 1
+  fetchPosts()
 }
 
 const fetchGeetestConfig = async () => {
@@ -292,7 +337,10 @@ const fetchGeetestConfig = async () => {
 const showPostDialog = () => {
   postForm.title = ''
   postForm.content = ''
-  postForm.category = 'discussion'
+  postForm.board_id = activeBoardId.value || boards.value[0]?.id || null
+  postForm.post_type = activeBoard.value?.slug === 'question'
+    ? 'question'
+    : activeBoard.value?.slug === 'tutorial' ? 'tutorial' : 'discussion'
   postForm.cover = ''
   postForm.tags = ''
   postDialogVisible.value = true
@@ -350,8 +398,9 @@ const createPost = async () => {
   }
 }
 
-onMounted(() => {
+onMounted(async () => {
   loadCommunityAnnouncements()
+  await loadBoards()
   fetchPosts()
   fetchGeetestConfig()
 })
@@ -698,4 +747,24 @@ $border-color: #eee;
 .r-community--cover_upload img { width:126px; height:72px; object-fit:cover; border-radius:10px; }
 .r-community--cover_upload > div { flex:1; display:flex; flex-direction:column; gap:4px; color:#344054; }
 .r-community--cover_upload > div span { color:#98a2b3; font-size:12px; }
+.r-community--side_heading { display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; }
+.r-community--side_heading .r-community--card_title { margin:0; padding:0; border:0; }
+.r-community--side_heading button { border:0; background:transparent; color:#b77908; font-size:12px; cursor:pointer; }
+.r-community--board_item { width:100%; display:grid; grid-template-columns:36px 1fr auto; align-items:center; gap:10px; padding:10px; margin-top:6px; border:1px solid transparent; border-radius:12px; background:transparent; text-align:left; cursor:pointer; transition:.2s; }
+.r-community--board_item:hover,.r-community--board_item.active { border-color:#f1d687; background:#fff9e8; }
+.r-community--board_icon { width:36px; height:36px; display:grid; place-items:center; border-radius:11px; font-size:17px; }
+.r-community--board_item b,.r-community--board_item small { display:block; }
+.r-community--board_item b { color:#273247; font-size:13px; }
+.r-community--board_item small { margin-top:2px; color:#98a2b3; font-size:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:158px; }
+.r-community--board_item em { color:#98a2b3; font-size:11px; font-style:normal; }
+.r-community--topic_meta { display:flex; align-items:center; gap:8px; margin:0 0 7px 50px; font-size:12px; font-weight:700; }
+.r-community--question_state { padding:2px 7px; border-radius:999px; color:#b54708; background:#fff3df; }
+.r-community--question_state.solved { color:#087443; background:#e9f8ef; }
+.r-community--item_tags { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:11px; color:#8a6a1c; font-size:12px; }
+.r-community--item_footer .r-community--last_reply { margin-left:auto; color:#7c8799; }
+@media (max-width: 768px) {
+  .r-community--tabs :deep(.el-radio-group) { display:flex; width:100%; overflow-x:auto; padding-bottom:3px; }
+  .r-community--topic_meta { margin-left:0; }
+  .r-community--item_footer .r-community--last_reply { display:none; }
+}
 </style>

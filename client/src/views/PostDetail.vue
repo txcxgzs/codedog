@@ -3,6 +3,12 @@
     <div class="r-post--container" v-if="post">
       <div class="r-post--main">
         <div class="r-post--header">
+          <div class="r-post--board_meta" v-if="post.board">
+            <router-link to="/community">论坛</router-link><span>/</span>
+            <span :style="{ color: post.board.color }">{{ post.board.icon }} {{ post.board.name }}</span>
+            <el-tag v-if="post.post_type === 'question'" :type="post.accepted_comment_id ? 'success' : 'warning'" size="small">{{ post.accepted_comment_id ? '已解决' : '待解决' }}</el-tag>
+            <el-tag v-if="post.is_locked" type="info" size="small">已锁定</el-tag>
+          </div>
           <h1 class="r-post--title">{{ post.title }}</h1>
           <div class="r-post--meta">
             <span class="r-post--author_link" role="link" tabindex="0" @click="goToAuthor" @keydown.enter="goToAuthor">
@@ -69,6 +75,9 @@
             {{ isFavorited ? '已收藏' : '收藏' }} {{ post.collection_count || 0 }}
           </el-button>
           <!-- 修复: 帖子作者显示编辑按钮 -->
+          <el-button v-if="userStore.isLoggedIn" :type="subscribed ? 'warning' : 'default'" @click="togglePostSubscription">
+            {{ subscribed ? '已订阅回复' : '订阅回复' }}
+          </el-button>
           <el-button v-if="userStore.user?.id === post.author?.id && !isEditing" type="primary" plain @click="startEdit">
             <el-icon><EditPen /></el-icon>编辑
           </el-button>
@@ -89,7 +98,8 @@
         <div class="r-post--comments" ref="commentSection">
           <h3 class="r-post--comments_title">评论 ({{ post.comment_count }})</h3>
           
-          <div class="r-post--comment_form" v-if="userStore.isLoggedIn">
+          <div v-if="post.is_locked" class="r-post--locked_notice">该帖子已锁定，暂时不能继续回复。</div>
+          <div class="r-post--comment_form" v-if="userStore.isLoggedIn && !post.is_locked">
             <div v-if="replyToCommentId" class="r-post--reply_hint">
               回复评论中...
               <el-button text size="small" @click="replyToCommentId = null; replyToUserId = null; commentContent = ''">取消回复</el-button>
@@ -103,12 +113,15 @@
           </div>
           
           <div class="r-post--comment_list">
-            <div v-for="comment in comments" :key="comment.id" class="r-post--comment_item">
+            <div v-for="(comment, index) in comments" :key="comment.id" :class="['r-post--comment_item', { 'is-accepted': Number(post.accepted_comment_id) === Number(comment.id) }]">
               <AppImage :src="comment.user?.avatar || defaultAvatar" :fallback="defaultAvatar" class="r-post--comment_avatar" @click="goToUser(comment)" style="cursor: pointer;" />
               <div class="r-post--comment_body">
                 <div class="r-post--comment_header">
                   <span class="r-post--comment_name" @click="goToUser(comment)" style="cursor: pointer;">{{ comment.user?.nickname || comment.user?.username }}</span>
                   <span class="r-post--comment_time">{{ formatTime(comment.created_at) }}</span>
+                  <span class="r-post--floor">#{{ Math.max(1, (post.comment_count || comments.length) - index) }}楼</span>
+                  <el-tag v-if="Number(post.accepted_comment_id) === Number(comment.id)" type="success" size="small">已采纳答案</el-tag>
+                  <button v-if="canAcceptAnswer(comment)" type="button" class="r-post--accept_answer" @click="acceptAnswer(comment)">采纳答案</button>
                 </div>
                 <SocialCommentCard :content="comment.content" :author="comment.user" />
                 <div class="r-post--comment_actions">
@@ -244,6 +257,7 @@ const wysiwygRef = ref(null)
 const comments = ref([])
 const relatedPosts = ref([])
 const liked = ref(false)
+const subscribed = ref(false)
 const following = ref(false)
 const commentContent = ref('')
 const selectedSocialCard = ref(null)
@@ -338,6 +352,7 @@ const fetchPost = async () => {
     if (res.code === 200) {
       post.value = res.data
       liked.value = !!res.data.liked
+      subscribed.value = !!res.data.subscribed
       isFavorited.value = !!res.data.favorited
       comments.value = res.data.comments || []
       fetchRelatedPosts()
@@ -796,6 +811,36 @@ const selectSocialCard = async type => {
     const { value } = await ElMessageBox.prompt(studio ? '请输入要分享的编程狗工作室 ID' : '请输入创建好的 IM 群聊 ID', studio ? '发送工作室卡片' : '发送群聊邀请卡片', { inputPattern:/^\d+$/, inputErrorMessage:studio ? '请输入正确的工作室 ID' : '请输入正确的群聊 ID' })
     selectedSocialCard.value = { type, target_id:Number(value) }
   } catch (error) { if (!['cancel','close'].includes(error)) ElMessage.error('无法选择社交卡片') }
+}
+
+const togglePostSubscription = async () => {
+  try {
+    const res = await postApi.toggleSubscription(post.value.id)
+    if (res.code === 200) {
+      subscribed.value = !!res.data?.subscribed
+      ElMessage.success(subscribed.value ? '已订阅帖子回复' : '已取消订阅')
+    }
+  } catch (e) {
+    ElMessage.error(e.response?.data?.msg || '操作失败')
+  }
+}
+
+const canAcceptAnswer = comment => post.value?.post_type === 'question'
+  && Number(userStore.user?.id) === Number(post.value?.author?.id)
+  && !post.value?.accepted_comment_id
+  && Number(comment.user_id) !== Number(userStore.user?.id)
+
+const acceptAnswer = async comment => {
+  try {
+    await ElMessageBox.confirm('采纳后该问题将标记为已解决，确定采纳这个回答吗？', '采纳答案', { type: 'warning' })
+    const res = await postApi.acceptAnswer(post.value.id, comment.id)
+    if (res.code === 200) {
+      post.value.accepted_comment_id = comment.id
+      ElMessage.success('答案已采纳')
+    }
+  } catch (e) {
+    if (e !== 'cancel') ElMessage.error(e.response?.data?.msg || '采纳失败')
+  }
 }
 </script>
 
@@ -1435,6 +1480,12 @@ $border-color: #eee;
 .r-post--comment_form { padding:16px; border:1px solid #e7ebf2; border-radius:16px; background:linear-gradient(145deg,#fbfcff,#fffaf0); }
 .r-post--comment_form :deep(.el-textarea__inner) { min-height:92px!important; padding:14px; border:0; border-radius:12px!important; background:#fff; box-shadow:0 0 0 1px #e2e7ef inset; }
 .r-post--comment_form .el-button { height:38px; padding:0 17px; border-radius:11px!important; font-weight:700; }
+.r-post--board_meta { display:flex; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:12px; color:#7c8799; font-size:13px; }
+.r-post--board_meta a { color:#9a6a00; text-decoration:none; }
+.r-post--locked_notice { margin:0 0 16px; padding:12px 14px; border:1px solid #eadfbf; border-radius:12px; background:#fff9e8; color:#8a6410; }
+.r-post--comment_item.is-accepted { margin:8px 0; padding:20px 14px; border:1px solid #a9dfbd; border-radius:14px; background:#f3fbf6; }
+.r-post--floor { margin-left:auto; color:#98a2b3; font-size:12px; }
+.r-post--accept_answer { border:0; border-radius:8px; padding:4px 9px; background:#e9f8ef; color:#087443; font-size:12px; cursor:pointer; }
 .r-post--comment_item { gap:14px; padding:20px 4px; border-bottom-color:#edf0f5; }
 .r-post--comment_item .r-post--comment_avatar { width:42px; height:42px; box-shadow:0 0 0 3px #fff,0 4px 12px rgba(35,48,70,.1); }
 .r-post--comment_item .r-post--comment_header .r-post--comment_name { color:#344054; font-weight:700; }

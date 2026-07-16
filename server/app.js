@@ -344,6 +344,17 @@ async function startServer() {
 
             // Post 表新增字段
             await ensureColumn('posts', 'hidden_reason', { sqlite: 'VARCHAR(50)', mysql: 'VARCHAR(50) NULL' });
+            // 成熟论坛基础字段。旧数据全部保留，board_id 在 sync 后按原 category 回填。
+            await ensureColumn('posts', 'board_id', { sqlite: 'INTEGER', mysql: 'INT NULL' });
+            await ensureColumn('posts', 'post_type', { sqlite: "VARCHAR(30) NOT NULL DEFAULT 'discussion'", mysql: "VARCHAR(30) NOT NULL DEFAULT 'discussion'" });
+            await ensureColumn('posts', 'last_reply_at', { sqlite: 'DATETIME', mysql: 'DATETIME NULL' });
+            await ensureColumn('posts', 'last_reply_user_id', { sqlite: 'INTEGER', mysql: 'INT NULL' });
+            await ensureColumn('posts', 'last_comment_id', { sqlite: 'INTEGER', mysql: 'INT NULL' });
+            await ensureColumn('posts', 'reply_count', { sqlite: 'INTEGER NOT NULL DEFAULT 0', mysql: 'INT NOT NULL DEFAULT 0' });
+            await ensureColumn('posts', 'participant_count', { sqlite: 'INTEGER NOT NULL DEFAULT 1', mysql: 'INT NOT NULL DEFAULT 1' });
+            await ensureColumn('posts', 'is_locked', { sqlite: 'INTEGER NOT NULL DEFAULT 0', mysql: 'TINYINT(1) NOT NULL DEFAULT 0' });
+            await ensureColumn('posts', 'slow_mode_seconds', { sqlite: 'INTEGER NOT NULL DEFAULT 0', mysql: 'INT NOT NULL DEFAULT 0' });
+            await ensureColumn('posts', 'accepted_comment_id', { sqlite: 'INTEGER', mysql: 'INT NULL' });
 
             // Banner 表新增字段
             await ensureColumn('banners', 'source', { sqlite: 'VARCHAR(20)', mysql: 'VARCHAR(20) NULL' });
@@ -424,6 +435,30 @@ async function startServer() {
         }
 
         await sequelize.sync(syncOptions);
+
+        // 论坛默认版块采用幂等种子：重复启动或智能更新不会覆盖管理员后续修改。
+        try {
+            const { ForumBoard } = require('./models');
+            const defaultBoards = [
+                { slug: 'discussion', name: '交流讨论', description: '讨论编程、创作与社区话题', icon: '💬', color: '#fec433', sort_order: 10 },
+                { slug: 'question', name: '问答互助', description: '提出问题，等待社区成员解答', icon: '❓', color: '#5b8def', sort_order: 20 },
+                { slug: 'share', name: '作品分享', description: '分享作品、经验、灵感与创作过程', icon: '✨', color: '#8b6ee8', sort_order: 30 },
+                { slug: 'tutorial', name: '教程知识', description: '发布教程、知识总结与学习资料', icon: '📚', color: '#37a56b', sort_order: 40 },
+                { slug: 'news', name: '官方公告', description: '编程狗官方动态与重要通知', icon: '📢', color: '#ef6a5b', sort_order: 50, allow_post_roles: ['admin', 'superadmin'] }
+            ];
+            for (const board of defaultBoards) await ForumBoard.findOrCreate({ where: { slug: board.slug }, defaults: board });
+            for (const board of defaultBoards) {
+                await sequelize.query('UPDATE posts SET board_id = (SELECT id FROM forum_boards WHERE slug = :slug), post_type = CASE WHEN category = :slug THEN :postType ELSE post_type END WHERE board_id IS NULL AND category = :slug', {
+                    replacements: { slug: board.slug, postType: board.slug === 'question' ? 'question' : board.slug === 'tutorial' ? 'tutorial' : 'discussion' }
+                });
+            }
+            await sequelize.query('UPDATE posts SET last_reply_at = created_at WHERE last_reply_at IS NULL');
+            await sequelize.query("UPDATE posts SET reply_count = (SELECT COUNT(*) FROM comments WHERE comments.post_id = posts.id AND comments.status = 'active') WHERE reply_count = 0");
+            await sequelize.query("UPDATE posts SET participant_count = 1 + (SELECT COUNT(DISTINCT user_id) FROM comments WHERE comments.post_id = posts.id AND comments.status = 'active' AND comments.user_id != posts.user_id) WHERE participant_count <= 1");
+            console.log('[迁移] 论坛默认版块和旧帖子归属已校准');
+        } catch (forumSeedError) {
+            console.warn('[迁移] 论坛版块种子或旧数据回填跳过:', forumSeedError.message);
+        }
         require('./services/imStatusPush').startImStatusPush();
         if (sessionStore) await sessionStore.sync();
         console.log('Database models synchronized.');

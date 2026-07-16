@@ -75,6 +75,7 @@ const Work = sequelize.define('Work', {
     praise_times: { type: DataTypes.INTEGER, defaultValue: 0 },
     collection_times: { type: DataTypes.INTEGER, defaultValue: 0 },
     comment_count: { type: DataTypes.INTEGER, defaultValue: 0 },
+    reply_count: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
     // 新增 'hidden' 状态：管理员可隐藏作品(从前台和列表移除,数据保留),与 deleted 区分
     status: { type: DataTypes.ENUM('pending', 'published', 'rejected', 'hidden', 'deleted'), defaultValue: 'published' },
     is_featured: { type: DataTypes.BOOLEAN, defaultValue: false }
@@ -121,6 +122,15 @@ const Post = sequelize.define('Post', {
     is_top: { type: DataTypes.BOOLEAN, defaultValue: false },
     is_essence: { type: DataTypes.BOOLEAN, defaultValue: false },
     category: { type: DataTypes.STRING(50), defaultValue: 'discussion' },
+    board_id: { type: DataTypes.INTEGER, allowNull: true },
+    post_type: { type: DataTypes.STRING(30), allowNull: false, defaultValue: 'discussion' },
+    last_reply_at: { type: DataTypes.DATE, allowNull: true },
+    last_reply_user_id: { type: DataTypes.INTEGER, allowNull: true },
+    last_comment_id: { type: DataTypes.INTEGER, allowNull: true },
+    participant_count: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 1 },
+    is_locked: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
+    slow_mode_seconds: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
+    accepted_comment_id: { type: DataTypes.INTEGER, allowNull: true },
     cover: { type: DataTypes.STRING(500) },
     // 中·绕过隐藏: 区分 AI 隐藏 vs 管理员手动隐藏。
     // 'ai_review' = AI 审核触发自动隐藏,编辑后审核通过可自动恢复 published;
@@ -151,9 +161,42 @@ const Post = sequelize.define('Post', {
     indexes: [
         { fields: ['status'] },
         { fields: ['user_id'] },
-        { fields: ['category'] }
+        { fields: ['category'] },
+        { fields: ['board_id', 'status', 'last_reply_at'] },
+        { fields: ['post_type', 'status'] }
     ]
 }, TIMESTAMP_OPTS));
+
+const ForumBoard = sequelize.define('ForumBoard', {
+    id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+    slug: { type: DataTypes.STRING(50), allowNull: false, unique: true },
+    name: { type: DataTypes.STRING(50), allowNull: false },
+    description: { type: DataTypes.STRING(300), allowNull: false, defaultValue: '' },
+    icon: { type: DataTypes.STRING(30), allowNull: false, defaultValue: '💬' },
+    color: { type: DataTypes.STRING(20), allowNull: false, defaultValue: '#fec433' },
+    sort_order: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
+    status: { type: DataTypes.STRING(20), allowNull: false, defaultValue: 'active' },
+    allow_post_roles: {
+        type: DataTypes.TEXT,
+        allowNull: false,
+        defaultValue: '["user","reviewer","moderator","admin","superadmin"]',
+        get() { try { return JSON.parse(this.getDataValue('allow_post_roles') || '[]'); } catch { return []; } },
+        set(value) { this.setDataValue('allow_post_roles', JSON.stringify(Array.isArray(value) ? value : [])); }
+    }
+}, Object.assign({ tableName: 'forum_boards', indexes: [{ fields: ['status', 'sort_order'] }] }, TIMESTAMP_OPTS));
+
+const ForumBoardSubscription = sequelize.define('ForumBoardSubscription', {
+    id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+    board_id: { type: DataTypes.INTEGER, allowNull: false },
+    user_id: { type: DataTypes.INTEGER, allowNull: false }
+}, Object.assign({ tableName: 'forum_board_subscriptions', indexes: [{ unique: true, fields: ['board_id', 'user_id'] }, { fields: ['user_id'] }] }, TIMESTAMP_OPTS));
+
+const PostSubscription = sequelize.define('PostSubscription', {
+    id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+    post_id: { type: DataTypes.INTEGER, allowNull: false },
+    user_id: { type: DataTypes.INTEGER, allowNull: false },
+    notify: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true }
+}, Object.assign({ tableName: 'post_subscriptions', indexes: [{ unique: true, fields: ['post_id', 'user_id'] }, { fields: ['user_id', 'notify'] }] }, TIMESTAMP_OPTS));
 
 const Studio = sequelize.define('Studio', {
     id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
@@ -496,6 +539,17 @@ User.hasMany(Work, { foreignKey: 'user_id', as: 'works' });
 Work.belongsTo(User, { foreignKey: 'user_id', as: 'author' });
 User.hasMany(Post, { foreignKey: 'user_id', as: 'posts' });
 Post.belongsTo(User, { foreignKey: 'user_id', as: 'author' });
+Post.belongsTo(User, { foreignKey: 'last_reply_user_id', as: 'last_reply_user', constraints: false });
+Post.belongsTo(ForumBoard, { foreignKey: 'board_id', as: 'board', constraints: false });
+ForumBoard.hasMany(Post, { foreignKey: 'board_id', as: 'posts', constraints: false });
+ForumBoardSubscription.belongsTo(ForumBoard, { foreignKey: 'board_id', as: 'board', onDelete: 'CASCADE' });
+ForumBoardSubscription.belongsTo(User, { foreignKey: 'user_id', as: 'user', onDelete: 'CASCADE' });
+ForumBoard.hasMany(ForumBoardSubscription, { foreignKey: 'board_id', as: 'subscriptions', onDelete: 'CASCADE' });
+User.hasMany(ForumBoardSubscription, { foreignKey: 'user_id', as: 'forum_board_subscriptions', onDelete: 'CASCADE' });
+PostSubscription.belongsTo(Post, { foreignKey: 'post_id', as: 'post', onDelete: 'CASCADE' });
+PostSubscription.belongsTo(User, { foreignKey: 'user_id', as: 'user', onDelete: 'CASCADE' });
+Post.hasMany(PostSubscription, { foreignKey: 'post_id', as: 'subscriptions', onDelete: 'CASCADE' });
+User.hasMany(PostSubscription, { foreignKey: 'user_id', as: 'post_subscriptions', onDelete: 'CASCADE' });
 User.hasMany(Comment, { foreignKey: 'user_id', as: 'comments' });
 Comment.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
 Comment.belongsTo(User, { foreignKey: 'reply_to_user_id', as: 'reply_to_user' });
@@ -697,7 +751,7 @@ Comment.belongsTo(Comment, { foreignKey: 'parent_id', as: 'parent' });
 
 module.exports = {
     sequelize,
-    User, Work, Comment, Post, Studio, StudioMember, StudioWork, StudioPointLog,
+    User, Work, Comment, Post, ForumBoard, ForumBoardSubscription, PostSubscription, Studio, StudioMember, StudioWork, StudioPointLog,
     Report, ReportAuditLog, DeveloperApp, DeveloperAppAuditLog, OAuthAuthCode, OAuthAccessToken, OAuthRefreshToken, UserAppAuthorization, Like, Favorite, Follow, Notification, Announcement, Banner, IpBan, CaptchaStats,
     SystemConfig, OperationLog, RolePermission, Statistics, SensitiveWord
 };

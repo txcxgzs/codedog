@@ -15,6 +15,7 @@ const likeRateLimit = createRateLimiter({
 
 // 公开路由
 router.get('/', postController.getPosts);
+router.get('/boards/list', optionalAuth, postController.getBoards);
 router.get('/my/list', authMiddleware, postController.getMyPosts);
 router.get('/:id', optionalAuth, postController.getPostDetail);
 
@@ -25,5 +26,8 @@ router.delete('/:id', authMiddleware, postController.deletePost);
 router.post('/:id/like', authMiddleware, likeRateLimit, geetestVerify('like'), postController.likePost);
 router.post('/:id/favorite', authMiddleware, likeRateLimit, geetestVerify('favorite'), postController.favoritePost);
 router.delete('/:id/favorite', authMiddleware, likeRateLimit, geetestVerify('favorite'), postController.unfavoritePost);
+router.post('/boards/:boardId/subscription', authMiddleware, postController.toggleBoardSubscription);
+router.post('/:id/subscription', authMiddleware, postController.togglePostSubscription);
+router.post('/:id/answers/:commentId/accept', authMiddleware, postController.acceptAnswer);
 
 module.exports = router;

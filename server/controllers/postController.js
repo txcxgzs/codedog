@@ -3,7 +3,7 @@ const DbAdapter = require('../utils/dbAdapter');
  * 社区帖子控制器
  */
 
-const { Post, User, Comment, sequelize } = require('../models');
+const { Post, User, Comment, Notification, ForumBoard, ForumBoardSubscription, PostSubscription, sequelize } = require('../models');
 const { successResponse, errorResponse, paginateResponse } = require('../middleware/response');
 const { Op } = require('sequelize');
 const { isRoleAtLeast, canManageUser } = require('../config/permissions');
@@ -13,6 +13,90 @@ const aiReview = require('../services/aiReview');
 
 function canInteractWithPost(post) {
     return post && post.status === 'published';
+}
+
+const POST_TYPES = new Set(['discussion', 'question', 'tutorial']);
+
+async function resolveBoard(boardId, legacyCategory, role = 'user') {
+    const where = boardId ? { id: Number(boardId), status: 'active' } : { slug: legacyCategory || 'discussion', status: 'active' };
+    const board = await ForumBoard.findOne({ where });
+    if (!board) return { error: '所选论坛版块不存在或已停用' };
+    const roles = Array.isArray(board.allow_post_roles) ? board.allow_post_roles : [];
+    if (roles.length && !roles.includes(role)) return { error: '当前账号无权在该版块发帖' };
+    return { board };
+}
+
+async function getBoards(req, res) {
+    try {
+        const boards = await ForumBoard.findAll({ where: { status: 'active' }, order: [['sort_order', 'ASC'], ['id', 'ASC']] });
+        const subscribed = req.user ? await ForumBoardSubscription.findAll({ where: { user_id: DbAdapter.getId(req.user) }, attributes: ['board_id'] }) : [];
+        const subscribedIds = new Set(subscribed.map(item => Number(item.board_id)));
+        const data = await Promise.all(boards.map(async board => ({
+            ...board.toJSON(),
+            post_count: await Post.count({ where: { board_id: board.id, status: 'published' } }),
+            subscribed: subscribedIds.has(Number(board.id))
+        })));
+        return successResponse(res, data);
+    } catch (error) {
+        console.error('获取论坛版块失败:', error);
+        return errorResponse(res, '获取论坛版块失败', 500);
+    }
+}
+
+async function toggleBoardSubscription(req, res) {
+    try {
+        const board = await ForumBoard.findOne({ where: { id: Number(req.params.boardId), status: 'active' } });
+        if (!board) return errorResponse(res, '论坛版块不存在', 404);
+        const where = { board_id: board.id, user_id: DbAdapter.getId(req.user) };
+        const existing = await ForumBoardSubscription.findOne({ where });
+        if (existing) {
+            await existing.destroy();
+            return successResponse(res, { subscribed: false }, '已取消关注版块');
+        }
+        await ForumBoardSubscription.create(where);
+        return successResponse(res, { subscribed: true }, '已关注版块');
+    } catch (error) {
+        console.error('关注论坛版块失败:', error);
+        return errorResponse(res, '操作失败', 500);
+    }
+}
+
+async function togglePostSubscription(req, res) {
+    try {
+        const post = await Post.findOne({ where: { id: Number(req.params.id), status: 'published' } });
+        if (!post) return errorResponse(res, '帖子不存在', 404);
+        const where = { post_id: post.id, user_id: DbAdapter.getId(req.user) };
+        const existing = await PostSubscription.findOne({ where });
+        if (existing) {
+            await existing.destroy();
+            return successResponse(res, { subscribed: false }, '已取消关注帖子');
+        }
+        await PostSubscription.create({ ...where, notify: true });
+        return successResponse(res, { subscribed: true }, '已关注帖子，有新回复时会通知你');
+    } catch (error) {
+        console.error('关注帖子失败:', error);
+        return errorResponse(res, '操作失败', 500);
+    }
+}
+
+async function acceptAnswer(req, res) {
+    try {
+        const post = await Post.findOne({ where: { id: Number(req.params.id), status: 'published' } });
+        if (!post) return errorResponse(res, '帖子不存在', 404);
+        if (post.post_type !== 'question') return errorResponse(res, '只有问答帖可以采纳回答', 400);
+        if (Number(post.user_id) !== Number(DbAdapter.getId(req.user)) && !isRoleAtLeast(req.user.role, 'moderator')) return errorResponse(res, '只有提问者或版务人员可以采纳回答', 403);
+        const comment = await Comment.findOne({ where: { id: Number(req.params.commentId), post_id: post.id, parent_id: null, status: 'active' } });
+        if (!comment) return errorResponse(res, '回答不存在或不能被采纳', 404);
+        post.accepted_comment_id = comment.id;
+        await post.save();
+        if (Number(comment.user_id) !== Number(DbAdapter.getId(req.user))) {
+            await Notification.create({ user_id: comment.user_id, sender_id: DbAdapter.getId(req.user), type: 'system', title: '你的回答已被采纳', content: post.title, related_id: post.id, related_type: 'post' });
+        }
+        return successResponse(res, { accepted_comment_id: comment.id }, '回答已采纳');
+    } catch (error) {
+        console.error('采纳回答失败:', error);
+        return errorResponse(res, '采纳回答失败', 500);
+    }
 }
 
 /**
@@ -57,7 +141,7 @@ function normalizePostOutput(post) {
  */
 async function createPost(req, res) {
     try {
-        const { title, content, category, tags, cover } = req.body;
+        const { title, content, category, board_id, post_type, tags, cover } = req.body;
         
         // 修复: null/undefined 先拦截,避免 String(null)=="null" 绕过校验
         if (title == null || content == null || !String(title).trim() || !String(content).trim()) {
@@ -89,16 +173,24 @@ async function createPost(req, res) {
         // 否则 updatePost 的恢复条件(status==='hidden' && hidden_reason==='ai_review')永远不满足
         const postStatus = reviewResult.recommendation === 'review' ? 'hidden' : 'published';
         const postHiddenReason = postStatus === 'hidden' ? 'ai_review' : null;
+        const boardResult = await resolveBoard(board_id, category, req.user.role);
+        if (boardResult.error) return errorResponse(res, boardResult.error, 400);
+        const normalizedType = POST_TYPES.has(post_type) ? post_type : (boardResult.board.slug === 'question' ? 'question' : boardResult.board.slug === 'tutorial' ? 'tutorial' : 'discussion');
 
         const post = await DbAdapter.create(Post, {
             title,
             content,
             user_id: DbAdapter.getId(req.user),
-            category: category || 'discussion',
+            category: boardResult.board.slug,
+            board_id: boardResult.board.id,
+            post_type: normalizedType,
             tags,
             cover,
             status: postStatus,
-            hidden_reason: postHiddenReason
+            hidden_reason: postHiddenReason,
+            last_reply_at: new Date(),
+            last_reply_user_id: DbAdapter.getId(req.user),
+            participant_count: 1
         });
         
         const result = await DbAdapter.findByPk(Post, post.id, {
@@ -106,7 +198,7 @@ async function createPost(req, res) {
                 model: User,
                 as: 'author',
                 attributes: ['id', 'codemao_user_id', 'username', 'nickname', 'avatar']
-            }]
+            }, { model: ForumBoard, as: 'board' }]
         });
         
         return successResponse(res, result, '发布成功');
@@ -123,6 +215,7 @@ async function getPosts(req, res) {
     try {
         const { page, pageSize, offset } = DbAdapter.parsePagination(req.query);
         const category = req.query.category || '';
+        const boardId = Number(req.query.board_id || 0);
         const keyword = req.query.keyword || '';
         const sortBy = req.query.sortBy || 'latest';
         // 规范化 isTop 参数：统一转小写字符串，兼容 'true'/'1'/'yes' 等多种写法，避免布尔/数字类型差异导致判断失效
@@ -130,6 +223,7 @@ async function getPosts(req, res) {
         
         // 统一使用 'published' 状态
         const where = { status: 'published' };
+        if (boardId > 0) where.board_id = boardId;
         
         if (category === 'essence') {
             where.is_essence = true;
@@ -150,7 +244,13 @@ async function getPosts(req, res) {
         
         let order = [['is_top', 'DESC'], ['created_at', 'DESC']];
         if (sortBy === 'hot') {
-            order = [['is_top', 'DESC'], ['view_count', 'DESC']];
+            order = [['is_top', 'DESC'], [sequelize.literal('(like_count * 4 + comment_count * 6 + view_count * 0.08)'), 'DESC'], ['last_reply_at', 'DESC']];
+        } else if (sortBy === 'active') {
+            order = [['is_top', 'DESC'], ['last_reply_at', 'DESC'], ['created_at', 'DESC']];
+        } else if (sortBy === 'unanswered') {
+            where.post_type = 'question';
+            where.accepted_comment_id = null;
+            order = [['created_at', 'DESC']];
         } else if (sortBy === 'essence') {
             where.is_essence = true;
             order = [['is_top', 'DESC'], ['created_at', 'DESC']];
@@ -166,6 +266,16 @@ async function getPosts(req, res) {
                 where: { status: 'active' },
                 required: false,
                 attributes: ['id', 'codemao_user_id', 'username', 'nickname', 'avatar']
+            }, {
+                model: User,
+                as: 'last_reply_user',
+                required: false,
+                attributes: ['id', 'codemao_user_id', 'username', 'nickname', 'avatar']
+            }, {
+                model: ForumBoard,
+                as: 'board',
+                required: false,
+                attributes: ['id', 'slug', 'name', 'icon', 'color']
             }],
             order,
             limit: pageSize,
@@ -194,6 +304,16 @@ async function getPostDetail(req, res) {
                 where: { status: 'active' },
                 required: false,
                 attributes: ['id', 'codemao_user_id', 'username', 'nickname', 'avatar', 'bio']
+            }, {
+                model: User,
+                as: 'last_reply_user',
+                required: false,
+                attributes: ['id', 'codemao_user_id', 'username', 'nickname', 'avatar']
+            }, {
+                model: ForumBoard,
+                as: 'board',
+                required: false,
+                attributes: ['id', 'slug', 'name', 'description', 'icon', 'color']
             }]
         });
         
@@ -229,13 +349,16 @@ async function getPostDetail(req, res) {
 
         let liked = false;
         let favorited = false;
+        let subscribed = false;
         if (req.user) {
-            const [existingLike, existingFav] = await Promise.all([
+            const [existingLike, existingFav, existingSubscription] = await Promise.all([
                 DbAdapter.findOne(Like, { where: { user_id: DbAdapter.getId(req.user), post_id: DbAdapter.getId(post) } }),
-                DbAdapter.findOne(Favorite, { where: { user_id: DbAdapter.getId(req.user), post_id: DbAdapter.getId(post) } })
+                DbAdapter.findOne(Favorite, { where: { user_id: DbAdapter.getId(req.user), post_id: DbAdapter.getId(post) } }),
+                PostSubscription.findOne({ where: { user_id: DbAdapter.getId(req.user), post_id: DbAdapter.getId(post) } })
             ]);
             liked = !!existingLike;
             favorited = !!existingFav;
+            subscribed = !!existingSubscription;
         }
 
         // 评论分页：使用 parsePagination 控制评论加载量,避免大帖卡死/超慢
@@ -292,7 +415,7 @@ async function getPostDetail(req, res) {
         });
 
         // M17: 去掉无条件 +1，直接使用 reload 后的实际 view_count（冷却期内不重复计数）
-        const postJson = normalizePostOutput({ ...post.toJSON(), comments: commentsJson, liked, favorited });
+        const postJson = normalizePostOutput({ ...post.toJSON(), comments: commentsJson, liked, favorited, subscribed });
 
         const commentIds = commentsJson.flatMap(c => [
             c.id,
@@ -331,7 +454,7 @@ async function getPostDetail(req, res) {
 async function updatePost(req, res) {
     try {
         const { id } = req.params;
-        const { title, content, category, tags, cover } = req.body;
+        const { title, content, category, board_id, post_type, tags, cover } = req.body;
         
         const post = await DbAdapter.findByPk(Post, id);
         if (!post) {
@@ -387,6 +510,16 @@ async function updatePost(req, res) {
             tags: tags !== undefined ? tags : post.tags,
             cover: cover !== undefined ? cover : post.cover
         };
+        if (board_id !== undefined || category !== undefined) {
+            const boardResult = await resolveBoard(board_id, category || post.category, req.user.role);
+            if (boardResult.error) return errorResponse(res, boardResult.error, 400);
+            updateData.board_id = boardResult.board.id;
+            updateData.category = boardResult.board.slug;
+        }
+        if (post_type !== undefined) {
+            if (!POST_TYPES.has(post_type)) return errorResponse(res, '帖子类型无效', 400);
+            updateData.post_type = post_type;
+        }
 
         if (title !== undefined || content !== undefined) {
             const reviewResult = await aiReview.fallbackReview(`${(finalTitle || '')}\n${(finalContent || '')}`);
@@ -413,7 +546,7 @@ async function updatePost(req, res) {
                 model: User,
                 as: 'author',
                 attributes: ['id', 'codemao_user_id', 'username', 'nickname', 'avatar']
-            }]
+            }, { model: ForumBoard, as: 'board' }]
         });
         
         return successResponse(res, updatedPost, '帖子已更新');
@@ -691,6 +824,10 @@ async function getMyPosts(req, res) {
 }
 
 module.exports = {
+    getBoards,
+    toggleBoardSubscription,
+    togglePostSubscription,
+    acceptAnswer,
     createPost,
     getPosts,
     getPostDetail,

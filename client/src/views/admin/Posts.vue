@@ -14,7 +14,7 @@
         <template #default="{ row }">{{ row.author?.nickname || row.author?.username }}</template>
       </el-table-column>
       <el-table-column prop="category" label="分类" width="100">
-        <template #default="{ row }">{{ categoryMap[row.category] || row.category }}</template>
+        <template #default="{ row }">{{ row.board ? `${row.board.icon} ${row.board.name}` : (categoryMap[row.category] || row.category) }}</template>
       </el-table-column>
       <el-table-column prop="view_count" label="浏览" width="80" />
       <el-table-column prop="like_count" label="点赞" width="80" />
@@ -72,6 +72,11 @@
           <el-form-item label="置顶">
             <el-switch v-model="editForm.is_top" />
           </el-form-item>
+          <el-form-item label="锁定回复"><el-switch v-model="editForm.is_locked" /></el-form-item>
+          <el-form-item label="慢速模式">
+            <el-input-number v-model="editForm.slow_mode_seconds" :min="0" :max="86400" :step="30" />
+            <span class="r-admin-posts--hint">秒，0 表示关闭</span>
+          </el-form-item>
         </el-form>
 
         <div style="display: flex; justify-content: space-between; gap: 8px; margin-top: 16px;">
@@ -103,7 +108,7 @@ const searchKeyword = ref('')
 // 帖子详情弹窗
 const detailVisible = ref(false)
 const editingPost = ref(null)
-const editForm = reactive({ title: '', category: '', is_essence: false, is_top: false })
+const editForm = reactive({ title: '', category: '', is_essence: false, is_top: false, is_locked: false, slow_mode_seconds: 0 })
 
 const categoryMap = { discussion: '讨论', question: '问答', share: '分享', tutorial: '教程', news: '公告' }
 
@@ -123,6 +128,8 @@ const openDetail = (post) => {
   editForm.category = post.category || 'discussion'
   editForm.is_essence = !!post.is_essence
   editForm.is_top = !!post.is_top
+  editForm.is_locked = !!post.is_locked
+  editForm.slow_mode_seconds = Number(post.slow_mode_seconds || 0)
   detailVisible.value = true
 }
 
@@ -132,7 +139,9 @@ const handleSavePost = async () => {
       title: editForm.title.trim(),
       category: editForm.category,
       is_essence: editForm.is_essence,
-      is_top: editForm.is_top
+      is_top: editForm.is_top,
+      is_locked: editForm.is_locked,
+      slow_mode_seconds: editForm.slow_mode_seconds
     })
     if (res.code === 200) {
       ElMessage.success('保存成功')
@@ -169,4 +178,5 @@ onMounted(fetchPosts)
 .r-admin-posts--page { background: #fff; border-radius: 12px; padding: 24px; }
 .r-admin-posts--toolbar { display: flex; gap: 12px; margin-bottom: 20px; .r-admin-posts--search { width: 300px; } }
 .r-admin-posts--pagination { display: flex; justify-content: flex-end; margin-top: 20px; }
+.r-admin-posts--hint { margin-left: 10px; color: #999; font-size: 12px; }
 </style>

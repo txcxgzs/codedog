@@ -5,6 +5,21 @@
 import request from './request'
 
 export const postApi = {
+  getBoards() {
+    return request.get('/posts/boards/list')
+  },
+
+  toggleBoardSubscription(boardId) {
+    return request.post(`/posts/boards/${boardId}/subscription`)
+  },
+
+  toggleSubscription(id) {
+    return request.post(`/posts/${id}/subscription`)
+  },
+
+  acceptAnswer(id, commentId) {
+    return request.post(`/posts/${id}/answers/${commentId}/accept`)
+  },
   getPosts(params = {}) {
     return request.get('/posts', { params })
   },

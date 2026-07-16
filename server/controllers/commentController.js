@@ -1,5 +1,5 @@
 const DbAdapter = require('../utils/dbAdapter');
-const { Comment, User, Work, Post, Studio, Notification, sequelize } = require('../models');
+const { Comment, User, Work, Post, Studio, Notification, PostSubscription, sequelize } = require('../models');
 const { successResponse, errorResponse, paginateResponse } = require('../middleware/response');
 const { isRoleAtLeast, canManageUser } = require('../config/permissions');
 // H12: 引入内容审核服务，落库前做敏感词检查
@@ -79,6 +79,20 @@ async function createComment(req, res) {
         if ((hasWorkTarget && !work) || (hasPostTarget && !post)) {
             return errorResponse(res, 'Comment target not found', 404);
         }
+        if (post?.is_locked && !['moderator', 'admin', 'superadmin'].includes(req.user.role)) {
+            return errorResponse(res, '该帖子已锁定，不能继续回复', 403);
+        }
+        if (post && Number(post.slow_mode_seconds || 0) > 0 && !['moderator', 'admin', 'superadmin'].includes(req.user.role)) {
+            const latestOwnReply = await Comment.findOne({
+                where: { post_id: DbAdapter.getId(post), user_id: DbAdapter.getId(req.user), status: 'active' },
+                order: [['created_at', 'DESC']],
+                attributes: ['created_at']
+            });
+            if (latestOwnReply) {
+                const remaining = Number(post.slow_mode_seconds) - Math.floor((Date.now() - new Date(latestOwnReply.created_at).getTime()) / 1000);
+                if (remaining > 0) return errorResponse(res, `该帖子已开启慢速模式，请在 ${remaining} 秒后再回复`, 429);
+            }
+        }
 
         const localWorkId = work ? DbAdapter.getId(work) : null;
         const localPostId = post ? DbAdapter.getId(post) : null;
@@ -142,11 +156,23 @@ async function createComment(req, res) {
             }
 
             if (post && isVisible) {
+                await DbAdapter.increment(post, 'reply_count', { transaction: t });
                 if (!parent_id) {
                     await DbAdapter.increment(post, 'comment_count', { transaction: t });
                 }
+                await DbAdapter.update(Post, {
+                    last_reply_at: new Date(),
+                    last_reply_user_id: DbAdapter.getId(req.user),
+                    last_comment_id: DbAdapter.getId(comment)
+                }, { where: { id: localPostId }, transaction: t });
             }
         });
+
+        if (post && isVisible) {
+            const participantCount = await Comment.count({ where: { post_id: localPostId, status: 'active' }, distinct: true, col: 'user_id' });
+            await DbAdapter.update(Post, { participant_count: Math.max(1, participantCount + (await Comment.count({ where: { post_id: localPostId, status: 'active', user_id: post.user_id } }) ? 0 : 1)) }, { where: { id: localPostId } });
+            await PostSubscription.findOrCreate({ where: { post_id: localPostId, user_id: DbAdapter.getId(req.user) }, defaults: { notify: true } });
+        }
 
         // 通知创建放在事务外,失败不影响评论落库
         if (isVisible) {
@@ -188,6 +214,22 @@ async function createComment(req, res) {
                         related_type: codemaoWorkId ? 'work' : 'post',
                         sender_id: DbAdapter.getId(req.user)
                     }));
+                }
+                if (post) {
+                    const excluded = new Set([String(DbAdapter.getId(req.user)), String(post.user_id || ''), String(replyToUserId || '')]);
+                    const subscribers = await PostSubscription.findAll({ where: { post_id: localPostId, notify: true }, attributes: ['user_id'] });
+                    for (const subscription of subscribers) {
+                        if (excluded.has(String(subscription.user_id))) continue;
+                        notificationPromises.push(DbAdapter.create(Notification, {
+                            user_id: subscription.user_id,
+                            type: 'reply',
+                            title: '你关注的帖子有新回复',
+                            content: notificationContent.substring(0, 100),
+                            related_id: codemaoPostId,
+                            related_type: 'post',
+                            sender_id: DbAdapter.getId(req.user)
+                        }));
+                    }
                 }
                 await Promise.allSettled(notificationPromises);
             } catch (notifyErr) {
@@ -385,6 +427,23 @@ async function deleteComment(req, res) {
                 }
             }
         });
+
+        if (comment.post_id) {
+            const [replyCount, participantCount, latestReply] = await Promise.all([
+                Comment.count({ where: { post_id: comment.post_id, status: 'active' } }),
+                Comment.count({ where: { post_id: comment.post_id, status: 'active' }, distinct: true, col: 'user_id' }),
+                Comment.findOne({ where: { post_id: comment.post_id, status: 'active' }, order: [['created_at', 'DESC']], attributes: ['id', 'user_id', 'created_at'] })
+            ]);
+            const targetPost = await Post.findByPk(comment.post_id, { attributes: ['id', 'user_id', 'accepted_comment_id', 'created_at'] });
+            if (targetPost) await Post.update({
+                reply_count: replyCount,
+                participant_count: Math.max(1, participantCount + (await Comment.count({ where: { post_id: comment.post_id, status: 'active', user_id: targetPost.user_id } }) ? 0 : 1)),
+                last_reply_at: latestReply?.created_at || targetPost.created_at,
+                last_reply_user_id: latestReply?.user_id || targetPost.user_id,
+                last_comment_id: latestReply?.id || null,
+                accepted_comment_id: Number(targetPost.accepted_comment_id) === Number(id) ? null : targetPost.accepted_comment_id
+            }, { where: { id: comment.post_id } });
+        }
 
         return successResponse(res, null, '评论已删除');
     } catch (error) {

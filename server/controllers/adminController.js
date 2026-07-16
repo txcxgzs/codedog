@@ -2,7 +2,7 @@
  * 后台管理控制器
  */
 
-const { User, Work, Comment, Post, Favorite, Follow, Banner, Report, ReportAuditLog, IpBan, Notification, Announcement, SystemConfig, OperationLog, SensitiveWord, RolePermission, CaptchaStats, Statistics, Studio, StudioMember, StudioWork, StudioPointLog, Like, sequelize } = require('../models');
+const { User, Work, Comment, Post, ForumBoard, Favorite, Follow, Banner, Report, ReportAuditLog, IpBan, Notification, Announcement, SystemConfig, OperationLog, SensitiveWord, RolePermission, CaptchaStats, Statistics, Studio, StudioMember, StudioWork, StudioPointLog, Like, sequelize } = require('../models');
 const { successResponse, errorResponse, paginateResponse } = require('../middleware/response');
 const { getAllRoles, canManageUser, getRole, hasPermission, getAllPermissions, refreshRoleCache, DEFAULT_ROLES } = require('../config/permissions');
 const { logOperation } = require('../middleware/operationLog');
@@ -1074,7 +1074,7 @@ async function getWorks(req, res) {
                 model: User,
                 as: 'author',
                 attributes: ['id', 'username', 'nickname', 'avatar']
-            }],
+            }, { model: ForumBoard, as: 'board', attributes: ['id', 'slug', 'name', 'icon', 'color'] }],
             order: [['created_at', 'DESC']],
             limit: pageSize,
             offset
@@ -5262,7 +5262,7 @@ async function deletePost(req, res) {
 async function updatePost(req, res) {
     try {
         const { postId } = req.params;
-        const { title, content, category, status, is_top, is_essence } = req.body;
+        const { title, content, category, status, is_top, is_essence, board_id, post_type, is_locked, slow_mode_seconds } = req.body;
 
         const post = await DbAdapter.findByPk(Post, postId);
         if (!post) {
@@ -5304,6 +5304,22 @@ async function updatePost(req, res) {
         }
         if (is_top !== undefined) updateData.is_top = is_top;
         if (is_essence !== undefined) updateData.is_essence = is_essence;
+        if (board_id !== undefined) {
+            const board = await DbAdapter.findByPk(ForumBoard, Number(board_id));
+            if (!board || board.status !== 'active') return errorResponse(res, '论坛板块不存在或已停用', 400);
+            updateData.board_id = Number(board_id);
+        }
+        if (post_type !== undefined) {
+            if (!['discussion', 'question', 'share', 'tutorial', 'news'].includes(post_type)) return errorResponse(res, '无效的帖子类型', 400);
+            updateData.post_type = post_type;
+            updateData.category = post_type;
+        }
+        if (is_locked !== undefined) updateData.is_locked = Boolean(is_locked);
+        if (slow_mode_seconds !== undefined) {
+            const seconds = Number(slow_mode_seconds);
+            if (!Number.isInteger(seconds) || seconds < 0 || seconds > 86400) return errorResponse(res, '慢速模式必须在 0 到 86400 秒之间', 400);
+            updateData.slow_mode_seconds = seconds;
+        }
 
         // Bug-6 修复: 管理员更新帖子 title/content 时缺少 AI 内容审核,
         // 用户可通过管理员通道编辑帖子绕过审核。参照 postController.updatePost 调用 aiReview.fallbackReview
