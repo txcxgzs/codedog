@@ -3,7 +3,7 @@ const DbAdapter = require('../utils/dbAdapter');
  * 社区帖子控制器
  */
 
-const { Post, User, Comment, Notification, ForumBoard, ForumBoardSubscription, PostSubscription, PostDraft, Favorite, sequelize } = require('../models');
+const { Post, User, Comment, Notification, ForumBoard, ForumBoardSubscription, PostSubscription, PostDraft, Favorite, Statistics, sequelize } = require('../models');
 const { successResponse, errorResponse, paginateResponse } = require('../middleware/response');
 const { Op } = require('sequelize');
 const { isRoleAtLeast, canManageUser } = require('../config/permissions');
@@ -15,6 +15,26 @@ const { getForumLeaderboard, getUserForumReputation, invalidateForumReputation }
 
 function canInteractWithPost(post) {
     return post && post.status === 'published';
+}
+
+// 浏览趋势按“帖子 + 小时”聚合，并循环复用 3 个时段槽位。
+// 这样后台可以识别短时间流量激增，同时不会为每次浏览永久新增一条日志。
+async function recordPostViewMetric(postId, viewedAt = new Date()) {
+    const bucket = new Date(viewedAt);
+    bucket.setMinutes(0, 0, 0);
+    const hourNumber = Math.floor(bucket.getTime() / (60 * 60 * 1000));
+    const statKey = `forum_post_view:${postId}:${hourNumber % 3}`;
+    const [row, created] = await Statistics.findOrCreate({
+        where: { stat_key: statKey },
+        defaults: { stat_value: 1, stat_date: bucket }
+    });
+    if (created) return;
+    const rowBucket = row.stat_date ? new Date(row.stat_date).getTime() : 0;
+    if (rowBucket !== bucket.getTime()) {
+        await row.update({ stat_value: 1, stat_date: bucket });
+    } else {
+        await row.increment('stat_value');
+    }
 }
 
 async function getLeaderboard(req, res) {
@@ -509,6 +529,12 @@ async function getPostDetail(req, res) {
         if (!lastView || (now - lastView) > VIEW_COOLDOWN) {
             // 原子 +1 避免 read-modify-write 竞态
             await DbAdapter.increment(post, 'view_count');
+            try {
+                await recordPostViewMetric(id, new Date(now));
+            } catch (metricError) {
+                // 趋势统计失败不能影响用户正常查看帖子。
+                console.warn('记录帖子浏览趋势失败:', metricError.message);
+            }
             // M17: reload 使实例 view_count 与数据库一致，避免下方手动 +1 不准
             await post.reload();
             if (req.session) {

@@ -26,9 +26,9 @@
         <div class="r-admin-posts--panel">
           <div class="r-admin-posts--panel_title"><b>需要关注</b><span>{{ overview.attention.length }} 项</span></div>
           <div v-if="overview.attention.length" class="r-admin-posts--attention">
-            <button v-for="item in overview.attention" :key="item.id" type="button" @click="openDetail(item)">
+            <button v-for="item in overview.attention" :key="item.id" type="button" @click="chooseAttentionAction(item)">
               <span class="r-admin-posts--attention_title">{{ item.title }}</span><span>{{ item.board?.icon }} {{ item.board?.name || '未分区' }}</span>
-              <el-tag size="small" :type="item.reason === 'hidden' ? 'warning' : 'info'">{{ item.reason === 'hidden' ? '待复核隐藏内容' : '超过 72 小时未解答' }}</el-tag>
+              <el-tag size="small" :type="attentionReason(item.reason).type">{{ attentionReason(item.reason, item.signal_count).label }}</el-tag>
             </button>
           </div>
           <el-empty v-else description="当前没有待关注内容" :image-size="48" />
@@ -251,6 +251,13 @@ const categoryMap = { discussion: '讨论', question: '问答', share: '分享',
 
 const trendMax = computed(() => Math.max(1, ...overview.trend.flatMap(item => [item.topics, item.replies])))
 const trendHeight = value => `${Math.max(value ? 8 : 2, Math.round((Number(value || 0) / trendMax.value) * 76))}px`
+const attentionReason = (reason, count) => ({
+  hidden: { label: '待复核隐藏内容', type: 'warning' },
+  stale_question: { label: '超过 72 小时未解答', type: 'info' },
+  rapid_views: { label: `2 小时浏览激增${count ? ` · ${count}` : ''}`, type: 'danger' },
+  rapid_likes: { label: `2 小时点赞激增${count ? ` · ${count}` : ''}`, type: 'danger' },
+  many_reports: { label: `集中举报${count ? ` · ${count}` : ''}`, type: 'danger' }
+}[reason] || { label: '需要关注', type: 'info' })
 
 const fetchOverview = async () => {
   overviewLoading.value = true
@@ -374,6 +381,20 @@ const openDetail = async (post) => {
   editForm.slow_mode_seconds = Number(post.slow_mode_seconds || 0)
   editForm.moderation_reason = ''
   detailVisible.value = true
+}
+
+const chooseAttentionAction = async post => {
+  try {
+    await ElMessageBox.confirm(`帖子“${post.title}”需要关注，请选择要打开的位置。`, '查看关注帖子', {
+      type: 'warning',
+      confirmButtonText: '打开原帖',
+      cancelButtonText: '打开管理页',
+      distinguishCancelAndClose: true
+    })
+    router.push(`/post/${post.id}`)
+  } catch (action) {
+    if (action === 'cancel') await openDetail(post)
+  }
 }
 
 const handleSavePost = async () => {

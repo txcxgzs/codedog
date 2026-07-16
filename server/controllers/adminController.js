@@ -5565,6 +5565,7 @@ async function getForumOverview(req, res) {
         const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
         const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
         const staleBefore = new Date(now.getTime() - 72 * 60 * 60 * 1000);
+        const twoHoursAgo = new Date(now.getTime() - 2 * 60 * 60 * 1000);
         const trendStart = new Date(todayStart.getTime() - 6 * 24 * 60 * 60 * 1000);
         const publishedWhere = { ...boardWhere, status: 'published' };
         const commentPostWhere = { ...boardWhere, status: { [Op.ne]: 'deleted' } };
@@ -5577,7 +5578,7 @@ async function getForumOverview(req, res) {
             totalPublished, totalReplies, todayTopics, todayReplies, unansweredQuestions,
             staleQuestions, lockedTopics, hiddenTopics, essenceTopics, activePostAuthors,
             activeReplyAuthors, postTrendRows, replyTrendRows, boards, boardCountRows,
-            hiddenAttention, staleAttention
+            hiddenAttention, staleAttention, recentLikeRows, pendingReportRows, recentViewRows
         ] = await Promise.all([
             Post.count({ where: publishedWhere }),
             Comment.count({ ...commentScope, distinct: true, col: 'id' }),
@@ -5618,6 +5619,21 @@ async function getForumOverview(req, res) {
                 where: { ...publishedWhere, post_type: 'question', accepted_comment_id: null, created_at: { [Op.lt]: staleBefore } },
                 include: [{ model: User, as: 'author', attributes: ['id', 'username', 'nickname'] }, { model: ForumBoard, as: 'board', attributes: ['id', 'name', 'icon'] }],
                 order: [['created_at', 'ASC']], limit: 6
+            }),
+            Like.findAll({
+                attributes: ['post_id', [sequelize.fn('COUNT', sequelize.col('id')), 'count']],
+                where: { post_id: { [Op.ne]: null }, created_at: { [Op.gte]: twoHoursAgo } },
+                group: ['post_id'], raw: true
+            }),
+            Report.findAll({
+                attributes: ['target_id', [sequelize.fn('COUNT', sequelize.col('id')), 'count']],
+                where: { type: 'post', status: { [Op.in]: ['pending', 'processing'] } },
+                group: ['target_id'], raw: true
+            }),
+            Statistics.findAll({
+                attributes: ['stat_key', 'stat_value', 'stat_date'],
+                where: { stat_key: { [Op.like]: 'forum_post_view:%' }, stat_date: { [Op.gte]: twoHoursAgo } },
+                raw: true
             })
         ]);
 
@@ -5637,16 +5653,45 @@ async function getForumOverview(req, res) {
             return { day, topics: topicTrend.get(day) || 0, replies: replyTrend.get(day) || 0 };
         });
         const boardCounts = new Map(boardCountRows.map(row => [Number(row.board_id), Number(row.count || 0)]));
-        const normalizeAttention = (post, reason) => ({
+        const normalizeAttention = (post, reason, signalCount = null) => ({
             id: Number(post.id), title: post.title, status: post.status, post_type: post.post_type,
-            created_at: post.created_at, updated_at: post.updated_at, comment_count: Number(post.comment_count || 0),
-            author: post.author, board: post.board, reason
+            board_id: post.board_id, is_essence: Boolean(post.is_essence), is_top: Boolean(post.is_top),
+            is_locked: Boolean(post.is_locked), slow_mode_seconds: Number(post.slow_mode_seconds || 0),
+            created_at: post.created_at, updated_at: post.updated_at, view_count: Number(post.view_count || 0),
+            like_count: Number(post.like_count || 0), comment_count: Number(post.comment_count || 0),
+            author: post.author, board: post.board, reason, signal_count: signalCount
         });
         const attentionMap = new Map();
         hiddenAttention.forEach(post => attentionMap.set(Number(post.id), normalizeAttention(post, 'hidden')));
         staleAttention.forEach(post => {
             if (!attentionMap.has(Number(post.id))) attentionMap.set(Number(post.id), normalizeAttention(post, 'stale_question'));
         });
+
+        const rapidLikeCounts = new Map(recentLikeRows.map(row => [Number(row.post_id), Number(row.count || 0)]).filter(([, count]) => count >= 8));
+        const reportCounts = new Map(pendingReportRows.map(row => [Number(row.target_id), Number(row.count || 0)]).filter(([, count]) => count >= 3));
+        const rapidViewCounts = new Map();
+        recentViewRows.forEach(row => {
+            const match = /^forum_post_view:(\d+):\d+$/.exec(String(row.stat_key));
+            if (!match) return;
+            const postId = Number(match[1]);
+            rapidViewCounts.set(postId, (rapidViewCounts.get(postId) || 0) + Number(row.stat_value || 0));
+        });
+        for (const [postId, count] of [...rapidViewCounts]) if (count < 20) rapidViewCounts.delete(postId);
+
+        const signalIds = [...new Set([...rapidViewCounts.keys(), ...rapidLikeCounts.keys(), ...reportCounts.keys()])];
+        if (signalIds.length) {
+            const signaledPosts = await Post.findAll({
+                where: { ...publishedWhere, id: { [Op.in]: signalIds } },
+                include: [{ model: User, as: 'author', attributes: ['id', 'username', 'nickname'] }, { model: ForumBoard, as: 'board', attributes: ['id', 'name', 'icon'] }]
+            });
+            signaledPosts.forEach(post => {
+                const postId = Number(post.id);
+                if (attentionMap.has(postId)) return;
+                if (reportCounts.has(postId)) attentionMap.set(postId, normalizeAttention(post, 'many_reports', reportCounts.get(postId)));
+                else if (rapidLikeCounts.has(postId)) attentionMap.set(postId, normalizeAttention(post, 'rapid_likes', rapidLikeCounts.get(postId)));
+                else if (rapidViewCounts.has(postId)) attentionMap.set(postId, normalizeAttention(post, 'rapid_views', rapidViewCounts.get(postId)));
+            });
+        }
 
         return successResponse(res, {
             scope: scoped ? 'assigned' : 'all',
