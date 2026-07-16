@@ -195,7 +195,7 @@ import { useUserStore } from '@/stores/user'
 import { imApi } from '@/api/im'
 import { useNotificationStore } from '@/stores/notification'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage, ElConfigProvider } from 'element-plus'
+import { ElMessage, ElMessageBox, ElConfigProvider } from 'element-plus'
 import zhCn from 'element-plus/dist/locale/zh-cn.mjs'
 import { storeToRefs } from 'pinia'
 import HCaptchaDialog from '@/components/HCaptchaDialog.vue'
@@ -213,6 +213,39 @@ const { unreadCount } = storeToRefs(notificationStore)
 const searchKeyword = ref('')
 const hcaptchaDialogRef = ref(null)
 const hcaptchaVerified = ref(false)
+const PRETTY_CURSOR_PREFERENCE = 'codedog_pretty_cursor_choice_v1'
+
+const applyPrettyCursor = enabled => {
+  document.documentElement.classList.toggle('codedog-pretty-cursor', enabled)
+}
+
+const askPrettyCursorPreference = async () => {
+  if (!window.matchMedia('(hover: hover) and (pointer: fine)').matches) return
+  const saved = localStorage.getItem(PRETTY_CURSOR_PREFERENCE)
+  if (saved) {
+    applyPrettyCursor(saved === 'enabled')
+    return
+  }
+  if (warningDialogVisible.value || popupDialogVisible.value) {
+    setTimeout(askPrettyCursorPreference, 1000)
+    return
+  }
+  try {
+    await ElMessageBox.confirm('要启用编程狗为你准备的精致鼠标样式吗？普通状态使用立体箭头，点击链接和按钮时会变成手型。', '发现好看的鼠标', {
+      confirmButtonText: '使用好看的鼠标',
+      cancelButtonText: '保持系统鼠标',
+      distinguishCancelAndClose: true,
+      type: 'info',
+      closeOnClickModal: false
+    })
+    localStorage.setItem(PRETTY_CURSOR_PREFERENCE, 'enabled')
+    applyPrettyCursor(true)
+    ElMessage.success('好看的鼠标已启用')
+  } catch (_) {
+    localStorage.setItem(PRETTY_CURSOR_PREFERENCE, 'disabled')
+    applyPrettyCursor(false)
+  }
+}
 
 const announcements = ref([])
 const dismissedTopBarIds = ref(loadDismissedIds('ann_topbar_dismissed'))
@@ -421,6 +454,7 @@ const startHCaptchaCheck = () => {
 }
 
 onMounted(async () => {
+  setTimeout(askPrettyCursorPreference, 700)
   loadAnnouncements()
   if (userStore.token && !userStore.user) {
     await userStore.fetchCurrentUser()
@@ -918,4 +952,19 @@ $shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
 .r-warning--notice p { margin:0; line-height:1.7; white-space:pre-wrap; }
 .r-warning--meta { margin:10px 2px 16px; color:#8b95a5; font-size:12px; }
 .r-warning--check { margin-top:14px; white-space:normal; }
+
+html.codedog-pretty-cursor,
+html.codedog-pretty-cursor body,
+html.codedog-pretty-cursor .r-index--root_container {
+  cursor: url('/cursors/pretty-pointer.svg') 7 4, default;
+}
+html.codedog-pretty-cursor :is(a, button, [role='button'], .el-button, .el-dropdown, .el-menu-item, .el-switch, .el-checkbox, .el-radio, .el-select) {
+  cursor: url('/cursors/pretty-hand.svg') 19 4, pointer !important;
+}
+html.codedog-pretty-cursor :is(input, textarea, [contenteditable='true'], .el-input__inner, .el-textarea__inner) {
+  cursor: text !important;
+}
+html.codedog-pretty-cursor :is(button:disabled, [aria-disabled='true'], .is-disabled) {
+  cursor: not-allowed !important;
+}
 </style>
