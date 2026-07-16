@@ -592,6 +592,12 @@ $shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
     display: flex;
     align-items: center;
     gap: 14px;
+
+    :is(button, a, .el-button) {
+      color: #111318;
+      font-family: "PingFang SC", "Microsoft YaHei UI", "Noto Sans SC", system-ui, sans-serif;
+      font-weight: 800;
+    }
   }
 }
 
@@ -984,10 +990,10 @@ html.codedog-pretty-cursor .r-index--root_container {
   cursor: url('/cursors/stmc-pointer.cur'), default;
 }
 html.codedog-pretty-cursor :is(a, button, [role='button'], .el-button, .el-dropdown, .el-menu-item, .el-switch, .el-checkbox, .el-radio, .el-select) {
-  cursor: url('/cursors/stmc-hand.cur'), pointer !important;
+  cursor: url('/cursors/stmc-mirrored-pointer.cur'), pointer !important;
 }
 html.codedog-pretty-cursor :is(input, textarea, [contenteditable='true'], .el-input__inner, .el-textarea__inner) {
-  cursor: url('/cursors/stmc-beam.cur'), text !important;
+  cursor: text !important;
 }
 html.codedog-pretty-cursor :is(button:disabled, [aria-disabled='true'], .is-disabled) {
   cursor: not-allowed !important;
