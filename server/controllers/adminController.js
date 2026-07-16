@@ -5317,11 +5317,11 @@ async function mergePosts(req, res) {
             const [sourceLikes, sourceFavorites, sourceSubscriptions] = await Promise.all([
                 Like.findAll({ where: { post_id: sourceId }, attributes: ['user_id'], raw: true, transaction }),
                 Favorite.findAll({ where: { post_id: sourceId }, attributes: ['user_id'], raw: true, transaction }),
-                PostSubscription.findAll({ where: { post_id: sourceId }, attributes: ['user_id', 'notify'], raw: true, transaction })
+                PostSubscription.findAll({ where: { post_id: sourceId }, attributes: ['user_id', 'notify', 'last_read_at'], raw: true, transaction })
             ]);
             if (sourceLikes.length) await Like.bulkCreate(sourceLikes.map(item => ({ user_id: item.user_id, post_id: targetId })), { ignoreDuplicates: true, transaction });
             if (sourceFavorites.length) await Favorite.bulkCreate(sourceFavorites.map(item => ({ user_id: item.user_id, post_id: targetId })), { ignoreDuplicates: true, transaction });
-            if (sourceSubscriptions.length) await PostSubscription.bulkCreate(sourceSubscriptions.map(item => ({ user_id: item.user_id, post_id: targetId, notify: item.notify })), { ignoreDuplicates: true, transaction });
+            if (sourceSubscriptions.length) await PostSubscription.bulkCreate(sourceSubscriptions.map(item => ({ user_id: item.user_id, post_id: targetId, notify: item.notify, last_read_at: item.last_read_at })), { ignoreDuplicates: true, transaction });
             await Promise.all([
                 Comment.update({ post_id: targetId }, { where: { post_id: sourceId }, transaction }),
                 Like.destroy({ where: { post_id: sourceId }, transaction }),

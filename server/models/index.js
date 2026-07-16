@@ -207,7 +207,8 @@ const PostSubscription = sequelize.define('PostSubscription', {
     id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
     post_id: { type: DataTypes.INTEGER, allowNull: false },
     user_id: { type: DataTypes.INTEGER, allowNull: false },
-    notify: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true }
+    notify: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },
+    last_read_at: { type: DataTypes.DATE, allowNull: true }
 }, Object.assign({ tableName: 'post_subscriptions', indexes: [{ unique: true, fields: ['post_id', 'user_id'] }, { fields: ['user_id', 'notify'] }] }, TIMESTAMP_OPTS));
 
 const PostDraft = sequelize.define('PostDraft', {

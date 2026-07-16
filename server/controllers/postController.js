@@ -3,7 +3,7 @@ const DbAdapter = require('../utils/dbAdapter');
  * 社区帖子控制器
  */
 
-const { Post, User, Comment, Notification, ForumBoard, ForumBoardSubscription, PostSubscription, PostDraft, sequelize } = require('../models');
+const { Post, User, Comment, Notification, ForumBoard, ForumBoardSubscription, PostSubscription, PostDraft, Favorite, sequelize } = require('../models');
 const { successResponse, errorResponse, paginateResponse } = require('../middleware/response');
 const { Op } = require('sequelize');
 const { isRoleAtLeast, canManageUser } = require('../config/permissions');
@@ -116,7 +116,7 @@ async function togglePostSubscription(req, res) {
             await existing.destroy();
             return successResponse(res, { subscribed: false }, '已取消关注帖子');
         }
-        await PostSubscription.create({ ...where, notify: true });
+        await PostSubscription.create({ ...where, notify: true, last_read_at: new Date() });
         return successResponse(res, { subscribed: true }, '已关注帖子，有新回复时会通知你');
     } catch (error) {
         console.error('关注帖子失败:', error);
@@ -128,7 +128,7 @@ async function getMyForumSubscriptions(req, res) {
     try {
         const userId = DbAdapter.getId(req.user);
         const { page, pageSize, offset } = DbAdapter.parsePagination(req.query);
-        const [topicResult, boardSubscriptions] = await Promise.all([
+        const [topicResult, boardSubscriptions, myTopics, myReplies, myFavorites, draft] = await Promise.all([
             PostSubscription.findAndCountAll({
                 where: { user_id: userId },
                 include: [{
@@ -144,12 +144,38 @@ async function getMyForumSubscriptions(req, res) {
                 where: { user_id: userId },
                 include: [{ model: ForumBoard, as: 'board', required: true, where: { status: 'active' }, attributes: ['id', 'slug', 'name', 'description', 'icon', 'color'] }],
                 order: [['updated_at', 'DESC']]
-            })
+            }),
+            Post.findAll({ where: { user_id: userId, status: { [Op.ne]: 'deleted' } }, attributes: ['id', 'title', 'status', 'reply_count', 'comment_count', 'updated_at'], order: [['updated_at', 'DESC']], limit: 30 }),
+            Comment.findAll({
+                where: { user_id: userId, status: 'active', post_id: { [Op.ne]: null } },
+                attributes: ['id', 'post_id', 'content', 'created_at'],
+                include: [{ model: Post, as: 'post', required: true, where: { status: 'published' }, attributes: ['id', 'title'] }],
+                order: [['created_at', 'DESC']], limit: 30
+            }),
+            Favorite.findAll({
+                where: { user_id: userId, post_id: { [Op.ne]: null } }, attributes: ['id', 'created_at'],
+                include: [{ model: Post, as: 'post', required: true, where: { status: 'published' }, attributes: ['id', 'title', 'reply_count', 'comment_count', 'updated_at'] }],
+                order: [['created_at', 'DESC']], limit: 30
+            }),
+            PostDraft.findOne({ where: { user_id: userId }, attributes: ['id', 'title', 'updated_at'] })
         ]);
+        const topics = topicResult.rows.map(row => {
+            const topic = row.post;
+            if (!topic) return null;
+            const json = normalizePostOutput(topic);
+            const lastReadAt = row.last_read_at ? new Date(row.last_read_at).getTime() : 0;
+            const lastReplyAt = topic.last_reply_at ? new Date(topic.last_reply_at).getTime() : 0;
+            json.has_unread = lastReplyAt > lastReadAt && Number(topic.last_reply_user_id) !== Number(userId);
+            return json;
+        }).filter(Boolean);
         return successResponse(res, {
-            topics: topicResult.rows.map(row => row.post).filter(Boolean).map(normalizePostOutput),
+            topics,
             topic_total: topicResult.count,
             boards: boardSubscriptions.map(row => row.board).filter(Boolean),
+            my_topics: myTopics.map(normalizePostOutput),
+            my_replies: myReplies.map(row => ({ id: row.id, post_id: row.post_id, content: row.content, created_at: row.created_at, post: row.post })),
+            favorites: myFavorites.map(row => row.post).filter(Boolean).map(normalizePostOutput),
+            draft,
             pagination: { page, pageSize, total: topicResult.count }
         });
     } catch (error) {
@@ -353,6 +379,7 @@ async function getPosts(req, res) {
         const category = req.query.category || '';
         const boardId = Number(req.query.board_id || 0);
         const keyword = req.query.keyword || '';
+        const tag = String(req.query.tag || '').trim();
         const sortBy = req.query.sortBy || 'latest';
         // 规范化 isTop 参数：统一转小写字符串，兼容 'true'/'1'/'yes' 等多种写法，避免布尔/数字类型差异导致判断失效
         const isTopVal = String(req.query.isTop || '').toLowerCase();
@@ -376,6 +403,10 @@ async function getPosts(req, res) {
         if (keyword) {
             const keywordWhere = likeContains(sequelize, ['title', 'content', 'tags'], keyword);
             if (keywordWhere) Object.assign(where, keywordWhere);
+        }
+        if (tag) {
+            const tagWhere = likeContains(sequelize, ['tags'], tag);
+            if (tagWhere) where[Op.and] = [...(where[Op.and] || []), tagWhere];
         }
         
         let order = [['is_top', 'DESC'], ['created_at', 'DESC']];
@@ -456,7 +487,6 @@ async function getPostDetail(req, res) {
         if (!post) {
             return errorResponse(res, '帖子不存在', 404);
         }
-
         if (post.status === 'deleted' && post.merged_into_post_id) {
             return successResponse(res, {
                 merged: true,
@@ -502,6 +532,10 @@ async function getPostDetail(req, res) {
             liked = !!existingLike;
             favorited = !!existingFav;
             subscribed = !!existingSubscription;
+            if (existingSubscription) {
+                // 打开主题即推进未读游标；不记录逐条回执，保持实现轻量。
+                await existingSubscription.update({ last_read_at: new Date() });
+            }
         }
 
         // 评论分页：使用 parsePagination 控制评论加载量,避免大帖卡死/超慢

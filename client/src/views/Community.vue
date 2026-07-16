@@ -18,6 +18,7 @@
           <div class="r-community--tabs">
             <span class="r-community--tabs_label">{{ activeBoard ? activeBoard.name : '全部帖子' }}</span>
             <el-input v-model="searchKeyword" clearable placeholder="搜索标题、正文或标签" class="r-community--forum_search" @keyup.enter="handleSearch" @clear="handleSearch" />
+            <el-tag v-if="activeTag" closable type="warning" @close="clearTag">#{{ activeTag }}</el-tag>
             <el-radio-group v-model="sortBy" @change="changeSort">
               <el-radio-button label="active">最新回复</el-radio-button>
               <el-radio-button label="latest">最新发布</el-radio-button>
@@ -43,7 +44,7 @@
                 <div class="r-community--topic_meta"><span v-if="post.board" :style="{ color: post.board.color }">{{ post.board.icon }} {{ post.board.name }}</span><span v-if="post.post_type === 'question'" :class="['r-community--question_state', { solved: post.accepted_comment_id }]">{{ post.accepted_comment_id ? '已解决' : '待解决' }}</span></div>
                 <h4 class="r-community--item_title">{{ post.title }}</h4>
                 <p class="r-community--item_content">{{ stripMarkdown(post.content) }}...</p>
-                <div v-if="post.tags?.length" class="r-community--item_tags"><span v-for="tag in post.tags.slice(0, 4)" :key="tag">#{{ tag }}</span></div>
+                <div v-if="post.tags?.length" class="r-community--item_tags"><button v-for="tag in post.tags.slice(0, 4)" :key="tag" @click.stop="selectTag(tag)">#{{ tag }}</button></div>
                 <div class="r-community--item_footer">
                   <span><span class="r-community--stat_icon r-community--stat_icon_view"></span>{{ post.view_count }}</span>
                   <span><span class="r-community--stat_icon r-community--stat_icon_like"></span>{{ post.like_count }}</span>
@@ -174,13 +175,29 @@
       <el-tabs v-model="subscriptionsTab" v-loading="subscriptionsLoading">
         <el-tab-pane :label="`关注主题 ${mySubscriptions.topic_total || 0}`" name="topics">
           <button v-for="topic in mySubscriptions.topics" :key="topic.id" class="r-community--subscription_topic" @click="$router.push(`/post/${topic.id}`); subscriptionsVisible = false">
-            <span><b>{{ topic.title }}</b><small>{{ topic.board?.icon }} {{ topic.board?.name }} · {{ topic.reply_count || topic.comment_count }} 条回复</small></span><em>{{ formatTime(topic.last_reply_at || topic.updated_at) }}</em>
+            <span><b>{{ topic.title }} <i v-if="topic.has_unread" class="r-community--unread_dot">新回复</i></b><small>{{ topic.board?.icon }} {{ topic.board?.name }} · {{ topic.reply_count || topic.comment_count }} 条回复</small></span><em>{{ formatTime(topic.last_reply_at || topic.updated_at) }}</em>
           </button>
           <el-empty v-if="!mySubscriptions.topics.length" description="还没有关注主题" />
         </el-tab-pane>
         <el-tab-pane :label="`关注板块 ${mySubscriptions.boards.length}`" name="boards">
           <button v-for="board in mySubscriptions.boards" :key="board.id" class="r-community--subscription_board" @click="selectBoard(board); subscriptionsVisible = false"><span :style="{ color: board.color }">{{ board.icon }}</span><b>{{ board.name }}</b><small>{{ board.description }}</small></button>
           <el-empty v-if="!mySubscriptions.boards.length" description="还没有关注板块" />
+        </el-tab-pane>
+        <el-tab-pane :label="`我的主题 ${mySubscriptions.my_topics.length}`" name="mine">
+          <button v-for="topic in mySubscriptions.my_topics" :key="topic.id" class="r-community--subscription_topic" @click="$router.push(`/post/${topic.id}`); subscriptionsVisible = false"><span><b>{{ topic.title }}</b><small>{{ topic.status === 'published' ? '已发布' : topic.status === 'draft' ? '草稿' : '已隐藏' }} · {{ topic.reply_count || topic.comment_count }} 条回复</small></span><em>{{ formatTime(topic.updated_at) }}</em></button>
+          <el-empty v-if="!mySubscriptions.my_topics.length" description="还没有发布主题" />
+        </el-tab-pane>
+        <el-tab-pane :label="`我的回复 ${mySubscriptions.my_replies.length}`" name="replies">
+          <button v-for="reply in mySubscriptions.my_replies" :key="reply.id" class="r-community--subscription_topic" @click="$router.push(`/post/${reply.post_id}`); subscriptionsVisible = false"><span><b>{{ reply.post?.title }}</b><small>{{ stripMarkdown(reply.content).slice(0, 80) }}</small></span><em>{{ formatTime(reply.created_at) }}</em></button>
+          <el-empty v-if="!mySubscriptions.my_replies.length" description="还没有参与回复" />
+        </el-tab-pane>
+        <el-tab-pane :label="`帖子收藏 ${mySubscriptions.favorites.length}`" name="favorites">
+          <button v-for="topic in mySubscriptions.favorites" :key="topic.id" class="r-community--subscription_topic" @click="$router.push(`/post/${topic.id}`); subscriptionsVisible = false"><span><b>{{ topic.title }}</b><small>{{ topic.reply_count || topic.comment_count }} 条回复</small></span><em>{{ formatTime(topic.updated_at) }}</em></button>
+          <el-empty v-if="!mySubscriptions.favorites.length" description="还没有收藏帖子" />
+        </el-tab-pane>
+        <el-tab-pane label="草稿" name="draft">
+          <button v-if="mySubscriptions.draft" class="r-community--subscription_topic" @click="continueDraft"><span><b>{{ mySubscriptions.draft.title || '未命名草稿' }}</b><small>继续编辑草稿</small></span><em>{{ formatTime(mySubscriptions.draft.updated_at) }}</em></button>
+          <el-empty v-else description="当前没有草稿" />
         </el-tab-pane>
       </el-tabs>
     </el-dialog>
@@ -245,6 +262,7 @@ const boards = ref([])
 const activeBoardId = ref(null)
 const sortBy = ref('active')
 const searchKeyword = ref('')
+const activeTag = ref('')
 const activeBoard = computed(() => boards.value.find(board => Number(board.id) === Number(activeBoardId.value)) || null)
 const posts = ref([])
 const currentPage = ref(1)
@@ -261,7 +279,7 @@ const draftStatus = ref('')
 const subscriptionsVisible = ref(false)
 const subscriptionsLoading = ref(false)
 const subscriptionsTab = ref('topics')
-const mySubscriptions = reactive({ topics: [], topic_total: 0, boards: [] })
+const mySubscriptions = reactive({ topics: [], topic_total: 0, boards: [], my_topics: [], my_replies: [], favorites: [], draft: null })
 const forumLeaderboard = ref([])
 const restoringDraft = ref(false)
 let draftTimer = null
@@ -339,7 +357,8 @@ const fetchPosts = async () => {
       pageSize: pageSize.value,
       board_id: activeBoardId.value || undefined,
       sortBy: sortBy.value,
-      keyword: searchKeyword.value.trim() || undefined
+      keyword: searchKeyword.value.trim() || undefined,
+      tag: activeTag.value || undefined
     })
     if (res.code === 200) {
       posts.value = res.data.list
@@ -370,6 +389,18 @@ const selectBoard = (board) => {
   fetchPosts()
 }
 
+const selectTag = tag => {
+  activeTag.value = String(tag || '').trim()
+  currentPage.value = 1
+  fetchPosts()
+}
+
+const clearTag = () => {
+  activeTag.value = ''
+  currentPage.value = 1
+  fetchPosts()
+}
+
 const toggleBoardFollow = async board => {
   try {
     const res = await postApi.toggleBoardSubscription(board.id)
@@ -389,9 +420,18 @@ const openMySubscriptions = async () => {
       mySubscriptions.topics = res.data?.topics || []
       mySubscriptions.topic_total = Number(res.data?.topic_total || 0)
       mySubscriptions.boards = res.data?.boards || []
+      mySubscriptions.my_topics = res.data?.my_topics || []
+      mySubscriptions.my_replies = res.data?.my_replies || []
+      mySubscriptions.favorites = res.data?.favorites || []
+      mySubscriptions.draft = res.data?.draft || null
     }
   } catch (e) { ElMessage.error('获取论坛关注失败') }
   finally { subscriptionsLoading.value = false }
+}
+
+const continueDraft = async () => {
+  subscriptionsVisible.value = false
+  await showPostDialog()
 }
 
 const changeSort = () => {
@@ -918,6 +958,9 @@ $border-color: #eee;
 .r-community--question_state { padding:2px 7px; border-radius:999px; color:#b54708; background:#fff3df; }
 .r-community--question_state.solved { color:#087443; background:#e9f8ef; }
 .r-community--item_tags { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:11px; color:#8a6a1c; font-size:12px; }
+.r-community--item_tags button { padding:0; border:0; background:transparent; color:inherit; cursor:pointer; }
+.r-community--item_tags button:hover { color:#d18b00; text-decoration:underline; }
+.r-community--unread_dot { display:inline-flex; margin-left:6px; padding:2px 6px; border-radius:8px; background:#fec433; color:#5c4100; font-size:10px; font-style:normal; }
 .r-community--item_footer .r-community--last_reply { margin-left:auto; color:#7c8799; }
 .r-community--leaderboard_card .r-community--side_heading > span { color:#a4acb9; font-size:11px; }
 .r-community--leader_row { width:100%; display:grid; grid-template-columns:24px 36px minmax(0,1fr) 22px; align-items:center; gap:9px; padding:9px 7px; border:0; border-radius:11px; background:transparent; color:#344054; text-align:left; cursor:pointer; transition:.18s; }

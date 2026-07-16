@@ -273,6 +273,28 @@ async function main() {
     );
     const mentionNotifications = await Notification.count({ where: { user_id: adminUser.id, sender_id: moderatorUser.id, type: 'mention', related_id: mergeTarget.id, related_type: 'post' } });
     record('forum mentions notify each active user only once', reputationReply.status === 200 && mentionNotifications === 1, `create=${reputationReply.status}; notifications=${mentionNotifications}`);
+    await mergeTarget.update({ tags: ['runtime-tag'] });
+    const tagFilteredTopics = await http('/api/posts?tag=runtime-tag&pageSize=100');
+    record('clickable forum tags have a working server-side filter', tagFilteredTopics.status === 200 && tagFilteredTopics.json?.data?.list?.some(item => Number(item.id) === Number(mergeTarget.id)), `status=${tagFilteredTopics.status}`);
+    const unreadReply = await http('/api/comments', {
+        method: 'POST', headers: auth(activeTokenClaimingSuperadmin), body: { post_id: mergeTarget.id, content: 'unread subscription cursor test' }
+    });
+    const subscriptionsBeforeRead = await http('/api/posts/subscriptions/mine?pageSize=100', { headers: auth(moderatorToken) });
+    const unreadTopic = subscriptionsBeforeRead.json?.data?.topics?.find(item => Number(item.id) === Number(mergeTarget.id));
+    record('forum subscriptions expose new replies as unread', unreadReply.status === 200 && unreadTopic?.has_unread === true, `reply=${unreadReply.status}; unread=${unreadTopic?.has_unread}`);
+    const readSubscribedTopic = await http(`/api/posts/${mergeTarget.id}`, { headers: auth(moderatorToken) });
+    const subscriptionsAfterRead = await http('/api/posts/subscriptions/mine?pageSize=100', { headers: auth(moderatorToken) });
+    const readTopic = subscriptionsAfterRead.json?.data?.topics?.find(item => Number(item.id) === Number(mergeTarget.id));
+    record('opening a subscribed topic clears its lightweight unread cursor', readSubscribedTopic.status === 200 && readTopic?.has_unread === false, `read=${readSubscribedTopic.status}; unread=${readTopic?.has_unread}`);
+    record(
+        'my forum center returns topics replies favorites and draft without extra endpoints',
+        subscriptionsAfterRead.status === 200
+            && Array.isArray(subscriptionsAfterRead.json?.data?.my_topics)
+            && Array.isArray(subscriptionsAfterRead.json?.data?.my_replies)
+            && Array.isArray(subscriptionsAfterRead.json?.data?.favorites)
+            && Object.prototype.hasOwnProperty.call(subscriptionsAfterRead.json?.data || {}, 'draft'),
+        `status=${subscriptionsAfterRead.status}`
+    );
     const invalidReputationUser = await http('/api/posts/forum/users/not-a-number/reputation');
     record('forum reputation rejects invalid user ids without a server error', invalidReputationUser.status === 400, `status=${invalidReputationUser.status}`);
 
