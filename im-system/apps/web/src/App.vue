@@ -1,5 +1,5 @@
 <template>
-  <main class="terminal-shell">
+  <main class="terminal-shell" :class="{ 'mobile-channel-open': mobileChannelOpen }">
     <aside class="rail">
       <div class="brand"><span class="brand-mark">狗</span><div><b>编程狗消息</b><small>即时通讯</small></div><a class="back-link" :href="communityUrl">返回编程狗</a></div>
       <form class="search" @submit.prevent="searchUsers"><span>⌕</span><input v-model="filter" placeholder="搜索用户或会话" /><button title="搜索">搜索</button></form>
@@ -12,11 +12,13 @@
         <form @submit.prevent="createGroup"><input v-model="groupName" maxlength="50" placeholder="新群名称" /><button>建群</button></form>
       </div>
       <div v-if="requests.length" class="requests"><small>私聊申请</small><div v-for="request in requests" :key="request.conversation_id"><span class="user-link" @click="openUser(request.from_user)">{{ displayName(request.from_user, request.from_user_id) }}</span><button @click="handleRequest(request, 'accept')">接受</button><button class="ghost" @click="handleRequest(request, 'reject')">拒绝</button></div></div>
-      <button v-for="item in filteredConversations" :key="item.id" class="conversation" :class="{ active: selected?.id === item.id }" @click="selectConversation(item)">
-        <span class="avatar"><img v-if="item.type === 'direct' && item.peer?.avatar" :src="item.peer.avatar" alt="" referrerpolicy="no-referrer" @error="$event.currentTarget.remove()" />{{ item.type === 'group' ? '群' : avatarLetter(item.peer, '友') }}</span>
-        <span class="conversation-copy"><b :class="{ 'user-link': item.type === 'direct' }" @click.stop="item.type === 'direct' && openUser(item.peer)">{{ item.title || `会话 #${item.id}` }}</b><small>序列 {{ item.last_sequence || 0 }}</small></span>
-      </button>
-      <div v-if="!conversations.length" class="empty">还没有会话<br><small>从编程狗用户主页发起私聊</small></div>
+      <div class="conversation-list">
+        <button v-for="item in filteredConversations" :key="item.id" class="conversation" :class="{ active: selected?.id === item.id }" @click="selectConversation(item)">
+          <span class="avatar"><img v-if="item.type === 'direct' && item.peer?.avatar" :src="item.peer.avatar" alt="" referrerpolicy="no-referrer" @error="$event.currentTarget.remove()" />{{ item.type === 'group' ? '群' : avatarLetter(item.peer, '友') }}</span>
+          <span class="conversation-copy"><b :class="{ 'user-link': item.type === 'direct' }" @click.stop="item.type === 'direct' && openUser(item.peer)">{{ item.title || `会话 #${item.id}` }}</b><small>序列 {{ item.last_sequence || 0 }}</small></span>
+        </button>
+        <div v-if="!conversations.length" class="empty">还没有会话<br><small>从编程狗用户主页发起私聊</small></div>
+      </div>
       <div class="account">
         <span class="avatar user">
           <img
@@ -33,7 +35,7 @@
     </aside>
 
     <section class="channel">
-      <header><div><small>即时消息</small><h1>{{ selected ? (selected.title || `会话 #${selected.id}`) : '选择一个会话' }}</h1></div><div class="signal"><span></span><span></span><span></span></div></header>
+      <header><button class="mobile-back" type="button" aria-label="返回会话列表" @click="mobileChannelOpen = false">‹</button><div><small>即时消息</small><h1>{{ selected ? (selected.title || `会话 #${selected.id}`) : '选择一个会话' }}</h1></div><div class="signal"><span></span><span></span><span></span></div></header>
       <div ref="timeline" class="timeline">
         <div v-if="loading" class="center-state">正在加载消息…</div>
         <div v-else-if="initialLoginError" class="welcome auth-failure"><div class="orb">!</div><h2>无法完成安全登录</h2><p>{{ initialLoginError }}</p><a class="reauth-button" :href="communityUrl">返回编程狗重新进入</a></div>
@@ -88,6 +90,7 @@ import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
 const me = ref(null), conversations = ref([]), requests = ref([]), selected = ref(null), messages = ref([])
 const filter = ref(''), draft = ref(''), loading = ref(false), sending = ref(false), socketState = ref('正在连接'), timeline = ref(null)
 const createPanel = ref(false), peerId = ref(''), groupName = ref('')
+const mobileChannelOpen = ref(false)
 const avatarFailed = ref(false)
 const sessionExpired = ref(false)
 const initialLoginError = ref('')
@@ -174,7 +177,7 @@ const createGroup = async () => { if (!groupName.value.trim()) return; try { con
 const searchUsers = async () => { const keyword = filter.value.trim(); if (!keyword) { searchResults.value = []; return } try { const captchaGrant = await getCaptchaGrant('im_search'); searchResults.value = await api('/search', { method:'POST', captchaGrant, body:JSON.stringify({ keyword }) }) } catch (error) { showToast(error.message, 'error') } }
 const startDirect = async user => { peerId.value = String(user.id); searchResults.value = []; await createDirect() }
 const handleRequest = async (request, action) => { await api(`/conversation-requests/${request.conversation_id}`, { method:'POST', body:JSON.stringify({ action }) }); await refreshSidebar() }
-const selectConversation = async item => { selected.value = item; loading.value = true; try { messages.value = await api(`/conversations/${item.id}/messages`); await nextTick(); timeline.value?.scrollTo(0, timeline.value.scrollHeight) } finally { loading.value = false } }
+const selectConversation = async item => { selected.value = item; mobileChannelOpen.value = true; loading.value = true; try { messages.value = await api(`/conversations/${item.id}/messages`); await nextTick(); timeline.value?.scrollTo(0, timeline.value.scrollHeight) } finally { loading.value = false } }
 const sendMessage = async () => {
   if (!selected.value || !draft.value.trim() || sending.value) return
   const content = draft.value.trim(); draft.value = ''; sending.value = true
@@ -242,4 +245,22 @@ onUnmounted(() => socket?.close())
 .session-expired{z-index:1200}.reauth-button{display:inline-flex;align-items:center;justify-content:center;height:38px;padding:0 18px;border-radius:9px;background:#fec433;color:#20242a;font-weight:700;text-decoration:none}
 .captcha-dialog{width:min(420px,100%)}.captcha-box{min-height:44px;margin-top:16px}
 .auth-failure .orb{background:#fff0f0;color:#d84b4b}.auth-failure p{max-width:520px}.auth-failure .reauth-button{margin-top:10px}
+.conversation-list{min-height:0;flex:1;overflow-y:auto;overscroll-behavior:contain}.mobile-back{display:none}
+@media(max-width:680px){
+  .terminal-shell{display:block;width:100%;height:100vh;height:100dvh;min-height:0;padding:0;overflow:hidden;background:#fff}
+  .rail,.channel{width:100%;height:100%;min-height:0;border:0;border-radius:0;box-shadow:none}
+  .rail{display:flex;padding:max(14px,env(safe-area-inset-top)) 12px max(10px,env(safe-area-inset-bottom))}
+  .brand{padding:0 4px 14px}.brand-mark{width:38px;height:38px;border-radius:11px}.brand b{font-size:16px}.back-link{font-size:12px}
+  .search{height:44px}.rail-title{margin-top:15px}.conversation{min-height:58px;padding:9px}.conversation .avatar{width:42px;height:42px}.conversation-copy b{font-size:14px}.conversation-copy small{font-size:11px}
+  .account{padding:11px 5px 0;background:#fff}.account .avatar{width:40px;height:40px}
+  .channel{display:none;grid-template-rows:62px minmax(0,1fr) auto;background:#fafafa}
+  .mobile-channel-open .rail{display:none}.mobile-channel-open .channel{display:grid}
+  .channel>header{position:relative;padding:max(9px,env(safe-area-inset-top)) 14px 9px 54px;min-height:62px}.channel h1{max-width:calc(100vw - 115px);margin:3px 0 0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.channel header small{font-size:9px}
+  .mobile-back{position:absolute;left:10px;top:50%;display:grid;place-items:center;width:36px;height:36px;padding:0;transform:translateY(-50%);border:1px solid #e1e4e9;border-radius:50%;background:#fff;color:#555;font-size:29px;line-height:1;cursor:pointer}
+  .timeline{min-height:0;padding:14px 12px 8px}.welcome .orb{width:64px;height:64px;border-radius:19px;font-size:29px}.welcome h2{font-size:20px;margin-top:16px}.welcome p{padding:0 20px;font-size:13px;line-height:1.6}
+  .message{max-width:94%;gap:8px;margin-bottom:14px}.message>.avatar{width:34px;height:34px}.message-meta{gap:6px;flex-wrap:wrap}.message p{margin-top:5px;padding:9px 11px;line-height:1.55}.message-image{max-width:min(72vw,320px);max-height:300px}
+  .composer{margin:7px 9px max(9px,env(safe-area-inset-bottom));border-radius:12px}.composer textarea{height:60px;padding:11px 12px}.composer footer{padding:7px 8px}.composer footer>span{max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.image-button{padding:7px 10px}.composer button{padding:8px 13px}
+  .modal-mask{padding:12px}.report-dialog{max-height:calc(100dvh - 24px);overflow-y:auto;padding:18px;border-radius:15px}.report-dialog textarea{min-height:100px}
+  .toast{top:max(12px,env(safe-area-inset-top));width:calc(100% - 24px);text-align:center}
+}
 </style>
