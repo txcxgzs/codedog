@@ -10,6 +10,7 @@ const { isRoleAtLeast, canManageUser } = require('../config/permissions');
 const { likeContains } = require('../utils/security');
 // H12: 引入内容审核服务，落库前做敏感词检查
 const aiReview = require('../services/aiReview');
+const { recordPostRevision } = require('../services/forumHistory');
 
 function canInteractWithPost(post) {
     return post && post.status === 'published';
@@ -76,6 +77,40 @@ async function togglePostSubscription(req, res) {
     } catch (error) {
         console.error('关注帖子失败:', error);
         return errorResponse(res, '操作失败', 500);
+    }
+}
+
+async function getMyForumSubscriptions(req, res) {
+    try {
+        const userId = DbAdapter.getId(req.user);
+        const { page, pageSize, offset } = DbAdapter.parsePagination(req.query);
+        const [topicResult, boardSubscriptions] = await Promise.all([
+            PostSubscription.findAndCountAll({
+                where: { user_id: userId },
+                include: [{
+                    model: Post, as: 'post', required: true, where: { status: 'published' },
+                    include: [
+                        { model: User, as: 'author', required: false, attributes: ['id', 'codemao_user_id', 'username', 'nickname', 'avatar'] },
+                        { model: ForumBoard, as: 'board', required: false, attributes: ['id', 'slug', 'name', 'icon', 'color'] }
+                    ]
+                }],
+                order: [['updated_at', 'DESC']], limit: pageSize, offset, distinct: true
+            }),
+            ForumBoardSubscription.findAll({
+                where: { user_id: userId },
+                include: [{ model: ForumBoard, as: 'board', required: true, where: { status: 'active' }, attributes: ['id', 'slug', 'name', 'description', 'icon', 'color'] }],
+                order: [['updated_at', 'DESC']]
+            })
+        ]);
+        return successResponse(res, {
+            topics: topicResult.rows.map(row => row.post).filter(Boolean).map(normalizePostOutput),
+            topic_total: topicResult.count,
+            boards: boardSubscriptions.map(row => row.board).filter(Boolean),
+            pagination: { page, pageSize, total: topicResult.count }
+        });
+    } catch (error) {
+        console.error('获取论坛关注失败:', error);
+        return errorResponse(res, '获取论坛关注失败', 500);
     }
 }
 
@@ -226,20 +261,25 @@ async function createPost(req, res) {
         if (boardResult.error) return errorResponse(res, boardResult.error, 400);
         const normalizedType = POST_TYPES.has(post_type) ? post_type : (boardResult.board.slug === 'question' ? 'question' : boardResult.board.slug === 'tutorial' ? 'tutorial' : 'discussion');
 
-        const post = await DbAdapter.create(Post, {
-            title,
-            content,
-            user_id: DbAdapter.getId(req.user),
-            category: boardResult.board.slug,
-            board_id: boardResult.board.id,
-            post_type: normalizedType,
-            tags,
-            cover,
-            status: postStatus,
-            hidden_reason: postHiddenReason,
-            last_reply_at: new Date(),
-            last_reply_user_id: DbAdapter.getId(req.user),
-            participant_count: 1
+        const post = await sequelize.transaction(async transaction => {
+            const created = await DbAdapter.create(Post, {
+                title,
+                content,
+                user_id: DbAdapter.getId(req.user),
+                category: boardResult.board.slug,
+                board_id: boardResult.board.id,
+                post_type: normalizedType,
+                tags,
+                cover,
+                status: postStatus,
+                hidden_reason: postHiddenReason,
+                last_reply_at: new Date(),
+                last_reply_user_id: DbAdapter.getId(req.user),
+                participant_count: 1
+            }, { transaction });
+            await recordPostRevision(created, DbAdapter.getId(req.user), 'user', 'initial', { transaction });
+            await PostDraft.destroy({ where: { user_id: DbAdapter.getId(req.user) }, transaction });
+            return created;
         });
         
         const result = await DbAdapter.findByPk(Post, post.id, {
@@ -249,8 +289,7 @@ async function createPost(req, res) {
                 attributes: ['id', 'codemao_user_id', 'username', 'nickname', 'avatar']
             }, { model: ForumBoard, as: 'board' }]
         });
-        await PostDraft.destroy({ where: { user_id: DbAdapter.getId(req.user) } });
-        
+
         return successResponse(res, result, '发布成功');
     } catch (error) {
         console.error('发布帖子错误:', error);
@@ -521,7 +560,7 @@ async function getPostDetail(req, res) {
 async function updatePost(req, res) {
     try {
         const { id } = req.params;
-        const { title, content, category, board_id, post_type, tags, cover } = req.body;
+        const { title, content, category, board_id, post_type, tags, cover, change_reason } = req.body;
         
         const post = await DbAdapter.findByPk(Post, id);
         if (!post) {
@@ -530,6 +569,11 @@ async function updatePost(req, res) {
         
         if (post.user_id !== DbAdapter.getId(req.user)) {
             return errorResponse(res, '无权修改此帖子', 403);
+        }
+
+        const changeReason = String(change_reason || '').trim();
+        if (changeReason.length < 3 || changeReason.length > 500) {
+            return errorResponse(res, '修改说明需要 3-500 个字', 400);
         }
 
         // 修复: 明确拒绝 title/content 为 null,避免 String(null) 写入 "null" 脏数据
@@ -606,7 +650,11 @@ async function updatePost(req, res) {
             }
         }
 
-        await DbAdapter.update(Post, updateData, { where: { id } });
+        await sequelize.transaction(async transaction => {
+            await DbAdapter.update(Post, updateData, { where: { id }, transaction });
+            await post.reload({ transaction });
+            await recordPostRevision(post, DbAdapter.getId(req.user), 'user', changeReason, { transaction });
+        });
 
         const updatedPost = await DbAdapter.findByPk(Post, id, {
             include: [{
@@ -894,6 +942,7 @@ module.exports = {
     getBoards,
     toggleBoardSubscription,
     togglePostSubscription,
+    getMyForumSubscriptions,
     acceptAnswer,
     getDraft,
     saveDraft,

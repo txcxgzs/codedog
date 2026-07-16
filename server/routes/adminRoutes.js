@@ -76,6 +76,8 @@ router.delete('/comments/:commentId', requirePermission('comment:delete'), admin
  * 帖子管理
  */
 router.get('/posts', requirePermission('post:review'), adminController.getPosts);
+router.get('/posts/:postId/history', requirePermission('post:review'), adminController.getPostHistory);
+router.post('/posts/:postId/revisions/:revisionId/restore', requirePermission('post:edit'), adminController.restorePostRevision);
 router.get('/forum/boards', requirePermission('post:review'), adminController.getForumBoards);
 router.post('/forum/boards', requirePermission('post:edit'), adminController.createForumBoard);
 router.put('/forum/boards/:boardId', requirePermission('post:edit'), adminController.updateForumBoard);

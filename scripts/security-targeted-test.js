@@ -2,7 +2,7 @@ const crypto = require('crypto');
 const {
     sequelize, User, Work, Post, Comment, Studio, StudioMember, StudioWork, StudioPointLog,
     Report, ReportAuditLog, Notification, Favorite, Like, Follow, ForumBoardSubscription,
-    PostSubscription, PostDraft, ForumBoard, OperationLog, IpBan, Announcement
+    PostSubscription, PostDraft, PostRevision, ForumModerationLog, ForumBoard, OperationLog, IpBan, Announcement
 } = require('../server/models');
 const { Op } = sequelize.constructor;
 
@@ -99,6 +99,8 @@ async function cleanup() {
     await ForumBoardSubscription.destroy({ where: { user_id: { [Op.in]: userIds } } });
     await PostSubscription.destroy({ where: { user_id: { [Op.in]: userIds } } });
     await PostDraft.destroy({ where: { user_id: { [Op.in]: userIds } } });
+    await ForumModerationLog.destroy({ where: { post_id: created.postIds } });
+    await PostRevision.destroy({ where: { post_id: created.postIds } });
     await OperationLog.destroy({ where: { user_id: { [Op.in]: userIds } } });
     await StudioPointLog.destroy({ where: { admin_id: { [Op.in]: userIds } } });
     await IpBan.destroy({ where: { banned_by: { [Op.in]: userIds } } });
@@ -143,6 +145,37 @@ async function main() {
     });
     if (boardCreate.json?.data?.id) created.boardIds.push(boardCreate.json.data.id);
     record('admin can create a governed forum board', boardCreate.status === 200, `status=${boardCreate.status}`);
+
+    const forumPostCreate = await http('/api/posts', {
+        method: 'POST', headers: auth(activeTokenClaimingSuperadmin),
+        body: { title: `${marker}_forum_original`, content: '<p>original body</p>', board_id: boardCreate.json?.data?.id, post_type: 'discussion', tags: ['history'] }
+    });
+    const forumPostId = forumPostCreate.json?.data?.id;
+    if (forumPostId) created.postIds.push(forumPostId);
+    record('forum post creation records initial revision', forumPostCreate.status === 200 && Boolean(forumPostId), `status=${forumPostCreate.status}`);
+
+    const editWithoutReason = await http(`/api/posts/${forumPostId}`, {
+        method: 'PUT', headers: auth(activeTokenClaimingSuperadmin),
+        body: { title: `${marker}_forum_edited`, content: '<p>edited body</p>' }
+    });
+    record('forum edit requires a change reason', editWithoutReason.status === 400, `status=${editWithoutReason.status}`);
+
+    const editWithReason = await http(`/api/posts/${forumPostId}`, {
+        method: 'PUT', headers: auth(activeTokenClaimingSuperadmin),
+        body: { title: `${marker}_forum_edited`, content: '<p>edited body</p>', change_reason: 'security history edit' }
+    });
+    record('forum edit records a revision atomically', editWithReason.status === 200, `status=${editWithReason.status}`);
+
+    const forumHistory = await http(`/api/admin/posts/${forumPostId}/history`, { headers: auth(superadminToken) });
+    const initialRevision = forumHistory.json?.data?.revisions?.find(item => Number(item.revision_number) === 1);
+    record('forum moderation history exposes revisions', forumHistory.status === 200 && forumHistory.json?.data?.revisions?.length >= 2, `status=${forumHistory.status}; revisions=${forumHistory.json?.data?.revisions?.length || 0}`);
+
+    const rollback = await http(`/api/admin/posts/${forumPostId}/revisions/${initialRevision?.id}/restore`, {
+        method: 'POST', headers: auth(superadminToken), body: { reason: 'security rollback test' }
+    });
+    const rolledBackPost = await Post.findByPk(forumPostId);
+    const rollbackLog = await ForumModerationLog.findOne({ where: { post_id: forumPostId, action: 'restore_revision' } });
+    record('forum revision rollback is audited', rollback.status === 200 && rolledBackPost?.title === `${marker}_forum_original` && Boolean(rollbackLog), `status=${rollback.status}; title=${rolledBackPost?.title}`);
 
     const disabledMe = await http('/api/users/me', { headers: auth(disabledToken) });
     record('disabled user token is rejected', disabledMe.status === 403, `status=${disabledMe.status}`);

@@ -2,7 +2,7 @@
  * 后台管理控制器
  */
 
-const { User, Work, Comment, Post, ForumBoard, PostDraft, Favorite, Follow, Banner, Report, ReportAuditLog, IpBan, Notification, Announcement, SystemConfig, OperationLog, SensitiveWord, RolePermission, CaptchaStats, Statistics, Studio, StudioMember, StudioWork, StudioPointLog, Like, sequelize } = require('../models');
+const { User, Work, Comment, Post, ForumBoard, PostDraft, PostRevision, ForumModerationLog, Favorite, Follow, Banner, Report, ReportAuditLog, IpBan, Notification, Announcement, SystemConfig, OperationLog, SensitiveWord, RolePermission, CaptchaStats, Statistics, Studio, StudioMember, StudioWork, StudioPointLog, Like, sequelize } = require('../models');
 const { successResponse, errorResponse, paginateResponse } = require('../middleware/response');
 const { getAllRoles, canManageUser, getRole, hasPermission, getAllPermissions, refreshRoleCache, DEFAULT_ROLES } = require('../config/permissions');
 const { logOperation } = require('../middleware/operationLog');
@@ -14,6 +14,7 @@ const jwt = require('jsonwebtoken');
 const { JWT_SECRET, JWT_EXPIRES_IN } = require('../config/auth');
 const DbAdapter = require('../utils/dbAdapter');
 const { likeContains } = require('../utils/security');
+const { snapshotPost, recordPostRevision, recordModerationLog } = require('../services/forumHistory');
 // H12: 引入内容审核服务，爬虫/管理员落库前对 nickname/bio/作品名+描述 做敏感词检查
 const aiReview = require('../services/aiReview');
 const proxyService = require('../services/proxyService');
@@ -5022,6 +5023,8 @@ module.exports = {
     restoreFromImpersonate,
     updateWork,
     getForumBoards,
+    getPostHistory,
+    restorePostRevision,
     createForumBoard,
     updateForumBoard,
     deleteForumBoard,
@@ -5211,6 +5214,67 @@ async function getForumBoards(req, res) {
     }
 }
 
+async function getPostHistory(req, res) {
+    try {
+        const postId = Number(req.params.postId);
+        const post = await Post.findByPk(postId, { attributes: ['id', 'title', 'status'] });
+        if (!post) return errorResponse(res, '帖子不存在', 404);
+        const [revisions, moderationLogs] = await Promise.all([
+            PostRevision.findAll({
+                where: { post_id: postId },
+                include: [{ model: User, as: 'editor', required: false, attributes: ['id', 'username', 'nickname', 'avatar'] }],
+                order: [['revision_number', 'DESC']]
+            }),
+            ForumModerationLog.findAll({
+                where: { post_id: postId },
+                include: [{ model: User, as: 'operator', required: false, attributes: ['id', 'username', 'nickname', 'avatar'] }],
+                order: [['created_at', 'DESC']]
+            })
+        ]);
+        const logs = moderationLogs.map(log => {
+            const item = log.toJSON();
+            try { item.before_state = item.before_state ? JSON.parse(item.before_state) : null; } catch {}
+            try { item.after_state = item.after_state ? JSON.parse(item.after_state) : null; } catch {}
+            return item;
+        });
+        return successResponse(res, { post, revisions, moderation_logs: logs });
+    } catch (error) {
+        console.error('获取帖子历史失败:', error);
+        return errorResponse(res, '获取帖子历史失败', 500);
+    }
+}
+
+async function restorePostRevision(req, res) {
+    try {
+        const postId = Number(req.params.postId);
+        const reason = String(req.body?.reason || '').trim();
+        if (reason.length < 3 || reason.length > 500) return errorResponse(res, '回滚原因需为 3-500 字', 400);
+        const [post, revision] = await Promise.all([
+            Post.findByPk(postId),
+            PostRevision.findOne({ where: { id: Number(req.params.revisionId), post_id: postId } })
+        ]);
+        if (!post || !revision) return errorResponse(res, '帖子或修订版本不存在', 404);
+        if (revision.board_id) {
+            const board = await ForumBoard.findOne({ where: { id: revision.board_id, status: 'active' } });
+            if (!board) return errorResponse(res, '该历史版本所属板块已停用，请先移动帖子后再回滚', 400);
+        }
+        const before = snapshotPost(post);
+        await sequelize.transaction(async transaction => {
+            await post.update({
+                title: revision.title, content: revision.content, board_id: revision.board_id,
+                category: revision.post_type, post_type: revision.post_type, cover: revision.cover, tags: revision.tags
+            }, { transaction });
+            await recordPostRevision(post, DbAdapter.getId(req.user), 'rollback', reason, { transaction });
+            await recordModerationLog(postId, DbAdapter.getId(req.user), 'restore_revision', reason, before, snapshotPost(post), { transaction });
+        });
+        logOperation(req, 'restore_post_revision', 'post', postId, { revision_id: revision.id, reason });
+        return successResponse(res, null, '帖子已回滚到指定版本');
+    } catch (error) {
+        console.error('回滚帖子版本失败:', error);
+        return errorResponse(res, '回滚帖子版本失败', 500);
+    }
+}
+
 function normalizeForumBoardInput(body, partial = false) {
     const data = {};
     if (!partial || body.slug !== undefined) {
@@ -5338,6 +5402,8 @@ async function getPosts(req, res) {
 async function deletePost(req, res) {
     try {
         const { postId } = req.params;
+        const reason = String(req.body?.reason || '').trim();
+        if (reason.length < 3 || reason.length > 500) return errorResponse(res, '删除原因需为 3-500 字', 400);
         const post = await DbAdapter.findByPk(Post, postId);
         if (!post) {
             return errorResponse(res, '帖子不存在', 404);
@@ -5346,6 +5412,7 @@ async function deletePost(req, res) {
         // L5: 删除帖子涉及多表关联数据，必须用事务包裹；Comment 软删保留历史
         // Bug-1: Post 改为软删（status:'deleted' + 计数清零），避免评论 post_id 成为指向已硬删帖子的死指针
         await sequelize.transaction(async (t) => {
+            await recordModerationLog(pid, DbAdapter.getId(req.user), 'delete_post', reason, { status: post.status }, { status: 'deleted' }, { transaction: t });
             await DbAdapter.destroy(Notification, { where: { related_id: pid, related_type: 'post' }, transaction: t });
             await DbAdapter.destroy(Report, { where: { target_id: pid, type: 'post' }, transaction: t });
             await DbAdapter.destroy(Like, { where: { post_id: pid }, transaction: t });
@@ -5353,7 +5420,7 @@ async function deletePost(req, res) {
             await DbAdapter.update(Comment, { status: 'deleted' }, { where: { post_id: pid }, transaction: t });
             await DbAdapter.update(Post, { status: 'deleted', like_count: 0, collection_count: 0, comment_count: 0 }, { where: { id: pid }, transaction: t });
         });
-        logOperation(req, 'delete_post', 'post', postId, { title: post.title });
+        logOperation(req, 'delete_post', 'post', postId, { title: post.title, reason });
         return successResponse(res, null, '删除成功');
     } catch (error) {
         console.error('删除帖子错误:', error);
@@ -5367,7 +5434,7 @@ async function deletePost(req, res) {
 async function updatePost(req, res) {
     try {
         const { postId } = req.params;
-        const { title, content, category, status, is_top, is_essence, board_id, post_type, is_locked, slow_mode_seconds } = req.body;
+        const { title, content, category, status, is_top, is_essence, board_id, post_type, is_locked, slow_mode_seconds, moderation_reason } = req.body;
 
         const post = await DbAdapter.findByPk(Post, postId);
         if (!post) {
@@ -5414,6 +5481,14 @@ async function updatePost(req, res) {
             if (!board || board.status !== 'active') return errorResponse(res, '论坛板块不存在或已停用', 400);
             updateData.board_id = Number(board_id);
         }
+        const moderationChanged = [status, is_top, is_essence, board_id, is_locked, slow_mode_seconds].some(value => value !== undefined);
+        if (moderationChanged && String(moderation_reason || '').trim().length < 3) {
+            return errorResponse(res, '版务操作原因至少需要 3 个字', 400);
+        }
+        const beforeState = {
+            status: post.status, is_top: post.is_top, is_essence: post.is_essence, board_id: post.board_id,
+            is_locked: post.is_locked, slow_mode_seconds: post.slow_mode_seconds
+        };
         if (post_type !== undefined) {
             if (!['discussion', 'question', 'share', 'tutorial', 'news'].includes(post_type)) return errorResponse(res, '无效的帖子类型', 400);
             updateData.post_type = post_type;
@@ -5449,7 +5524,20 @@ async function updatePost(req, res) {
             }
         }
 
-        await DbAdapter.update(Post, updateData, { where: { id: postId } });
+        await sequelize.transaction(async transaction => {
+            await DbAdapter.update(Post, updateData, { where: { id: postId }, transaction });
+            const updated = await DbAdapter.findByPk(Post, postId, { transaction });
+            if (title !== undefined || content !== undefined || board_id !== undefined || post_type !== undefined) {
+                await recordPostRevision(updated, DbAdapter.getId(req.user), 'admin', moderation_reason || 'admin_edit', { transaction });
+            }
+            if (moderationChanged) {
+                const afterState = {
+                    status: updated.status, is_top: updated.is_top, is_essence: updated.is_essence, board_id: updated.board_id,
+                    is_locked: updated.is_locked, slow_mode_seconds: updated.slow_mode_seconds
+                };
+                await recordModerationLog(postId, DbAdapter.getId(req.user), 'update_post_moderation', moderation_reason, beforeState, afterState, { transaction });
+            }
+        });
         logOperation(req, 'update_post', 'post', postId, updateData);
 
         return successResponse(res, null, '更新成功');
@@ -5465,14 +5553,18 @@ async function updatePost(req, res) {
 async function setPostEssence(req, res) {
     try {
         const { postId } = req.params;
-        const { isEssence } = req.body;
+        const { isEssence, reason } = req.body;
+        if (String(reason || '').trim().length < 3) return errorResponse(res, '操作原因至少需要 3 个字', 400);
         
         const post = await DbAdapter.findByPk(Post, postId);
         if (!post) {
             return errorResponse(res, '帖子不存在', 404);
         }
         
-        await DbAdapter.update(Post, { is_essence: isEssence }, { where: { id: postId } });
+        await sequelize.transaction(async transaction => {
+            await DbAdapter.update(Post, { is_essence: isEssence }, { where: { id: postId }, transaction });
+            await recordModerationLog(postId, DbAdapter.getId(req.user), isEssence ? 'set_essence' : 'unset_essence', reason, { is_essence: post.is_essence }, { is_essence: Boolean(isEssence) }, { transaction });
+        });
         logOperation(req, 'set_post_essence', 'post', postId, { isEssence });
         
         return successResponse(res, null, '设置成功');
@@ -5488,14 +5580,18 @@ async function setPostEssence(req, res) {
 async function setPostTop(req, res) {
     try {
         const { postId } = req.params;
-        const { isTop } = req.body;
+        const { isTop, reason } = req.body;
+        if (String(reason || '').trim().length < 3) return errorResponse(res, '操作原因至少需要 3 个字', 400);
         
         const post = await DbAdapter.findByPk(Post, postId);
         if (!post) {
             return errorResponse(res, '帖子不存在', 404);
         }
         
-        await DbAdapter.update(Post, { is_top: isTop }, { where: { id: postId } });
+        await sequelize.transaction(async transaction => {
+            await DbAdapter.update(Post, { is_top: isTop }, { where: { id: postId }, transaction });
+            await recordModerationLog(postId, DbAdapter.getId(req.user), isTop ? 'set_top' : 'unset_top', reason, { is_top: post.is_top }, { is_top: Boolean(isTop) }, { transaction });
+        });
         logOperation(req, 'set_post_top', 'post', postId, { isTop });
         
         return successResponse(res, null, '设置成功');

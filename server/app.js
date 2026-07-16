@@ -455,6 +455,13 @@ async function startServer() {
             await sequelize.query('UPDATE posts SET last_reply_at = created_at WHERE last_reply_at IS NULL');
             await sequelize.query("UPDATE posts SET reply_count = (SELECT COUNT(*) FROM comments WHERE comments.post_id = posts.id AND comments.status = 'active') WHERE reply_count = 0");
             await sequelize.query("UPDATE posts SET participant_count = 1 + (SELECT COUNT(DISTINCT user_id) FROM comments WHERE comments.post_id = posts.id AND comments.status = 'active' AND comments.user_id != posts.user_id) WHERE participant_count <= 1");
+            await sequelize.query(`INSERT INTO post_revisions
+                (post_id, revision_number, editor_id, source, change_reason, title, content, board_id, post_type, cover, tags, created_at, updated_at)
+                SELECT posts.id, 1, posts.user_id, 'system', 'legacy_initial', posts.title, posts.content, posts.board_id,
+                       COALESCE(posts.post_type, posts.category, 'discussion'), COALESCE(posts.cover, ''), COALESCE(posts.tags, '[]'),
+                       posts.created_at, posts.updated_at
+                FROM posts
+                WHERE NOT EXISTS (SELECT 1 FROM post_revisions WHERE post_revisions.post_id = posts.id)`);
             console.log('[迁移] 论坛默认版块和旧帖子归属已校准');
         } catch (forumSeedError) {
             console.warn('[迁移] 论坛版块种子或旧数据回填跳过:', forumSeedError.message);

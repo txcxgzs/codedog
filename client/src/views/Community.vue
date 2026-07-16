@@ -82,6 +82,11 @@
             </div>
           </div>
 
+          <div v-if="userStore.isLoggedIn" class="r-community--side_card r-community--following_card">
+            <div class="r-community--side_heading"><h4 class="r-community--card_title">我的论坛</h4><button @click="openMySubscriptions">管理关注</button></div>
+            <p>集中查看关注的板块和主题，新回复不会错过。</p>
+          </div>
+
           <div class="r-community--side_card">
             <h4 class="r-community--card_title">社区公告</h4>
             <div v-if="communityAnnouncements.length" class="r-community--ann_list">
@@ -154,6 +159,20 @@
     </el-dialog>
     
     <GeetestDialog ref="geetestDialogRef" />
+    <el-dialog v-model="subscriptionsVisible" title="我的论坛关注" width="min(760px, 94vw)">
+      <el-tabs v-model="subscriptionsTab" v-loading="subscriptionsLoading">
+        <el-tab-pane :label="`关注主题 ${mySubscriptions.topic_total || 0}`" name="topics">
+          <button v-for="topic in mySubscriptions.topics" :key="topic.id" class="r-community--subscription_topic" @click="$router.push(`/post/${topic.id}`); subscriptionsVisible = false">
+            <span><b>{{ topic.title }}</b><small>{{ topic.board?.icon }} {{ topic.board?.name }} · {{ topic.reply_count || topic.comment_count }} 条回复</small></span><em>{{ formatTime(topic.last_reply_at || topic.updated_at) }}</em>
+          </button>
+          <el-empty v-if="!mySubscriptions.topics.length" description="还没有关注主题" />
+        </el-tab-pane>
+        <el-tab-pane :label="`关注板块 ${mySubscriptions.boards.length}`" name="boards">
+          <button v-for="board in mySubscriptions.boards" :key="board.id" class="r-community--subscription_board" @click="selectBoard(board); subscriptionsVisible = false"><span :style="{ color: board.color }">{{ board.icon }}</span><b>{{ board.name }}</b><small>{{ board.description }}</small></button>
+          <el-empty v-if="!mySubscriptions.boards.length" description="还没有关注板块" />
+        </el-tab-pane>
+      </el-tabs>
+    </el-dialog>
   </div>
 </template>
 
@@ -228,6 +247,10 @@ const wysiwygRef = ref(null)
 const coverInput = ref(null)
 const coverUploading = ref(false)
 const draftStatus = ref('')
+const subscriptionsVisible = ref(false)
+const subscriptionsLoading = ref(false)
+const subscriptionsTab = ref('topics')
+const mySubscriptions = reactive({ topics: [], topic_total: 0, boards: [] })
 const restoringDraft = ref(false)
 let draftTimer = null
 
@@ -336,6 +359,20 @@ const toggleBoardFollow = async board => {
       ElMessage.success(board.subscribed ? '已关注板块' : '已取消关注')
     }
   } catch (e) { ElMessage.error(e.response?.data?.msg || '操作失败') }
+}
+
+const openMySubscriptions = async () => {
+  subscriptionsVisible.value = true
+  subscriptionsLoading.value = true
+  try {
+    const res = await postApi.getMySubscriptions({ page: 1, pageSize: 50 })
+    if (res.code === 200) {
+      mySubscriptions.topics = res.data?.topics || []
+      mySubscriptions.topic_total = Number(res.data?.topic_total || 0)
+      mySubscriptions.boards = res.data?.boards || []
+    }
+  } catch (e) { ElMessage.error('获取论坛关注失败') }
+  finally { subscriptionsLoading.value = false }
 }
 
 const changeSort = () => {
@@ -848,6 +885,15 @@ $border-color: #eee;
 .r-community--board_item em { color:#98a2b3; font-size:11px; font-style:normal; }
 .r-community--board_follow { position:absolute; right:8px; top:50%; transform:translateY(-50%); width:25px; height:25px; padding:0; border:0; border-radius:8px; background:transparent; color:#aab2c0; font-size:18px; cursor:pointer; }
 .r-community--board_follow:hover,.r-community--board_follow.active { background:#fff2c7; color:#d89a00; }
+.r-community--subscription_topic,.r-community--subscription_board { width:100%; display:flex; align-items:center; gap:12px; padding:13px 12px; border:0; border-bottom:1px solid #edf0f5; background:transparent; text-align:left; cursor:pointer; }
+.r-community--subscription_topic:hover,.r-community--subscription_board:hover { background:#fffaf0; }
+.r-community--subscription_topic > span { flex:1; min-width:0; }
+.r-community--subscription_topic b,.r-community--subscription_topic small { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.r-community--subscription_topic b { color:#273247; font-size:14px; }
+.r-community--subscription_topic small,.r-community--subscription_topic em,.r-community--subscription_board small { margin-top:4px; color:#8a94a5; font-size:12px; font-style:normal; }
+.r-community--subscription_board > span { width:34px; font-size:20px; text-align:center; }
+.r-community--subscription_board b { min-width:100px; color:#273247; }
+.r-community--subscription_board small { flex:1; }
 .r-community--topic_meta { display:flex; align-items:center; gap:8px; margin:0 0 7px 50px; font-size:12px; font-weight:700; }
 .r-community--question_state { padding:2px 7px; border-radius:999px; color:#b54708; background:#fff3df; }
 .r-community--question_state.solved { color:#087443; background:#e9f8ef; }

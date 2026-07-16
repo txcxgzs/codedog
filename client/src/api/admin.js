@@ -160,6 +160,14 @@ export const adminApi = {
     return request.get('/admin/posts', { params })
   },
 
+  getPostHistory(postId) {
+    return request.get(`/admin/posts/${postId}/history`)
+  },
+
+  restorePostRevision(postId, revisionId, reason) {
+    return request.post(`/admin/posts/${postId}/revisions/${revisionId}/restore`, { reason })
+  },
+
   getForumBoards() {
     return request.get('/admin/forum/boards')
   },
@@ -176,20 +184,20 @@ export const adminApi = {
     return request.delete(`/admin/forum/boards/${boardId}`)
   },
   
-  setPostEssence(postId, isEssence) {
-    return request.put(`/admin/posts/${postId}/essence`, { isEssence })
+  setPostEssence(postId, isEssence, reason) {
+    return request.put(`/admin/posts/${postId}/essence`, { isEssence, reason })
   },
   
-  setPostTop(postId, isTop) {
-    return request.put(`/admin/posts/${postId}/top`, { isTop })
+  setPostTop(postId, isTop, reason) {
+    return request.put(`/admin/posts/${postId}/top`, { isTop, reason })
   },
   
   updatePost(postId, data) {
     return request.put(`/admin/posts/${postId}`, data)
   },
   
-  deletePost(postId) {
-    return request.delete(`/admin/posts/${postId}`)
+  deletePost(postId, reason) {
+    return request.delete(`/admin/posts/${postId}`, { data: { reason } })
   },
   
   /**

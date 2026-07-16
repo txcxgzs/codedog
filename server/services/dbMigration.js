@@ -18,6 +18,7 @@ const BATCH_SIZE = 500;
 // 该清单同时用于覆盖检查；models/index.js 新增模型后未加入这里会直接拒绝迁移。
 const MODEL_ORDER = [
     'User', 'Work', 'ForumBoard', 'Post', 'ForumBoardSubscription', 'PostSubscription', 'PostDraft',
+    'PostRevision', 'ForumModerationLog',
     'Comment', 'Notification', 'SystemConfig', 'Banner',
     'Announcement', 'IpBan', 'Report', 'Studio', 'StudioMember', 'StudioWork',
     'StudioPointLog', 'ReportAuditLog', 'Like', 'Favorite', 'Follow', 'CaptchaStats',

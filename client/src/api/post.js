@@ -16,6 +16,10 @@ export const postApi = {
   deleteDraft() {
     return request.delete('/posts/drafts/current')
   },
+
+  getMySubscriptions(params = {}) {
+    return request.get('/posts/subscriptions/mine', { params })
+  },
   getBoards() {
     return request.get('/posts/boards/list')
   },

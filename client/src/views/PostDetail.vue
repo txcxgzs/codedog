@@ -42,6 +42,9 @@
               <el-form-item label="标签">
                 <el-input v-model="editTags" placeholder="标签,用逗号分隔" />
               </el-form-item>
+              <el-form-item label="修改说明">
+                <el-input v-model="editReason" maxlength="200" show-word-limit placeholder="简单说明这次修改了什么（至少 3 个字）" />
+              </el-form-item>
             </el-form>
             <div class="r-post--edit_actions">
               <el-button @click="cancelEdit">取消</el-button>
@@ -260,6 +263,7 @@ const editTitle = ref('')
 const editCategory = ref('')
 const editContent = ref('')
 const editTags = ref('')
+const editReason = ref('')
 const wysiwygRef = ref(null)
 const comments = ref([])
 const commentPage = ref(1)
@@ -414,6 +418,7 @@ const startEdit = () => {
   // 修复: 内容直接放入 WYSIWYG 编辑器(后端存储的可能是 HTML 或 markdown,都直接显示)
   editContent.value = post.value.content || ''
   editTags.value = Array.isArray(post.value.tags) ? post.value.tags.join(', ') : (post.value.tags || '')
+  editReason.value = ''
   isEditing.value = true
   nextTick(() => {
     wysiwygRef.value?.setContent(editContent.value)
@@ -428,6 +433,7 @@ const cancelEdit = () => {
 // 帖子编辑:保存
 const saveEdit = async () => {
   if (!editTitle.value.trim()) { ElMessage.error('请输入标题'); return }
+  if (editReason.value.trim().length < 3) { ElMessage.error('请填写至少 3 个字的修改说明'); return }
   const html = wysiwygRef.value?.getSanitizedHtml() || ''
   if (!html.replace(/<[^>]+>/g, '').trim()) { ElMessage.error('请输入内容'); return }
   editLoading.value = true
@@ -437,7 +443,8 @@ const saveEdit = async () => {
       title: editTitle.value.trim(),
       category: editCategory.value,
       content: html,
-      tags
+      tags,
+      change_reason: editReason.value.trim()
     })
     if (res.code === 200) {
       ElMessage.success('保存成功')

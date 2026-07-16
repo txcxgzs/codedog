@@ -105,16 +105,44 @@
             <el-input-number v-model="editForm.slow_mode_seconds" :min="0" :max="86400" :step="30" />
             <span class="r-admin-posts--hint">秒，0 表示关闭</span>
           </el-form-item>
+          <el-form-item label="操作原因" required>
+            <el-input v-model="editForm.moderation_reason" type="textarea" :rows="2" maxlength="500" show-word-limit placeholder="移动、锁定、置顶或修改帖子时必须填写，记录到版务日志" />
+          </el-form-item>
         </el-form>
 
         <div style="display: flex; justify-content: space-between; gap: 8px; margin-top: 16px;">
           <el-button type="danger" @click="handleDeletePost">删除帖子</el-button>
           <div style="display: flex; gap: 8px;">
+            <el-button @click="openPostHistory">历史与日志</el-button>
             <el-button @click="detailVisible = false">取消</el-button>
             <el-button type="primary" @click="handleSavePost">保存修改</el-button>
           </div>
         </div>
       </div>
+    </el-dialog>
+
+    <el-dialog v-model="historyVisible" title="帖子历史与版务日志" width="900px" destroy-on-close>
+      <el-tabs v-model="historyTab" v-loading="historyLoading">
+        <el-tab-pane label="修订历史" name="revisions">
+          <el-timeline v-if="postHistory.revisions.length">
+            <el-timeline-item v-for="revision in postHistory.revisions" :key="revision.id" :timestamp="formatDate(revision.created_at)" placement="top">
+              <div class="r-admin-posts--history_card">
+                <div><b>版本 #{{ revision.revision_number }}</b><el-tag size="small" style="margin-left:8px">{{ revision.source }}</el-tag><span>{{ revision.editor?.nickname || revision.editor?.username || '系统' }}</span></div>
+                <strong>{{ revision.title }}</strong>
+                <p>{{ revision.change_reason || '未填写修改说明' }}</p>
+                <el-button size="small" type="warning" plain @click="restoreRevision(revision)">回滚到此版本</el-button>
+              </div>
+            </el-timeline-item>
+          </el-timeline><el-empty v-else description="暂无修订历史" />
+        </el-tab-pane>
+        <el-tab-pane label="版务日志" name="moderation">
+          <el-timeline v-if="postHistory.moderation_logs.length">
+            <el-timeline-item v-for="log in postHistory.moderation_logs" :key="log.id" :timestamp="formatDate(log.created_at)" placement="top">
+              <div class="r-admin-posts--history_card"><div><b>{{ log.action }}</b><span>{{ log.operator?.nickname || log.operator?.username || '系统' }}</span></div><p>{{ log.reason }}</p></div>
+            </el-timeline-item>
+          </el-timeline><el-empty v-else description="暂无版务操作" />
+        </el-tab-pane>
+      </el-tabs>
     </el-dialog>
   </div>
 </template>
@@ -146,7 +174,11 @@ const boardForm = reactive({ id: null, name: '', slug: '', description: '', icon
 // 帖子详情弹窗
 const detailVisible = ref(false)
 const editingPost = ref(null)
-const editForm = reactive({ title: '', board_id: null, post_type: 'discussion', is_essence: false, is_top: false, is_locked: false, slow_mode_seconds: 0 })
+const editForm = reactive({ title: '', board_id: null, post_type: 'discussion', is_essence: false, is_top: false, is_locked: false, slow_mode_seconds: 0, moderation_reason: '' })
+const historyVisible = ref(false)
+const historyLoading = ref(false)
+const historyTab = ref('revisions')
+const postHistory = reactive({ revisions: [], moderation_logs: [] })
 
 const categoryMap = { discussion: '讨论', question: '问答', share: '分享', tutorial: '教程', news: '公告' }
 
@@ -218,10 +250,12 @@ const openDetail = async (post) => {
   editForm.is_top = !!post.is_top
   editForm.is_locked = !!post.is_locked
   editForm.slow_mode_seconds = Number(post.slow_mode_seconds || 0)
+  editForm.moderation_reason = ''
   detailVisible.value = true
 }
 
 const handleSavePost = async () => {
+  if (editForm.moderation_reason.trim().length < 3) return ElMessage.warning('请填写至少 3 个字的操作原因')
   try {
     const res = await adminApi.updatePost(editingPost.value.id, {
       title: editForm.title.trim(),
@@ -230,7 +264,8 @@ const handleSavePost = async () => {
       is_essence: editForm.is_essence,
       is_top: editForm.is_top,
       is_locked: editForm.is_locked,
-      slow_mode_seconds: editForm.slow_mode_seconds
+      slow_mode_seconds: editForm.slow_mode_seconds,
+      moderation_reason: editForm.moderation_reason.trim()
     })
     if (res.code === 200) {
       ElMessage.success('保存成功')
@@ -242,10 +277,35 @@ const handleSavePost = async () => {
   } catch (e) { ElMessage.error('保存失败') }
 }
 
+const openPostHistory = async () => {
+  if (!editingPost.value) return
+  historyVisible.value = true
+  historyLoading.value = true
+  try {
+    const res = await adminApi.getPostHistory(editingPost.value.id)
+    if (res.code === 200) {
+      postHistory.revisions = res.data?.revisions || []
+      postHistory.moderation_logs = res.data?.moderation_logs || []
+    }
+  } catch (e) { ElMessage.error('获取帖子历史失败') }
+  finally { historyLoading.value = false }
+}
+
+const restoreRevision = async revision => {
+  try {
+    const { value } = await ElMessageBox.prompt(`将帖子回滚到版本 #${revision.revision_number}，请填写原因`, '回滚帖子', { inputPattern: /^.{3,500}$/, inputErrorMessage: '原因需为 3-500 字', type: 'warning' })
+    const res = await adminApi.restorePostRevision(editingPost.value.id, revision.id, value.trim())
+    if (res.code === 200) {
+      ElMessage.success(res.msg || '回滚成功')
+      await Promise.all([openPostHistory(), fetchPosts()])
+    }
+  } catch (e) { if (e !== 'cancel') ElMessage.error(e.response?.data?.msg || '回滚失败') }
+}
+
 const handleDeletePost = async () => {
   try {
-    await ElMessageBox.confirm('确定删除该帖子？此操作不可恢复。', '确认删除', { type: 'warning' })
-    const res = await adminApi.deletePost(editingPost.value.id)
+    const { value } = await ElMessageBox.prompt('删除后帖子会保留审计证据但不再公开，请填写处理原因。', '删除帖子', { inputPattern: /^.{3,500}$/, inputErrorMessage: '原因需为 3-500 字', type: 'warning', confirmButtonText: '确认删除' })
+    const res = await adminApi.deletePost(editingPost.value.id, value.trim())
     if (res.code === 200) {
       ElMessage.success('删除成功')
       detailVisible.value = false
@@ -270,4 +330,9 @@ onMounted(fetchPosts)
 .r-admin-posts--hint { margin-left: 10px; color: #999; font-size: 12px; }
 .r-admin-posts--board_toolbar { display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; color:#7c8799; font-size:13px; }
 .r-admin-posts--board_slug { margin-top:3px; color:#98a2b3; font-size:11px; }
+.r-admin-posts--history_card { padding:12px 14px; border:1px solid #e8ebf0; border-radius:12px; background:#fafbfc; }
+.r-admin-posts--history_card > div { display:flex; align-items:center; gap:10px; }
+.r-admin-posts--history_card > div span:last-child { margin-left:auto; color:#7c8799; font-size:12px; }
+.r-admin-posts--history_card strong { display:block; margin:9px 0 4px; color:#273247; }
+.r-admin-posts--history_card p { margin:5px 0 10px; color:#667085; font-size:13px; }
 </style>

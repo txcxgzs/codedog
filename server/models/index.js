@@ -215,6 +215,35 @@ const PostDraft = sequelize.define('PostDraft', {
     }
 }, Object.assign({ tableName: 'post_drafts', indexes: [{ unique: true, fields: ['user_id'] }, { fields: ['updated_at'] }] }, TIMESTAMP_OPTS));
 
+const PostRevision = sequelize.define('PostRevision', {
+    id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+    post_id: { type: DataTypes.INTEGER, allowNull: false },
+    revision_number: { type: DataTypes.INTEGER, allowNull: false },
+    editor_id: { type: DataTypes.INTEGER, allowNull: true },
+    source: { type: DataTypes.STRING(20), allowNull: false, defaultValue: 'user' },
+    change_reason: { type: DataTypes.STRING(500), allowNull: false, defaultValue: '' },
+    title: { type: DataTypes.STRING(200), allowNull: false },
+    content: { type: DataTypes.TEXT, allowNull: false },
+    board_id: { type: DataTypes.INTEGER, allowNull: true },
+    post_type: { type: DataTypes.STRING(30), allowNull: false, defaultValue: 'discussion' },
+    cover: { type: DataTypes.STRING(1000), allowNull: false, defaultValue: '' },
+    tags: {
+        type: DataTypes.TEXT, allowNull: false, defaultValue: '[]',
+        get() { try { return JSON.parse(this.getDataValue('tags') || '[]'); } catch { return []; } },
+        set(value) { this.setDataValue('tags', JSON.stringify(Array.isArray(value) ? value : [])); }
+    }
+}, Object.assign({ tableName: 'post_revisions', indexes: [{ unique: true, fields: ['post_id', 'revision_number'] }, { fields: ['post_id', 'created_at'] }, { fields: ['editor_id'] }] }, TIMESTAMP_OPTS));
+
+const ForumModerationLog = sequelize.define('ForumModerationLog', {
+    id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+    post_id: { type: DataTypes.INTEGER, allowNull: false },
+    operator_id: { type: DataTypes.INTEGER, allowNull: true },
+    action: { type: DataTypes.STRING(50), allowNull: false },
+    reason: { type: DataTypes.STRING(500), allowNull: false, defaultValue: '' },
+    before_state: { type: DataTypes.TEXT, allowNull: true },
+    after_state: { type: DataTypes.TEXT, allowNull: true }
+}, Object.assign({ tableName: 'forum_moderation_logs', indexes: [{ fields: ['post_id', 'created_at'] }, { fields: ['operator_id'] }, { fields: ['action'] }] }, TIMESTAMP_OPTS));
+
 const Studio = sequelize.define('Studio', {
     id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
     name: { type: DataTypes.STRING(100), allowNull: false },
@@ -570,6 +599,12 @@ User.hasMany(PostSubscription, { foreignKey: 'user_id', as: 'post_subscriptions'
 PostDraft.belongsTo(User, { foreignKey: 'user_id', as: 'user', onDelete: 'CASCADE' });
 PostDraft.belongsTo(ForumBoard, { foreignKey: 'board_id', as: 'board', constraints: false });
 User.hasOne(PostDraft, { foreignKey: 'user_id', as: 'post_draft', onDelete: 'CASCADE' });
+PostRevision.belongsTo(Post, { foreignKey: 'post_id', as: 'post', onDelete: 'CASCADE' });
+PostRevision.belongsTo(User, { foreignKey: 'editor_id', as: 'editor', constraints: false });
+Post.hasMany(PostRevision, { foreignKey: 'post_id', as: 'revisions', onDelete: 'CASCADE' });
+ForumModerationLog.belongsTo(Post, { foreignKey: 'post_id', as: 'post', onDelete: 'CASCADE' });
+ForumModerationLog.belongsTo(User, { foreignKey: 'operator_id', as: 'operator', constraints: false });
+Post.hasMany(ForumModerationLog, { foreignKey: 'post_id', as: 'moderation_logs', onDelete: 'CASCADE' });
 User.hasMany(Comment, { foreignKey: 'user_id', as: 'comments' });
 Comment.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
 Comment.belongsTo(User, { foreignKey: 'reply_to_user_id', as: 'reply_to_user' });
@@ -771,7 +806,7 @@ Comment.belongsTo(Comment, { foreignKey: 'parent_id', as: 'parent' });
 
 module.exports = {
     sequelize,
-    User, Work, Comment, Post, ForumBoard, ForumBoardSubscription, PostSubscription, PostDraft, Studio, StudioMember, StudioWork, StudioPointLog,
+    User, Work, Comment, Post, ForumBoard, ForumBoardSubscription, PostSubscription, PostDraft, PostRevision, ForumModerationLog, Studio, StudioMember, StudioWork, StudioPointLog,
     Report, ReportAuditLog, DeveloperApp, DeveloperAppAuditLog, OAuthAuthCode, OAuthAccessToken, OAuthRefreshToken, UserAppAuthorization, Like, Favorite, Follow, Notification, Announcement, Banner, IpBan, CaptchaStats,
     SystemConfig, OperationLog, RolePermission, Statistics, SensitiveWord
 };

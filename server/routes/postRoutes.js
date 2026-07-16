@@ -18,6 +18,7 @@ router.get('/', postController.getPosts);
 router.get('/boards/list', optionalAuth, postController.getBoards);
 router.get('/my/list', authMiddleware, postController.getMyPosts);
 router.get('/drafts/current', authMiddleware, postController.getDraft);
+router.get('/subscriptions/mine', authMiddleware, postController.getMyForumSubscriptions);
 router.put('/drafts/current', authMiddleware, postController.saveDraft);
 router.delete('/drafts/current', authMiddleware, postController.deleteDraft);
 router.get('/:id', optionalAuth, postController.getPostDetail);
