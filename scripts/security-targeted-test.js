@@ -206,6 +206,29 @@ async function main() {
     });
     record('admin can assign scoped forum moderators', assignSource.status === 200 && assignTarget.status === 200, `source=${assignSource.status}; target=${assignTarget.status}`);
 
+    const publicForumOverview = await http('/api/admin/forum/overview');
+    record('forum operations overview requires authentication', publicForumOverview.status === 401, `status=${publicForumOverview.status}`);
+    const forgedForumOverview = await http('/api/admin/forum/overview', { headers: auth(activeTokenClaimingSuperadmin) });
+    record('forum operations overview rejects a forged privileged JWT role', forgedForumOverview.status === 403, `status=${forgedForumOverview.status}`);
+    const moderatorForumOverview = await http('/api/admin/forum/overview', { headers: auth(moderatorToken) });
+    const overviewBoardIds = (moderatorForumOverview.json?.data?.boards || []).map(board => Number(board.id));
+    const assignedBoardIds = [Number(boardCreate.json?.data?.id), Number(targetBoardId)];
+    record(
+        'forum operations overview is usable and limited to assigned moderator boards',
+        moderatorForumOverview.status === 200
+            && moderatorForumOverview.json?.data?.scope === 'assigned'
+            && overviewBoardIds.every(id => assignedBoardIds.includes(id))
+            && moderatorForumOverview.json?.data?.trend?.length === 7
+            && Number.isFinite(Number(moderatorForumOverview.json?.data?.metrics?.total_published)),
+        `status=${moderatorForumOverview.status}; boards=${overviewBoardIds.join(',')}; error=${moderatorForumOverview.json?.msg || ''}`
+    );
+    const adminForumOverview = await http('/api/admin/forum/overview', { headers: auth(superadminToken) });
+    record(
+        'administrators receive a complete forum operations overview',
+        adminForumOverview.status === 200 && adminForumOverview.json?.data?.scope === 'all' && adminForumOverview.json?.data?.trend?.length === 7,
+        `status=${adminForumOverview.status}; scope=${adminForumOverview.json?.data?.scope}; error=${adminForumOverview.json?.msg || ''}`
+    );
+
     const moveResult = await http(`/api/admin/posts/${forumPostId}/move`, {
         method: 'POST', headers: auth(moderatorToken), body: { board_id: targetBoardId, reason: 'move topic test' }
     });

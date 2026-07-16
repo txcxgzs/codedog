@@ -160,6 +160,10 @@ export const adminApi = {
     return request.get('/admin/posts', { params })
   },
 
+  getForumOverview() {
+    return request.get('/admin/forum/overview')
+  },
+
   getPostHistory(postId) {
     return request.get(`/admin/posts/${postId}/history`)
   },

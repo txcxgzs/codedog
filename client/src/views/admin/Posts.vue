@@ -1,10 +1,49 @@
 <template>
   <div class="r-admin-posts--page">
+    <section class="r-admin-posts--overview" v-loading="overviewLoading">
+      <div class="r-admin-posts--overview_head">
+        <div><h2>论坛运营总览</h2><p>{{ overview.scope === 'assigned' ? '仅统计您负责的版块' : '全站论坛内容与活跃情况' }}</p></div>
+        <el-button text @click="fetchOverview">刷新数据</el-button>
+      </div>
+      <div class="r-admin-posts--metrics">
+        <div class="r-admin-posts--metric"><span>已发布主题</span><strong>{{ overview.metrics.total_published }}</strong><small>累计 {{ overview.metrics.total_replies }} 条回复</small></div>
+        <div class="r-admin-posts--metric is-accent"><span>今日互动</span><strong>{{ overview.metrics.today_topics + overview.metrics.today_replies }}</strong><small>{{ overview.metrics.today_topics }} 主题 · {{ overview.metrics.today_replies }} 回复</small></div>
+        <div class="r-admin-posts--metric"><span>30 天活跃作者</span><strong>{{ overview.metrics.active_authors_30d }}</strong><small>发帖或参与回复</small></div>
+        <div class="r-admin-posts--metric is-warning"><span>待回答问题</span><strong>{{ overview.metrics.unanswered_questions }}</strong><small>其中 {{ overview.metrics.stale_questions }} 条超过 72 小时</small></div>
+        <div class="r-admin-posts--metric"><span>内容状态</span><strong>{{ overview.metrics.hidden_topics + overview.metrics.locked_topics }}</strong><small>{{ overview.metrics.hidden_topics }} 隐藏 · {{ overview.metrics.locked_topics }} 锁定</small></div>
+        <div class="r-admin-posts--metric"><span>精华主题</span><strong>{{ overview.metrics.essence_topics }}</strong><small>优质内容沉淀</small></div>
+      </div>
+      <div class="r-admin-posts--overview_grid">
+        <div class="r-admin-posts--panel">
+          <div class="r-admin-posts--panel_title"><b>近 7 天趋势</b><span>主题 / 回复</span></div>
+          <div class="r-admin-posts--trend">
+            <div v-for="item in overview.trend" :key="item.day" class="r-admin-posts--trend_item">
+              <div class="r-admin-posts--trend_bars"><i class="is-topic" :style="{ height: trendHeight(item.topics) }" :title="`${item.topics} 个主题`" /><i class="is-reply" :style="{ height: trendHeight(item.replies) }" :title="`${item.replies} 条回复`" /></div>
+              <span>{{ item.day.slice(5) }}</span>
+            </div>
+          </div>
+        </div>
+        <div class="r-admin-posts--panel">
+          <div class="r-admin-posts--panel_title"><b>需要关注</b><span>{{ overview.attention.length }} 项</span></div>
+          <div v-if="overview.attention.length" class="r-admin-posts--attention">
+            <button v-for="item in overview.attention" :key="item.id" type="button" @click="openDetail(item)">
+              <span class="r-admin-posts--attention_title">{{ item.title }}</span><span>{{ item.board?.icon }} {{ item.board?.name || '未分区' }}</span>
+              <el-tag size="small" :type="item.reason === 'hidden' ? 'warning' : 'info'">{{ item.reason === 'hidden' ? '待复核隐藏内容' : '超过 72 小时未解答' }}</el-tag>
+            </button>
+          </div>
+          <el-empty v-else description="当前没有待关注内容" :image-size="48" />
+        </div>
+      </div>
+      <div v-if="overview.boards.length" class="r-admin-posts--boards_summary">
+        <span v-for="board in overview.boards" :key="board.id"><i :style="{ background: board.color }" />{{ board.icon }} {{ board.name }} <b>{{ board.post_count }}</b></span>
+      </div>
+    </section>
+
     <div class="r-admin-posts--toolbar">
       <el-input v-model="searchKeyword" placeholder="搜索帖子" clearable class="r-admin-posts--search" @keyup.enter="handleSearch">
         <template #append><el-button @click="handleSearch">搜索</el-button></template>
       </el-input>
-      <el-button type="primary" @click="fetchPosts">刷新</el-button>
+      <el-button type="primary" @click="refreshAll">刷新</el-button>
       <el-button @click="openBoardManager">板块管理</el-button>
     </div>
 
@@ -164,7 +203,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, reactive } from 'vue'
+import { ref, onMounted, reactive, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { adminApi } from '@/api/admin'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -176,6 +215,12 @@ const currentPage = ref(1)
 const pageSize = ref(10)
 const total = ref(0)
 const searchKeyword = ref('')
+const overviewLoading = ref(false)
+const overview = reactive({
+  scope: 'all',
+  metrics: { total_published: 0, total_replies: 0, today_topics: 0, today_replies: 0, active_authors_30d: 0, unanswered_questions: 0, stale_questions: 0, locked_topics: 0, hidden_topics: 0, essence_topics: 0 },
+  trend: [], boards: [], attention: []
+})
 const boards = ref([])
 const boardsLoading = ref(false)
 const boardManagerVisible = ref(false)
@@ -203,6 +248,20 @@ const historyTab = ref('revisions')
 const postHistory = reactive({ revisions: [], moderation_logs: [] })
 
 const categoryMap = { discussion: '讨论', question: '问答', share: '分享', tutorial: '教程', news: '公告' }
+
+const trendMax = computed(() => Math.max(1, ...overview.trend.flatMap(item => [item.topics, item.replies])))
+const trendHeight = value => `${Math.max(value ? 8 : 2, Math.round((Number(value || 0) / trendMax.value) * 76))}px`
+
+const fetchOverview = async () => {
+  overviewLoading.value = true
+  try {
+    const res = await adminApi.getForumOverview()
+    if (res.code === 200) Object.assign(overview, res.data)
+  } catch (e) { ElMessage.error(e.response?.data?.msg || '获取论坛运营数据失败') }
+  finally { overviewLoading.value = false }
+}
+
+const refreshAll = () => Promise.all([fetchPosts(), fetchOverview()])
 
 const fetchPosts = async () => {
   loading.value = true
@@ -248,7 +307,7 @@ const saveBoard = async () => {
       ElMessage.success(res.msg || '保存成功')
       boardEditorVisible.value = false
       await loadBoards()
-      fetchPosts()
+      refreshAll()
     }
   } catch (e) { ElMessage.error(e.response?.data?.msg || '保存板块失败') }
   finally { boardSaving.value = false }
@@ -258,7 +317,7 @@ const removeBoard = async board => {
   try {
     await ElMessageBox.confirm(`确定处理板块“${board.name}”吗？已有帖子时只会安全停用。`, '删除板块', { type: 'warning' })
     const res = await adminApi.deleteForumBoard(board.id)
-    if (res.code === 200) { ElMessage.success(res.msg); await loadBoards(); fetchPosts() }
+    if (res.code === 200) { ElMessage.success(res.msg); await loadBoards(); refreshAll() }
   } catch (e) { if (e !== 'cancel') ElMessage.error(e.response?.data?.msg || '操作失败') }
 }
 
@@ -333,7 +392,7 @@ const handleSavePost = async () => {
     if (res.code === 200) {
       ElMessage.success('保存成功')
       detailVisible.value = false
-      fetchPosts()
+      refreshAll()
     } else {
       ElMessage.error(res.msg || '保存失败')
     }
@@ -345,7 +404,7 @@ const openMovePost = async () => {
     const { value: boardId } = await ElMessageBox.prompt('请输入目标板块 ID', '移动主题', { inputPattern: /^\d+$/, inputErrorMessage: '请输入有效板块 ID' })
     const { value: reason } = await ElMessageBox.prompt('请说明移动原因，该说明会写入版务日志', '移动主题', { inputPattern: /^.{3,500}$/, inputErrorMessage: '原因需要 3-500 个字' })
     const res = await adminApi.movePost(editingPost.value.id, Number(boardId), reason.trim())
-    if (res.code === 200) { ElMessage.success(res.msg || '主题已移动'); detailVisible.value = false; await fetchPosts() }
+    if (res.code === 200) { ElMessage.success(res.msg || '主题已移动'); detailVisible.value = false; await refreshAll() }
   } catch (e) { if (!['cancel', 'close'].includes(e)) ElMessage.error(e.response?.data?.msg || '移动主题失败') }
 }
 
@@ -355,7 +414,7 @@ const openMergePost = async () => {
     const { value: reason } = await ElMessageBox.prompt('请说明合并原因，该操作会完整写入审计日志', '确认合并主题', { inputPattern: /^.{3,500}$/, inputErrorMessage: '原因需要 3-500 个字', type: 'warning' })
     await ElMessageBox.confirm(`确定将帖子 #${editingPost.value.id} 合并到 #${targetId} 吗？此操作不可直接撤销。`, '最终确认', { type: 'warning', confirmButtonText: '确认合并' })
     const res = await adminApi.mergePosts(editingPost.value.id, Number(targetId), reason.trim())
-    if (res.code === 200) { ElMessage.success(res.msg || '主题已合并'); detailVisible.value = false; await fetchPosts() }
+    if (res.code === 200) { ElMessage.success(res.msg || '主题已合并'); detailVisible.value = false; await refreshAll() }
   } catch (e) { if (!['cancel', 'close'].includes(e)) ElMessage.error(e.response?.data?.msg || '合并主题失败') }
 }
 
@@ -379,7 +438,7 @@ const restoreRevision = async revision => {
     const res = await adminApi.restorePostRevision(editingPost.value.id, revision.id, value.trim())
     if (res.code === 200) {
       ElMessage.success(res.msg || '回滚成功')
-      await Promise.all([openPostHistory(), fetchPosts()])
+      await Promise.all([openPostHistory(), refreshAll()])
     }
   } catch (e) { if (e !== 'cancel') ElMessage.error(e.response?.data?.msg || '回滚失败') }
 }
@@ -391,7 +450,7 @@ const handleDeletePost = async () => {
     if (res.code === 200) {
       ElMessage.success('删除成功')
       detailVisible.value = false
-      fetchPosts()
+      refreshAll()
     } else { ElMessage.error(res.msg || '删除失败') }
   } catch (e) { if (e !== 'cancel') ElMessage.error('删除失败') }
 }
@@ -402,11 +461,40 @@ const formatDate = (t) => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
 
-onMounted(fetchPosts)
+onMounted(refreshAll)
 </script>
 
 <style lang="scss" scoped>
 .r-admin-posts--page { background: #fff; border-radius: 12px; padding: 24px; }
+.r-admin-posts--overview { margin-bottom:24px; padding:20px; border:1px solid #edf0f5; border-radius:16px; background:linear-gradient(145deg,#fff 60%,#fff9e8); }
+.r-admin-posts--overview_head { display:flex; align-items:flex-start; justify-content:space-between; margin-bottom:16px; }
+.r-admin-posts--overview_head h2 { margin:0; color:#202a3d; font-size:20px; }
+.r-admin-posts--overview_head p { margin:5px 0 0; color:#98a2b3; font-size:12px; }
+.r-admin-posts--metrics { display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:10px; }
+.r-admin-posts--metric { display:flex; flex-direction:column; min-width:0; padding:14px; border:1px solid #edf0f5; border-radius:12px; background:#fff; }
+.r-admin-posts--metric span { color:#667085; font-size:12px; }
+.r-admin-posts--metric strong { margin:6px 0 3px; color:#202a3d; font-size:25px; line-height:1; }
+.r-admin-posts--metric small { overflow:hidden; color:#98a2b3; font-size:11px; text-overflow:ellipsis; white-space:nowrap; }
+.r-admin-posts--metric.is-accent { border-color:#ffe19a; background:#fffaf0; }
+.r-admin-posts--metric.is-warning strong { color:#e09100; }
+.r-admin-posts--overview_grid { display:grid; grid-template-columns:minmax(360px,1fr) minmax(360px,1fr); gap:12px; margin-top:12px; }
+.r-admin-posts--panel { min-height:150px; padding:14px 16px; border:1px solid #edf0f5; border-radius:12px; background:#fff; }
+.r-admin-posts--panel_title { display:flex; justify-content:space-between; align-items:center; color:#98a2b3; font-size:11px; }
+.r-admin-posts--panel_title b { color:#344054; font-size:14px; }
+.r-admin-posts--trend { display:flex; height:105px; align-items:flex-end; justify-content:space-around; gap:8px; padding-top:12px; }
+.r-admin-posts--trend_item { display:flex; flex:1; flex-direction:column; align-items:center; gap:5px; color:#98a2b3; font-size:10px; }
+.r-admin-posts--trend_bars { display:flex; height:78px; align-items:flex-end; gap:3px; }
+.r-admin-posts--trend_bars i { display:block; width:8px; min-height:2px; border-radius:5px 5px 2px 2px; transition:height .2s ease; }
+.r-admin-posts--trend_bars .is-topic { background:#fec433; }
+.r-admin-posts--trend_bars .is-reply { background:#7ea1e8; }
+.r-admin-posts--attention { margin-top:8px; }
+.r-admin-posts--attention button { display:grid; width:100%; grid-template-columns:minmax(0,1fr) 110px 128px; align-items:center; gap:8px; padding:8px 0; border:0; border-bottom:1px solid #f0f2f5; background:none; color:#667085; text-align:left; cursor:pointer; }
+.r-admin-posts--attention button:hover .r-admin-posts--attention_title { color:#e79b00; }
+.r-admin-posts--attention_title { overflow:hidden; color:#344054; text-overflow:ellipsis; white-space:nowrap; }
+.r-admin-posts--boards_summary { display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; }
+.r-admin-posts--boards_summary span { display:inline-flex; align-items:center; gap:5px; padding:6px 9px; border-radius:8px; background:#f7f8fa; color:#667085; font-size:11px; }
+.r-admin-posts--boards_summary i { width:6px; height:6px; border-radius:50%; }
+.r-admin-posts--boards_summary b { color:#344054; }
 .r-admin-posts--toolbar { display: flex; gap: 12px; margin-bottom: 20px; .r-admin-posts--search { width: 300px; } }
 .r-admin-posts--pagination { display: flex; justify-content: flex-end; margin-top: 20px; }
 .r-admin-posts--hint { margin-left: 10px; color: #999; font-size: 12px; }
@@ -418,4 +506,8 @@ onMounted(fetchPosts)
 .r-admin-posts--history_card strong { display:block; margin:9px 0 4px; color:#273247; }
 .r-admin-posts--history_card p { margin:5px 0 10px; color:#667085; font-size:13px; }
 .r-admin-posts--moderator_add { display:grid; grid-template-columns:140px minmax(180px,1fr) auto; gap:10px; margin-bottom:14px; }
+@media (max-width: 1200px) {
+  .r-admin-posts--metrics { grid-template-columns:repeat(3,minmax(0,1fr)); }
+  .r-admin-posts--overview_grid { grid-template-columns:1fr; }
+}
 </style>

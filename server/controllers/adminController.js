@@ -5024,6 +5024,7 @@ module.exports = {
     impersonateUser,
     restoreFromImpersonate,
     updateWork,
+    getForumOverview,
     getForumBoards,
     getForumBoardModerators,
     assignForumBoardModerator,
@@ -5544,6 +5545,125 @@ async function getPosts(req, res) {
     } catch (error) {
         console.error('获取帖子列表错误:', error);
         return errorResponse(res, '获取失败', 500);
+    }
+}
+
+/**
+ * 论坛运营总览。管理员查看全站，分区版主只能查看已分配板块。
+ * 查询在数据库中聚合，避免将大量帖子或评论加载到 Node.js 内存。
+ */
+async function getForumOverview(req, res) {
+    try {
+        const moderatedBoardIds = await getModeratedBoardIds(req.user);
+        const scoped = Array.isArray(moderatedBoardIds);
+        const boardIds = scoped ? moderatedBoardIds : null;
+        const impossibleBoardIds = [-1];
+        const boardWhere = scoped
+            ? { board_id: { [Op.in]: boardIds.length ? boardIds : impossibleBoardIds } }
+            : {};
+        const now = new Date();
+        const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+        const staleBefore = new Date(now.getTime() - 72 * 60 * 60 * 1000);
+        const trendStart = new Date(todayStart.getTime() - 6 * 24 * 60 * 60 * 1000);
+        const publishedWhere = { ...boardWhere, status: 'published' };
+        const commentPostWhere = { ...boardWhere, status: { [Op.ne]: 'deleted' } };
+        const commentScope = {
+            where: { status: { [Op.ne]: 'deleted' } },
+            include: [{ model: Post, as: 'post', attributes: [], required: true, where: commentPostWhere }]
+        };
+
+        const [
+            totalPublished, totalReplies, todayTopics, todayReplies, unansweredQuestions,
+            staleQuestions, lockedTopics, hiddenTopics, essenceTopics, activePostAuthors,
+            activeReplyAuthors, postTrendRows, replyTrendRows, boards, boardCountRows,
+            hiddenAttention, staleAttention
+        ] = await Promise.all([
+            Post.count({ where: publishedWhere }),
+            Comment.count({ ...commentScope, distinct: true, col: 'id' }),
+            Post.count({ where: { ...publishedWhere, created_at: { [Op.gte]: todayStart } } }),
+            Comment.count({ ...commentScope, where: { ...commentScope.where, created_at: { [Op.gte]: todayStart } }, distinct: true, col: 'id' }),
+            Post.count({ where: { ...publishedWhere, post_type: 'question', accepted_comment_id: null } }),
+            Post.count({ where: { ...publishedWhere, post_type: 'question', accepted_comment_id: null, created_at: { [Op.lt]: staleBefore } } }),
+            Post.count({ where: { ...publishedWhere, is_locked: true } }),
+            Post.count({ where: { ...boardWhere, status: 'hidden' } }),
+            Post.count({ where: { ...publishedWhere, is_essence: true } }),
+            Post.findAll({ attributes: ['user_id'], where: { ...publishedWhere, created_at: { [Op.gte]: thirtyDaysAgo } }, group: ['user_id'], raw: true }),
+            Comment.findAll({ attributes: ['user_id'], ...commentScope, where: { ...commentScope.where, created_at: { [Op.gte]: thirtyDaysAgo } }, group: ['Comment.user_id'], raw: true }),
+            Post.findAll({
+                attributes: [[sequelize.fn('DATE', sequelize.col('created_at')), 'day'], [sequelize.fn('COUNT', sequelize.col('id')), 'count']],
+                where: { ...publishedWhere, created_at: { [Op.gte]: trendStart } },
+                group: [sequelize.fn('DATE', sequelize.col('created_at'))], raw: true
+            }),
+            Comment.findAll({
+                attributes: [[sequelize.fn('DATE', sequelize.col('Comment.created_at')), 'day'], [sequelize.fn('COUNT', sequelize.col('Comment.id')), 'count']],
+                ...commentScope,
+                where: { ...commentScope.where, created_at: { [Op.gte]: trendStart } },
+                group: [sequelize.fn('DATE', sequelize.col('Comment.created_at'))], raw: true
+            }),
+            ForumBoard.findAll({
+                where: scoped ? { id: { [Op.in]: boardIds.length ? boardIds : impossibleBoardIds } } : {},
+                attributes: ['id', 'name', 'icon', 'color', 'status'], order: [['sort_order', 'ASC'], ['id', 'ASC']], raw: true
+            }),
+            Post.findAll({
+                attributes: ['board_id', [sequelize.fn('COUNT', sequelize.col('id')), 'count']],
+                where: publishedWhere, group: ['board_id'], raw: true
+            }),
+            Post.findAll({
+                where: { ...boardWhere, status: 'hidden' },
+                include: [{ model: User, as: 'author', attributes: ['id', 'username', 'nickname'] }, { model: ForumBoard, as: 'board', attributes: ['id', 'name', 'icon'] }],
+                order: [['updated_at', 'DESC']], limit: 6
+            }),
+            Post.findAll({
+                where: { ...publishedWhere, post_type: 'question', accepted_comment_id: null, created_at: { [Op.lt]: staleBefore } },
+                include: [{ model: User, as: 'author', attributes: ['id', 'username', 'nickname'] }, { model: ForumBoard, as: 'board', attributes: ['id', 'name', 'icon'] }],
+                order: [['created_at', 'ASC']], limit: 6
+            })
+        ]);
+
+        const authorIds = new Set([
+            ...activePostAuthors.map(row => Number(row.user_id)),
+            ...activeReplyAuthors.map(row => Number(row.user_id))
+        ].filter(Number.isFinite));
+        const dayKey = date => {
+            const year = date.getFullYear();
+            return `${year}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+        };
+        const topicTrend = new Map(postTrendRows.map(row => [String(row.day), Number(row.count || 0)]));
+        const replyTrend = new Map(replyTrendRows.map(row => [String(row.day), Number(row.count || 0)]));
+        const trend = Array.from({ length: 7 }, (_, index) => {
+            const date = new Date(trendStart.getTime() + index * 24 * 60 * 60 * 1000);
+            const day = dayKey(date);
+            return { day, topics: topicTrend.get(day) || 0, replies: replyTrend.get(day) || 0 };
+        });
+        const boardCounts = new Map(boardCountRows.map(row => [Number(row.board_id), Number(row.count || 0)]));
+        const normalizeAttention = (post, reason) => ({
+            id: Number(post.id), title: post.title, status: post.status, post_type: post.post_type,
+            created_at: post.created_at, updated_at: post.updated_at, comment_count: Number(post.comment_count || 0),
+            author: post.author, board: post.board, reason
+        });
+        const attentionMap = new Map();
+        hiddenAttention.forEach(post => attentionMap.set(Number(post.id), normalizeAttention(post, 'hidden')));
+        staleAttention.forEach(post => {
+            if (!attentionMap.has(Number(post.id))) attentionMap.set(Number(post.id), normalizeAttention(post, 'stale_question'));
+        });
+
+        return successResponse(res, {
+            scope: scoped ? 'assigned' : 'all',
+            metrics: {
+                total_published: Number(totalPublished), total_replies: Number(totalReplies),
+                today_topics: Number(todayTopics), today_replies: Number(todayReplies),
+                active_authors_30d: authorIds.size, unanswered_questions: Number(unansweredQuestions),
+                stale_questions: Number(staleQuestions), locked_topics: Number(lockedTopics),
+                hidden_topics: Number(hiddenTopics), essence_topics: Number(essenceTopics)
+            },
+            trend,
+            boards: boards.map(board => ({ ...board, post_count: boardCounts.get(Number(board.id)) || 0 })),
+            attention: Array.from(attentionMap.values()).slice(0, 10)
+        });
+    } catch (error) {
+        console.error('获取论坛运营总览错误:', error);
+        return errorResponse(res, '获取论坛运营总览失败', 500);
     }
 }
 
