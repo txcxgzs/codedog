@@ -234,6 +234,15 @@ const syncPrettyCursorPreference = event => {
   applyPrettyCursor(!!event.detail?.enabled)
 }
 
+const syncHoveredBibataCursor = event => {
+  if (!document.documentElement.classList.contains('codedog-pretty-cursor')) return
+  const element = event.target instanceof Element ? event.target : null
+  if (!element || element.dataset.codedogCursor) return
+  const cursor = getComputedStyle(element).cursor
+  const supported = ['pointer', 'help', 'move', 'grab', 'grabbing', 'crosshair', 'zoom-in', 'zoom-out', 'ew-resize', 'ns-resize', 'nwse-resize', 'nesw-resize', 'copy', 'context-menu', 'wait', 'not-allowed']
+  if (supported.includes(cursor)) element.dataset.codedogCursor = cursor
+}
+
 const askPrettyCursorPreference = async () => {
   if (!window.matchMedia('(hover: hover) and (pointer: fine)').matches) return
   const saved = localStorage.getItem(PRETTY_CURSOR_PREFERENCE)
@@ -484,6 +493,7 @@ onMounted(async () => {
   // 监听全局 hCaptcha 校验事件（由 request 拦截器在 403/HCAPTCHA_REQUIRED 时派发）
   window.addEventListener('hcaptcha-required', checkHCaptcha)
   window.addEventListener('codedog-cursor-preference', syncPrettyCursorPreference)
+  document.addEventListener('pointerover', syncHoveredBibataCursor, { passive: true })
   window.addEventListener('focus', refreshUnreadWhenVisible)
   document.addEventListener('visibilitychange', refreshUnreadWhenVisible)
 })
@@ -492,6 +502,7 @@ onMounted(async () => {
 onUnmounted(() => {
   window.removeEventListener('hcaptcha-required', checkHCaptcha)
   window.removeEventListener('codedog-cursor-preference', syncPrettyCursorPreference)
+  document.removeEventListener('pointerover', syncHoveredBibataCursor)
   window.removeEventListener('focus', refreshUnreadWhenVisible)
   document.removeEventListener('visibilitychange', refreshUnreadWhenVisible)
   if (hcaptchaCheckInterval) {
@@ -1021,16 +1032,59 @@ $shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
 
 html.codedog-pretty-cursor,
 html.codedog-pretty-cursor body,
-html.codedog-pretty-cursor .r-index--root_container {
+html.codedog-pretty-cursor .r-index--root_container,
+html.codedog-pretty-cursor * {
   cursor: url('/cursors/bibata-pointer.png') 3 2, default;
 }
-html.codedog-pretty-cursor :is(a, button, [role='button'], .el-button, .el-dropdown, .el-menu-item, .el-switch, .el-checkbox, .el-radio, .el-select) {
+html.codedog-pretty-cursor :is(a, button, summary, label[for], [role='button'], [role='link'], [tabindex]:not([tabindex='-1']), input[type='button'], input[type='submit'], input[type='reset'], input[type='checkbox'], input[type='radio'], .el-button, .el-dropdown, .el-dropdown-menu__item, .el-menu-item, .el-switch, .el-checkbox, .el-radio, .el-select, .is-clickable, [data-codedog-cursor='pointer']) {
   cursor: url('/cursors/bibata-link.png') 10 2, pointer !important;
 }
-html.codedog-pretty-cursor :is(input, textarea, [contenteditable='true'], .el-input__inner, .el-textarea__inner) {
+html.codedog-pretty-cursor :is(input:not([type]), input[type='text'], input[type='search'], input[type='email'], input[type='password'], input[type='url'], input[type='tel'], input[type='number'], textarea, [contenteditable='true'], .el-input__inner, .el-textarea__inner) {
   cursor: url('/cursors/bibata-text.png') 16 16, text !important;
 }
-html.codedog-pretty-cursor :is(button:disabled, [aria-disabled='true'], .is-disabled) {
-  cursor: not-allowed !important;
+html.codedog-pretty-cursor :is(button:disabled, input:disabled, [aria-disabled='true'], .is-disabled, [data-codedog-cursor='not-allowed']) {
+  cursor: url('/cursors/bibata-not-allowed.png') 16 16, not-allowed !important;
+}
+html.codedog-pretty-cursor :is([aria-busy='true'], .is-loading, .cursor-wait, [data-codedog-cursor='wait']) {
+  cursor: url('/cursors/bibata-wait.png') 16 16, wait !important;
+}
+html.codedog-pretty-cursor :is(.cursor-help, [data-cursor='help'], [data-codedog-cursor='help']) {
+  cursor: url('/cursors/bibata-help.png') 3 2, help !important;
+}
+html.codedog-pretty-cursor :is(.cursor-move, [draggable='true'], [data-cursor='move'], [data-codedog-cursor='move']) {
+  cursor: url('/cursors/bibata-move.png') 16 16, move !important;
+}
+html.codedog-pretty-cursor :is(.cursor-grab, [data-cursor='grab'], [data-codedog-cursor='grab']) {
+  cursor: url('/cursors/bibata-grab.png') 16 16, grab !important;
+}
+html.codedog-pretty-cursor :is(.cursor-grabbing, .cursor-grab:active, [data-cursor='grabbing'], [data-codedog-cursor='grabbing']) {
+  cursor: url('/cursors/bibata-grabbing.png') 16 16, grabbing !important;
+}
+html.codedog-pretty-cursor :is(.cursor-crosshair, [data-cursor='crosshair'], [data-codedog-cursor='crosshair']) {
+  cursor: url('/cursors/bibata-crosshair.png') 16 16, crosshair !important;
+}
+html.codedog-pretty-cursor :is(.cursor-zoom-in, [data-cursor='zoom-in'], [data-codedog-cursor='zoom-in']) {
+  cursor: url('/cursors/bibata-zoom-in.png') 12 12, zoom-in !important;
+}
+html.codedog-pretty-cursor :is(.cursor-zoom-out, [data-cursor='zoom-out'], [data-codedog-cursor='zoom-out']) {
+  cursor: url('/cursors/bibata-zoom-out.png') 12 12, zoom-out !important;
+}
+html.codedog-pretty-cursor :is(.cursor-ew-resize, [data-cursor='ew-resize'], [data-codedog-cursor='ew-resize']) {
+  cursor: url('/cursors/bibata-resize-ew.png') 16 16, ew-resize !important;
+}
+html.codedog-pretty-cursor :is(.cursor-ns-resize, [data-cursor='ns-resize'], [data-codedog-cursor='ns-resize']) {
+  cursor: url('/cursors/bibata-resize-ns.png') 16 16, ns-resize !important;
+}
+html.codedog-pretty-cursor :is(.cursor-nwse-resize, [data-cursor='nwse-resize'], [data-codedog-cursor='nwse-resize']) {
+  cursor: url('/cursors/bibata-resize-nwse.png') 16 16, nwse-resize !important;
+}
+html.codedog-pretty-cursor :is(.cursor-nesw-resize, [data-cursor='nesw-resize'], [data-codedog-cursor='nesw-resize']) {
+  cursor: url('/cursors/bibata-resize-nesw.png') 16 16, nesw-resize !important;
+}
+html.codedog-pretty-cursor :is(.cursor-copy, [data-cursor='copy'], [data-codedog-cursor='copy']) {
+  cursor: url('/cursors/bibata-copy.png') 5 3, copy !important;
+}
+html.codedog-pretty-cursor :is(.cursor-context-menu, [data-cursor='context-menu'], [data-codedog-cursor='context-menu']) {
+  cursor: url('/cursors/bibata-context-menu.png') 5 3, context-menu !important;
 }
 </style>
