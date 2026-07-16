@@ -1,5 +1,6 @@
 <template>
-  <div class="r-home--home_page">
+  <div class="r-home--home_page" @pointermove="moveAmbientGlow">
+    <span class="r-home--mouse_glow" :style="mouseGlowStyle" aria-hidden="true" />
     <div class="r-home--container">
       <!-- 左侧主内容 -->
       <div class="r-home--main_column">
@@ -188,7 +189,7 @@
 </template>
 
 <script setup>
-import { computed, ref, onMounted } from 'vue'
+import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useUserStore } from '@/stores/user'
@@ -198,6 +199,20 @@ import { postApi } from '@/api/post'
 import AppImage from '@/components/AppImage.vue'
 
 const router = useRouter()
+const mouseGlowPosition = ref({ x: typeof window === 'undefined' ? 800 : window.innerWidth * .55, y: 360 })
+let ambientFrame = 0
+let pendingPointer = null
+const mouseGlowStyle = computed(() => ({ transform: `translate3d(${mouseGlowPosition.value.x - 340}px, ${mouseGlowPosition.value.y - 340}px, 0)` }))
+const moveAmbientGlow = event => {
+  if (event.pointerType === 'touch') return
+  pendingPointer = { x: event.clientX, y: event.clientY }
+  if (ambientFrame) return
+  ambientFrame = requestAnimationFrame(() => {
+    mouseGlowPosition.value = pendingPointer
+    ambientFrame = 0
+  })
+}
+onUnmounted(() => { if (ambientFrame) cancelAnimationFrame(ambientFrame) })
 const userStore = useUserStore()
 const banners = ref([])
 const announcements = ref([])
@@ -338,7 +353,24 @@ $border-color: #eee;
     radial-gradient(circle at 8% 12%, rgba(255, 205, 92, .28), transparent 24rem),
     radial-gradient(circle at 92% 18%, rgba(108, 190, 255, .24), transparent 26rem),
     linear-gradient(145deg, #f5f8ff 0%, #f9fbff 48%, #fff9ef 100%);
+  background-attachment: fixed;
   overflow: hidden;
+}
+
+.r-home--mouse_glow {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 0;
+  width: 680px;
+  height: 680px;
+  border-radius: 50%;
+  pointer-events: none;
+  opacity: .34;
+  filter: blur(10px);
+  background: radial-gradient(circle, rgba(255, 226, 139, .5) 0, rgba(170, 218, 255, .24) 42%, transparent 72%);
+  transition: transform .42s cubic-bezier(.2,.75,.25,1);
+  will-change: transform;
 }
 
 .r-home--home_page::before {
@@ -358,12 +390,18 @@ $border-color: #eee;
 }
 
 .r-home--container {
+  position: relative;
+  z-index: 1;
   max-width: 1200px;
   margin: 0 auto;
   padding: 20px 20px 0;
   display: flex;
   gap: 20px;
   align-items: flex-start;
+}
+
+@media (max-width: 768px), (prefers-reduced-motion: reduce) {
+  .r-home--mouse_glow { display:none; }
 }
 
 .r-home--main_column {

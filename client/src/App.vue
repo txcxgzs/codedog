@@ -523,11 +523,11 @@ $shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
 
 // 顶栏使用极浅的暖白毛玻璃，与页面两侧淡黄、浅蓝渐变自然衔接。
 .c-navigator--navigator {
-  background: linear-gradient(90deg, rgba(255, 251, 240, .82), rgba(255, 255, 255, .9) 48%, rgba(242, 249, 255, .82));
-  border-bottom: 1px solid rgba(255, 255, 255, .72);
-  box-shadow: 0 5px 22px rgba(43, 58, 86, .08), inset 0 1px 0 rgba(255, 255, 255, .86);
-  -webkit-backdrop-filter: blur(18px) saturate(135%);
-  backdrop-filter: blur(18px) saturate(135%);
+  background: linear-gradient(90deg, rgba(255, 251, 240, .6), rgba(255, 255, 255, .72) 48%, rgba(240, 248, 255, .6));
+  border-bottom: 1px solid rgba(255, 255, 255, .6);
+  box-shadow: 0 7px 26px rgba(43, 58, 86, .065), inset 0 1px 0 rgba(255, 255, 255, .72);
+  -webkit-backdrop-filter: blur(22px) saturate(145%);
+  backdrop-filter: blur(22px) saturate(145%);
   position: sticky;
   top: 0;
   z-index: 1000;
