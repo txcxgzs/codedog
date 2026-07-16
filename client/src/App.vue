@@ -238,6 +238,17 @@ const syncHoveredBibataCursor = event => {
   if (!document.documentElement.classList.contains('codedog-pretty-cursor')) return
   const element = event.target instanceof Element ? event.target : null
   if (!element || element.dataset.codedogCursor) return
+  const semanticClickable = 'a, button, summary, label[for], [role="button"], [role="link"], [tabindex]:not([tabindex="-1"]), input[type="button"], input[type="submit"], input[type="reset"], input[type="checkbox"], input[type="radio"], .el-button, .el-dropdown-menu__item, .el-menu-item, .el-switch, .el-checkbox, .el-radio, .el-select, .is-clickable'
+  const path = event.composedPath().filter(node => node instanceof Element)
+  const hasVueClick = candidate => Object.getOwnPropertySymbols(candidate).some(symbol => {
+    if (!String(symbol).includes('_vei')) return false
+    const invokers = candidate[symbol]
+    return invokers && Object.keys(invokers).some(key => key.toLowerCase().includes('click'))
+  })
+  if (path.some(candidate => candidate.matches(semanticClickable) || typeof candidate.onclick === 'function' || hasVueClick(candidate))) {
+    element.dataset.codedogCursor = 'pointer'
+    return
+  }
   const cursor = getComputedStyle(element).cursor
   const supported = ['pointer', 'help', 'move', 'grab', 'grabbing', 'crosshair', 'zoom-in', 'zoom-out', 'ew-resize', 'ns-resize', 'nwse-resize', 'nesw-resize', 'copy', 'context-menu', 'wait', 'not-allowed']
   if (supported.includes(cursor)) element.dataset.codedogCursor = cursor
@@ -1037,7 +1048,10 @@ html.codedog-pretty-cursor * {
   cursor: url('/cursors/bibata-pointer.png') 3 2, default;
 }
 html.codedog-pretty-cursor :is(a, button, summary, label[for], [role='button'], [role='link'], [tabindex]:not([tabindex='-1']), input[type='button'], input[type='submit'], input[type='reset'], input[type='checkbox'], input[type='radio'], .el-button, .el-dropdown, .el-dropdown-menu__item, .el-menu-item, .el-switch, .el-checkbox, .el-radio, .el-select, .is-clickable, [data-codedog-cursor='pointer']) {
-  cursor: url('/cursors/bibata-link.png') 10 2, pointer !important;
+  cursor: url('/cursors/bibata-link.png') 13 2, pointer !important;
+}
+html.codedog-pretty-cursor :where(a, button, summary, label[for], [role='button'], [role='link'], [tabindex]:not([tabindex='-1']), .el-button, .el-dropdown, .el-dropdown-menu__item, .el-menu-item, .el-switch, .el-checkbox, .el-radio, .el-select, .is-clickable, [data-codedog-cursor='pointer']) * {
+  cursor: url('/cursors/bibata-link.png') 13 2, pointer !important;
 }
 html.codedog-pretty-cursor :is(input:not([type]), input[type='text'], input[type='search'], input[type='email'], input[type='password'], input[type='url'], input[type='tel'], input[type='number'], textarea, [contenteditable='true'], .el-input__inner, .el-textarea__inner) {
   cursor: url('/cursors/bibata-text.png') 16 16, text !important;
