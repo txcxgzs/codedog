@@ -34,6 +34,7 @@ check(app.includes('isProduction'), 'CORS policy should distinguish production f
 check(app.includes('createRateLimiter') && app.includes('writeRateLimiter') && app.includes('codemaoImportRateLimiter'), 'app should rate-limit write APIs and codemao imports.');
 check(app.includes('req.body === undefined') && app.includes('req.body = {}'), 'app should provide an empty body object for unsupported content-types.');
 check(app.includes('Invalid request body'), 'body parser 4xx errors should not fall through to generic 500s.');
+check(app.includes("ensureColumn('posts', 'merged_into_post_id'"), 'startup migration should add the forum topic merge column for existing databases.');
 
 const authConfig = read('server/config/auth.js');
 check(authConfig.includes('crypto.randomBytes'), 'auth config should generate an unpredictable development JWT secret.');

@@ -355,6 +355,7 @@ async function startServer() {
             await ensureColumn('posts', 'is_locked', { sqlite: 'INTEGER NOT NULL DEFAULT 0', mysql: 'TINYINT(1) NOT NULL DEFAULT 0' });
             await ensureColumn('posts', 'slow_mode_seconds', { sqlite: 'INTEGER NOT NULL DEFAULT 0', mysql: 'INT NOT NULL DEFAULT 0' });
             await ensureColumn('posts', 'accepted_comment_id', { sqlite: 'INTEGER', mysql: 'INT NULL' });
+            await ensureColumn('posts', 'merged_into_post_id', { sqlite: 'INTEGER', mysql: 'INT NULL' });
             // 主题关注的轻量未读游标。打开主题时更新时间，不保存逐条已读回执。
             await ensureColumn('post_subscriptions', 'last_read_at', { sqlite: 'DATETIME', mysql: 'DATETIME NULL' });
 
