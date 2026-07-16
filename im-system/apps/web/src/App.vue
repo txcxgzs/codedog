@@ -1,5 +1,5 @@
 <template>
-  <main class="terminal-shell" :class="{ 'mobile-channel-open': mobileChannelOpen }">
+  <main class="terminal-shell" :class="{ 'mobile-layout': mobileLayout, 'mobile-channel-open': mobileChannelOpen }">
     <aside class="rail">
       <div class="brand"><span class="brand-mark">狗</span><div><b>编程狗消息</b><small>即时通讯</small></div><a class="back-link" :href="communityUrl">返回编程狗</a></div>
       <form class="search" @submit.prevent="searchUsers"><span>⌕</span><input v-model="filter" placeholder="搜索用户或会话" /><button title="搜索">搜索</button></form>
@@ -91,6 +91,7 @@ const me = ref(null), conversations = ref([]), requests = ref([]), selected = re
 const filter = ref(''), draft = ref(''), loading = ref(false), sending = ref(false), socketState = ref('正在连接'), timeline = ref(null)
 const createPanel = ref(false), peerId = ref(''), groupName = ref('')
 const mobileChannelOpen = ref(false)
+const mobileLayout = ref(false)
 const avatarFailed = ref(false)
 const sessionExpired = ref(false)
 const initialLoginError = ref('')
@@ -214,8 +215,20 @@ const connectSocket = () => {
 }
 const formatTime = value => value ? new Date(value).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) : ''
 const imageData = message => { try { return JSON.parse(message.content) } catch { return { url: '' } } }
-onMounted(() => load().catch(error => { initialLoginError.value = error.message; socketState.value = error.message }))
-onUnmounted(() => socket?.close())
+const syncMobileLayout = () => {
+  mobileLayout.value = window.innerWidth <= 680 || window.screen.width <= 680 || window.matchMedia('(max-device-width: 680px)').matches
+}
+onMounted(() => {
+  syncMobileLayout()
+  window.addEventListener('resize', syncMobileLayout, { passive: true })
+  window.addEventListener('orientationchange', syncMobileLayout, { passive: true })
+  load().catch(error => { initialLoginError.value = error.message; socketState.value = error.message })
+})
+onUnmounted(() => {
+  socket?.close()
+  window.removeEventListener('resize', syncMobileLayout)
+  window.removeEventListener('orientationchange', syncMobileLayout)
+})
 </script>
 <style scoped>
 .timeline { padding:24px clamp(16px,2vw,28px); }
@@ -246,7 +259,7 @@ onUnmounted(() => socket?.close())
 .captcha-dialog{width:min(420px,100%)}.captcha-box{min-height:44px;margin-top:16px}
 .auth-failure .orb{background:#fff0f0;color:#d84b4b}.auth-failure p{max-width:520px}.auth-failure .reauth-button{margin-top:10px}
 .conversation-list{min-height:0;flex:1;overflow-y:auto;overscroll-behavior:contain}.mobile-back{display:none}
-@media(max-width:680px){
+@media(max-width:680px), (max-device-width:680px){
   .terminal-shell{display:block;width:100%;height:100vh;height:100dvh;min-height:0;padding:0;overflow:hidden;background:#fff}
   .rail,.channel{width:100%;height:100%;min-height:0;border:0;border-radius:0;box-shadow:none}
   .rail{display:flex;padding:max(14px,env(safe-area-inset-top)) 12px max(10px,env(safe-area-inset-bottom))}
@@ -263,4 +276,17 @@ onUnmounted(() => socket?.close())
   .modal-mask{padding:12px}.report-dialog{max-height:calc(100dvh - 24px);overflow-y:auto;padding:18px;border-radius:15px}.report-dialog textarea{min-height:100px}
   .toast{top:max(12px,env(safe-area-inset-top));width:calc(100% - 24px);text-align:center}
 }
+.terminal-shell.mobile-layout{display:block;width:100%;height:100vh;height:100dvh;min-height:0;padding:0;overflow:hidden;background:#fff}
+.mobile-layout .rail,.mobile-layout .channel{width:100%;height:100%;min-height:0;border:0;border-radius:0;box-shadow:none}
+.mobile-layout .rail{display:flex;padding:max(14px,env(safe-area-inset-top)) 12px max(10px,env(safe-area-inset-bottom))}
+.mobile-layout .brand{padding:0 4px 14px}.mobile-layout .brand-mark{width:38px;height:38px;border-radius:11px}.mobile-layout .brand b{font-size:16px}.mobile-layout .back-link{font-size:12px}
+.mobile-layout .search{height:44px}.mobile-layout .rail-title{margin-top:15px}.mobile-layout .conversation{min-height:58px;padding:9px}.mobile-layout .conversation .avatar{width:42px;height:42px}.mobile-layout .conversation-copy b{font-size:14px}.mobile-layout .conversation-copy small{font-size:11px}
+.mobile-layout .account{padding:11px 5px 0;background:#fff}.mobile-layout .account .avatar{width:40px;height:40px}
+.mobile-layout .channel{display:none;grid-template-rows:62px minmax(0,1fr) auto;background:#fafafa}.mobile-layout.mobile-channel-open .rail{display:none}.mobile-layout.mobile-channel-open .channel{display:grid}
+.mobile-layout .channel>header{position:relative;padding:max(9px,env(safe-area-inset-top)) 14px 9px 54px;min-height:62px}.mobile-layout .channel h1{max-width:calc(100vw - 115px);margin:3px 0 0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.mobile-layout .channel header small{font-size:9px}
+.mobile-layout .mobile-back{position:absolute;left:10px;top:50%;display:grid;place-items:center;width:36px;height:36px;padding:0;transform:translateY(-50%);border:1px solid #e1e4e9;border-radius:50%;background:#fff;color:#555;font-size:29px;line-height:1;cursor:pointer}
+.mobile-layout .timeline{min-height:0;padding:14px 12px 8px}.mobile-layout .welcome .orb{width:64px;height:64px;border-radius:19px;font-size:29px}.mobile-layout .welcome h2{font-size:20px;margin-top:16px}.mobile-layout .welcome p{padding:0 20px;font-size:13px;line-height:1.6}
+.mobile-layout .message{max-width:94%;gap:8px;margin-bottom:14px}.mobile-layout .message>.avatar{width:34px;height:34px}.mobile-layout .message-meta{gap:6px;flex-wrap:wrap}.mobile-layout .message p{margin-top:5px;padding:9px 11px;line-height:1.55}.mobile-layout .message-image{max-width:min(72vw,320px);max-height:300px}
+.mobile-layout .composer{margin:7px 9px max(9px,env(safe-area-inset-bottom));border-radius:12px}.mobile-layout .composer textarea{height:60px;padding:11px 12px}.mobile-layout .composer footer{padding:7px 8px}.mobile-layout .composer footer>span{max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.mobile-layout .image-button{padding:7px 10px}.mobile-layout .composer button{padding:8px 13px}
+.mobile-layout .intel{display:none}.mobile-layout .modal-mask{padding:12px}.mobile-layout .report-dialog{max-height:calc(100dvh - 24px);overflow-y:auto;padding:18px;border-radius:15px}.mobile-layout .report-dialog textarea{min-height:100px}.mobile-layout .toast{top:max(12px,env(safe-area-inset-top));width:calc(100% - 24px);text-align:center}
 </style>
