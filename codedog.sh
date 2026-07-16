@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # CodeDog 管理工具箱
-VERSION="1.0.7"
+VERSION="1.0.8"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
@@ -519,25 +519,41 @@ do_update() {
         return 1
     fi
 
-    # 先在维护页仍占用 3001 时创建好容器。docker compose create 不启动
-    # 容器、不会绑定端口；这样切换阶段只剩 Node 启动时间，避免把容器
-    # 创建、网络准备等耗时暴露成 Nginx 500/502 空窗。
-    echo "  预创建新容器..."
-    if ! $COMPOSE_CMD create codedog; then
-        echo "[!!] 新容器预创建失败，维护页将继续保持在线"
+    # 镜像准备好后再短暂切换端口。不要先 create 再 start：部分 Docker
+    # Compose 版本会在预创建容器后的 start 阶段无输出卡住，用户无法判断
+    # 是端口冲突还是 Docker 异常。up --no-build 能一次完成创建和启动，且
+    # 不会重复构建刚刚生成的镜像。
+    echo "  镜像已构建，正在切换维护页与正式服务..."
+    if [ -f "$SCRIPT_DIR/scripts/maintenance-server.sh" ]; then
+        if command -v timeout >/dev/null 2>&1; then
+            timeout 15s bash "$SCRIPT_DIR/scripts/maintenance-server.sh" stop || true
+        else
+            bash "$SCRIPT_DIR/scripts/maintenance-server.sh" stop || true
+        fi
+    fi
+    for i in $(seq 1 15); do
+        if ! ss -tln 2>/dev/null | grep -q ':3001 '; then break; fi
+        [ "$i" -eq 1 ] && echo "  等待 3001 端口释放..."
+        sleep 1
+    done
+    if ss -tln 2>/dev/null | grep -q ':3001 '; then
+        echo "[!!] 3001 端口在 15 秒后仍被占用，正式服务尚未启动"
+        ss -ltnp 'sport = :3001' 2>/dev/null || true
+        if [ -f "$SCRIPT_DIR/scripts/maintenance-server.sh" ]; then
+            bash "$SCRIPT_DIR/scripts/maintenance-server.sh" start || true
+        fi
         wait_enter
         return 1
     fi
 
-    # 新镜像和容器均准备好后再短暂切换端口。
-    if [ -f "$SCRIPT_DIR/scripts/maintenance-server.sh" ]; then
-        bash "$SCRIPT_DIR/scripts/maintenance-server.sh" stop
+    echo "  启动新容器（最长等待 90 秒）..."
+    START_OK=0
+    if command -v timeout >/dev/null 2>&1; then
+        timeout 90s $COMPOSE_CMD up -d --no-build codedog && START_OK=1
+    else
+        $COMPOSE_CMD up -d --no-build codedog && START_OK=1
     fi
-    for i in $(seq 1 15); do
-        if ! ss -tln 2>/dev/null | grep -q ':3001 '; then break; fi
-        sleep 1
-    done
-    if ! $COMPOSE_CMD start codedog; then
+    if [ "$START_OK" != "1" ]; then
         echo "[!!] 新容器启动失败，正在恢复维护页..."
         $COMPOSE_CMD down --remove-orphans 2>/dev/null || true
         for i in $(seq 1 15); do
