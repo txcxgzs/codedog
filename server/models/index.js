@@ -584,6 +584,21 @@ const Statistics = sequelize.define('Statistics', {
     stat_date: { type: DataTypes.DATE }
 }, Object.assign({ tableName: 'statistics' }, TIMESTAMP_OPTS));
 
+const UserWarning = sequelize.define('UserWarning', {
+    id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+    user_id: { type: DataTypes.INTEGER, allowNull: false },
+    issued_by: { type: DataTypes.INTEGER, allowNull: false },
+    reason: { type: DataTypes.TEXT, allowNull: false },
+    source_type: { type: DataTypes.STRING(30), allowNull: true },
+    source_id: { type: DataTypes.INTEGER, allowNull: true },
+    status: { type: DataTypes.ENUM('pending', 'acknowledged'), allowNull: false, defaultValue: 'pending' },
+    guarantee_text: { type: DataTypes.TEXT, allowNull: true },
+    acknowledged_at: { type: DataTypes.DATE, allowNull: true }
+}, Object.assign({
+    tableName: 'user_warnings',
+    indexes: [{ fields: ['user_id', 'status'] }, { fields: ['issued_by'] }, { fields: ['created_at'] }]
+}, TIMESTAMP_OPTS));
+
 const SensitiveWord = sequelize.define('SensitiveWord', {
     id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
     word: { type: DataTypes.STRING(200), allowNull: false },
@@ -668,6 +683,9 @@ User.hasMany(IpBan, { foreignKey: 'banned_by', as: 'ipBans' });
 User.hasMany(Notification, { foreignKey: 'user_id', as: 'notifications' });
 OperationLog.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
 User.hasMany(OperationLog, { foreignKey: 'user_id', as: 'operation_logs' });
+UserWarning.belongsTo(User, { foreignKey: 'user_id', as: 'user', onDelete: 'CASCADE' });
+UserWarning.belongsTo(User, { foreignKey: 'issued_by', as: 'issuer', constraints: false });
+User.hasMany(UserWarning, { foreignKey: 'user_id', as: 'warnings', onDelete: 'CASCADE' });
 Announcement.belongsTo(User, { foreignKey: 'author_id', as: 'author' });
 
 Like.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
@@ -826,5 +844,5 @@ module.exports = {
     sequelize,
     User, Work, Comment, Post, ForumBoard, ForumBoardSubscription, ForumBoardModerator, PostSubscription, PostDraft, PostRevision, ForumModerationLog, Studio, StudioMember, StudioWork, StudioPointLog,
     Report, ReportAuditLog, DeveloperApp, DeveloperAppAuditLog, OAuthAuthCode, OAuthAccessToken, OAuthRefreshToken, UserAppAuthorization, Like, Favorite, Follow, Notification, Announcement, Banner, IpBan, CaptchaStats,
-    SystemConfig, OperationLog, RolePermission, Statistics, SensitiveWord
+    SystemConfig, OperationLog, RolePermission, Statistics, UserWarning, SensitiveWord
 };

@@ -16,8 +16,7 @@ const DEFAULT_ROLES = {
             'report:view',
             'report:handle',
             'work:review',
-            'comment:review',
-            'post:review'
+            'comment:review'
         ]
     },
     moderator: {
@@ -26,15 +25,13 @@ const DEFAULT_ROLES = {
         permissions: [
             'report:view',
             'report:handle',
-            'work:review',
-            'work:delete',
-            'work:feature',
             'comment:review',
             'comment:delete',
             'post:review',
             'post:delete',
             'post:sticky',
             'post:lock',
+            'post:edit',
             'user:warn',
             'announcement:view'
         ]

@@ -2177,6 +2177,15 @@ async function getComments(req, res) {
         if (userId) where.user_id = parseInt(userId, 10) || userId;
         if (workId) where.work_id = parseInt(workId, 10) || workId;
 
+        let scopedPostWhere = null;
+        if (req.user.role === 'reviewer') {
+            where.work_id = { [Op.ne]: null };
+        } else if (req.user.role === 'moderator') {
+            const boardIds = await getModeratedBoardIds(req.user);
+            scopedPostWhere = { board_id: { [Op.in]: boardIds?.length ? boardIds : [-1] } };
+            where.post_id = { [Op.ne]: null };
+        }
+
         const { count, rows } = await DbAdapter.findAndCountAll(Comment, {
             where,
             include: [
@@ -2195,7 +2204,8 @@ async function getComments(req, res) {
                     model: Post,
                     as: 'post',
                     attributes: ['id', 'title', 'status'],
-                    required: false
+                    required: Boolean(scopedPostWhere),
+                    ...(scopedPostWhere ? { where: scopedPostWhere } : {})
                 },
                 {
                     model: User,
@@ -2360,6 +2370,28 @@ async function deleteComment(req, res) {
 /**
  * 获取举报列表
  */
+async function getRoleReportScope(user) {
+    if (!['reviewer', 'moderator'].includes(user.role)) return null;
+    if (user.role === 'reviewer') {
+        const comments = await Comment.findAll({ where: { work_id: { [Op.ne]: null } }, attributes: ['id'], raw: true });
+        return { [Op.or]: [{ type: 'work' }, { type: 'comment', target_id: { [Op.in]: comments.length ? comments.map(item => item.id) : [-1] } }] };
+    }
+    const boardIds = await getModeratedBoardIds(user);
+    const posts = await Post.findAll({ where: { board_id: { [Op.in]: boardIds?.length ? boardIds : [-1] } }, attributes: ['id'], raw: true });
+    const postIds = posts.map(item => item.id);
+    const comments = await Comment.findAll({ where: { post_id: { [Op.in]: postIds.length ? postIds : [-1] } }, attributes: ['id'], raw: true });
+    return { [Op.or]: [
+        { type: 'post', target_id: { [Op.in]: postIds.length ? postIds : [-1] } },
+        { type: 'comment', target_id: { [Op.in]: comments.length ? comments.map(item => item.id) : [-1] } }
+    ] };
+}
+
+async function canAccessReport(user, report) {
+    if (!['reviewer', 'moderator'].includes(user.role)) return true;
+    const scope = await getRoleReportScope(user);
+    return Boolean(await Report.findOne({ where: { id: report.id, ...scope }, attributes: ['id'] }));
+}
+
 async function getReports(req, res) {
     try {
         const { page, pageSize, offset } = DbAdapter.parsePagination(req.query);
@@ -2373,6 +2405,8 @@ async function getReports(req, res) {
         if (!status) {
             where.status = { [Op.ne]: 'merged' };
         }
+        const reportScope = await getRoleReportScope(req.user);
+        if (reportScope) where[Op.and] = [reportScope];
 
         const { count, rows } = await DbAdapter.findAndCountAll(Report, {
             where,
@@ -2449,6 +2483,7 @@ async function handleReport(req, res) {
         if (!report) {
             return errorResponse(res, '举报不存在', 404);
         }
+        if (!await canAccessReport(req.user, report)) return errorResponse(res, '您只能处理职责范围内的举报', 403);
 
         // 修复: takeAction 时按举报类型校验细粒度权限,防止 reviewer 借举报接口绕过删除/禁用权限
         if (req.body.takeAction && status === 'resolved') {

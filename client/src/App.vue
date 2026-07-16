@@ -165,6 +165,25 @@
       </template>
     </el-dialog>
 
+    <el-dialog
+      v-model="warningDialogVisible"
+      title="社区违规警告与保证书"
+      width="min(560px, 92vw)"
+      :show-close="false"
+      :close-on-click-modal="false"
+      :close-on-press-escape="false"
+      :before-close="() => {}"
+      append-to-body
+    >
+      <div v-if="pendingWarning" class="r-warning--body">
+        <div class="r-warning--notice"><strong>你收到了一次正式违规警告</strong><p>{{ pendingWarning.reason }}</p></div>
+        <p class="r-warning--meta">发出时间：{{ new Date(pendingWarning.created_at).toLocaleString() }} · 处理人：{{ pendingWarning.issuer?.nickname || pendingWarning.issuer?.username || '社区管理团队' }}</p>
+        <el-input v-model="warningGuarantee" type="textarea" :rows="4" maxlength="1000" show-word-limit placeholder="请填写不少于 10 个字的保证内容，例如：我已了解社区规范，保证不再发布违规内容……" />
+        <el-checkbox v-model="warningAccepted" class="r-warning--check">我已阅读警告，承诺遵守社区规范并不再违规</el-checkbox>
+      </div>
+      <template #footer><el-button type="primary" :loading="warningSubmitting" :disabled="!warningAccepted || warningGuarantee.trim().length < 10" @click="submitWarningGuarantee">签署保证书并继续使用</el-button></template>
+    </el-dialog>
+
     <HCaptchaDialog ref="hcaptchaDialogRef" />
   </div>
   </el-config-provider>
@@ -183,6 +202,7 @@ import HCaptchaDialog from '@/components/HCaptchaDialog.vue'
 import MobileBottomNav from '@/components/MobileBottomNav.vue'
 import { hcaptchaApi } from '@/api/hcaptcha'
 import { publicApi } from '@/api/public'
+import { userApi } from '@/api/user'
 import { Search, EditPen, Bell, CaretBottom, User, Monitor, Star, Setting, SwitchButton } from '@element-plus/icons-vue'
 
 const router = useRouter()
@@ -200,6 +220,37 @@ const dismissedPopupIds = ref(loadDismissedIds('ann_popup_dismissed'))
 const popupQueue = ref([])
 const popupDialogVisible = ref(false)
 const currentPopupAnnouncement = ref(null)
+const pendingWarning = ref(null)
+const warningDialogVisible = ref(false)
+const warningGuarantee = ref('')
+const warningAccepted = ref(false)
+const warningSubmitting = ref(false)
+
+const fetchPendingWarning = async () => {
+  if (!userStore.isLoggedIn) return
+  try {
+    const res = await userApi.getPendingWarning()
+    pendingWarning.value = res.data || null
+    warningDialogVisible.value = !!pendingWarning.value
+  } catch (_) {}
+}
+
+const submitWarningGuarantee = async () => {
+  if (!pendingWarning.value) return
+  warningSubmitting.value = true
+  try {
+    const res = await userApi.acknowledgeWarning(pendingWarning.value.id, { accepted: warningAccepted.value, guarantee_text: warningGuarantee.value.trim() })
+    if (res.code === 200) {
+      ElMessage.success(res.msg || '保证书已签署')
+      warningDialogVisible.value = false
+      pendingWarning.value = null
+      warningGuarantee.value = ''
+      warningAccepted.value = false
+      await fetchPendingWarning()
+    }
+  } catch (e) { ElMessage.error(e.response?.data?.msg || '签署失败') }
+  finally { warningSubmitting.value = false }
+}
 
 // SPA 每次进入路由计一次 PV；服务端自行读取并匿名化 IP，前端不发送 IP。
 watch(() => route.fullPath, () => {
@@ -209,8 +260,14 @@ watch(() => route.fullPath, () => {
 // App 通常早于登录页挂载；监听用户 ID 才能在登录完成后及时获取未读数。
 // 同时覆盖退出后切换账号，避免沿用上一账号的红点数量。
 watch(() => userStore.user?.id, (userId) => {
-  if (userId) notificationStore.fetchUnreadCount()
-  else notificationStore.unreadCount = 0
+  if (userId) {
+    notificationStore.fetchUnreadCount()
+    fetchPendingWarning()
+  } else {
+    notificationStore.unreadCount = 0
+    warningDialogVisible.value = false
+    pendingWarning.value = null
+  }
 }, { immediate: true })
 
 const refreshUnreadWhenVisible = () => {
@@ -795,4 +852,9 @@ $shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
   line-height: 1.7;
   word-break: break-word;
 }
+.r-warning--notice { padding:16px; border:1px solid #ffd6d6; border-radius:12px; background:#fff4f4; color:#8f2525; }
+.r-warning--notice strong { display:block; margin-bottom:8px; font-size:16px; }
+.r-warning--notice p { margin:0; line-height:1.7; white-space:pre-wrap; }
+.r-warning--meta { margin:10px 2px 16px; color:#8b95a5; font-size:12px; }
+.r-warning--check { margin-top:14px; white-space:normal; }
 </style>

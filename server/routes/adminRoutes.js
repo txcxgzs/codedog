@@ -5,11 +5,15 @@
 const express = require('express');
 const router = express.Router();
 const adminController = require('../controllers/adminController');
+const warningController = require('../controllers/warningController');
 const developerController = require('../controllers/developerController');
 const { authMiddleware, adminMiddleware } = require('../middleware/auth');
 const { requireRole, requirePermission } = require('../middleware/permission');
-const { requireForumPostPermission } = require('../middleware/forumModeration');
+const { requireForumPostPermission, requireScopedCommentPermission } = require('../middleware/forumModeration');
 const { auditAdminRequest } = require('../middleware/operationLog');
+const denyModerator = (req, res, next) => req.user?.role === 'moderator'
+    ? res.status(403).json({ code: 403, msg: '版主不能管理作品，只能管理被分配板块的帖子与评论', data: null })
+    : next();
 
 /**
  * 以下路由需要管理员权限
@@ -47,6 +51,7 @@ router.post('/users/:userId/impersonate', requireRole('admin'), adminController.
 // 原因: impersonate 后当前用户是被模拟的普通用户,通不过 adminMiddleware(reviewer+)
 router.put('/users/:userId/password', requireRole('admin'), adminController.updateUserPassword);
 router.put('/users/:userId/status', requirePermission('user:disable'), adminController.updateUserStatus);
+router.post('/users/:userId/warnings', requirePermission('user:warn'), warningController.issueWarning);
 router.put('/users/:userId/role', requireRole('admin'), adminController.updateUserRole);
 router.delete('/users/:userId', requireRole('superadmin'), adminController.deleteUser);
 router.post('/users/:userId/notification', requireRole('admin'), adminController.sendUserNotification);
@@ -57,10 +62,10 @@ router.put('/users/:userId/level', requireRole('admin'), adminController.updateU
 /**
  * 作品管理
  */
-router.get('/works', requirePermission('work:review'), adminController.getWorks);
-router.put('/works/:workId', requirePermission('work:edit'), adminController.updateWork);
-router.put('/works/:workId/featured', requirePermission('work:feature'), adminController.setWorkFeatured);
-router.delete('/works/:workId', requirePermission('work:delete'), adminController.deleteWork);
+router.get('/works', denyModerator, requirePermission('work:review'), adminController.getWorks);
+router.put('/works/:workId', denyModerator, requirePermission('work:edit'), adminController.updateWork);
+router.put('/works/:workId/featured', denyModerator, requirePermission('work:feature'), adminController.setWorkFeatured);
+router.delete('/works/:workId', denyModerator, requirePermission('work:delete'), adminController.deleteWork);
 // 全站校准属于高风险操作：仅超级管理员可先扫描预览，再显式确认应用。
 router.post('/works/recalibrate', requireRole('superadmin'), adminController.recalibrateAllWorks);
 router.get('/works/recalibrate/:jobId', requireRole('superadmin'), adminController.getRecalibrationJob);
@@ -70,14 +75,14 @@ router.post('/works/recalibrate/:jobId/apply', requireRole('superadmin'), adminC
  * 评论管理
  */
 router.get('/comments', requirePermission('comment:review'), adminController.getComments);
-router.put('/comments/:commentId/status', requirePermission('comment:review'), adminController.updateCommentStatus);
-router.delete('/comments/:commentId', requirePermission('comment:delete'), adminController.deleteComment);
+router.put('/comments/:commentId/status', requireScopedCommentPermission('comment:review'), adminController.updateCommentStatus);
+router.delete('/comments/:commentId', requireScopedCommentPermission('comment:delete'), adminController.deleteComment);
 
 /**
  * 帖子管理
  */
-router.get('/posts', requirePermission('post:review'), adminController.getPosts);
-router.get('/forum/overview', requirePermission('post:review'), adminController.getForumOverview);
+router.get('/posts', requireRole('moderator'), requirePermission('post:review'), adminController.getPosts);
+router.get('/forum/overview', requireRole('moderator'), requirePermission('post:review'), adminController.getForumOverview);
 router.get('/forum/attention-settings', requireRole('admin'), adminController.getForumAttentionSettings);
 router.put('/forum/attention-settings', requireRole('admin'), adminController.updateForumAttentionSettings);
 router.get('/posts/:postId/history', requireForumPostPermission('post:review'), adminController.getPostHistory);

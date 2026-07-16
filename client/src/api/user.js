@@ -20,6 +20,14 @@ export const userApi = {
     return request.get('/users/me')
   },
 
+  getPendingWarning() {
+    return request.get('/users/me/pending-warning')
+  },
+
+  acknowledgeWarning(warningId, data) {
+    return request.post(`/users/me/warnings/${warningId}/acknowledge`, data)
+  },
+
   /**
    * 退出登录
    * 后端会清除 httpOnly cookie

@@ -179,6 +179,7 @@
         <div class="r-admin-posts--detail_actions">
           <el-button type="danger" @click="handleDeletePost">删除帖子</el-button>
           <div class="r-admin-posts--detail_actions_main">
+            <el-button v-if="editingPost.author?.id" type="warning" plain @click="warnPostAuthor">警告作者</el-button>
             <el-button @click="openMovePost">移动主题</el-button>
             <el-button type="warning" plain @click="openMergePost">合并主题</el-button>
             <el-button @click="openPostHistory">历史与日志</el-button>
@@ -429,6 +430,15 @@ const chooseAttentionAction = async post => {
   } catch (action) {
     if (action === 'cancel') await openDetail(post)
   }
+}
+
+const warnPostAuthor = async () => {
+  if (!editingPost.value?.author?.id) return
+  try {
+    const { value } = await ElMessageBox.prompt('请填写该用户在本板块中的具体违规事实。警告将强制用户签署保证书。', '正式警告帖子作者', { type: 'warning', inputType: 'textarea', inputPattern: /^.{5,1000}$/, inputErrorMessage: '警告原因需为 5-1000 字', confirmButtonText: '发出警告' })
+    const res = await adminApi.warnUser(editingPost.value.author.id, value.trim(), { source_type: 'post', source_id: editingPost.value.id })
+    if (res.code === 200) ElMessage.success(res.msg || '警告已发出')
+  } catch (e) { if (!['cancel', 'close'].includes(e)) ElMessage.error(e.response?.data?.msg || '警告失败') }
 }
 
 const handleSavePost = async () => {

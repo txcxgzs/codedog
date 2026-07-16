@@ -20,7 +20,7 @@
             <el-icon><User /></el-icon>
             <span>用户管理</span>
           </el-menu-item>
-          <el-menu-item index="works">
+          <el-menu-item v-if="userStore.user?.role !== 'moderator'" index="works">
             <el-icon><Document /></el-icon>
             <span>作品管理</span>
           </el-menu-item>
@@ -28,7 +28,7 @@
             <el-icon><ChatDotRound /></el-icon>
             <span>评论管理</span>
           </el-menu-item>
-          <el-menu-item index="posts">
+          <el-menu-item v-if="userStore.user?.role !== 'reviewer'" index="posts">
             <el-icon><Postcard /></el-icon>
             <span>帖子管理</span>
           </el-menu-item>
@@ -293,6 +293,7 @@
                 <el-button type="primary" size="small" @click="showRoleDialog(userDetail.user)">修改角色</el-button>
                 <el-button size="small" @click="showPasswordDialog">修改密码</el-button>
                 <el-button type="warning" size="small" @click="showSendNotificationDialog">发送站内信</el-button>
+                <el-button v-if="userDetail.user.id !== userStore.user?.id" type="warning" plain size="small" @click="warnUserDetail">正式警告</el-button>
                 <el-button :type="userDetail.user.status === 'active' ? 'danger' : 'success'" size="small" @click="toggleUserStatus(userDetail.user)">
                   {{ userDetail.user.status === 'active' ? '禁用账户' : '启用账户' }}
                 </el-button>
@@ -5356,6 +5357,22 @@ onMounted(() => {
 const formatCallPayload = (value) => {
   if (value == null || value === '') return '无记录'
   try { return typeof value === 'string' ? JSON.stringify(JSON.parse(value), null, 2) : JSON.stringify(value, null, 2) } catch { return String(value) }
+}
+
+const warnUserDetail = async () => {
+  const user = userDetail.value?.user
+  if (!user) return
+  try {
+    const { value } = await ElMessageBox.prompt(
+      '警告会写入审计记录、发送站内信，并强制该用户签署不再违规保证书。请填写具体违规事实。',
+      `正式警告：${user.nickname || user.username}`,
+      { type: 'warning', inputType: 'textarea', inputPattern: /^.{5,1000}$/, inputErrorMessage: '警告原因需为 5-1000 字', confirmButtonText: '确认发出警告' }
+    )
+    const res = await adminApi.warnUser(user.id, value.trim())
+    if (res.code === 200) ElMessage.success(res.msg || '警告已发出')
+  } catch (e) {
+    if (!['cancel', 'close'].includes(e)) ElMessage.error(e.response?.data?.msg || '发出警告失败')
+  }
 }
 
 const openStudioPointsDialog = (studio) => {

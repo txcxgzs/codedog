@@ -71,6 +71,10 @@ export const adminApi = {
   updateUserStatus(userId, status) {
     return request.put(`/admin/users/${userId}/status`, { status })
   },
+
+  warnUser(userId, reason, source = {}) {
+    return request.post(`/admin/users/${userId}/warnings`, { reason, ...source })
+  },
   
   updateUserRole(userId, role) {
     return request.put(`/admin/users/${userId}/role`, { role })

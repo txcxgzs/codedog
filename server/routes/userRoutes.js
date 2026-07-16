@@ -6,6 +6,7 @@ const sharp = require('sharp');
 const router = express.Router();
 const userController = require('../controllers/userController');
 const adminController = require('../controllers/adminController'); // restoreFromImpersonate 需要
+const warningController = require('../controllers/warningController');
 const { authMiddleware } = require('../middleware/auth');
 const { geetestVerify } = require('../middleware/geetest');
 const { errorResponse } = require('../middleware/response');
@@ -164,6 +165,8 @@ async function avatarImageHostUpload(req, res, next) {
 router.post('/login', loginRateLimit, geetestVerify('login'), userController.login);
 router.post('/logout', authMiddleware, userController.logout);
 router.get('/me', authMiddleware, userController.getCurrentUser);
+router.get('/me/pending-warning', authMiddleware, warningController.getPendingWarning);
+router.post('/me/warnings/:warningId/acknowledge', authMiddleware, warningController.acknowledgeWarning);
 router.post('/im-sso-ticket', authMiddleware, userController.createImSsoTicket);
 router.post('/im-status', userController.getImAccountStatus);
 router.post('/im-admin/users/:userId/disable', userController.disableUserFromIm);
