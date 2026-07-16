@@ -3,7 +3,10 @@
     <section class="r-admin-posts--overview" v-loading="overviewLoading">
       <div class="r-admin-posts--overview_head">
         <div><h2>论坛运营总览</h2><p>{{ overview.scope === 'assigned' ? '仅统计您负责的版块' : '全站论坛内容与活跃情况' }}</p></div>
-        <el-button text @click="fetchOverview">刷新数据</el-button>
+        <div class="r-admin-posts--overview_actions">
+          <el-button v-if="overview.can_configure_attention" plain @click="openAttentionSettings">关注规则</el-button>
+          <el-button text @click="fetchOverview">刷新数据</el-button>
+        </div>
       </div>
       <div class="r-admin-posts--metrics">
         <div class="r-admin-posts--metric"><span>已发布主题</span><strong>{{ overview.metrics.total_published }}</strong><small>累计 {{ overview.metrics.total_replies }} 条回复</small></div>
@@ -38,6 +41,16 @@
         <span v-for="board in overview.boards" :key="board.id"><i :style="{ background: board.color }" />{{ board.icon }} {{ board.name }} <b>{{ board.post_count }}</b></span>
       </div>
     </section>
+
+    <el-dialog v-model="attentionSettingsVisible" title="需要关注 · 预警规则" width="min(500px, 92vw)" append-to-body>
+      <p class="r-admin-posts--settings_intro">达到任一条件的帖子会进入“需要关注”。浏览和点赞统计窗口固定为近 2 小时。</p>
+      <el-form label-width="150px">
+        <el-form-item label="浏览激增阈值"><el-input-number v-model="attentionSettingsForm.view_threshold" :min="1" :max="100000" /><span class="r-admin-posts--hint">次 / 2 小时</span></el-form-item>
+        <el-form-item label="点赞激增阈值"><el-input-number v-model="attentionSettingsForm.like_threshold" :min="1" :max="100000" /><span class="r-admin-posts--hint">次 / 2 小时</span></el-form-item>
+        <el-form-item label="未处理举报阈值"><el-input-number v-model="attentionSettingsForm.report_threshold" :min="1" :max="100000" /><span class="r-admin-posts--hint">条</span></el-form-item>
+      </el-form>
+      <template #footer><el-button @click="attentionSettingsVisible = false">取消</el-button><el-button type="primary" :loading="attentionSettingsSaving" @click="saveAttentionSettings">保存规则</el-button></template>
+    </el-dialog>
 
     <div class="r-admin-posts--toolbar">
       <el-input v-model="searchKeyword" placeholder="搜索帖子" clearable class="r-admin-posts--search" @keyup.enter="handleSearch">
@@ -221,6 +234,9 @@ const overview = reactive({
   metrics: { total_published: 0, total_replies: 0, today_topics: 0, today_replies: 0, active_authors_30d: 0, unanswered_questions: 0, stale_questions: 0, locked_topics: 0, hidden_topics: 0, essence_topics: 0 },
   trend: [], boards: [], attention: []
 })
+const attentionSettingsVisible = ref(false)
+const attentionSettingsSaving = ref(false)
+const attentionSettingsForm = reactive({ view_threshold: 20, like_threshold: 8, report_threshold: 3 })
 const boards = ref([])
 const boardsLoading = ref(false)
 const boardManagerVisible = ref(false)
@@ -266,6 +282,24 @@ const fetchOverview = async () => {
     if (res.code === 200) Object.assign(overview, res.data)
   } catch (e) { ElMessage.error(e.response?.data?.msg || '获取论坛运营数据失败') }
   finally { overviewLoading.value = false }
+}
+
+const openAttentionSettings = () => {
+  Object.assign(attentionSettingsForm, overview.attention_settings || { view_threshold: 20, like_threshold: 8, report_threshold: 3 })
+  attentionSettingsVisible.value = true
+}
+
+const saveAttentionSettings = async () => {
+  attentionSettingsSaving.value = true
+  try {
+    const res = await adminApi.updateForumAttentionSettings({ ...attentionSettingsForm })
+    if (res.code === 200) {
+      ElMessage.success(res.msg || '关注规则已保存')
+      attentionSettingsVisible.value = false
+      await fetchOverview()
+    }
+  } catch (e) { ElMessage.error(e.response?.data?.msg || '保存关注规则失败') }
+  finally { attentionSettingsSaving.value = false }
 }
 
 const refreshAll = () => Promise.all([fetchPosts(), fetchOverview()])
@@ -491,6 +525,8 @@ onMounted(refreshAll)
 .r-admin-posts--overview_head { display:flex; align-items:flex-start; justify-content:space-between; margin-bottom:16px; }
 .r-admin-posts--overview_head h2 { margin:0; color:#202a3d; font-size:20px; }
 .r-admin-posts--overview_head p { margin:5px 0 0; color:#98a2b3; font-size:12px; }
+.r-admin-posts--overview_actions { display:flex; align-items:center; gap:8px; }
+.r-admin-posts--settings_intro { margin:0 0 18px; padding:11px 13px; border-radius:10px; background:#fff8e7; color:#7a641f; font-size:13px; line-height:1.6; }
 .r-admin-posts--metrics { display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:10px; }
 .r-admin-posts--metric { display:flex; flex-direction:column; min-width:0; padding:14px; border:1px solid #edf0f5; border-radius:12px; background:#fff; }
 .r-admin-posts--metric span { color:#667085; font-size:12px; }

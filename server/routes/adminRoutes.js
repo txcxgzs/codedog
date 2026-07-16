@@ -78,6 +78,8 @@ router.delete('/comments/:commentId', requirePermission('comment:delete'), admin
  */
 router.get('/posts', requirePermission('post:review'), adminController.getPosts);
 router.get('/forum/overview', requirePermission('post:review'), adminController.getForumOverview);
+router.get('/forum/attention-settings', requireRole('admin'), adminController.getForumAttentionSettings);
+router.put('/forum/attention-settings', requireRole('admin'), adminController.updateForumAttentionSettings);
 router.get('/posts/:postId/history', requireForumPostPermission('post:review'), adminController.getPostHistory);
 router.post('/posts/:postId/revisions/:revisionId/restore', requireForumPostPermission('post:edit'), adminController.restorePostRevision);
 router.get('/forum/boards', requirePermission('post:review'), adminController.getForumBoards);

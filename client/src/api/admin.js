@@ -164,6 +164,14 @@ export const adminApi = {
     return request.get('/admin/forum/overview')
   },
 
+  getForumAttentionSettings() {
+    return request.get('/admin/forum/attention-settings')
+  },
+
+  updateForumAttentionSettings(data) {
+    return request.put('/admin/forum/attention-settings', data)
+  },
+
   getPostHistory(postId) {
     return request.get(`/admin/posts/${postId}/history`)
   },

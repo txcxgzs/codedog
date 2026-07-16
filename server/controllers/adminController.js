@@ -37,6 +37,23 @@ const MAX_REALTIME_LOG_STRING_LENGTH = 2000;
 
 const VALID_USER_ROLES = ['user', 'reviewer', 'moderator', 'admin', 'superadmin'];
 const VALID_USER_STATUSES = ['active', 'disabled'];
+const FORUM_ATTENTION_DEFAULTS = Object.freeze({ view_threshold: 20, like_threshold: 8, report_threshold: 3 });
+const FORUM_ATTENTION_CONFIG_KEYS = Object.freeze({
+    view_threshold: 'forum_attention_view_threshold',
+    like_threshold: 'forum_attention_like_threshold',
+    report_threshold: 'forum_attention_report_threshold'
+});
+
+async function readForumAttentionSettings() {
+    const rows = await SystemConfig.findAll({ where: { config_key: { [Op.in]: Object.values(FORUM_ATTENTION_CONFIG_KEYS) } }, raw: true });
+    const stored = new Map(rows.map(row => [row.config_key, row.config_value]));
+    const settings = {};
+    for (const [name, key] of Object.entries(FORUM_ATTENTION_CONFIG_KEYS)) {
+        const value = Number(stored.get(key));
+        settings[name] = Number.isSafeInteger(value) && value >= 1 && value <= 100000 ? value : FORUM_ATTENTION_DEFAULTS[name];
+    }
+    return settings;
+}
 
 // 爬虫创建虚拟用户时使用的占位密码哈希
 // 在模块加载时用强随机数生成一次合法 bcrypt 哈希并缓存，避免每个爬取请求都重复计算影响性能
@@ -5025,6 +5042,8 @@ module.exports = {
     restoreFromImpersonate,
     updateWork,
     getForumOverview,
+    getForumAttentionSettings,
+    updateForumAttentionSettings,
     getForumBoards,
     getForumBoardModerators,
     assignForumBoardModerator,
@@ -5554,6 +5573,7 @@ async function getPosts(req, res) {
  */
 async function getForumOverview(req, res) {
     try {
+        const attentionSettings = await readForumAttentionSettings();
         const moderatedBoardIds = await getModeratedBoardIds(req.user);
         const scoped = Array.isArray(moderatedBoardIds);
         const boardIds = scoped ? moderatedBoardIds : null;
@@ -5667,8 +5687,8 @@ async function getForumOverview(req, res) {
             if (!attentionMap.has(Number(post.id))) attentionMap.set(Number(post.id), normalizeAttention(post, 'stale_question'));
         });
 
-        const rapidLikeCounts = new Map(recentLikeRows.map(row => [Number(row.post_id), Number(row.count || 0)]).filter(([, count]) => count >= 8));
-        const reportCounts = new Map(pendingReportRows.map(row => [Number(row.target_id), Number(row.count || 0)]).filter(([, count]) => count >= 3));
+        const rapidLikeCounts = new Map(recentLikeRows.map(row => [Number(row.post_id), Number(row.count || 0)]).filter(([, count]) => count >= attentionSettings.like_threshold));
+        const reportCounts = new Map(pendingReportRows.map(row => [Number(row.target_id), Number(row.count || 0)]).filter(([, count]) => count >= attentionSettings.report_threshold));
         const rapidViewCounts = new Map();
         recentViewRows.forEach(row => {
             const match = /^forum_post_view:(\d+):\d+$/.exec(String(row.stat_key));
@@ -5676,7 +5696,7 @@ async function getForumOverview(req, res) {
             const postId = Number(match[1]);
             rapidViewCounts.set(postId, (rapidViewCounts.get(postId) || 0) + Number(row.stat_value || 0));
         });
-        for (const [postId, count] of [...rapidViewCounts]) if (count < 20) rapidViewCounts.delete(postId);
+        for (const [postId, count] of [...rapidViewCounts]) if (count < attentionSettings.view_threshold) rapidViewCounts.delete(postId);
 
         const signalIds = [...new Set([...rapidViewCounts.keys(), ...rapidLikeCounts.keys(), ...reportCounts.keys()])];
         if (signalIds.length) {
@@ -5695,6 +5715,8 @@ async function getForumOverview(req, res) {
 
         return successResponse(res, {
             scope: scoped ? 'assigned' : 'all',
+            can_configure_attention: getRole(req.user.role).level >= getRole('admin').level,
+            attention_settings: attentionSettings,
             metrics: {
                 total_published: Number(totalPublished), total_replies: Number(totalReplies),
                 today_topics: Number(todayTopics), today_replies: Number(todayReplies),
@@ -5709,6 +5731,39 @@ async function getForumOverview(req, res) {
     } catch (error) {
         console.error('获取论坛运营总览错误:', error);
         return errorResponse(res, '获取论坛运营总览失败', 500);
+    }
+}
+
+async function getForumAttentionSettings(req, res) {
+    try {
+        return successResponse(res, await readForumAttentionSettings());
+    } catch (error) {
+        console.error('获取论坛关注规则失败:', error);
+        return errorResponse(res, '获取论坛关注规则失败', 500);
+    }
+}
+
+async function updateForumAttentionSettings(req, res) {
+    try {
+        const next = {};
+        for (const name of Object.keys(FORUM_ATTENTION_CONFIG_KEYS)) {
+            const value = Number(req.body?.[name]);
+            if (!Number.isSafeInteger(value) || value < 1 || value > 100000) {
+                return errorResponse(res, '关注阈值必须是 1-100000 的整数', 400);
+            }
+            next[name] = value;
+        }
+        await sequelize.transaction(async transaction => {
+            for (const [name, key] of Object.entries(FORUM_ATTENTION_CONFIG_KEYS)) {
+                const [config] = await SystemConfig.findOrCreate({ where: { config_key: key }, defaults: { config_value: String(next[name]) }, transaction });
+                if (String(config.config_value) !== String(next[name])) await config.update({ config_value: String(next[name]) }, { transaction });
+            }
+        });
+        logOperation(req, 'update_forum_attention_settings', 'system_config', null, next);
+        return successResponse(res, next, '关注规则已更新');
+    } catch (error) {
+        console.error('更新论坛关注规则失败:', error);
+        return errorResponse(res, '更新论坛关注规则失败', 500);
     }
 }
 
