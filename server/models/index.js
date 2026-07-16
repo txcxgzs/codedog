@@ -198,6 +198,23 @@ const PostSubscription = sequelize.define('PostSubscription', {
     notify: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true }
 }, Object.assign({ tableName: 'post_subscriptions', indexes: [{ unique: true, fields: ['post_id', 'user_id'] }, { fields: ['user_id', 'notify'] }] }, TIMESTAMP_OPTS));
 
+const PostDraft = sequelize.define('PostDraft', {
+    id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+    user_id: { type: DataTypes.INTEGER, allowNull: false, unique: true },
+    title: { type: DataTypes.STRING(200), allowNull: false, defaultValue: '' },
+    content: { type: DataTypes.TEXT, allowNull: false, defaultValue: '' },
+    board_id: { type: DataTypes.INTEGER, allowNull: true },
+    post_type: { type: DataTypes.STRING(30), allowNull: false, defaultValue: 'discussion' },
+    cover: { type: DataTypes.STRING(1000), allowNull: false, defaultValue: '' },
+    tags: {
+        type: DataTypes.TEXT,
+        allowNull: false,
+        defaultValue: '[]',
+        get() { try { return JSON.parse(this.getDataValue('tags') || '[]'); } catch { return []; } },
+        set(value) { this.setDataValue('tags', JSON.stringify(Array.isArray(value) ? value : [])); }
+    }
+}, Object.assign({ tableName: 'post_drafts', indexes: [{ unique: true, fields: ['user_id'] }, { fields: ['updated_at'] }] }, TIMESTAMP_OPTS));
+
 const Studio = sequelize.define('Studio', {
     id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
     name: { type: DataTypes.STRING(100), allowNull: false },
@@ -550,6 +567,9 @@ PostSubscription.belongsTo(Post, { foreignKey: 'post_id', as: 'post', onDelete: 
 PostSubscription.belongsTo(User, { foreignKey: 'user_id', as: 'user', onDelete: 'CASCADE' });
 Post.hasMany(PostSubscription, { foreignKey: 'post_id', as: 'subscriptions', onDelete: 'CASCADE' });
 User.hasMany(PostSubscription, { foreignKey: 'user_id', as: 'post_subscriptions', onDelete: 'CASCADE' });
+PostDraft.belongsTo(User, { foreignKey: 'user_id', as: 'user', onDelete: 'CASCADE' });
+PostDraft.belongsTo(ForumBoard, { foreignKey: 'board_id', as: 'board', constraints: false });
+User.hasOne(PostDraft, { foreignKey: 'user_id', as: 'post_draft', onDelete: 'CASCADE' });
 User.hasMany(Comment, { foreignKey: 'user_id', as: 'comments' });
 Comment.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
 Comment.belongsTo(User, { foreignKey: 'reply_to_user_id', as: 'reply_to_user' });
@@ -751,7 +771,7 @@ Comment.belongsTo(Comment, { foreignKey: 'parent_id', as: 'parent' });
 
 module.exports = {
     sequelize,
-    User, Work, Comment, Post, ForumBoard, ForumBoardSubscription, PostSubscription, Studio, StudioMember, StudioWork, StudioPointLog,
+    User, Work, Comment, Post, ForumBoard, ForumBoardSubscription, PostSubscription, PostDraft, Studio, StudioMember, StudioWork, StudioPointLog,
     Report, ReportAuditLog, DeveloperApp, DeveloperAppAuditLog, OAuthAuthCode, OAuthAccessToken, OAuthRefreshToken, UserAppAuthorization, Like, Favorite, Follow, Notification, Announcement, Banner, IpBan, CaptchaStats,
     SystemConfig, OperationLog, RolePermission, Statistics, SensitiveWord
 };

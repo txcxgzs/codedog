@@ -24,6 +24,39 @@ async function buildSocialCard(input, userId) {
     return false;
 }
 
+async function getCommentReplies(req, res) {
+    try {
+        const parent = await Comment.findOne({ where: { id: Number(req.params.id), parent_id: null, status: 'active' } });
+        if (!parent) return errorResponse(res, '评论不存在', 404);
+        if (parent.post_id) {
+            const post = await Post.findOne({ where: { id: parent.post_id, status: 'published' } });
+            if (!post) return errorResponse(res, '评论不存在', 404);
+        } else if (parent.work_id) {
+            const work = await Work.findOne({ where: { id: parent.work_id, status: 'published' } });
+            if (!work) return errorResponse(res, '评论不存在', 404);
+        } else return errorResponse(res, '评论不存在', 404);
+        const { page, pageSize, offset } = DbAdapter.parsePagination(req.query);
+        const { count, rows } = await Comment.findAndCountAll({
+            where: { parent_id: parent.id, status: 'active' },
+            include: [{ model: User, as: 'user', required: false, where: { status: 'active' }, attributes: ['id', 'codemao_user_id', 'username', 'nickname', 'avatar'] },
+                { model: User, as: 'reply_to_user', required: false, where: { status: 'active' }, attributes: ['id', 'codemao_user_id', 'username', 'nickname', 'avatar'] }],
+            order: [['created_at', 'ASC']], limit: pageSize, offset, distinct: true
+        });
+        const result = rows.map(row => row.toJSON());
+        if (req.user && result.length) {
+            const { Like } = require('../models');
+            const { Op } = require('sequelize');
+            const liked = await Like.findAll({ where: { user_id: DbAdapter.getId(req.user), comment_id: { [Op.in]: result.map(row => row.id) } }, attributes: ['comment_id'] });
+            const likedIds = new Set(liked.map(row => Number(row.comment_id)));
+            result.forEach(row => { row.liked = likedIds.has(Number(row.id)); });
+        }
+        return paginateResponse(res, result, count, page, pageSize);
+    } catch (error) {
+        console.error('获取评论回复失败:', error);
+        return errorResponse(res, '获取回复失败', 500);
+    }
+}
+
 function sameId(a, b) {
     return String(a) === String(b);
 }
@@ -525,6 +558,7 @@ async function likeComment(req, res) {
 module.exports = {
     createComment,
     getWorkComments,
+    getCommentReplies,
     deleteComment,
     likeComment
 };

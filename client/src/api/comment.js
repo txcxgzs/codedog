@@ -8,6 +8,10 @@ export const commentApi = {
   getWorkComments(workId, params = {}) {
     return request.get(`/comments/work/${workId}`, { params })
   },
+
+  getReplies(commentId, params = {}) {
+    return request.get(`/comments/${commentId}/replies`, { params })
+  },
   
   createComment(data) {
     return request.post('/comments', data)

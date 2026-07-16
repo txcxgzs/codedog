@@ -17,6 +17,7 @@
         <div class="r-community--content">
           <div class="r-community--tabs">
             <span class="r-community--tabs_label">{{ activeBoard ? activeBoard.name : '全部帖子' }}</span>
+            <el-input v-model="searchKeyword" clearable placeholder="搜索标题、正文或标签" class="r-community--forum_search" @keyup.enter="handleSearch" @clear="handleSearch" />
             <el-radio-group v-model="sortBy" @change="changeSort">
               <el-radio-button label="active">最新回复</el-radio-button>
               <el-radio-button label="latest">最新发布</el-radio-button>
@@ -71,11 +72,14 @@
         <aside class="r-community--sidebar">
           <div class="r-community--side_card r-community--boards_card">
             <div class="r-community--side_heading"><h4 class="r-community--card_title">论坛版块</h4><button v-if="activeBoardId" @click="selectBoard(null)">查看全部</button></div>
-            <button v-for="board in boards" :key="board.id" :class="['r-community--board_item', { active: Number(activeBoardId) === Number(board.id) }]" @click="selectBoard(board)">
-              <span class="r-community--board_icon" :style="{ background: `${board.color}18`, color: board.color }">{{ board.icon }}</span>
-              <span><b>{{ board.name }}</b><small>{{ board.description }}</small></span>
-              <em>{{ board.post_count }}</em>
-            </button>
+            <div v-for="board in boards" :key="board.id" class="r-community--board_row">
+              <button :class="['r-community--board_item', { active: Number(activeBoardId) === Number(board.id) }]" @click="selectBoard(board)">
+                <span class="r-community--board_icon" :style="{ background: `${board.color}18`, color: board.color }">{{ board.icon }}</span>
+                <span><b>{{ board.name }}</b><small>{{ board.description }}</small></span>
+                <em>{{ board.post_count }}</em>
+              </button>
+              <button v-if="userStore.isLoggedIn" class="r-community--board_follow" :class="{ active: board.subscribed }" :title="board.subscribed ? '取消关注板块' : '关注板块'" @click="toggleBoardFollow(board)">{{ board.subscribed ? '★' : '☆' }}</button>
+            </div>
           </div>
 
           <div class="r-community--side_card">
@@ -108,7 +112,7 @@
     </div>
     
     <!-- 发帖对话框 -->
-    <el-dialog v-model="postDialogVisible" title="创作新帖子" width="min(1180px, 96vw)" top="3vh" class="r-community--compose_dialog">
+    <el-dialog v-model="postDialogVisible" title="创作新帖子" width="min(1180px, 96vw)" top="3vh" class="r-community--compose_dialog" :close-on-click-modal="false" :before-close="confirmCloseComposer">
       <div class="r-community--compose_intro">像写文档一样组织你的内容，支持排版、链接、代码和图床图片。</div>
       <el-form :model="postForm" :rules="postRules" ref="postFormRef" label-position="top">
         <el-form-item label="标题" prop="title">
@@ -143,7 +147,8 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="postDialogVisible = false">取消</el-button>
+        <span class="r-community--draft_status">{{ draftStatus }}</span>
+        <el-button @click="requestCloseComposer">取消</el-button>
         <el-button type="primary" :loading="postLoading" @click="createPost">发布</el-button>
       </template>
     </el-dialog>
@@ -153,12 +158,12 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, computed } from 'vue'
+import { ref, reactive, onMounted, computed, watch, onBeforeUnmount } from 'vue'
 import { useUserStore } from '@/stores/user'
 import { postApi } from '@/api/post'
 import { publicApi } from '@/api/public'
 import { geetestApi } from '@/api/geetest'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import GeetestDialog from '@/components/GeetestDialog.vue'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
@@ -209,6 +214,7 @@ const loadCommunityAnnouncements = async () => {
 const boards = ref([])
 const activeBoardId = ref(null)
 const sortBy = ref('active')
+const searchKeyword = ref('')
 const activeBoard = computed(() => boards.value.find(board => Number(board.id) === Number(activeBoardId.value)) || null)
 const posts = ref([])
 const currentPage = ref(1)
@@ -221,6 +227,9 @@ const geetestConfig = ref(null)
 const wysiwygRef = ref(null)
 const coverInput = ref(null)
 const coverUploading = ref(false)
+const draftStatus = ref('')
+const restoringDraft = ref(false)
+let draftTimer = null
 
 const uploadCover = async (event) => {
   const file = event.target.files?.[0]
@@ -287,7 +296,8 @@ const fetchPosts = async () => {
       page: currentPage.value,
       pageSize: pageSize.value,
       board_id: activeBoardId.value || undefined,
-      sortBy: sortBy.value
+      sortBy: sortBy.value,
+      keyword: searchKeyword.value.trim() || undefined
     })
     if (res.code === 200) {
       posts.value = res.data.list
@@ -318,7 +328,22 @@ const selectBoard = (board) => {
   fetchPosts()
 }
 
+const toggleBoardFollow = async board => {
+  try {
+    const res = await postApi.toggleBoardSubscription(board.id)
+    if (res.code === 200) {
+      board.subscribed = !!res.data?.subscribed
+      ElMessage.success(board.subscribed ? '已关注板块' : '已取消关注')
+    }
+  } catch (e) { ElMessage.error(e.response?.data?.msg || '操作失败') }
+}
+
 const changeSort = () => {
+  currentPage.value = 1
+  fetchPosts()
+}
+
+const handleSearch = () => {
   currentPage.value = 1
   fetchPosts()
 }
@@ -334,7 +359,7 @@ const fetchGeetestConfig = async () => {
   }
 }
 
-const showPostDialog = () => {
+const showPostDialog = async () => {
   postForm.title = ''
   postForm.content = ''
   postForm.board_id = activeBoardId.value || boards.value[0]?.id || null
@@ -344,7 +369,63 @@ const showPostDialog = () => {
   postForm.cover = ''
   postForm.tags = ''
   postDialogVisible.value = true
+  draftStatus.value = ''
+  try {
+    const res = await postApi.getDraft()
+    const draft = res.data
+    if (draft && (draft.title || draft.content || draft.cover)) {
+      await ElMessageBox.confirm('检测到上次未发布的帖子草稿，是否恢复？', '恢复草稿', {
+        confirmButtonText: '恢复', cancelButtonText: '舍弃草稿', distinguishCancelAndClose: true
+      })
+      restoringDraft.value = true
+      postForm.title = draft.title || ''
+      postForm.content = draft.content || ''
+      postForm.board_id = draft.board_id || postForm.board_id
+      postForm.post_type = draft.post_type || 'discussion'
+      postForm.cover = draft.cover || ''
+      postForm.tags = Array.isArray(draft.tags) ? draft.tags.join(', ') : ''
+      draftStatus.value = `已恢复 ${new Date(draft.updated_at).toLocaleString()} 的草稿`
+      restoringDraft.value = false
+    }
+  } catch (e) {
+    if (e === 'cancel') await postApi.deleteDraft().catch(() => {})
+  }
 }
+
+const hasDraftContent = () => Boolean(postForm.title.trim() || postForm.content.replace(/<[^>]+>/g, '').trim() || postForm.cover || postForm.tags.trim())
+
+const saveDraftNow = async () => {
+  if (!postDialogVisible.value || restoringDraft.value || !hasDraftContent()) return true
+  draftStatus.value = '正在保存草稿…'
+  try {
+    await postApi.saveDraft({
+      ...postForm,
+      tags: postForm.tags ? postForm.tags.split(',').map(tag => tag.trim()).filter(Boolean) : []
+    })
+    draftStatus.value = `草稿已自动保存 ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+    return true
+  } catch (e) {
+    draftStatus.value = '草稿保存失败，将稍后重试'
+    return false
+  }
+}
+
+watch(postForm, () => {
+  if (!postDialogVisible.value || restoringDraft.value) return
+  clearTimeout(draftTimer)
+  draftTimer = setTimeout(saveDraftNow, 1200)
+}, { deep: true })
+
+const confirmCloseComposer = async done => {
+  if (!hasDraftContent()) return done()
+  const saved = await saveDraftNow()
+  try {
+    await ElMessageBox.confirm(saved ? '内容已保存为草稿。确定暂时离开编辑器吗？' : '草稿保存失败，立即离开可能丢失本次内容。仍要离开吗？', '离开发帖', { confirmButtonText: saved ? '离开' : '仍要离开', cancelButtonText: '继续编辑', type: saved ? 'info' : 'warning' })
+    done()
+  } catch (e) {}
+}
+
+const requestCloseComposer = () => confirmCloseComposer(() => { postDialogVisible.value = false })
 
 const createPost = async () => {
   const valid = await postFormRef.value.validate().catch(() => false)
@@ -386,6 +467,7 @@ const createPost = async () => {
     if (res.code === 200) {
       ElMessage.success('发布成功')
       postDialogVisible.value = false
+      draftStatus.value = ''
       currentPage.value = 1
       fetchPosts()
     } else {
@@ -404,6 +486,8 @@ onMounted(async () => {
   fetchPosts()
   fetchGeetestConfig()
 })
+
+onBeforeUnmount(() => clearTimeout(draftTimer))
 </script>
 
 <style lang="scss" scoped>
@@ -703,6 +787,8 @@ $border-color: #eee;
 .r-community--main { gap: 24px; align-items: flex-start; }
 .r-community--tabs { display: flex; align-items: center; gap: 18px; padding: 13px 16px; border: 1px solid rgba(255,255,255,.9); border-radius: 16px; background: rgba(255,255,255,.72); backdrop-filter: blur(16px); box-shadow: 0 10px 32px rgba(45, 63, 91, .06); }
 .r-community--tabs_label { padding-left: 4px; font-size: 13px; font-weight: 700; color: #344054; white-space: nowrap; }
+.r-community--forum_search { width:220px; }
+.r-community--forum_search :deep(.el-input__wrapper) { border-radius:10px; box-shadow:0 0 0 1px #e4e8ef inset; }
 .r-community--tabs :deep(.el-radio-button__inner) { background: transparent; color: #667085; font-weight: 600; border-radius: 10px; padding: 8px 17px; }
 .r-community--tabs :deep(.el-radio-button__original-radio:checked + .el-radio-button__inner) { background: #172033; color: #fff; box-shadow: 0 5px 12px rgba(23,32,51,.16); }
 .r-community--list { overflow: hidden; border: 1px solid rgba(255,255,255,.92); border-radius: 20px; background: rgba(255,255,255,.82); backdrop-filter: blur(18px); box-shadow: 0 18px 50px rgba(39, 55, 82, .08); }
@@ -739,6 +825,8 @@ $border-color: #eee;
 .r-community--compose_dialog :deep(.el-dialog) { max-height:94vh; display:flex; flex-direction:column; overflow:hidden; }
 .r-community--compose_dialog :deep(.el-dialog__body) { overflow-y:auto; }
 .r-community--compose_dialog :deep(.el-dialog__footer) { padding:16px 28px 24px; }
+.r-community--compose_dialog :deep(.el-dialog__footer) { display:flex; align-items:center; justify-content:flex-end; gap:10px; }
+.r-community--draft_status { margin-right:auto; color:#7c8799; font-size:12px; }
 .r-community--compose_intro { margin-bottom:20px; padding:12px 14px; border-radius:12px; background:linear-gradient(90deg,#fff8e5,#f2f8ff); color:#667085; }
 .r-community--compose_dialog :deep(.el-form-item__label) { color:#344054; font-weight:700; }
 .r-community--compose_dialog :deep(.el-input__wrapper) { min-height:42px; border-radius:11px!important; }
@@ -750,13 +838,16 @@ $border-color: #eee;
 .r-community--side_heading { display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; }
 .r-community--side_heading .r-community--card_title { margin:0; padding:0; border:0; }
 .r-community--side_heading button { border:0; background:transparent; color:#b77908; font-size:12px; cursor:pointer; }
-.r-community--board_item { width:100%; display:grid; grid-template-columns:36px 1fr auto; align-items:center; gap:10px; padding:10px; margin-top:6px; border:1px solid transparent; border-radius:12px; background:transparent; text-align:left; cursor:pointer; transition:.2s; }
+.r-community--board_row { position:relative; }
+.r-community--board_item { width:100%; display:grid; grid-template-columns:36px 1fr auto; align-items:center; gap:10px; padding:10px 34px 10px 10px; margin-top:6px; border:1px solid transparent; border-radius:12px; background:transparent; text-align:left; cursor:pointer; transition:.2s; }
 .r-community--board_item:hover,.r-community--board_item.active { border-color:#f1d687; background:#fff9e8; }
 .r-community--board_icon { width:36px; height:36px; display:grid; place-items:center; border-radius:11px; font-size:17px; }
 .r-community--board_item b,.r-community--board_item small { display:block; }
 .r-community--board_item b { color:#273247; font-size:13px; }
 .r-community--board_item small { margin-top:2px; color:#98a2b3; font-size:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:158px; }
 .r-community--board_item em { color:#98a2b3; font-size:11px; font-style:normal; }
+.r-community--board_follow { position:absolute; right:8px; top:50%; transform:translateY(-50%); width:25px; height:25px; padding:0; border:0; border-radius:8px; background:transparent; color:#aab2c0; font-size:18px; cursor:pointer; }
+.r-community--board_follow:hover,.r-community--board_follow.active { background:#fff2c7; color:#d89a00; }
 .r-community--topic_meta { display:flex; align-items:center; gap:8px; margin:0 0 7px 50px; font-size:12px; font-weight:700; }
 .r-community--question_state { padding:2px 7px; border-radius:999px; color:#b54708; background:#fff3df; }
 .r-community--question_state.solved { color:#087443; background:#e9f8ef; }
@@ -764,6 +855,7 @@ $border-color: #eee;
 .r-community--item_footer .r-community--last_reply { margin-left:auto; color:#7c8799; }
 @media (max-width: 768px) {
   .r-community--tabs :deep(.el-radio-group) { display:flex; width:100%; overflow-x:auto; padding-bottom:3px; }
+  .r-community--forum_search { width:100%; }
   .r-community--topic_meta { margin-left:0; }
   .r-community--item_footer .r-community--last_reply { display:none; }
 }

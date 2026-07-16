@@ -3,7 +3,7 @@ const DbAdapter = require('../utils/dbAdapter');
  * 社区帖子控制器
  */
 
-const { Post, User, Comment, Notification, ForumBoard, ForumBoardSubscription, PostSubscription, sequelize } = require('../models');
+const { Post, User, Comment, Notification, ForumBoard, ForumBoardSubscription, PostSubscription, PostDraft, sequelize } = require('../models');
 const { successResponse, errorResponse, paginateResponse } = require('../middleware/response');
 const { Op } = require('sequelize');
 const { isRoleAtLeast, canManageUser } = require('../config/permissions');
@@ -96,6 +96,55 @@ async function acceptAnswer(req, res) {
     } catch (error) {
         console.error('采纳回答失败:', error);
         return errorResponse(res, '采纳回答失败', 500);
+    }
+}
+
+async function getDraft(req, res) {
+    try {
+        const draft = await PostDraft.findOne({
+            where: { user_id: DbAdapter.getId(req.user) },
+            include: [{ model: ForumBoard, as: 'board', required: false, attributes: ['id', 'slug', 'name', 'icon'] }]
+        });
+        return successResponse(res, draft);
+    } catch (error) {
+        console.error('获取帖子草稿失败:', error);
+        return errorResponse(res, '获取草稿失败', 500);
+    }
+}
+
+async function saveDraft(req, res) {
+    try {
+        const { title = '', content = '', board_id = null, post_type = 'discussion', cover = '', tags = [] } = req.body || {};
+        if (String(title).length > 200) return errorResponse(res, '草稿标题不能超过 200 字', 400);
+        if (String(content).length > 100000) return errorResponse(res, '草稿内容过长', 400);
+        const tagError = validateTags(tags);
+        if (tagError) return errorResponse(res, tagError, 400);
+        if (board_id !== null) {
+            const board = await ForumBoard.findOne({ where: { id: Number(board_id), status: 'active' } });
+            if (!board) return errorResponse(res, '论坛板块不存在', 400);
+        }
+        const values = {
+            title: String(title), content: String(content), board_id: board_id ? Number(board_id) : null,
+            post_type: POST_TYPES.has(post_type) ? post_type : 'discussion', cover: String(cover || ''), tags
+        };
+        const where = { user_id: DbAdapter.getId(req.user) };
+        let draft = await PostDraft.findOne({ where });
+        if (draft) await draft.update(values);
+        else draft = await PostDraft.create({ ...where, ...values });
+        return successResponse(res, draft, '草稿已保存');
+    } catch (error) {
+        console.error('保存帖子草稿失败:', error);
+        return errorResponse(res, '保存草稿失败', 500);
+    }
+}
+
+async function deleteDraft(req, res) {
+    try {
+        await PostDraft.destroy({ where: { user_id: DbAdapter.getId(req.user) } });
+        return successResponse(res, null, '草稿已清除');
+    } catch (error) {
+        console.error('清除帖子草稿失败:', error);
+        return errorResponse(res, '清除草稿失败', 500);
     }
 }
 
@@ -200,6 +249,7 @@ async function createPost(req, res) {
                 attributes: ['id', 'codemao_user_id', 'username', 'nickname', 'avatar']
             }, { model: ForumBoard, as: 'board' }]
         });
+        await PostDraft.destroy({ where: { user_id: DbAdapter.getId(req.user) } });
         
         return successResponse(res, result, '发布成功');
     } catch (error) {
@@ -238,7 +288,7 @@ async function getPosts(req, res) {
         }
         
         if (keyword) {
-            const keywordWhere = likeContains(sequelize, ['title', 'content'], keyword);
+            const keywordWhere = likeContains(sequelize, ['title', 'content', 'tags'], keyword);
             if (keywordWhere) Object.assign(where, keywordWhere);
         }
         
@@ -363,6 +413,10 @@ async function getPostDetail(req, res) {
 
         // 评论分页：使用 parsePagination 控制评论加载量,避免大帖卡死/超慢
         const { page: commentPage, pageSize: commentPageSize, offset: commentOffset } = DbAdapter.parsePagination(req.query);
+        const commentSort = ['oldest', 'newest', 'hot'].includes(req.query.comment_sort) ? req.query.comment_sort : 'oldest';
+        const commentOrder = commentSort === 'hot'
+            ? [['like_count', 'DESC'], ['created_at', 'ASC']]
+            : [['created_at', commentSort === 'newest' ? 'DESC' : 'ASC']];
 
         // 独立 count 查询避免 include(JOIN) 导致 count 不准;
         // findAndCountAll + distinct 在 include 带 separate 时可能忽略 distinct 导致计数虚高
@@ -384,6 +438,7 @@ async function getPostDetail(req, res) {
                     required: false,
                     separate: true,
                     limit: 20,
+                    order: [['created_at', 'ASC']],
                     include: [{
                         model: User,
                         as: 'user',
@@ -398,7 +453,7 @@ async function getPostDetail(req, res) {
                         attributes: ['id', 'codemao_user_id', 'username', 'nickname', 'avatar']
                     }]
                 }],
-                order: [['created_at', 'DESC']],
+                order: commentOrder,
                 limit: commentPageSize,
                 offset: commentOffset
             })
@@ -406,8 +461,19 @@ async function getPostDetail(req, res) {
 
         // 先将评论及回复转换为普通 JSON 对象，否则给 Sequelize 实例挂 liked
         // 不会进入响应（实例的 toJSON 只输出 dataValues）
-        const commentsJson = comments.map(c => {
+        const visibleParentIds = comments.map(comment => DbAdapter.getId(comment));
+        const replyCountRows = visibleParentIds.length ? await Comment.findAll({
+            attributes: ['parent_id', [sequelize.fn('COUNT', sequelize.col('id')), 'count']],
+            where: { parent_id: { [Op.in]: visibleParentIds }, status: 'active' },
+            group: ['parent_id'], raw: true
+        }) : [];
+        const replyCountMap = new Map(replyCountRows.map(row => [Number(row.parent_id), Number(row.count || 0)]));
+
+        const commentsJson = comments.map((c, index) => {
             const json = c.toJSON ? c.toJSON() : c;
+            json.reply_total = replyCountMap.get(Number(json.id)) || 0;
+            if (commentSort === 'oldest') json.floor_number = commentOffset + index + 1;
+            else if (commentSort === 'newest') json.floor_number = totalComments - commentOffset - index;
             if (Array.isArray(json.replies)) {
                 json.replies = json.replies.map(r => (r && r.toJSON ? r.toJSON() : r));
             }
@@ -438,7 +504,8 @@ async function getPostDetail(req, res) {
         postJson.commentPagination = {
             page: commentPage,
             pageSize: commentPageSize,
-            total: totalComments
+            total: totalComments,
+            sort: commentSort
         };
 
         return successResponse(res, postJson);
@@ -828,6 +895,9 @@ module.exports = {
     toggleBoardSubscription,
     togglePostSubscription,
     acceptAnswer,
+    getDraft,
+    saveDraft,
+    deleteDraft,
     createPost,
     getPosts,
     getPostDetail,

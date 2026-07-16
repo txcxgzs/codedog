@@ -19,6 +19,7 @@ const likeRateLimit = createRateLimiter({
 
 // 公开路由
 router.get('/work/:workId', optionalAuth, commentController.getWorkComments);
+router.get('/:id/replies', optionalAuth, commentController.getCommentReplies);
 
 // 需要登录的路由
 router.post('/', authMiddleware, geetestVerify(req => req.body?.parent_id ? 'reply' : 'comment'), commentController.createComment);

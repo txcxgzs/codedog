@@ -1,10 +1,16 @@
 const crypto = require('crypto');
-const { sequelize, User, Work, Post, Studio, StudioMember, StudioWork } = require('../server/models');
+const {
+    sequelize, User, Work, Post, Comment, Studio, StudioMember, StudioWork, StudioPointLog,
+    Report, ReportAuditLog, Notification, Favorite, Like, Follow, ForumBoardSubscription,
+    PostSubscription, PostDraft, ForumBoard, OperationLog, IpBan, Announcement
+} = require('../server/models');
+const { Op } = sequelize.constructor;
 
 const baseUrl = (process.env.SECURITY_TEST_BASE_URL || process.argv[2] || 'http://127.0.0.1:3299').replace(/\/$/, '');
 const jwtSecret = process.env.JWT_SECRET || 'development-secret-key-do-not-use-in-production';
 const marker = `codex_sec_${Date.now()}_${Math.random().toString(16).slice(2)}`;
 const created = {
+    boardIds: [],
     studioWorkIds: [],
     studioMemberIds: [],
     studioIds: [],
@@ -82,11 +88,27 @@ async function createUser(role, status = 'active') {
 }
 
 async function cleanup() {
+    const userIds = created.userIds;
+    await ReportAuditLog.destroy({ where: { handler_id: { [Op.in]: userIds } } });
+    await Report.destroy({ where: { [Op.or]: [{ reporter_id: { [Op.in]: userIds } }, { handler_id: { [Op.in]: userIds } }] } });
+    await Notification.destroy({ where: { [Op.or]: [{ user_id: { [Op.in]: userIds } }, { sender_id: { [Op.in]: userIds } }] } });
+    await Comment.destroy({ where: { [Op.or]: [{ user_id: { [Op.in]: userIds } }, { reply_to_user_id: { [Op.in]: userIds } }] } });
+    await Like.destroy({ where: { user_id: { [Op.in]: userIds } } });
+    await Favorite.destroy({ where: { user_id: { [Op.in]: userIds } } });
+    await Follow.destroy({ where: { [Op.or]: [{ follower_id: { [Op.in]: userIds } }, { following_id: { [Op.in]: userIds } }] } });
+    await ForumBoardSubscription.destroy({ where: { user_id: { [Op.in]: userIds } } });
+    await PostSubscription.destroy({ where: { user_id: { [Op.in]: userIds } } });
+    await PostDraft.destroy({ where: { user_id: { [Op.in]: userIds } } });
+    await OperationLog.destroy({ where: { user_id: { [Op.in]: userIds } } });
+    await StudioPointLog.destroy({ where: { admin_id: { [Op.in]: userIds } } });
+    await IpBan.destroy({ where: { banned_by: { [Op.in]: userIds } } });
+    await Announcement.destroy({ where: { author_id: { [Op.in]: userIds } } });
     await StudioWork.destroy({ where: { id: created.studioWorkIds } });
     await StudioMember.destroy({ where: { id: created.studioMemberIds } });
     await Studio.destroy({ where: { id: created.studioIds } });
     await Work.destroy({ where: { id: created.workIds } });
     await Post.destroy({ where: { id: created.postIds } });
+    await ForumBoard.destroy({ where: { id: created.boardIds } });
     await User.destroy({ where: { id: created.userIds } });
 }
 
@@ -103,6 +125,24 @@ async function main() {
     const disabledToken = signJwt({ id: disabledUser.id, username: disabledUser.username, role: 'user' });
     const adminToken = signJwt({ id: adminUser.id, username: adminUser.username, role: 'admin' });
     const superadminToken = signJwt({ id: superadminUser.id, username: superadminUser.username, role: 'superadmin' });
+
+    const draftSave = await http('/api/posts/drafts/current', {
+        method: 'PUT', headers: auth(activeTokenClaimingSuperadmin),
+        body: { title: `${marker}_draft`, content: '<p>draft body</p>', post_type: 'discussion', tags: ['test'] }
+    });
+    record('authenticated user can save a forum draft', draftSave.status === 200, `status=${draftSave.status}`);
+    const draftRead = await http('/api/posts/drafts/current', { headers: auth(activeTokenClaimingSuperadmin) });
+    record('forum draft can be restored', draftRead.status === 200 && draftRead.text.includes(`${marker}_draft`), `status=${draftRead.status}`);
+    const draftDelete = await http('/api/posts/drafts/current', { method: 'DELETE', headers: auth(activeTokenClaimingSuperadmin) });
+    record('forum draft can be cleared', draftDelete.status === 200, `status=${draftDelete.status}`);
+
+    const boardSlug = `security-${Date.now()}`;
+    const boardCreate = await http('/api/admin/forum/boards', {
+        method: 'POST', headers: auth(superadminToken),
+        body: { name: 'Security board', slug: boardSlug, description: 'test', icon: 'T', color: '#fec433', allow_post_roles: ['user', 'superadmin'] }
+    });
+    if (boardCreate.json?.data?.id) created.boardIds.push(boardCreate.json.data.id);
+    record('admin can create a governed forum board', boardCreate.status === 200, `status=${boardCreate.status}`);
 
     const disabledMe = await http('/api/users/me', { headers: auth(disabledToken) });
     record('disabled user token is rejected', disabledMe.status === 403, `status=${disabledMe.status}`);
@@ -173,7 +213,7 @@ async function main() {
     });
     record('user cannot report hidden work by id oracle', reportPendingWork.status === 404, `status=${reportPendingWork.status}`);
 
-    const missingCodemaoImport = await http(`/api/works/codemao/${Date.now()}123`);
+    const missingCodemaoImport = await http(`/api/works/import/${Date.now()}123`, { method: 'POST' });
     record('anonymous codemao import is blocked before external fetch', missingCodemaoImport.status === 401, `status=${missingCodemaoImport.status}`);
 
     const hiddenPost = await Post.create({
@@ -269,6 +309,8 @@ async function main() {
         status: 'pending'
     });
     created.studioWorkIds.push(studioWork.id);
+    // 同一工作室与作品只能有一条关联；先移除待审夹具，再验证已批准但源作品隐藏的场景。
+    await studioWork.destroy();
 
     const approvedHiddenStudioWork = await StudioWork.create({
         studio_id: studio.id,

@@ -17,6 +17,9 @@ const likeRateLimit = createRateLimiter({
 router.get('/', postController.getPosts);
 router.get('/boards/list', optionalAuth, postController.getBoards);
 router.get('/my/list', authMiddleware, postController.getMyPosts);
+router.get('/drafts/current', authMiddleware, postController.getDraft);
+router.put('/drafts/current', authMiddleware, postController.saveDraft);
+router.delete('/drafts/current', authMiddleware, postController.deleteDraft);
 router.get('/:id', optionalAuth, postController.getPostDetail);
 
 // 需要登录的路由

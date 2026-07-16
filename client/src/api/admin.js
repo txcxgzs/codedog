@@ -159,6 +159,22 @@ export const adminApi = {
   getPosts(params = {}) {
     return request.get('/admin/posts', { params })
   },
+
+  getForumBoards() {
+    return request.get('/admin/forum/boards')
+  },
+
+  createForumBoard(data) {
+    return request.post('/admin/forum/boards', data)
+  },
+
+  updateForumBoard(boardId, data) {
+    return request.put(`/admin/forum/boards/${boardId}`, data)
+  },
+
+  deleteForumBoard(boardId) {
+    return request.delete(`/admin/forum/boards/${boardId}`)
+  },
   
   setPostEssence(postId, isEssence) {
     return request.put(`/admin/posts/${postId}/essence`, { isEssence })

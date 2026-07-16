@@ -2,7 +2,7 @@
  * 后台管理控制器
  */
 
-const { User, Work, Comment, Post, ForumBoard, Favorite, Follow, Banner, Report, ReportAuditLog, IpBan, Notification, Announcement, SystemConfig, OperationLog, SensitiveWord, RolePermission, CaptchaStats, Statistics, Studio, StudioMember, StudioWork, StudioPointLog, Like, sequelize } = require('../models');
+const { User, Work, Comment, Post, ForumBoard, PostDraft, Favorite, Follow, Banner, Report, ReportAuditLog, IpBan, Notification, Announcement, SystemConfig, OperationLog, SensitiveWord, RolePermission, CaptchaStats, Statistics, Studio, StudioMember, StudioWork, StudioPointLog, Like, sequelize } = require('../models');
 const { successResponse, errorResponse, paginateResponse } = require('../middleware/response');
 const { getAllRoles, canManageUser, getRole, hasPermission, getAllPermissions, refreshRoleCache, DEFAULT_ROLES } = require('../config/permissions');
 const { logOperation } = require('../middleware/operationLog');
@@ -5021,6 +5021,10 @@ module.exports = {
     impersonateUser,
     restoreFromImpersonate,
     updateWork,
+    getForumBoards,
+    createForumBoard,
+    updateForumBoard,
+    deleteForumBoard,
     updatePost,
     getPosts,
     deletePost,
@@ -5193,6 +5197,107 @@ async function applyRecalibrationJob(req, res) {
 /**
  * 获取帖子列表 (管理)
  */
+async function getForumBoards(req, res) {
+    try {
+        const boards = await ForumBoard.findAll({ order: [['sort_order', 'ASC'], ['id', 'ASC']] });
+        const data = await Promise.all(boards.map(async board => ({
+            ...board.toJSON(),
+            post_count: await Post.count({ where: { board_id: board.id, status: { [Op.ne]: 'deleted' } } })
+        })));
+        return successResponse(res, data);
+    } catch (error) {
+        console.error('获取论坛板块管理列表失败:', error);
+        return errorResponse(res, '获取板块失败', 500);
+    }
+}
+
+function normalizeForumBoardInput(body, partial = false) {
+    const data = {};
+    if (!partial || body.slug !== undefined) {
+        const slug = String(body.slug || '').trim().toLowerCase();
+        if (!/^[a-z][a-z0-9-]{1,49}$/.test(slug)) return { error: '板块标识需为 2-50 位小写字母、数字或连字符' };
+        data.slug = slug;
+    }
+    if (!partial || body.name !== undefined) {
+        const name = String(body.name || '').trim();
+        if (!name || name.length > 50) return { error: '板块名称需为 1-50 字' };
+        data.name = name;
+    }
+    if (body.description !== undefined) data.description = String(body.description || '').trim().slice(0, 300);
+    if (body.icon !== undefined) data.icon = String(body.icon || '💬').trim().slice(0, 30) || '💬';
+    if (body.color !== undefined) {
+        if (!/^#[0-9a-f]{6}$/i.test(String(body.color))) return { error: '板块颜色格式无效' };
+        data.color = String(body.color);
+    }
+    if (body.sort_order !== undefined) data.sort_order = Math.max(0, Math.min(9999, Number(body.sort_order) || 0));
+    if (body.status !== undefined) {
+        if (!['active', 'disabled'].includes(body.status)) return { error: '板块状态无效' };
+        data.status = body.status;
+    }
+    if (body.allow_post_roles !== undefined) {
+        const validRoles = ['user', 'reviewer', 'moderator', 'admin', 'superadmin'];
+        if (!Array.isArray(body.allow_post_roles) || body.allow_post_roles.some(role => !validRoles.includes(role))) return { error: '发帖角色配置无效' };
+        data.allow_post_roles = [...new Set(body.allow_post_roles)];
+    }
+    return { data };
+}
+
+async function createForumBoard(req, res) {
+    try {
+        const parsed = normalizeForumBoardInput(req.body || {});
+        if (parsed.error) return errorResponse(res, parsed.error, 400);
+        const existing = await ForumBoard.findOne({ where: { slug: parsed.data.slug } });
+        if (existing) return errorResponse(res, '板块标识已存在', 409);
+        const board = await ForumBoard.create(parsed.data);
+        logOperation(req, 'create_forum_board', 'forum_board', board.id, parsed.data);
+        return successResponse(res, board, '板块已创建');
+    } catch (error) {
+        console.error('创建论坛板块失败:', error);
+        return errorResponse(res, '创建板块失败', 500);
+    }
+}
+
+async function updateForumBoard(req, res) {
+    try {
+        const board = await ForumBoard.findByPk(Number(req.params.boardId));
+        if (!board) return errorResponse(res, '板块不存在', 404);
+        const parsed = normalizeForumBoardInput(req.body || {}, true);
+        if (parsed.error) return errorResponse(res, parsed.error, 400);
+        if (parsed.data.slug && parsed.data.slug !== board.slug) {
+            const duplicate = await ForumBoard.findOne({ where: { slug: parsed.data.slug, id: { [Op.ne]: board.id } } });
+            if (duplicate) return errorResponse(res, '板块标识已存在', 409);
+        }
+        await board.update(parsed.data);
+        if (parsed.data.status === 'disabled') await PostDraft.update({ board_id: null }, { where: { board_id: board.id } });
+        logOperation(req, 'update_forum_board', 'forum_board', board.id, parsed.data);
+        return successResponse(res, board, '板块已更新');
+    } catch (error) {
+        console.error('更新论坛板块失败:', error);
+        return errorResponse(res, '更新板块失败', 500);
+    }
+}
+
+async function deleteForumBoard(req, res) {
+    try {
+        const board = await ForumBoard.findByPk(Number(req.params.boardId));
+        if (!board) return errorResponse(res, '板块不存在', 404);
+        const postCount = await Post.count({ where: { board_id: board.id, status: { [Op.ne]: 'deleted' } } });
+        if (postCount > 0) {
+            await PostDraft.update({ board_id: null }, { where: { board_id: board.id } });
+            await board.update({ status: 'disabled' });
+            logOperation(req, 'disable_forum_board', 'forum_board', board.id, { post_count: postCount });
+            return successResponse(res, { disabled: true, post_count: postCount }, '板块已有帖子，已安全停用而非删除');
+        }
+        await PostDraft.update({ board_id: null }, { where: { board_id: board.id } });
+        await board.destroy();
+        logOperation(req, 'delete_forum_board', 'forum_board', board.id, {});
+        return successResponse(res, { deleted: true }, '板块已删除');
+    } catch (error) {
+        console.error('删除论坛板块失败:', error);
+        return errorResponse(res, '删除板块失败', 500);
+    }
+}
+
 async function getPosts(req, res) {
     try {
         const { page, pageSize, offset } = DbAdapter.parsePagination(req.query);

@@ -96,7 +96,10 @@
         
         <!-- 评论区 -->
         <div class="r-post--comments" ref="commentSection">
-          <h3 class="r-post--comments_title">评论 ({{ post.comment_count }})</h3>
+          <div class="r-post--comments_heading">
+            <h3 class="r-post--comments_title">全部回复 ({{ post.reply_count || post.comment_count }})</h3>
+            <el-radio-group v-model="commentSort" size="small" @change="changeCommentSort"><el-radio-button label="oldest">正序</el-radio-button><el-radio-button label="newest">倒序</el-radio-button><el-radio-button label="hot">热门</el-radio-button></el-radio-group>
+          </div>
           
           <div v-if="post.is_locked" class="r-post--locked_notice">该帖子已锁定，暂时不能继续回复。</div>
           <div class="r-post--comment_form" v-if="userStore.isLoggedIn && !post.is_locked">
@@ -119,7 +122,7 @@
                 <div class="r-post--comment_header">
                   <span class="r-post--comment_name" @click="goToUser(comment)" style="cursor: pointer;">{{ comment.user?.nickname || comment.user?.username }}</span>
                   <span class="r-post--comment_time">{{ formatTime(comment.created_at) }}</span>
-                  <span class="r-post--floor">#{{ Math.max(1, (post.comment_count || comments.length) - index) }}楼</span>
+                  <span class="r-post--floor">{{ comment.floor_number ? `#${comment.floor_number}楼` : `热门 #${index + 1}` }}</span>
                   <el-tag v-if="Number(post.accepted_comment_id) === Number(comment.id)" type="success" size="small">已采纳答案</el-tag>
                   <button v-if="canAcceptAnswer(comment)" type="button" class="r-post--accept_answer" @click="acceptAnswer(comment)">采纳答案</button>
                 </div>
@@ -145,11 +148,15 @@
                     </div>
                   </div>
                 </div>
+                <button v-if="Number(comment.reply_total || 0) > (comment.replies?.length || 0)" type="button" class="r-post--more_replies" :disabled="replyLoading.has(comment.id)" @click="loadMoreReplies(comment)">
+                  {{ replyLoading.has(comment.id) ? '加载中…' : `展开其余 ${comment.reply_total - (comment.replies?.length || 0)} 条回复` }}
+                </button>
               </div>
             </div>
             
             <el-empty v-if="!loading && comments.length === 0" description="暂无评论，快来抢沙发吧~" />
           </div>
+          <el-pagination v-if="commentTotal > commentPageSize" v-model:current-page="commentPage" :page-size="commentPageSize" :total="commentTotal" layout="prev, pager, next" class="r-post--comment_pagination" @current-change="fetchPost" />
         </div>
       </div>
       
@@ -255,6 +262,10 @@ const editContent = ref('')
 const editTags = ref('')
 const wysiwygRef = ref(null)
 const comments = ref([])
+const commentPage = ref(1)
+const commentPageSize = ref(20)
+const commentTotal = ref(0)
+const commentSort = ref('oldest')
 const relatedPosts = ref([])
 const liked = ref(false)
 const subscribed = ref(false)
@@ -348,13 +359,14 @@ const formatTime = (time) => {
 const fetchPost = async () => {
   loading.value = true
   try {
-    const res = await postApi.getPost(route.params.id)
+    const res = await postApi.getPost(route.params.id, { page: commentPage.value, pageSize: commentPageSize.value, comment_sort: commentSort.value })
     if (res.code === 200) {
       post.value = res.data
       liked.value = !!res.data.liked
       subscribed.value = !!res.data.subscribed
       isFavorited.value = !!res.data.favorited
       comments.value = res.data.comments || []
+      commentTotal.value = Number(res.data.commentPagination?.total || 0)
       fetchRelatedPosts()
       // 初始化关注状态:已关注作者仍显示"关注"是因为 following 默认 false 未刷新
       // 这里在拿到帖子后调用 followApi.check 来同步真实关注状态
@@ -552,6 +564,23 @@ const followAuthor = async () => {
 }
 
 const likingComments = ref(new Set())
+const replyLoading = ref(new Set())
+
+const loadMoreReplies = async comment => {
+  if (replyLoading.value.has(comment.id)) return
+  replyLoading.value.add(comment.id)
+  try {
+    const loaded = comment.replies?.length || 0
+    const res = await commentApi.getReplies(comment.id, { page: Math.floor(loaded / 20) + 1, pageSize: 20 })
+    if (res.code === 200) {
+      const existingIds = new Set((comment.replies || []).map(reply => Number(reply.id)))
+      const nextReplies = (res.data?.list || []).filter(reply => !existingIds.has(Number(reply.id)))
+      comment.replies = [...(comment.replies || []), ...nextReplies]
+      comment.reply_total = Number(res.data?.total ?? comment.reply_total ?? comment.replies.length)
+    }
+  } catch (e) { ElMessage.error('加载更多回复失败') }
+  finally { replyLoading.value.delete(comment.id) }
+}
 
 const likeComment = async (comment) => {
   if (!userStore.isLoggedIn) {
@@ -617,23 +646,16 @@ const submitComment = async () => {
       ...geetestData
     })
     if (res.code === 200) {
-      if (replyToCommentId.value) {
-        const parent = comments.value.find(c => c.id === replyToCommentId.value)
-        if (parent) {
-          if (!parent.replies) parent.replies = []
-          parent.replies.push(res.data)
-        } else {
-          comments.value.unshift(res.data)
-          post.value.comment_count = (post.value.comment_count || 0) + 1
-        }
-      } else {
-        comments.value.unshift(res.data)
-        post.value.comment_count = (post.value.comment_count || 0) + 1
-      }
+      const wasTopLevel = !replyToCommentId.value
       commentContent.value = ''
       selectedSocialCard.value = null
       replyToCommentId.value = null
       replyToUserId.value = null
+      if (wasTopLevel) {
+        commentSort.value = 'newest'
+        commentPage.value = 1
+      }
+      await fetchPost()
       ElMessage.success('评论成功')
     }
   } catch (e) {
@@ -668,6 +690,7 @@ const deleteComment = async (comment) => {
         }
         // 回复删除不扣 comment_count(comment_count 只统计顶层评论数)
       }
+      await fetchPost()
       ElMessage.success('评论已删除')
     }
   } catch (e) {
@@ -811,6 +834,11 @@ const selectSocialCard = async type => {
     const { value } = await ElMessageBox.prompt(studio ? '请输入要分享的编程狗工作室 ID' : '请输入创建好的 IM 群聊 ID', studio ? '发送工作室卡片' : '发送群聊邀请卡片', { inputPattern:/^\d+$/, inputErrorMessage:studio ? '请输入正确的工作室 ID' : '请输入正确的群聊 ID' })
     selectedSocialCard.value = { type, target_id:Number(value) }
   } catch (error) { if (!['cancel','close'].includes(error)) ElMessage.error('无法选择社交卡片') }
+}
+
+const changeCommentSort = () => {
+  commentPage.value = 1
+  fetchPost()
 }
 
 const togglePostSubscription = async () => {
@@ -1477,6 +1505,9 @@ $border-color: #eee;
 .r-post--comment_actions .r-post--like_action:hover,
 .r-post--reply_actions .r-post--like_action:hover { color:#999; }
 .r-post--comments .r-post--comments_title { color:#172033; font-size:21px; font-weight:800; }
+.r-post--comments_heading { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:18px; }
+.r-post--comments_heading .r-post--comments_title { margin:0; }
+.r-post--comment_pagination { justify-content:center; margin-top:22px; }
 .r-post--comment_form { padding:16px; border:1px solid #e7ebf2; border-radius:16px; background:linear-gradient(145deg,#fbfcff,#fffaf0); }
 .r-post--comment_form :deep(.el-textarea__inner) { min-height:92px!important; padding:14px; border:0; border-radius:12px!important; background:#fff; box-shadow:0 0 0 1px #e2e7ef inset; }
 .r-post--comment_form .el-button { height:38px; padding:0 17px; border-radius:11px!important; font-weight:700; }
@@ -1486,6 +1517,8 @@ $border-color: #eee;
 .r-post--comment_item.is-accepted { margin:8px 0; padding:20px 14px; border:1px solid #a9dfbd; border-radius:14px; background:#f3fbf6; }
 .r-post--floor { margin-left:auto; color:#98a2b3; font-size:12px; }
 .r-post--accept_answer { border:0; border-radius:8px; padding:4px 9px; background:#e9f8ef; color:#087443; font-size:12px; cursor:pointer; }
+.r-post--more_replies { margin:8px 0 0 56px; padding:6px 10px; border:0; border-radius:8px; background:#eef3fa; color:#52657d; font-size:12px; cursor:pointer; }
+.r-post--more_replies:disabled { opacity:.6; cursor:wait; }
 .r-post--comment_item { gap:14px; padding:20px 4px; border-bottom-color:#edf0f5; }
 .r-post--comment_item .r-post--comment_avatar { width:42px; height:42px; box-shadow:0 0 0 3px #fff,0 4px 12px rgba(35,48,70,.1); }
 .r-post--comment_item .r-post--comment_header .r-post--comment_name { color:#344054; font-weight:700; }
