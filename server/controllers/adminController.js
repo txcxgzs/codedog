@@ -16,6 +16,7 @@ const DbAdapter = require('../utils/dbAdapter');
 const { likeContains } = require('../utils/security');
 const { snapshotPost, recordPostRevision, recordModerationLog } = require('../services/forumHistory');
 const { getModeratedBoardIds, canModerateBoard } = require('../services/forumModeration');
+const { invalidateForumReputation } = require('../services/forumReputation');
 // H12: 引入内容审核服务，爬虫/管理员落库前对 nickname/bio/作品名+描述 做敏感词检查
 const aiReview = require('../services/aiReview');
 const proxyService = require('../services/proxyService');
@@ -1039,6 +1040,7 @@ async function deleteUser(req, res) {
             }, { where: { id: uid }, transaction: t });
         });
         logOperation(req, 'delete_user', 'user', userId, { username: user.username });
+        invalidateForumReputation();
 
         return successResponse(res, null, '删除成功');
     } catch (error) {
@@ -5350,6 +5352,7 @@ async function mergePosts(req, res) {
             await recordModerationLog(targetId, DbAdapter.getId(req.user), 'merge_post_target', reason, { merged_source_id: null }, { merged_source_id: sourceId }, { transaction });
         });
         logOperation(req, 'merge_posts', 'post', sourceId, { target_post_id: targetId, reason });
+        invalidateForumReputation();
         return successResponse(res, { source_post_id: sourceId, target_post_id: targetId }, '主题已安全合并');
     } catch (error) {
         console.error('合并帖子失败:', error);
@@ -5569,6 +5572,7 @@ async function deletePost(req, res) {
             await DbAdapter.update(Post, { status: 'deleted', like_count: 0, collection_count: 0, comment_count: 0 }, { where: { id: pid }, transaction: t });
         });
         logOperation(req, 'delete_post', 'post', postId, { title: post.title, reason });
+        invalidateForumReputation();
         return successResponse(res, null, '删除成功');
     } catch (error) {
         console.error('删除帖子错误:', error);
@@ -5688,6 +5692,7 @@ async function updatePost(req, res) {
             }
         });
         logOperation(req, 'update_post', 'post', postId, updateData);
+        if (updateData.status !== undefined) invalidateForumReputation();
 
         return successResponse(res, null, '更新成功');
     } catch (error) {

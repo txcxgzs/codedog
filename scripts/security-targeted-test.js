@@ -225,6 +225,32 @@ async function main() {
     const mergedRedirect = await http(`/api/posts/${forumPostId}`);
     record('merged topic keeps a public redirect target', mergedRedirect.status === 200 && Number(mergedRedirect.json?.data?.merged_into_post_id) === Number(mergeTarget.id), `status=${mergedRedirect.status}; target=${mergedRedirect.json?.data?.merged_into_post_id}`);
 
+    const leaderboardBeforeReply = await http('/api/posts/forum/leaderboard?limit=10');
+    const moderatorBeforeReply = await http(`/api/posts/forum/users/${moderatorUser.id}/reputation`);
+    const initialReplyCount = Number(moderatorBeforeReply.json?.data?.replies_count || 0);
+    const leaderboardEntry = leaderboardBeforeReply.json?.data?.list?.find(item => Number(item.user?.id) === Number(moderatorUser.id));
+    record(
+        'public forum leaderboard exposes ranked contribution without private fields',
+        leaderboardBeforeReply.status === 200 && Boolean(leaderboardEntry) && Number(leaderboardEntry.rank) > 0 && !leaderboardBeforeReply.text.includes('@example.test'),
+        `status=${leaderboardBeforeReply.status}; rank=${leaderboardEntry?.rank}; leakedEmail=${leaderboardBeforeReply.text.includes('@example.test')}`
+    );
+    record(
+        'public user forum reputation returns contribution counters',
+        moderatorBeforeReply.status === 200 && initialReplyCount >= 1 && Number(moderatorBeforeReply.json?.data?.contribution_score) >= 2,
+        `status=${moderatorBeforeReply.status}; replies=${initialReplyCount}; score=${moderatorBeforeReply.json?.data?.contribution_score}`
+    );
+    const reputationReply = await http('/api/comments', {
+        method: 'POST', headers: auth(moderatorToken), body: { post_id: mergeTarget.id, content: 'reputation cache invalidation reply' }
+    });
+    const moderatorAfterReply = await http(`/api/posts/forum/users/${moderatorUser.id}/reputation`);
+    record(
+        'new forum reply invalidates reputation cache immediately',
+        reputationReply.status === 200 && Number(moderatorAfterReply.json?.data?.replies_count) === initialReplyCount + 1,
+        `create=${reputationReply.status}; error=${reputationReply.json?.msg || reputationReply.text}; before=${initialReplyCount}; after=${moderatorAfterReply.json?.data?.replies_count}`
+    );
+    const invalidReputationUser = await http('/api/posts/forum/users/not-a-number/reputation');
+    record('forum reputation rejects invalid user ids without a server error', invalidReputationUser.status === 400, `status=${invalidReputationUser.status}`);
+
     const disabledMe = await http('/api/users/me', { headers: auth(disabledToken) });
     record('disabled user token is rejected', disabledMe.status === 403, `status=${disabledMe.status}`);
 

@@ -19,6 +19,8 @@ router.get('/boards/list', optionalAuth, postController.getBoards);
 router.get('/my/list', authMiddleware, postController.getMyPosts);
 router.get('/drafts/current', authMiddleware, postController.getDraft);
 router.get('/subscriptions/mine', authMiddleware, postController.getMyForumSubscriptions);
+router.get('/forum/leaderboard', postController.getLeaderboard);
+router.get('/forum/users/:userId/reputation', postController.getUserReputation);
 router.put('/drafts/current', authMiddleware, postController.saveDraft);
 router.delete('/drafts/current', authMiddleware, postController.deleteDraft);
 router.get('/:id', optionalAuth, postController.getPostDetail);

@@ -11,9 +11,32 @@ const { likeContains } = require('../utils/security');
 // H12: 引入内容审核服务，落库前做敏感词检查
 const aiReview = require('../services/aiReview');
 const { recordPostRevision } = require('../services/forumHistory');
+const { getForumLeaderboard, getUserForumReputation, invalidateForumReputation } = require('../services/forumReputation');
 
 function canInteractWithPost(post) {
     return post && post.status === 'published';
+}
+
+async function getLeaderboard(req, res) {
+    try {
+        return successResponse(res, await getForumLeaderboard(req.query.limit));
+    } catch (error) {
+        console.error('获取论坛贡献榜失败:', error);
+        return errorResponse(res, '获取论坛贡献榜失败', 500);
+    }
+}
+
+async function getUserReputation(req, res) {
+    try {
+        const userId = Number(req.params.userId);
+        if (!Number.isSafeInteger(userId) || userId <= 0) return errorResponse(res, '无效的用户 ID', 400);
+        const reputation = await getUserForumReputation(userId);
+        if (!reputation) return errorResponse(res, '用户不存在', 404);
+        return successResponse(res, reputation);
+    } catch (error) {
+        console.error('获取用户论坛档案失败:', error);
+        return errorResponse(res, '获取用户论坛档案失败', 500);
+    }
 }
 
 const POST_TYPES = new Set(['discussion', 'question', 'tutorial']);
@@ -127,6 +150,7 @@ async function acceptAnswer(req, res) {
         if (Number(comment.user_id) !== Number(DbAdapter.getId(req.user))) {
             await Notification.create({ user_id: comment.user_id, sender_id: DbAdapter.getId(req.user), type: 'system', title: '你的回答已被采纳', content: post.title, related_id: post.id, related_type: 'post' });
         }
+        invalidateForumReputation();
         return successResponse(res, { accepted_comment_id: comment.id }, '回答已采纳');
     } catch (error) {
         console.error('采纳回答失败:', error);
@@ -289,6 +313,8 @@ async function createPost(req, res) {
                 attributes: ['id', 'codemao_user_id', 'username', 'nickname', 'avatar']
             }, { model: ForumBoard, as: 'board' }]
         });
+
+        invalidateForumReputation();
 
         return successResponse(res, result, '发布成功');
     } catch (error) {
@@ -714,7 +740,8 @@ async function deletePost(req, res) {
             // 软删帖子并清零计数字段，保持与关联数据一致
             await DbAdapter.update(Post, { status: 'deleted', like_count: 0, collection_count: 0, comment_count: 0 }, { where: { id: pid }, transaction: t });
         });
-        
+
+        invalidateForumReputation();
         return successResponse(res, null, '帖子已删除');
     } catch (error) {
         console.error('删除帖子错误:', error);
@@ -762,6 +789,7 @@ async function likePost(req, res) {
             });
             await post.reload();
             const newCount = Math.max(0, post.like_count || 0);
+            invalidateForumReputation();
             return successResponse(res, { like_count: newCount, liked: false }, '已取消点赞');
         }
 
@@ -814,6 +842,7 @@ async function likePost(req, res) {
             }
         }
 
+        invalidateForumReputation();
         return successResponse(res, { like_count: post.like_count || 0, liked: true }, '点赞成功');
     } catch (error) {
         console.error('点赞错误:', error);
@@ -946,6 +975,8 @@ async function getMyPosts(req, res) {
 }
 
 module.exports = {
+    getLeaderboard,
+    getUserReputation,
     getBoards,
     toggleBoardSubscription,
     togglePostSubscription,

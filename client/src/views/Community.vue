@@ -87,6 +87,17 @@
             <p>集中查看关注的板块和主题，新回复不会错过。</p>
           </div>
 
+          <div class="r-community--side_card r-community--leaderboard_card">
+            <div class="r-community--side_heading"><h4 class="r-community--card_title">论坛贡献榜</h4><span>近实时</span></div>
+            <button v-for="(entry, index) in forumLeaderboard" :key="entry.user.id" class="r-community--leader_row" @click="$router.push(`/user/${entry.user.codemao_user_id}`)">
+              <em :class="{ top: index < 3 }">{{ index + 1 }}</em>
+              <AppImage :src="entry.user.avatar || defaultAvatar" :fallback="defaultAvatar" />
+              <span><b>{{ entry.user.nickname || entry.user.username }}</b><small>{{ entry.title }} · {{ entry.contribution_score }} 贡献</small></span>
+              <i v-if="entry.badges?.length" :style="{ color: entry.badges[0].color }" :title="entry.badges.map(item => item.name).join('、')">{{ entry.badges[0].icon }}</i>
+            </button>
+            <el-empty v-if="!forumLeaderboard.length" description="暂无贡献记录" :image-size="48" />
+          </div>
+
           <div class="r-community--side_card">
             <h4 class="r-community--card_title">社区公告</h4>
             <div v-if="communityAnnouncements.length" class="r-community--ann_list">
@@ -251,6 +262,7 @@ const subscriptionsVisible = ref(false)
 const subscriptionsLoading = ref(false)
 const subscriptionsTab = ref('topics')
 const mySubscriptions = reactive({ topics: [], topic_total: 0, boards: [] })
+const forumLeaderboard = ref([])
 const restoringDraft = ref(false)
 let draftTimer = null
 
@@ -267,6 +279,13 @@ const uploadCover = async (event) => {
     ElMessage.success('封面上传成功')
   } catch (e) { ElMessage.error(e.response?.data?.msg || '封面上传失败') }
   finally { coverUploading.value = false }
+}
+
+const loadForumLeaderboard = async () => {
+  try {
+    const res = await postApi.getLeaderboard(8)
+    if (res.code === 200) forumLeaderboard.value = res.data?.list || []
+  } catch (e) { forumLeaderboard.value = [] }
 }
 
 const defaultAvatar = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI0ZFQzQzMyIvPjx0ZXh0IHg9IjUwIiB5PSI2MCIgZm9udC1zaXplPSI0MCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZmlsbD0id2hpdGUiPuahijwvdGV4dD48L3N2Zz4='
@@ -519,6 +538,7 @@ const createPost = async () => {
 
 onMounted(async () => {
   loadCommunityAnnouncements()
+  loadForumLeaderboard()
   await loadBoards()
   fetchPosts()
   fetchGeetestConfig()
@@ -899,6 +919,17 @@ $border-color: #eee;
 .r-community--question_state.solved { color:#087443; background:#e9f8ef; }
 .r-community--item_tags { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:11px; color:#8a6a1c; font-size:12px; }
 .r-community--item_footer .r-community--last_reply { margin-left:auto; color:#7c8799; }
+.r-community--leaderboard_card .r-community--side_heading > span { color:#a4acb9; font-size:11px; }
+.r-community--leader_row { width:100%; display:grid; grid-template-columns:24px 36px minmax(0,1fr) 22px; align-items:center; gap:9px; padding:9px 7px; border:0; border-radius:11px; background:transparent; color:#344054; text-align:left; cursor:pointer; transition:.18s; }
+.r-community--leader_row:hover { background:#fff9e8; transform:translateX(2px); }
+.r-community--leader_row > em { display:grid; place-items:center; width:22px; height:22px; border-radius:7px; background:#f1f3f6; color:#8992a3; font-size:11px; font-style:normal; font-weight:800; }
+.r-community--leader_row > em.top { background:#fff0b8; color:#b87800; }
+.r-community--leader_row > :deep(.app-image),.r-community--leader_row > img { width:36px; height:36px; border-radius:50%; object-fit:cover; }
+.r-community--leader_row > span { min-width:0; }
+.r-community--leader_row b,.r-community--leader_row small { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.r-community--leader_row b { font-size:13px; }
+.r-community--leader_row small { margin-top:3px; color:#98a2b3; font-size:10px; }
+.r-community--leader_row > i { font-style:normal; font-weight:800; text-align:center; }
 @media (max-width: 768px) {
   .r-community--tabs :deep(.el-radio-group) { display:flex; width:100%; overflow-x:auto; padding-bottom:3px; }
   .r-community--forum_search { width:100%; }

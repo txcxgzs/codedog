@@ -75,7 +75,6 @@ const Work = sequelize.define('Work', {
     praise_times: { type: DataTypes.INTEGER, defaultValue: 0 },
     collection_times: { type: DataTypes.INTEGER, defaultValue: 0 },
     comment_count: { type: DataTypes.INTEGER, defaultValue: 0 },
-    reply_count: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
     // 新增 'hidden' 状态：管理员可隐藏作品(从前台和列表移除,数据保留),与 deleted 区分
     status: { type: DataTypes.ENUM('pending', 'published', 'rejected', 'hidden', 'deleted'), defaultValue: 'published' },
     is_featured: { type: DataTypes.BOOLEAN, defaultValue: false }
@@ -118,6 +117,7 @@ const Post = sequelize.define('Post', {
     view_count: { type: DataTypes.INTEGER, defaultValue: 0 },
     like_count: { type: DataTypes.INTEGER, defaultValue: 0 },
     comment_count: { type: DataTypes.INTEGER, defaultValue: 0 },
+    reply_count: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
     collection_count: { type: DataTypes.INTEGER, defaultValue: 0 },
     is_top: { type: DataTypes.BOOLEAN, defaultValue: false },
     is_essence: { type: DataTypes.BOOLEAN, defaultValue: false },

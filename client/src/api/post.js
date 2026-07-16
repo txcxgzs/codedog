@@ -20,6 +20,14 @@ export const postApi = {
   getMySubscriptions(params = {}) {
     return request.get('/posts/subscriptions/mine', { params })
   },
+
+  getLeaderboard(limit = 10) {
+    return request.get('/posts/forum/leaderboard', { params: { limit } })
+  },
+
+  getUserReputation(userId) {
+    return request.get(`/posts/forum/users/${userId}/reputation`)
+  },
   getBoards() {
     return request.get('/posts/boards/list')
   },

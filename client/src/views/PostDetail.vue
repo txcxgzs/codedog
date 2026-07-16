@@ -168,8 +168,10 @@
         <div class="r-post--author_card" role="link" tabindex="0" @click="goToAuthor" @keydown.enter="goToAuthor">
           <AppImage :src="post.author?.avatar || defaultAvatar" :fallback="defaultAvatar" class="r-post--author_card_avatar" />
           <div class="r-post--author_card_info">
-            <h4>{{ post.author?.nickname || post.author?.username }}</h4>
+            <h4>{{ post.author?.nickname || post.author?.username }} <span v-if="authorReputation" class="r-post--forum_title">{{ authorReputation.title }}</span></h4>
             <p>{{ post.author?.bio || '这个人很懒，什么都没写' }}</p>
+            <div v-if="authorReputation" class="r-post--reputation_meta"><span v-if="authorReputation.rank">论坛第 {{ authorReputation.rank }} 名</span><span>{{ authorReputation.contribution_score }} 贡献</span><span>{{ authorReputation.topics_count }} 主题</span><span>{{ authorReputation.accepted_answers }} 采纳</span></div>
+            <div v-if="authorReputation?.badges?.length" class="r-post--forum_badges"><span v-for="badge in authorReputation.badges" :key="badge.key" :style="{ color: badge.color, background: `${badge.color}12`, borderColor: `${badge.color}35` }" :title="badge.name">{{ badge.icon }} {{ badge.name }}</span></div>
           </div>
           <el-button type="primary" size="small" @click.stop="followAuthor" v-if="userStore.user?.id !== post.author?.id">
             {{ following ? '已关注' : '关注' }}
@@ -271,6 +273,7 @@ const commentPageSize = ref(20)
 const commentTotal = ref(0)
 const commentSort = ref('oldest')
 const relatedPosts = ref([])
+const authorReputation = ref(null)
 const liked = ref(false)
 const subscribed = ref(false)
 const following = ref(false)
@@ -377,6 +380,7 @@ const fetchPost = async () => {
       comments.value = res.data.comments || []
       commentTotal.value = Number(res.data.commentPagination?.total || 0)
       fetchRelatedPosts()
+      fetchAuthorReputation()
       // 初始化关注状态:已关注作者仍显示"关注"是因为 following 默认 false 未刷新
       // 这里在拿到帖子后调用 followApi.check 来同步真实关注状态
       checkFollowingStatus()
@@ -592,6 +596,15 @@ const loadMoreReplies = async comment => {
     }
   } catch (e) { ElMessage.error('加载更多回复失败') }
   finally { replyLoading.value.delete(comment.id) }
+}
+
+const fetchAuthorReputation = async () => {
+  const userId = post.value?.author?.id
+  if (!userId) { authorReputation.value = null; return }
+  try {
+    const res = await postApi.getUserReputation(userId)
+    authorReputation.value = res.code === 200 ? res.data : null
+  } catch (e) { authorReputation.value = null }
 }
 
 const likeComment = async (comment) => {
@@ -1545,6 +1558,10 @@ $border-color: #eee;
 .r-post--author_card .r-post--author_card_avatar { width:72px; height:72px; box-shadow:0 0 0 4px #fff,0 10px 24px rgba(35,48,70,.15); }
 .r-post--author_card .r-post--author_card_info h4 { color:#172033; font-size:17px; font-weight:800; }
 .r-post--author_card .r-post--author_card_info p { color:#7a8495; line-height:1.6; }
+.r-post--forum_title { display:inline-flex; margin-left:6px; padding:2px 7px; border-radius:999px; background:#fff1bd; color:#a66e00; font-size:10px; vertical-align:middle; }
+.r-post--reputation_meta { display:flex; flex-wrap:wrap; gap:9px; margin-top:8px; color:#8a94a6; font-size:10px; }
+.r-post--forum_badges { display:flex; flex-wrap:wrap; gap:5px; margin-top:8px; }
+.r-post--forum_badges span { padding:3px 7px; border:1px solid; border-radius:7px; font-size:10px; font-weight:700; }
 .r-post--author_card .el-button { height:38px; border-radius:11px!important; font-weight:700; }
 .r-post--related { padding:20px; }
 .r-post--related h4 { padding-bottom:14px; border-bottom:1px solid #edf0f5; color:#172033; font-weight:800; }

@@ -4,6 +4,7 @@ const { successResponse, errorResponse, paginateResponse } = require('../middlew
 const { isRoleAtLeast, canManageUser } = require('../config/permissions');
 // H12: 引入内容审核服务，落库前做敏感词检查
 const aiReview = require('../services/aiReview');
+const { invalidateForumReputation } = require('../services/forumReputation');
 const SOCIAL_CARD_PREFIX = '[[codedog-social-card]]';
 
 async function buildSocialCard(input, userId) {
@@ -283,6 +284,7 @@ async function createComment(req, res) {
             }]
         });
 
+        if (post && isVisible) invalidateForumReputation();
         return successResponse(res, result, '评论成功');
     } catch (error) {
         console.error('Create comment error:', error);
@@ -478,6 +480,7 @@ async function deleteComment(req, res) {
             }, { where: { id: comment.post_id } });
         }
 
+        if (comment.post_id) invalidateForumReputation();
         return successResponse(res, null, '评论已删除');
     } catch (error) {
         console.error('删除评论错误:', error);
@@ -526,6 +529,7 @@ async function likeComment(req, res) {
             });
             await comment.reload();
             const newCount = Math.max(0, comment.like_count || 0);
+            if (comment.post_id) invalidateForumReputation();
             return successResponse(res, { like_count: newCount, liked: false }, '已取消点赞');
         }
 
@@ -548,6 +552,7 @@ async function likeComment(req, res) {
         await comment.reload();
 
         const likeCount = Math.max(0, comment.like_count || 0);
+        if (comment.post_id) invalidateForumReputation();
         return successResponse(res, { like_count: likeCount, liked: true }, '点赞成功');
     } catch (error) {
         console.error('点赞评论错误:', error);
