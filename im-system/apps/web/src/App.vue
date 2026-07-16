@@ -216,18 +216,28 @@ const connectSocket = () => {
 const formatTime = value => value ? new Date(value).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) : ''
 const imageData = message => { try { return JSON.parse(message.content) } catch { return { url: '' } } }
 const syncMobileLayout = () => {
-  mobileLayout.value = window.innerWidth <= 820 || window.screen.width <= 820 || window.matchMedia('(max-device-width: 820px)').matches
+  const widths = [window.innerWidth, window.outerWidth, window.visualViewport?.width, document.documentElement.clientWidth, window.screen?.width, window.screen?.availWidth]
+    .map(Number).filter(value => Number.isFinite(value) && value > 0)
+  const narrowViewport = Math.min(...widths) <= 820
+  const mobileUserAgent = /Android|iPhone|iPad|iPod|Mobile|HarmonyOS/i.test(navigator.userAgent || '')
+  const compactTouchDevice = navigator.maxTouchPoints > 1 && Math.min(Number(screen.width) || 9999, Number(screen.height) || 9999) <= 1024
+  mobileLayout.value = narrowViewport || mobileUserAgent || compactTouchDevice || window.matchMedia('(max-device-width: 820px)').matches
+  document.body.classList.toggle('im-mobile', mobileLayout.value)
+  document.documentElement.style.setProperty('--im-viewport-height', `${Math.round(window.visualViewport?.height || window.innerHeight)}px`)
 }
 onMounted(() => {
   syncMobileLayout()
   window.addEventListener('resize', syncMobileLayout, { passive: true })
   window.addEventListener('orientationchange', syncMobileLayout, { passive: true })
+  window.visualViewport?.addEventListener('resize', syncMobileLayout, { passive: true })
   load().catch(error => { initialLoginError.value = error.message; socketState.value = error.message })
 })
 onUnmounted(() => {
   socket?.close()
   window.removeEventListener('resize', syncMobileLayout)
   window.removeEventListener('orientationchange', syncMobileLayout)
+  window.visualViewport?.removeEventListener('resize', syncMobileLayout)
+  document.body.classList.remove('im-mobile')
 })
 </script>
 <style scoped>
@@ -276,16 +286,16 @@ onUnmounted(() => {
   .modal-mask{padding:12px}.report-dialog{max-height:calc(100dvh - 24px);overflow-y:auto;padding:18px;border-radius:15px}.report-dialog textarea{min-height:100px}
   .toast{top:max(12px,env(safe-area-inset-top));width:calc(100% - 24px);text-align:center}
 }
-.terminal-shell.mobile-layout{display:block;width:100%;height:100vh;height:100dvh;min-height:0;padding:0;overflow:hidden;background:#fff}
+.terminal-shell.mobile-layout{display:block;width:100%;height:100vh;height:100dvh;height:var(--im-viewport-height,100dvh);min-height:0;padding:0;overflow:hidden;background:#fff}
 .mobile-layout .rail,.mobile-layout .channel{width:100%;height:100%;min-height:0;border:0;border-radius:0;box-shadow:none}
-.mobile-layout .rail{display:flex;padding:max(14px,env(safe-area-inset-top)) 12px max(10px,env(safe-area-inset-bottom))}
+.mobile-layout .rail{display:flex;padding:max(14px,env(safe-area-inset-top)) 12px max(10px,env(safe-area-inset-bottom));overscroll-behavior:none}
 .mobile-layout .brand{padding:0 4px 12px}.mobile-layout .brand-mark{width:38px;height:38px;border-radius:11px}.mobile-layout .brand b{font-size:16px}.mobile-layout .brand small{letter-spacing:.08em}.mobile-layout .back-link{min-height:40px;display:inline-flex;align-items:center;font-size:12px}
 .mobile-layout .search{height:46px}.mobile-layout .search button{min-width:48px;min-height:42px}.mobile-layout .rail-title{margin-top:13px}.mobile-layout .rail-title button{width:40px;height:40px}.mobile-layout .conversation{min-height:64px;padding:10px}.mobile-layout .conversation .avatar{width:44px;height:44px}.mobile-layout .conversation-copy b{font-size:15px}.mobile-layout .conversation-copy small{font-size:11px}
 .mobile-layout .account{padding:11px 5px 0;background:#fff}.mobile-layout .account .avatar{width:40px;height:40px}
 .mobile-layout .channel{display:none;grid-template-rows:62px minmax(0,1fr) auto;background:#fafafa}.mobile-layout.mobile-channel-open .rail{display:none}.mobile-layout.mobile-channel-open .channel{display:grid}
 .mobile-layout .channel>header{position:relative;padding:max(9px,env(safe-area-inset-top)) 52px 9px;min-height:62px}.mobile-layout .channel h1{max-width:calc(100vw - 120px);margin:3px 0 0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.mobile-layout .channel header small{font-size:9px}.mobile-layout .signal{position:absolute;right:16px}
 .mobile-layout .mobile-back{position:absolute;left:10px;top:50%;display:grid;place-items:center;width:36px;height:36px;padding:0;transform:translateY(-50%);border:1px solid #e1e4e9;border-radius:50%;background:#fff;color:#555;font-size:29px;line-height:1;cursor:pointer}
-.mobile-layout .timeline{min-height:0;padding:14px 12px 8px}.mobile-layout .welcome .orb{width:64px;height:64px;border-radius:19px;font-size:29px}.mobile-layout .welcome h2{font-size:20px;margin-top:16px}.mobile-layout .welcome p{padding:0 20px;font-size:13px;line-height:1.6}
+.mobile-layout .timeline{min-height:0;padding:14px 12px 8px;overscroll-behavior:contain}.mobile-layout .welcome .orb{width:64px;height:64px;border-radius:19px;font-size:29px}.mobile-layout .welcome h2{font-size:20px;margin-top:16px}.mobile-layout .welcome p{padding:0 20px;font-size:13px;line-height:1.6}
 .mobile-layout .message{max-width:94%;gap:8px;margin-bottom:14px}.mobile-layout .message>.avatar{width:34px;height:34px}.mobile-layout .message-meta{gap:6px;flex-wrap:wrap}.mobile-layout .message p{margin-top:5px;padding:9px 11px;line-height:1.55}.mobile-layout .message-image{max-width:min(72vw,320px);max-height:300px}
 .mobile-layout .composer{margin:6px 8px max(8px,env(safe-area-inset-bottom));border-radius:12px}.mobile-layout .composer textarea{height:56px;padding:10px 11px;font-size:16px}.mobile-layout .composer footer{padding:6px 7px}.mobile-layout .composer footer>span{max-width:92px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.mobile-layout .image-button{min-height:40px;padding:8px 11px}.mobile-layout .composer button{min-height:40px;padding:8px 14px}
 .mobile-layout .intel{display:none}.mobile-layout .modal-mask{padding:12px}.mobile-layout .report-dialog{max-height:calc(100dvh - 24px);overflow-y:auto;padding:18px;border-radius:15px}.mobile-layout .report-dialog textarea{min-height:100px}.mobile-layout .toast{top:max(12px,env(safe-area-inset-top));width:calc(100% - 24px);text-align:center}
