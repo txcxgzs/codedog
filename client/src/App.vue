@@ -230,6 +230,10 @@ const applyPrettyCursor = enabled => {
   document.documentElement.classList.toggle('codedog-pretty-cursor', enabled)
 }
 
+const syncPrettyCursorPreference = event => {
+  applyPrettyCursor(!!event.detail?.enabled)
+}
+
 const askPrettyCursorPreference = async () => {
   if (!window.matchMedia('(hover: hover) and (pointer: fine)').matches) return
   const saved = localStorage.getItem(PRETTY_CURSOR_PREFERENCE)
@@ -479,6 +483,7 @@ onMounted(async () => {
 
   // 监听全局 hCaptcha 校验事件（由 request 拦截器在 403/HCAPTCHA_REQUIRED 时派发）
   window.addEventListener('hcaptcha-required', checkHCaptcha)
+  window.addEventListener('codedog-cursor-preference', syncPrettyCursorPreference)
   window.addEventListener('focus', refreshUnreadWhenVisible)
   document.addEventListener('visibilitychange', refreshUnreadWhenVisible)
 })
@@ -486,6 +491,7 @@ onMounted(async () => {
 // 组件卸载时清理事件监听与定时器，避免内存泄漏
 onUnmounted(() => {
   window.removeEventListener('hcaptcha-required', checkHCaptcha)
+  window.removeEventListener('codedog-cursor-preference', syncPrettyCursorPreference)
   window.removeEventListener('focus', refreshUnreadWhenVisible)
   document.removeEventListener('visibilitychange', refreshUnreadWhenVisible)
   if (hcaptchaCheckInterval) {
@@ -569,11 +575,11 @@ $shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
 
 // 顶栏使用极浅的暖白毛玻璃，与页面两侧淡黄、浅蓝渐变自然衔接。
 .c-navigator--navigator {
-  background: linear-gradient(90deg, rgba(255, 251, 240, .42), rgba(255, 255, 255, .56) 48%, rgba(240, 248, 255, .42));
-  border-bottom: 1px solid rgba(255, 255, 255, .5);
-  box-shadow: 0 7px 26px rgba(43, 58, 86, .055), inset 0 1px 0 rgba(255, 255, 255, .64);
-  -webkit-backdrop-filter: blur(24px) saturate(150%);
-  backdrop-filter: blur(24px) saturate(150%);
+  background: linear-gradient(90deg, rgba(255, 251, 240, .18), rgba(255, 255, 255, .25) 48%, rgba(240, 248, 255, .18));
+  border-bottom: 1px solid rgba(255, 255, 255, .38);
+  box-shadow: 0 7px 24px rgba(43, 58, 86, .04), inset 0 1px 0 rgba(255, 255, 255, .5);
+  -webkit-backdrop-filter: blur(18px) saturate(135%);
+  backdrop-filter: blur(18px) saturate(135%);
   position: sticky;
   top: 0;
   z-index: 1000;
@@ -752,8 +758,11 @@ $shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
     padding: 0 20px;
     border: 1px solid rgba(255,255,255,.78) !important;
     border-radius: 999px;
-    color: #594000;
-    font-weight: 750;
+    color: #151515;
+    font-family: "PingFang SC", "Microsoft YaHei UI", "Noto Sans SC", system-ui, sans-serif;
+    font-size: 14px;
+    font-weight: 900;
+    letter-spacing: .02em;
     background: linear-gradient(180deg, rgba(255,255,255,.4), rgba(255,214,93,.24) 54%, rgba(255,189,36,.3)) !important;
     box-shadow:
       0 9px 18px rgba(141,102,0,.18),
@@ -795,7 +804,7 @@ $shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
     }
 
     &:hover {
-      color: #4e3700;
+      color: #050505;
       background: linear-gradient(180deg, rgba(255,255,255,.34), rgba(255,211,76,.18) 55%, rgba(255,184,19,.24)) !important;
       box-shadow: 0 12px 24px rgba(141,102,0,.2), 0 3px 7px rgba(52,42,10,.12), inset 0 1px 2px rgba(255,255,255,1), inset 0 -2px 5px rgba(221,157,0,.1);
       -webkit-backdrop-filter: blur(5px) saturate(175%);
@@ -972,13 +981,13 @@ $shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
 html.codedog-pretty-cursor,
 html.codedog-pretty-cursor body,
 html.codedog-pretty-cursor .r-index--root_container {
-  cursor: url('/cursors/pretty-pointer.svg') 7 4, default;
+  cursor: url('/cursors/stmc-pointer.cur'), default;
 }
 html.codedog-pretty-cursor :is(a, button, [role='button'], .el-button, .el-dropdown, .el-menu-item, .el-switch, .el-checkbox, .el-radio, .el-select) {
-  cursor: url('/cursors/pretty-hand.svg') 19 4, pointer !important;
+  cursor: url('/cursors/stmc-hand.cur'), pointer !important;
 }
 html.codedog-pretty-cursor :is(input, textarea, [contenteditable='true'], .el-input__inner, .el-textarea__inner) {
-  cursor: text !important;
+  cursor: url('/cursors/stmc-beam.cur'), text !important;
 }
 html.codedog-pretty-cursor :is(button:disabled, [aria-disabled='true'], .is-disabled) {
   cursor: not-allowed !important;

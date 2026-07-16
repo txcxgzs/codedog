@@ -72,6 +72,17 @@
               <el-form-item label="收藏隐私">
                 <el-switch v-model="form.show_favorites" active-text="向其他用户展示我的收藏夹" inactive-text="仅自己可见" />
               </el-form-item>
+              <el-form-item label="鼠标样式">
+                <div class="r-profile--cursor_setting">
+                  <el-switch
+                    v-model="prettyCursorEnabled"
+                    active-text="使用 STMC 美化鼠标"
+                    inactive-text="使用系统默认鼠标"
+                    @change="changeCursorPreference"
+                  />
+                  <small>仅在使用鼠标的电脑设备上生效，可随时切回系统默认样式。</small>
+                </div>
+              </el-form-item>
               <transition name="r-profile--save">
                 <el-form-item v-if="isProfileDirty" class="r-profile--save_row">
                   <div class="r-profile--save_hint">检测到资料有改动</div>
@@ -168,6 +179,16 @@ const avatarInput = ref(null)
 const avatarLoading = ref(false)
 const coverInput = ref(null)
 const coverUploading = ref(false)
+const PRETTY_CURSOR_PREFERENCE = 'codedog_pretty_cursor_choice_v1'
+const prettyCursorEnabled = ref(localStorage.getItem(PRETTY_CURSOR_PREFERENCE) === 'enabled')
+
+const changeCursorPreference = enabled => {
+  const value = enabled ? 'enabled' : 'disabled'
+  localStorage.setItem(PRETTY_CURSOR_PREFERENCE, value)
+  document.documentElement.classList.toggle('codedog-pretty-cursor', enabled)
+  window.dispatchEvent(new CustomEvent('codedog-cursor-preference', { detail: { enabled } }))
+  ElMessage.success(enabled ? '已启用 STMC 美化鼠标' : '已恢复系统默认鼠标')
+}
 
 const viewPublicProfile = () => {
   const codemaoId = userStore.user?.codemao_user_id
@@ -709,6 +730,8 @@ $border-color: #eee;
 .r-profile--form :deep(.el-input__wrapper.is-focus),
 .r-profile--form :deep(.el-textarea__inner:focus) { box-shadow: 0 0 0 2px rgba(254,196,51,.62) inset; }
 .r-profile--form :deep(.is-disabled .el-input__wrapper) { background: #f4f6fa; }
+.r-profile--cursor_setting { display:flex; flex-direction:column; align-items:flex-start; gap:7px; }
+.r-profile--cursor_setting small { color:#8a94a6; line-height:1.55; }
 .r-profile--cover_preview { aspect-ratio: 3.4 / 1; border-radius: 18px; box-shadow: inset 0 0 0 1px rgba(255,255,255,.2); }
 
 .r-profile--save_row {
