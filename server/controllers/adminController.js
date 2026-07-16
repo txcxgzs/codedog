@@ -1094,7 +1094,7 @@ async function getWorks(req, res) {
                 model: User,
                 as: 'author',
                 attributes: ['id', 'username', 'nickname', 'avatar']
-            }, { model: ForumBoard, as: 'board', attributes: ['id', 'slug', 'name', 'icon', 'color'] }],
+            }],
             order: [['created_at', 'DESC']],
             limit: pageSize,
             offset

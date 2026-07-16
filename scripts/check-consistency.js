@@ -137,6 +137,11 @@ check(adminController.includes('canManageUser(operatorRole, user.role)'), 'imper
 check(adminController.includes('function canManageExistingUser') && adminController.includes('VALID_USER_STATUSES'), 'admin user management should reject same-or-higher targets and invalid statuses.');
 check(adminController.includes('redactConfigDetails'), 'system config logging should redact secrets.');
 check(adminController.includes('targetCount = Math.min') && adminController.includes('targetLimit = Math.min'), 'crawler admin endpoints should clamp requested limits.');
+const adminWorksStart = adminController.indexOf('async function getWorks(req, res)');
+const adminWorksEnd = adminController.indexOf('async function updateWork(req, res)', adminWorksStart);
+const adminWorksSection = adminController.slice(adminWorksStart, adminWorksEnd);
+check(adminWorksStart >= 0 && adminWorksEnd > adminWorksStart, 'admin work list controller section should be discoverable.');
+check(!adminWorksSection.includes('ForumBoard'), 'admin Work queries must not include ForumBoard, which is only associated with Post.');
 
 const geetestService = read('server/services/geetestService.js');
 check(geetestService.includes('misconfigured') && geetestService.includes('success: false'), 'enabled Geetest with incomplete config should fail closed.');
