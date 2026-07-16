@@ -18,6 +18,7 @@
         <span :class="{ active: activeType === 'like' }" @click="changeType('like')">点赞</span>
         <span :class="{ active: activeType === 'comment' }" @click="changeType('comment')">评论</span>
         <span :class="{ active: activeType === 'reply' }" @click="changeType('reply')">回复</span>
+        <span :class="{ active: activeType === 'mention' }" @click="changeType('mention')">提及</span>
         <span :class="{ active: activeType === 'follow' }" @click="changeType('follow')">关注</span>
         <span :class="{ active: activeType === 'system' }" @click="changeType('system')">系统</span>
       </div>
@@ -277,7 +278,8 @@ $text-muted: #999;
         background-size: contain;
       }
       
-      &.r-notification--icon_reply {
+      &.r-notification--icon_reply,
+      &.r-notification--icon_mention {
         background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%2367C23A'%3E%3Cpath d='M10 9V5l-7 7 7 7v-4.1c5 0 8.5 1.6 11 5.1-1-5-4-10-11-11z'/%3E%3C/svg%3E") no-repeat center;
         background-size: contain;
       }

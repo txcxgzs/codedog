@@ -240,7 +240,7 @@ async function main() {
         `status=${moderatorBeforeReply.status}; replies=${initialReplyCount}; score=${moderatorBeforeReply.json?.data?.contribution_score}`
     );
     const reputationReply = await http('/api/comments', {
-        method: 'POST', headers: auth(moderatorToken), body: { post_id: mergeTarget.id, content: 'reputation cache invalidation reply' }
+        method: 'POST', headers: auth(moderatorToken), body: { post_id: mergeTarget.id, content: `@${adminUser.username} @${adminUser.username} reputation cache invalidation reply` }
     });
     const moderatorAfterReply = await http(`/api/posts/forum/users/${moderatorUser.id}/reputation`);
     record(
@@ -248,6 +248,8 @@ async function main() {
         reputationReply.status === 200 && Number(moderatorAfterReply.json?.data?.replies_count) === initialReplyCount + 1,
         `create=${reputationReply.status}; error=${reputationReply.json?.msg || reputationReply.text}; before=${initialReplyCount}; after=${moderatorAfterReply.json?.data?.replies_count}`
     );
+    const mentionNotifications = await Notification.count({ where: { user_id: adminUser.id, sender_id: moderatorUser.id, type: 'mention', related_id: mergeTarget.id, related_type: 'post' } });
+    record('forum mentions notify each active user only once', reputationReply.status === 200 && mentionNotifications === 1, `create=${reputationReply.status}; notifications=${mentionNotifications}`);
     const invalidReputationUser = await http('/api/posts/forum/users/not-a-number/reputation');
     record('forum reputation rejects invalid user ids without a server error', invalidReputationUser.status === 400, `status=${invalidReputationUser.status}`);
 

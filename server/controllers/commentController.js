@@ -5,7 +5,24 @@ const { isRoleAtLeast, canManageUser } = require('../config/permissions');
 // H12: 引入内容审核服务，落库前做敏感词检查
 const aiReview = require('../services/aiReview');
 const { invalidateForumReputation } = require('../services/forumReputation');
+const { Op } = require('sequelize');
 const SOCIAL_CARD_PREFIX = '[[codedog-social-card]]';
+
+function extractMentionUsernames(content) {
+    const usernames = [];
+    const seen = new Set();
+    const pattern = /(^|[\s，。！？、(（])@([A-Za-z0-9_.-]{2,50})/g;
+    for (const match of String(content || '').matchAll(pattern)) {
+        const username = match[2];
+        const key = username.toLowerCase();
+        if (!seen.has(key)) {
+            seen.add(key);
+            usernames.push(username);
+        }
+        if (usernames.length >= 5) break;
+    }
+    return usernames;
+}
 
 async function buildSocialCard(input, userId) {
     if (!input) return null;
@@ -251,9 +268,31 @@ async function createComment(req, res) {
                 }
                 if (post) {
                     const excluded = new Set([String(DbAdapter.getId(req.user)), String(post.user_id || ''), String(replyToUserId || '')]);
+                    const mentionUsernames = extractMentionUsernames(rawContent);
+                    if (mentionUsernames.length) {
+                        const mentionedUsers = await User.findAll({
+                            where: { username: { [Op.in]: mentionUsernames }, status: 'active' },
+                            attributes: ['id']
+                        });
+                        for (const mentionedUser of mentionedUsers) {
+                            const mentionedId = String(DbAdapter.getId(mentionedUser));
+                            if (excluded.has(mentionedId)) continue;
+                            excluded.add(mentionedId);
+                            notificationPromises.push(DbAdapter.create(Notification, {
+                                user_id: DbAdapter.getId(mentionedUser),
+                                type: 'mention',
+                                title: '在论坛回复中提到了你',
+                                content: notificationContent.substring(0, 100),
+                                related_id: codemaoPostId,
+                                related_type: 'post',
+                                sender_id: DbAdapter.getId(req.user)
+                            }));
+                        }
+                    }
                     const subscribers = await PostSubscription.findAll({ where: { post_id: localPostId, notify: true }, attributes: ['user_id'] });
                     for (const subscription of subscribers) {
                         if (excluded.has(String(subscription.user_id))) continue;
+                        excluded.add(String(subscription.user_id));
                         notificationPromises.push(DbAdapter.create(Notification, {
                             user_id: subscription.user_id,
                             type: 'reply',

@@ -111,6 +111,7 @@
               <el-button text size="small" @click="replyToCommentId = null; replyToUserId = null; commentContent = ''">取消回复</el-button>
             </div>
             <el-input v-model="commentContent" type="textarea" :rows="3" placeholder="写下你的评论..." />
+            <small class="r-post--mention_hint">输入 <b>@用户名</b> 可提及对方，每条回复最多通知 5 人</small>
             <SocialCardPicker :selected="selectedSocialCard" @select="selectSocialCard" @clear="selectedSocialCard = null" />
             <el-button type="primary" :loading="commentLoading" @click="submitComment">发表评论</el-button>
           </div>
@@ -1535,6 +1536,7 @@ $border-color: #eee;
 .r-post--comment_pagination { justify-content:center; margin-top:22px; }
 .r-post--comment_form { padding:16px; border:1px solid #e7ebf2; border-radius:16px; background:linear-gradient(145deg,#fbfcff,#fffaf0); }
 .r-post--comment_form :deep(.el-textarea__inner) { min-height:92px!important; padding:14px; border:0; border-radius:12px!important; background:#fff; box-shadow:0 0 0 1px #e2e7ef inset; }
+.r-post--mention_hint { display:block; margin:8px 2px 2px; color:#98a2b3; font-size:11px; }.r-post--mention_hint b{color:#a66e00}
 .r-post--comment_form .el-button { height:38px; padding:0 17px; border-radius:11px!important; font-weight:700; }
 .r-post--board_meta { display:flex; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:12px; color:#7c8799; font-size:13px; }
 .r-post--board_meta a { color:#9a6a00; text-decoration:none; }
