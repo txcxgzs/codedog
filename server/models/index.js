@@ -131,6 +131,7 @@ const Post = sequelize.define('Post', {
     is_locked: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
     slow_mode_seconds: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
     accepted_comment_id: { type: DataTypes.INTEGER, allowNull: true },
+    merged_into_post_id: { type: DataTypes.INTEGER, allowNull: true },
     cover: { type: DataTypes.STRING(500) },
     // 中·绕过隐藏: 区分 AI 隐藏 vs 管理员手动隐藏。
     // 'ai_review' = AI 审核触发自动隐藏,编辑后审核通过可自动恢复 published;
@@ -190,6 +191,17 @@ const ForumBoardSubscription = sequelize.define('ForumBoardSubscription', {
     board_id: { type: DataTypes.INTEGER, allowNull: false },
     user_id: { type: DataTypes.INTEGER, allowNull: false }
 }, Object.assign({ tableName: 'forum_board_subscriptions', indexes: [{ unique: true, fields: ['board_id', 'user_id'] }, { fields: ['user_id'] }] }, TIMESTAMP_OPTS));
+
+const ForumBoardModerator = sequelize.define('ForumBoardModerator', {
+    id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+    board_id: { type: DataTypes.INTEGER, allowNull: false },
+    user_id: { type: DataTypes.INTEGER, allowNull: false },
+    assigned_by: { type: DataTypes.INTEGER, allowNull: true },
+    note: { type: DataTypes.STRING(300), allowNull: false, defaultValue: '' }
+}, Object.assign({
+    tableName: 'forum_board_moderators',
+    indexes: [{ unique: true, fields: ['board_id', 'user_id'] }, { fields: ['user_id'] }]
+}, TIMESTAMP_OPTS));
 
 const PostSubscription = sequelize.define('PostSubscription', {
     id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
@@ -592,6 +604,11 @@ ForumBoardSubscription.belongsTo(ForumBoard, { foreignKey: 'board_id', as: 'boar
 ForumBoardSubscription.belongsTo(User, { foreignKey: 'user_id', as: 'user', onDelete: 'CASCADE' });
 ForumBoard.hasMany(ForumBoardSubscription, { foreignKey: 'board_id', as: 'subscriptions', onDelete: 'CASCADE' });
 User.hasMany(ForumBoardSubscription, { foreignKey: 'user_id', as: 'forum_board_subscriptions', onDelete: 'CASCADE' });
+ForumBoardModerator.belongsTo(ForumBoard, { foreignKey: 'board_id', as: 'board', onDelete: 'CASCADE' });
+ForumBoardModerator.belongsTo(User, { foreignKey: 'user_id', as: 'user', onDelete: 'CASCADE' });
+ForumBoardModerator.belongsTo(User, { foreignKey: 'assigned_by', as: 'assigner', constraints: false });
+ForumBoard.hasMany(ForumBoardModerator, { foreignKey: 'board_id', as: 'moderators', onDelete: 'CASCADE' });
+User.hasMany(ForumBoardModerator, { foreignKey: 'user_id', as: 'moderated_forum_boards', onDelete: 'CASCADE' });
 PostSubscription.belongsTo(Post, { foreignKey: 'post_id', as: 'post', onDelete: 'CASCADE' });
 PostSubscription.belongsTo(User, { foreignKey: 'user_id', as: 'user', onDelete: 'CASCADE' });
 Post.hasMany(PostSubscription, { foreignKey: 'post_id', as: 'subscriptions', onDelete: 'CASCADE' });
@@ -806,7 +823,7 @@ Comment.belongsTo(Comment, { foreignKey: 'parent_id', as: 'parent' });
 
 module.exports = {
     sequelize,
-    User, Work, Comment, Post, ForumBoard, ForumBoardSubscription, PostSubscription, PostDraft, PostRevision, ForumModerationLog, Studio, StudioMember, StudioWork, StudioPointLog,
+    User, Work, Comment, Post, ForumBoard, ForumBoardSubscription, ForumBoardModerator, PostSubscription, PostDraft, PostRevision, ForumModerationLog, Studio, StudioMember, StudioWork, StudioPointLog,
     Report, ReportAuditLog, DeveloperApp, DeveloperAppAuditLog, OAuthAuthCode, OAuthAccessToken, OAuthRefreshToken, UserAppAuthorization, Like, Favorite, Follow, Notification, Announcement, Banner, IpBan, CaptchaStats,
     SystemConfig, OperationLog, RolePermission, Statistics, SensitiveWord
 };

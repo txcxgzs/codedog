@@ -183,6 +183,26 @@ export const adminApi = {
   deleteForumBoard(boardId) {
     return request.delete(`/admin/forum/boards/${boardId}`)
   },
+
+  getForumBoardModerators(boardId) {
+    return request.get(`/admin/forum/boards/${boardId}/moderators`)
+  },
+
+  assignForumBoardModerator(boardId, data) {
+    return request.post(`/admin/forum/boards/${boardId}/moderators`, data)
+  },
+
+  removeForumBoardModerator(boardId, userId) {
+    return request.delete(`/admin/forum/boards/${boardId}/moderators/${userId}`)
+  },
+
+  movePost(postId, boardId, reason) {
+    return request.post(`/admin/posts/${postId}/move`, { board_id: boardId, reason })
+  },
+
+  mergePosts(postId, targetPostId, reason) {
+    return request.post(`/admin/posts/${postId}/merge`, { target_post_id: targetPostId, reason })
+  },
   
   setPostEssence(postId, isEssence, reason) {
     return request.put(`/admin/posts/${postId}/essence`, { isEssence, reason })

@@ -17,7 +17,7 @@ const BATCH_SIZE = 500;
 // 父表在前、关联/审计/token 表在后。写入按此顺序，清空时反向执行。
 // 该清单同时用于覆盖检查；models/index.js 新增模型后未加入这里会直接拒绝迁移。
 const MODEL_ORDER = [
-    'User', 'Work', 'ForumBoard', 'Post', 'ForumBoardSubscription', 'PostSubscription', 'PostDraft',
+    'User', 'Work', 'ForumBoard', 'Post', 'ForumBoardSubscription', 'ForumBoardModerator', 'PostSubscription', 'PostDraft',
     'PostRevision', 'ForumModerationLog',
     'Comment', 'Notification', 'SystemConfig', 'Banner',
     'Announcement', 'IpBan', 'Report', 'Studio', 'StudioMember', 'StudioWork',

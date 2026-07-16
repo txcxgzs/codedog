@@ -2,7 +2,7 @@ const crypto = require('crypto');
 const {
     sequelize, User, Work, Post, Comment, Studio, StudioMember, StudioWork, StudioPointLog,
     Report, ReportAuditLog, Notification, Favorite, Like, Follow, ForumBoardSubscription,
-    PostSubscription, PostDraft, PostRevision, ForumModerationLog, ForumBoard, OperationLog, IpBan, Announcement
+    PostSubscription, PostDraft, PostRevision, ForumModerationLog, ForumBoard, ForumBoardModerator, OperationLog, IpBan, Announcement
 } = require('../server/models');
 const { Op } = sequelize.constructor;
 
@@ -99,6 +99,7 @@ async function cleanup() {
     await ForumBoardSubscription.destroy({ where: { user_id: { [Op.in]: userIds } } });
     await PostSubscription.destroy({ where: { user_id: { [Op.in]: userIds } } });
     await PostDraft.destroy({ where: { user_id: { [Op.in]: userIds } } });
+    await ForumBoardModerator.destroy({ where: { user_id: { [Op.in]: userIds } } });
     await ForumModerationLog.destroy({ where: { post_id: created.postIds } });
     await PostRevision.destroy({ where: { post_id: created.postIds } });
     await OperationLog.destroy({ where: { user_id: { [Op.in]: userIds } } });
@@ -121,11 +122,13 @@ async function main() {
     const activeUser = await createUser('user');
     const disabledUser = await createUser('user', 'disabled');
     const adminUser = await createUser('admin');
+    const moderatorUser = await createUser('moderator');
     const superadminUser = await createUser('superadmin');
 
     const activeTokenClaimingSuperadmin = signJwt({ id: activeUser.id, username: activeUser.username, role: 'superadmin' });
     const disabledToken = signJwt({ id: disabledUser.id, username: disabledUser.username, role: 'user' });
     const adminToken = signJwt({ id: adminUser.id, username: adminUser.username, role: 'admin' });
+    const moderatorToken = signJwt({ id: moderatorUser.id, username: moderatorUser.username, role: 'moderator' });
     const superadminToken = signJwt({ id: superadminUser.id, username: superadminUser.username, role: 'superadmin' });
 
     const draftSave = await http('/api/posts/drafts/current', {
@@ -176,6 +179,51 @@ async function main() {
     const rolledBackPost = await Post.findByPk(forumPostId);
     const rollbackLog = await ForumModerationLog.findOne({ where: { post_id: forumPostId, action: 'restore_revision' } });
     record('forum revision rollback is audited', rollback.status === 200 && rolledBackPost?.title === `${marker}_forum_original` && Boolean(rollbackLog), `status=${rollback.status}; title=${rolledBackPost?.title}`);
+
+    const targetBoardCreate = await http('/api/admin/forum/boards', {
+        method: 'POST', headers: auth(superadminToken),
+        body: { name: 'Merge target board', slug: `merge-${Date.now()}`, description: 'test', icon: 'M', color: '#fec433', allow_post_roles: ['user', 'moderator', 'superadmin'] }
+    });
+    const targetBoardId = targetBoardCreate.json?.data?.id;
+    if (targetBoardId) created.boardIds.push(targetBoardId);
+    const mergeTarget = await Post.create({ title: `${marker}_merge_target`, content: 'target', user_id: activeUser.id, status: 'published', board_id: targetBoardId, category: 'discussion' });
+    created.postIds.push(mergeTarget.id);
+    await Comment.create({ content: 'source reply', user_id: moderatorUser.id, post_id: forumPostId, status: 'active' });
+    await Like.create({ user_id: moderatorUser.id, post_id: forumPostId });
+    await Favorite.create({ user_id: moderatorUser.id, post_id: forumPostId });
+    await PostSubscription.create({ user_id: moderatorUser.id, post_id: forumPostId, notify: true });
+
+    const unassignedMerge = await http(`/api/admin/posts/${forumPostId}/merge`, {
+        method: 'POST', headers: auth(moderatorToken), body: { target_post_id: mergeTarget.id, reason: 'unassigned board test' }
+    });
+    record('unassigned moderator cannot merge forum topics', unassignedMerge.status === 403, `status=${unassignedMerge.status}`);
+
+    const assignSource = await http(`/api/admin/forum/boards/${boardCreate.json?.data?.id}/moderators`, {
+        method: 'POST', headers: auth(superadminToken), body: { user_id: moderatorUser.id, note: 'security test source' }
+    });
+    const assignTarget = await http(`/api/admin/forum/boards/${targetBoardId}/moderators`, {
+        method: 'POST', headers: auth(superadminToken), body: { user_id: moderatorUser.id, note: 'security test target' }
+    });
+    record('admin can assign scoped forum moderators', assignSource.status === 200 && assignTarget.status === 200, `source=${assignSource.status}; target=${assignTarget.status}`);
+
+    const moveResult = await http(`/api/admin/posts/${forumPostId}/move`, {
+        method: 'POST', headers: auth(moderatorToken), body: { board_id: targetBoardId, reason: 'move topic test' }
+    });
+    const movedPost = await Post.findByPk(forumPostId);
+    record('scoped moderator can move a topic with audit reason', moveResult.status === 200 && Number(movedPost?.board_id) === Number(targetBoardId), `status=${moveResult.status}; board=${movedPost?.board_id}`);
+
+    const mergeResult = await http(`/api/admin/posts/${forumPostId}/merge`, {
+        method: 'POST', headers: auth(moderatorToken), body: { target_post_id: mergeTarget.id, reason: 'duplicate topic merge test' }
+    });
+    const [mergedCommentCount, migratedLike, migratedFavorite, migratedSubscription] = await Promise.all([
+        Comment.count({ where: { post_id: mergeTarget.id, content: 'source reply' } }),
+        Like.findOne({ where: { user_id: moderatorUser.id, post_id: mergeTarget.id } }),
+        Favorite.findOne({ where: { user_id: moderatorUser.id, post_id: mergeTarget.id } }),
+        PostSubscription.findOne({ where: { user_id: moderatorUser.id, post_id: mergeTarget.id } })
+    ]);
+    record('scoped moderator can safely merge topic data', mergeResult.status === 200 && mergedCommentCount === 1 && Boolean(migratedLike && migratedFavorite && migratedSubscription), `status=${mergeResult.status}; comments=${mergedCommentCount}`);
+    const mergedRedirect = await http(`/api/posts/${forumPostId}`);
+    record('merged topic keeps a public redirect target', mergedRedirect.status === 200 && Number(mergedRedirect.json?.data?.merged_into_post_id) === Number(mergeTarget.id), `status=${mergedRedirect.status}; target=${mergedRedirect.json?.data?.merged_into_post_id}`);
 
     const disabledMe = await http('/api/users/me', { headers: auth(disabledToken) });
     record('disabled user token is rejected', disabledMe.status === 403, `status=${disabledMe.status}`);

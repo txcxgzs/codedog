@@ -49,7 +49,21 @@
         <el-table-column prop="post_count" label="帖子" width="70" />
         <el-table-column prop="sort_order" label="排序" width="70" />
         <el-table-column label="状态" width="90"><template #default="{ row }"><el-tag :type="row.status === 'active' ? 'success' : 'info'">{{ row.status === 'active' ? '启用' : '停用' }}</el-tag></template></el-table-column>
-        <el-table-column label="操作" width="150"><template #default="{ row }"><el-button size="small" @click="openBoardEditor(row)">编辑</el-button><el-button size="small" type="danger" plain @click="removeBoard(row)">删除</el-button></template></el-table-column>
+        <el-table-column label="操作" width="220"><template #default="{ row }"><el-button size="small" @click="openModeratorManager(row)">版主</el-button><el-button size="small" @click="openBoardEditor(row)">编辑</el-button><el-button size="small" type="danger" plain @click="removeBoard(row)">删除</el-button></template></el-table-column>
+      </el-table>
+    </el-dialog>
+
+    <el-dialog v-model="moderatorVisible" :title="`${moderatorBoard?.name || ''} · 分区版主`" width="620px" append-to-body>
+      <el-alert title="分区版主只能管理被分配板块中的主题；管理员和超级管理员不受分区限制。" type="info" :closable="false" style="margin-bottom:14px" />
+      <div class="r-admin-posts--moderator_add">
+        <el-input-number v-model="moderatorForm.user_id" :min="1" :controls="false" placeholder="版主用户 ID" />
+        <el-input v-model="moderatorForm.note" maxlength="300" placeholder="分配备注（可选）" />
+        <el-button type="primary" :loading="moderatorSaving" @click="assignModerator">添加版主</el-button>
+      </div>
+      <el-table :data="moderators" v-loading="moderatorsLoading" border>
+        <el-table-column label="用户" min-width="180"><template #default="{ row }"><b>{{ row.user?.nickname || row.user?.username }}</b><div class="r-admin-posts--board_slug">ID {{ row.user_id }} · {{ row.user?.role }}</div></template></el-table-column>
+        <el-table-column prop="note" label="备注" min-width="180" />
+        <el-table-column label="操作" width="90"><template #default="{ row }"><el-button size="small" type="danger" plain @click="removeModerator(row)">移除</el-button></template></el-table-column>
       </el-table>
     </el-dialog>
 
@@ -113,6 +127,8 @@
         <div style="display: flex; justify-content: space-between; gap: 8px; margin-top: 16px;">
           <el-button type="danger" @click="handleDeletePost">删除帖子</el-button>
           <div style="display: flex; gap: 8px;">
+            <el-button @click="openMovePost">移动主题</el-button>
+            <el-button type="warning" plain @click="openMergePost">合并主题</el-button>
             <el-button @click="openPostHistory">历史与日志</el-button>
             <el-button @click="detailVisible = false">取消</el-button>
             <el-button type="primary" @click="handleSavePost">保存修改</el-button>
@@ -165,6 +181,12 @@ const boardsLoading = ref(false)
 const boardManagerVisible = ref(false)
 const boardEditorVisible = ref(false)
 const boardSaving = ref(false)
+const moderatorVisible = ref(false)
+const moderatorBoard = ref(null)
+const moderators = ref([])
+const moderatorsLoading = ref(false)
+const moderatorSaving = ref(false)
+const moderatorForm = reactive({ user_id: null, note: '' })
 const roleOptions = [
   { value: 'user', label: '普通用户' }, { value: 'reviewer', label: '审核员' },
   { value: 'moderator', label: '版主' }, { value: 'admin', label: '管理员' }, { value: 'superadmin', label: '超级管理员' }
@@ -240,6 +262,47 @@ const removeBoard = async board => {
   } catch (e) { if (e !== 'cancel') ElMessage.error(e.response?.data?.msg || '操作失败') }
 }
 
+const loadModerators = async () => {
+  if (!moderatorBoard.value) return
+  moderatorsLoading.value = true
+  try {
+    const res = await adminApi.getForumBoardModerators(moderatorBoard.value.id)
+    if (res.code === 200) moderators.value = res.data || []
+  } catch (e) { ElMessage.error(e.response?.data?.msg || '获取分区版主失败') }
+  finally { moderatorsLoading.value = false }
+}
+
+const openModeratorManager = async board => {
+  moderatorBoard.value = board
+  moderatorForm.user_id = null
+  moderatorForm.note = ''
+  moderatorVisible.value = true
+  await loadModerators()
+}
+
+const assignModerator = async () => {
+  if (!moderatorForm.user_id) return ElMessage.warning('请输入版主用户 ID')
+  moderatorSaving.value = true
+  try {
+    const res = await adminApi.assignForumBoardModerator(moderatorBoard.value.id, { user_id: moderatorForm.user_id, note: moderatorForm.note.trim() })
+    if (res.code === 200) {
+      ElMessage.success(res.msg || '分配成功')
+      moderatorForm.user_id = null
+      moderatorForm.note = ''
+      await loadModerators()
+    }
+  } catch (e) { ElMessage.error(e.response?.data?.msg || '分配版主失败') }
+  finally { moderatorSaving.value = false }
+}
+
+const removeModerator = async assignment => {
+  try {
+    await ElMessageBox.confirm(`确定移除“${assignment.user?.nickname || assignment.user?.username}”的分区版主权限吗？`, '移除版主', { type: 'warning' })
+    const res = await adminApi.removeForumBoardModerator(moderatorBoard.value.id, assignment.user_id)
+    if (res.code === 200) { ElMessage.success(res.msg || '已移除'); await loadModerators() }
+  } catch (e) { if (e !== 'cancel') ElMessage.error(e.response?.data?.msg || '移除失败') }
+}
+
 const openDetail = async (post) => {
   if (!boards.value.length) await loadBoards()
   editingPost.value = post
@@ -275,6 +338,25 @@ const handleSavePost = async () => {
       ElMessage.error(res.msg || '保存失败')
     }
   } catch (e) { ElMessage.error('保存失败') }
+}
+
+const openMovePost = async () => {
+  try {
+    const { value: boardId } = await ElMessageBox.prompt('请输入目标板块 ID', '移动主题', { inputPattern: /^\d+$/, inputErrorMessage: '请输入有效板块 ID' })
+    const { value: reason } = await ElMessageBox.prompt('请说明移动原因，该说明会写入版务日志', '移动主题', { inputPattern: /^.{3,500}$/, inputErrorMessage: '原因需要 3-500 个字' })
+    const res = await adminApi.movePost(editingPost.value.id, Number(boardId), reason.trim())
+    if (res.code === 200) { ElMessage.success(res.msg || '主题已移动'); detailVisible.value = false; await fetchPosts() }
+  } catch (e) { if (!['cancel', 'close'].includes(e)) ElMessage.error(e.response?.data?.msg || '移动主题失败') }
+}
+
+const openMergePost = async () => {
+  try {
+    const { value: targetId } = await ElMessageBox.prompt('源主题的回复、点赞、收藏和订阅将迁移到目标主题，源主题会保留合并跳转。请输入目标帖子 ID。', '合并主题', { inputPattern: /^\d+$/, inputErrorMessage: '请输入有效帖子 ID', type: 'warning' })
+    const { value: reason } = await ElMessageBox.prompt('请说明合并原因，该操作会完整写入审计日志', '确认合并主题', { inputPattern: /^.{3,500}$/, inputErrorMessage: '原因需要 3-500 个字', type: 'warning' })
+    await ElMessageBox.confirm(`确定将帖子 #${editingPost.value.id} 合并到 #${targetId} 吗？此操作不可直接撤销。`, '最终确认', { type: 'warning', confirmButtonText: '确认合并' })
+    const res = await adminApi.mergePosts(editingPost.value.id, Number(targetId), reason.trim())
+    if (res.code === 200) { ElMessage.success(res.msg || '主题已合并'); detailVisible.value = false; await fetchPosts() }
+  } catch (e) { if (!['cancel', 'close'].includes(e)) ElMessage.error(e.response?.data?.msg || '合并主题失败') }
 }
 
 const openPostHistory = async () => {
@@ -335,4 +417,5 @@ onMounted(fetchPosts)
 .r-admin-posts--history_card > div span:last-child { margin-left:auto; color:#7c8799; font-size:12px; }
 .r-admin-posts--history_card strong { display:block; margin:9px 0 4px; color:#273247; }
 .r-admin-posts--history_card p { margin:5px 0 10px; color:#667085; font-size:13px; }
+.r-admin-posts--moderator_add { display:grid; grid-template-columns:140px minmax(180px,1fr) auto; gap:10px; margin-bottom:14px; }
 </style>

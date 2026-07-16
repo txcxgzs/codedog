@@ -409,6 +409,13 @@ async function getPostDetail(req, res) {
         if (!post) {
             return errorResponse(res, '帖子不存在', 404);
         }
+
+        if (post.status === 'deleted' && post.merged_into_post_id) {
+            return successResponse(res, {
+                merged: true,
+                merged_into_post_id: Number(post.merged_into_post_id)
+            }, '该主题已合并，正在跳转到目标主题');
+        }
         
         if (post.status !== 'published') {
             return errorResponse(res, '帖子不存在', 404);

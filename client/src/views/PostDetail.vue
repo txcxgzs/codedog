@@ -365,6 +365,11 @@ const fetchPost = async () => {
   try {
     const res = await postApi.getPost(route.params.id, { page: commentPage.value, pageSize: commentPageSize.value, comment_sort: commentSort.value })
     if (res.code === 200) {
+      if (res.data?.merged && res.data?.merged_into_post_id) {
+        ElMessage.info('该主题已合并，正在跳转到目标主题')
+        await router.replace(`/post/${res.data.merged_into_post_id}`)
+        return
+      }
       post.value = res.data
       liked.value = !!res.data.liked
       subscribed.value = !!res.data.subscribed

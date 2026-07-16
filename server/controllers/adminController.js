@@ -2,7 +2,7 @@
  * 后台管理控制器
  */
 
-const { User, Work, Comment, Post, ForumBoard, PostDraft, PostRevision, ForumModerationLog, Favorite, Follow, Banner, Report, ReportAuditLog, IpBan, Notification, Announcement, SystemConfig, OperationLog, SensitiveWord, RolePermission, CaptchaStats, Statistics, Studio, StudioMember, StudioWork, StudioPointLog, Like, sequelize } = require('../models');
+const { User, Work, Comment, Post, ForumBoard, ForumBoardModerator, PostSubscription, PostDraft, PostRevision, ForumModerationLog, Favorite, Follow, Banner, Report, ReportAuditLog, IpBan, Notification, Announcement, SystemConfig, OperationLog, SensitiveWord, RolePermission, CaptchaStats, Statistics, Studio, StudioMember, StudioWork, StudioPointLog, Like, sequelize } = require('../models');
 const { successResponse, errorResponse, paginateResponse } = require('../middleware/response');
 const { getAllRoles, canManageUser, getRole, hasPermission, getAllPermissions, refreshRoleCache, DEFAULT_ROLES } = require('../config/permissions');
 const { logOperation } = require('../middleware/operationLog');
@@ -15,6 +15,7 @@ const { JWT_SECRET, JWT_EXPIRES_IN } = require('../config/auth');
 const DbAdapter = require('../utils/dbAdapter');
 const { likeContains } = require('../utils/security');
 const { snapshotPost, recordPostRevision, recordModerationLog } = require('../services/forumHistory');
+const { getModeratedBoardIds, canModerateBoard } = require('../services/forumModeration');
 // H12: 引入内容审核服务，爬虫/管理员落库前对 nickname/bio/作品名+描述 做敏感词检查
 const aiReview = require('../services/aiReview');
 const proxyService = require('../services/proxyService');
@@ -256,7 +257,6 @@ async function getUsers(req, res) {
         const status = req.query.status || '';
 
         const where = {};
-        
         if (keyword) {
             const keywordWhere = likeContains(sequelize, ['username', 'nickname', 'email', 'codemao_user_id'], keyword);
             if (keywordWhere) Object.assign(where, keywordWhere);
@@ -5023,8 +5023,13 @@ module.exports = {
     restoreFromImpersonate,
     updateWork,
     getForumBoards,
+    getForumBoardModerators,
+    assignForumBoardModerator,
+    removeForumBoardModerator,
     getPostHistory,
     restorePostRevision,
+    movePost,
+    mergePosts,
     createForumBoard,
     updateForumBoard,
     deleteForumBoard,
@@ -5214,6 +5219,144 @@ async function getForumBoards(req, res) {
     }
 }
 
+async function getForumBoardModerators(req, res) {
+    try {
+        const board = await ForumBoard.findByPk(Number(req.params.boardId), { attributes: ['id', 'name'] });
+        if (!board) return errorResponse(res, '板块不存在', 404);
+        const assignments = await ForumBoardModerator.findAll({
+            where: { board_id: board.id },
+            include: [{ model: User, as: 'user', required: true, attributes: ['id', 'codemao_user_id', 'username', 'nickname', 'avatar', 'role', 'status'] }],
+            order: [['created_at', 'ASC']]
+        });
+        return successResponse(res, assignments);
+    } catch (error) {
+        console.error('获取板块版主失败:', error);
+        return errorResponse(res, '获取板块版主失败', 500);
+    }
+}
+
+async function assignForumBoardModerator(req, res) {
+    try {
+        const boardId = Number(req.params.boardId);
+        const userId = Number(req.body?.user_id);
+        const note = String(req.body?.note || '').trim();
+        if (!Number.isInteger(userId) || userId <= 0) return errorResponse(res, '请选择有效用户', 400);
+        if (note.length > 300) return errorResponse(res, '备注不能超过 300 个字', 400);
+        const [board, user] = await Promise.all([ForumBoard.findByPk(boardId), User.findByPk(userId)]);
+        if (!board) return errorResponse(res, '板块不存在', 404);
+        if (!user || user.status !== 'active') return errorResponse(res, '用户不存在或已被禁用', 404);
+        if (user.role !== 'moderator') return errorResponse(res, '只有角色为“版主”的账号可以分配到板块', 400);
+        const [assignment, created] = await ForumBoardModerator.findOrCreate({
+            where: { board_id: boardId, user_id: userId },
+            defaults: { assigned_by: DbAdapter.getId(req.user), note }
+        });
+        if (!created) await assignment.update({ assigned_by: DbAdapter.getId(req.user), note });
+        logOperation(req, created ? 'assign_forum_board_moderator' : 'update_forum_board_moderator', 'forum_board', boardId, { user_id: userId, note });
+        return successResponse(res, assignment, created ? '板块版主已分配' : '板块版主设置已更新');
+    } catch (error) {
+        console.error('分配板块版主失败:', error);
+        return errorResponse(res, '分配板块版主失败', 500);
+    }
+}
+
+async function removeForumBoardModerator(req, res) {
+    try {
+        const boardId = Number(req.params.boardId);
+        const userId = Number(req.params.userId);
+        const deleted = await ForumBoardModerator.destroy({ where: { board_id: boardId, user_id: userId } });
+        if (!deleted) return errorResponse(res, '该板块版主分配不存在', 404);
+        logOperation(req, 'remove_forum_board_moderator', 'forum_board', boardId, { user_id: userId });
+        return successResponse(res, null, '板块版主已移除');
+    } catch (error) {
+        console.error('移除板块版主失败:', error);
+        return errorResponse(res, '移除板块版主失败', 500);
+    }
+}
+
+async function movePost(req, res) {
+    try {
+        const postId = Number(req.params.postId);
+        const boardId = Number(req.body?.board_id);
+        const reason = String(req.body?.reason || '').trim();
+        if (reason.length < 3 || reason.length > 500) return errorResponse(res, '移动原因需要 3-500 个字', 400);
+        const [post, board] = await Promise.all([Post.findByPk(postId), ForumBoard.findOne({ where: { id: boardId, status: 'active' } })]);
+        if (!post || post.status === 'deleted') return errorResponse(res, '帖子不存在', 404);
+        if (!board) return errorResponse(res, '目标板块不存在或已停用', 400);
+        if (!(await canModerateBoard(req.user, board.id))) return errorResponse(res, '您没有目标板块的管理权限', 403);
+        if (Number(post.board_id) === boardId) return errorResponse(res, '帖子已经位于该板块', 400);
+        const before = snapshotPost(post);
+        await sequelize.transaction(async transaction => {
+            await post.update({ board_id: board.id, category: board.slug }, { transaction });
+            await recordPostRevision(post, DbAdapter.getId(req.user), 'moderator', reason, { transaction });
+            await recordModerationLog(post.id, DbAdapter.getId(req.user), 'move_post', reason, before, snapshotPost(post), { transaction });
+        });
+        logOperation(req, 'move_post', 'post', postId, { from_board_id: before.board_id, to_board_id: board.id, reason });
+        return successResponse(res, post, '帖子已移动');
+    } catch (error) {
+        console.error('移动帖子失败:', error);
+        return errorResponse(res, '移动帖子失败', 500);
+    }
+}
+
+async function mergePosts(req, res) {
+    try {
+        const sourceId = Number(req.params.postId);
+        const targetId = Number(req.body?.target_post_id);
+        const reason = String(req.body?.reason || '').trim();
+        if (!Number.isInteger(targetId) || targetId <= 0 || targetId === sourceId) return errorResponse(res, '请选择不同的有效目标帖子', 400);
+        if (reason.length < 3 || reason.length > 500) return errorResponse(res, '合并原因需要 3-500 个字', 400);
+        const [source, target] = await Promise.all([Post.findByPk(sourceId), Post.findByPk(targetId)]);
+        if (!source || !target || source.status === 'deleted' || target.status !== 'published') return errorResponse(res, '源帖子或目标帖子不存在', 404);
+        if (!(await canModerateBoard(req.user, target.board_id))) return errorResponse(res, '您没有目标帖子所在板块的管理权限', 403);
+        const sourceStatus = source.status;
+
+        await sequelize.transaction(async transaction => {
+            const [sourceLikes, sourceFavorites, sourceSubscriptions] = await Promise.all([
+                Like.findAll({ where: { post_id: sourceId }, attributes: ['user_id'], raw: true, transaction }),
+                Favorite.findAll({ where: { post_id: sourceId }, attributes: ['user_id'], raw: true, transaction }),
+                PostSubscription.findAll({ where: { post_id: sourceId }, attributes: ['user_id', 'notify'], raw: true, transaction })
+            ]);
+            if (sourceLikes.length) await Like.bulkCreate(sourceLikes.map(item => ({ user_id: item.user_id, post_id: targetId })), { ignoreDuplicates: true, transaction });
+            if (sourceFavorites.length) await Favorite.bulkCreate(sourceFavorites.map(item => ({ user_id: item.user_id, post_id: targetId })), { ignoreDuplicates: true, transaction });
+            if (sourceSubscriptions.length) await PostSubscription.bulkCreate(sourceSubscriptions.map(item => ({ user_id: item.user_id, post_id: targetId, notify: item.notify })), { ignoreDuplicates: true, transaction });
+            await Promise.all([
+                Comment.update({ post_id: targetId }, { where: { post_id: sourceId }, transaction }),
+                Like.destroy({ where: { post_id: sourceId }, transaction }),
+                Favorite.destroy({ where: { post_id: sourceId }, transaction }),
+                PostSubscription.destroy({ where: { post_id: sourceId }, transaction }),
+                Notification.update({ related_id: targetId }, { where: { related_type: 'post', related_id: sourceId }, transaction })
+            ]);
+
+            const [commentCount, replyCount, likeCount, favoriteCount, participantCount, lastComment] = await Promise.all([
+                Comment.count({ where: { post_id: targetId, status: 'active', parent_id: null }, transaction }),
+                Comment.count({ where: { post_id: targetId, status: 'active' }, transaction }),
+                Like.count({ where: { post_id: targetId }, transaction }),
+                Favorite.count({ where: { post_id: targetId }, transaction }),
+                Comment.count({ where: { post_id: targetId, status: 'active', user_id: { [Op.ne]: target.user_id } }, distinct: true, col: 'user_id', transaction }),
+                Comment.findOne({ where: { post_id: targetId, status: 'active' }, order: [['created_at', 'DESC']], transaction })
+            ]);
+            await target.update({
+                comment_count: commentCount, reply_count: replyCount, like_count: likeCount, collection_count: favoriteCount,
+                participant_count: Math.max(1, participantCount + (Number(target.user_id) ? 1 : 0)),
+                last_comment_id: lastComment?.id || null, last_reply_at: lastComment?.created_at || target.created_at,
+                last_reply_user_id: lastComment?.user_id || target.user_id,
+                accepted_comment_id: target.accepted_comment_id || source.accepted_comment_id || null
+            }, { transaction });
+            await source.update({
+                status: 'deleted', merged_into_post_id: targetId, is_top: false, is_essence: false,
+                comment_count: 0, reply_count: 0, like_count: 0, collection_count: 0
+            }, { transaction });
+            await recordModerationLog(sourceId, DbAdapter.getId(req.user), 'merge_post_source', reason, { status: sourceStatus }, { status: 'deleted', merged_into_post_id: targetId }, { transaction });
+            await recordModerationLog(targetId, DbAdapter.getId(req.user), 'merge_post_target', reason, { merged_source_id: null }, { merged_source_id: sourceId }, { transaction });
+        });
+        logOperation(req, 'merge_posts', 'post', sourceId, { target_post_id: targetId, reason });
+        return successResponse(res, { source_post_id: sourceId, target_post_id: targetId }, '主题已安全合并');
+    } catch (error) {
+        console.error('合并帖子失败:', error);
+        return errorResponse(res, '合并帖子失败', 500);
+    }
+}
+
 async function getPostHistory(req, res) {
     try {
         const postId = Number(req.params.postId);
@@ -5257,6 +5400,7 @@ async function restorePostRevision(req, res) {
         if (revision.board_id) {
             const board = await ForumBoard.findOne({ where: { id: revision.board_id, status: 'active' } });
             if (!board) return errorResponse(res, '该历史版本所属板块已停用，请先移动帖子后再回滚', 400);
+            if (!(await canModerateBoard(req.user, board.id))) return errorResponse(res, '您没有该历史版本所属板块的管理权限', 403);
         }
         const before = snapshotPost(post);
         await sequelize.transaction(async transaction => {
@@ -5370,6 +5514,10 @@ async function getPosts(req, res) {
         const status = req.query.status || '';
 
         const where = {};
+        if (req.user?.role === 'moderator') {
+            const boardIds = await getModeratedBoardIds(req.user);
+            where.board_id = { [Op.in]: boardIds || [] };
+        }
         if (keyword) {
             const keywordWhere = likeContains(sequelize, ['title', 'content'], keyword);
             if (keywordWhere) Object.assign(where, keywordWhere);
@@ -5479,6 +5627,7 @@ async function updatePost(req, res) {
         if (board_id !== undefined) {
             const board = await DbAdapter.findByPk(ForumBoard, Number(board_id));
             if (!board || board.status !== 'active') return errorResponse(res, '论坛板块不存在或已停用', 400);
+            if (!(await canModerateBoard(req.user, board.id))) return errorResponse(res, '您没有目标板块的管理权限', 403);
             updateData.board_id = Number(board_id);
         }
         const moderationChanged = [status, is_top, is_essence, board_id, is_locked, slow_mode_seconds].some(value => value !== undefined);

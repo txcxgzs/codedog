@@ -8,6 +8,7 @@ const adminController = require('../controllers/adminController');
 const developerController = require('../controllers/developerController');
 const { authMiddleware, adminMiddleware } = require('../middleware/auth');
 const { requireRole, requirePermission } = require('../middleware/permission');
+const { requireForumPostPermission } = require('../middleware/forumModeration');
 const { auditAdminRequest } = require('../middleware/operationLog');
 
 /**
@@ -76,16 +77,21 @@ router.delete('/comments/:commentId', requirePermission('comment:delete'), admin
  * 帖子管理
  */
 router.get('/posts', requirePermission('post:review'), adminController.getPosts);
-router.get('/posts/:postId/history', requirePermission('post:review'), adminController.getPostHistory);
-router.post('/posts/:postId/revisions/:revisionId/restore', requirePermission('post:edit'), adminController.restorePostRevision);
+router.get('/posts/:postId/history', requireForumPostPermission('post:review'), adminController.getPostHistory);
+router.post('/posts/:postId/revisions/:revisionId/restore', requireForumPostPermission('post:edit'), adminController.restorePostRevision);
 router.get('/forum/boards', requirePermission('post:review'), adminController.getForumBoards);
-router.post('/forum/boards', requirePermission('post:edit'), adminController.createForumBoard);
-router.put('/forum/boards/:boardId', requirePermission('post:edit'), adminController.updateForumBoard);
-router.delete('/forum/boards/:boardId', requirePermission('post:delete'), adminController.deleteForumBoard);
-router.put('/posts/:postId/essence', requirePermission('post:edit'), adminController.setPostEssence);
-router.put('/posts/:postId/top', requirePermission('post:sticky'), adminController.setPostTop);
-router.put('/posts/:postId', requirePermission('post:edit'), adminController.updatePost);
-router.delete('/posts/:postId', requirePermission('post:delete'), adminController.deletePost);
+router.post('/forum/boards', requireRole('admin'), adminController.createForumBoard);
+router.put('/forum/boards/:boardId', requireRole('admin'), adminController.updateForumBoard);
+router.delete('/forum/boards/:boardId', requireRole('admin'), adminController.deleteForumBoard);
+router.get('/forum/boards/:boardId/moderators', requireRole('admin'), adminController.getForumBoardModerators);
+router.post('/forum/boards/:boardId/moderators', requireRole('admin'), adminController.assignForumBoardModerator);
+router.delete('/forum/boards/:boardId/moderators/:userId', requireRole('admin'), adminController.removeForumBoardModerator);
+router.post('/posts/:postId/move', requireForumPostPermission('post:edit'), adminController.movePost);
+router.post('/posts/:postId/merge', requireForumPostPermission('post:edit'), adminController.mergePosts);
+router.put('/posts/:postId/essence', requireForumPostPermission('post:edit'), adminController.setPostEssence);
+router.put('/posts/:postId/top', requireForumPostPermission('post:sticky'), adminController.setPostTop);
+router.put('/posts/:postId', requireForumPostPermission('post:edit'), adminController.updatePost);
+router.delete('/posts/:postId', requireForumPostPermission('post:delete'), adminController.deletePost);
 
 /**
  * 轮播图管理
