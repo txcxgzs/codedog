@@ -68,6 +68,16 @@
             </el-button>
             
             <!-- 通知图标 -->
+            <button
+              type="button"
+              class="c-navigator--mobile_im"
+              aria-label="打开即时通讯"
+              title="即时通讯"
+              @click="openIm"
+            >
+              <el-icon :size="20"><ChatDotRound /></el-icon>
+            </button>
+
             <div class="c-navigator--notification" @click="$router.push('/notifications')">
               <el-badge :value="unreadCount" :max="99" :hidden="!unreadCount" class="c-navigator--badge_item">
                 <el-icon :size="20" color="#666"><Bell /></el-icon>
@@ -88,6 +98,7 @@
                   <el-dropdown-item command="profile"><el-icon><Setting /></el-icon>编辑资料</el-dropdown-item>
                   <el-dropdown-item command="myWorks"><el-icon><Monitor /></el-icon>我的作品</el-dropdown-item>
                   <el-dropdown-item command="notifications"><el-icon><Bell /></el-icon>消息通知</el-dropdown-item>
+                  <el-dropdown-item command="im"><el-icon><ChatDotRound /></el-icon>即时通讯</el-dropdown-item>
                   <el-dropdown-item command="favorites"><el-icon><Star /></el-icon>我的收藏</el-dropdown-item>
                   <el-dropdown-item v-if="userStore.isAdmin" command="admin" divided><el-icon><Setting /></el-icon>后台管理</el-dropdown-item>
                   <el-dropdown-item command="logout" divided><el-icon><SwitchButton /></el-icon>退出登录</el-dropdown-item>
@@ -203,7 +214,7 @@ import MobileBottomNav from '@/components/MobileBottomNav.vue'
 import { hcaptchaApi } from '@/api/hcaptcha'
 import { publicApi } from '@/api/public'
 import { userApi } from '@/api/user'
-import { Search, EditPen, Bell, CaretBottom, User, Monitor, Star, Setting, SwitchButton } from '@element-plus/icons-vue'
+import { Search, EditPen, Bell, CaretBottom, User, Monitor, Star, Setting, SwitchButton, ChatDotRound } from '@element-plus/icons-vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -508,6 +519,7 @@ const handleCommand = (command) => {
     case 'profile': router.push('/profile'); break
     case 'myWorks': router.push('/my-works'); break
     case 'notifications': router.push('/notifications'); break
+    case 'im': openIm(); break
     case 'favorites': router.push('/favorites'); break
     case 'admin': router.push('/admin'); break
     case 'logout':
@@ -872,6 +884,10 @@ $shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
     padding: 0 4px;
     font-size: 12px;
   }
+}
+
+.c-navigator--mobile_im {
+  display: none;
 }
 
 @media (max-width: 768px) {

@@ -12,6 +12,7 @@
   .c-navigator--logo_wrap .c-navigator--logo_text { display:block; font-size:18px; line-height:1; font-weight:850; letter-spacing:-.5px; color:#172033; white-space:nowrap; }
   .c-navigator--nav_wrap,.c-navigator--search_wrap,.c-navigator--publish_btn,.c-navigator--register_btn,.c-navigator--username,.c-navigator--user_info .el-icon--right { display: none !important; }
   .c-navigator--user_wrap { gap:6px; margin-left:auto; align-items:center; }
+  .c-navigator--mobile_im { display:grid!important; place-items:center; width:36px!important; height:40px!important; padding:0; flex:none; border:0; border-radius:50%; background:transparent; color:#4f5662; }
   .c-navigator--notification { width:36px!important; height:40px!important; display:grid!important; place-items:center; }
   .c-navigator--user_info { width:40px; height:40px; padding:2px!important; border-radius:50%; background:#fff; box-shadow:0 0 0 1px rgba(23,32,51,.09),0 5px 14px rgba(23,32,51,.1); display:grid!important; place-items:center; }
   .c-navigator--user_info .el-avatar { width:34px!important; height:34px!important; }
