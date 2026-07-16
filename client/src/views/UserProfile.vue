@@ -33,6 +33,12 @@
             <div class="r-user--meta">
               <span>加入于 {{ formatTime(user.created_at) }}</span>
             </div>
+            <div v-if="forumReputation" class="r-user--forum_identity">
+              <strong>{{ forumReputation.title }}</strong>
+              <span v-if="forumReputation.rank">论坛第 {{ forumReputation.rank }} 名</span>
+              <span>{{ forumReputation.contribution_score }} 贡献</span>
+              <i v-for="badge in forumReputation.badges" :key="badge.key" :style="{ color: badge.color, borderColor: `${badge.color}40`, background: `${badge.color}12` }">{{ badge.icon }} {{ badge.name }}</i>
+            </div>
           </div>
           <div class="r-user--actions">
             <template v-if="isCurrentUser">
@@ -76,6 +82,17 @@
                 </div>
               </div>
               <el-empty v-else description="暂无作品" />
+            </div>
+          </el-tab-pane>
+
+          <el-tab-pane :label="`帖子 ${forumReputation?.topics_count || 0}`" name="posts">
+            <div class="r-user--forum_posts" v-loading="loadingPosts">
+              <article v-for="post in forumPosts" :key="post.id" class="r-user--forum_post" @click="router.push(`/post/${post.id}`)">
+                <div><span v-if="post.board" :style="{ color: post.board.color }">{{ post.board.icon }} {{ post.board.name }}</span><span>{{ formatTime(post.created_at) }}</span></div>
+                <h3>{{ post.title }}</h3>
+                <p><span>{{ post.view_count || 0 }} 阅读</span><span>{{ post.reply_count || post.comment_count || 0 }} 回复</span><span>{{ post.like_count || 0 }} 点赞</span></p>
+              </article>
+              <el-empty v-if="!loadingPosts && forumPosts.length === 0" description="暂无公开帖子" />
             </div>
           </el-tab-pane>
           
@@ -153,6 +170,7 @@ import { userApi } from '@/api/user'
 import { workApi } from '@/api/work'
 import { favoriteApi } from '@/api/favorite'
 import { followApi } from '@/api/follow'
+import { postApi } from '@/api/post'
 import { ElMessage } from 'element-plus'
 import AppImage from '@/components/AppImage.vue'
 
@@ -164,6 +182,7 @@ const loadingWorks = ref(false)
 const loadingFavorites = ref(false)
 const loadingFollowers = ref(false)
 const loadingFollowing = ref(false)
+const loadingPosts = ref(false)
 const followLoading = ref(false)
 const isFollowing = ref(false)
 const user = ref(null)
@@ -171,6 +190,8 @@ const works = ref([])
 const favorites = ref([])
 const followers = ref([])
 const following = ref([])
+const forumPosts = ref([])
+const forumReputation = ref(null)
 const activeTab = ref('works')
 
 const defaultAvatar = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI0ZFQzQzMyIvPjx0ZXh0IHg9IjUwIiB5PSI2MCIgZm9udC1zaXplPSI0MCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZmlsbD0id2hpdGUiPuahijwvdGV4dD48L3N2Zz4='
@@ -202,6 +223,7 @@ const fetchUser = async () => {
     if (res.code === 200) {
       user.value = res.data
       fetchWorks()
+      fetchForumProfile()
       checkFollow()
     }
   } catch (error) {
@@ -223,6 +245,24 @@ const fetchWorks = async () => {
     console.error('获取作品失败:', error)
   } finally {
     loadingWorks.value = false
+  }
+}
+
+const fetchForumProfile = async () => {
+  if (!user.value?.id) return
+  loadingPosts.value = true
+  try {
+    const [reputationRes, postsRes] = await Promise.all([
+      postApi.getUserReputation(user.value.id),
+      postApi.getUserForumPosts(user.value.id, { page: 1, pageSize: 20 })
+    ])
+    forumReputation.value = reputationRes.code === 200 ? reputationRes.data : null
+    forumPosts.value = postsRes.code === 200 ? (postsRes.data?.list || []) : []
+  } catch (error) {
+    forumReputation.value = null
+    forumPosts.value = []
+  } finally {
+    loadingPosts.value = false
   }
 }
 
@@ -340,6 +380,8 @@ const clearUserData = () => {
   favorites.value = []
   followers.value = []
   following.value = []
+  forumPosts.value = []
+  forumReputation.value = null
   isFollowing.value = false
   activeTab.value = 'works'
 }
@@ -744,6 +786,17 @@ $border-color: #eee;
 }
 .r-user--works_grid { gap: 18px; }
 .r-user--work_card { border-radius: 16px; box-shadow: 0 8px 24px rgba(30,54,92,.06); }
+.r-user--forum_identity { display:flex; flex-wrap:wrap; align-items:center; gap:7px; margin-top:12px; }
+.r-user--forum_identity strong,.r-user--forum_identity span,.r-user--forum_identity i { padding:4px 8px; border-radius:8px; font-size:11px; font-style:normal; }
+.r-user--forum_identity strong { background:#fff1bd; color:#9b6900; }
+.r-user--forum_identity span { background:#f2f4f7; color:#667085; }
+.r-user--forum_identity i { border:1px solid; font-weight:700; }
+.r-user--forum_posts { display:grid; gap:12px; }
+.r-user--forum_post { padding:16px 18px; border:1px solid #eaecf0; border-radius:14px; background:#fff; cursor:pointer; transition:.18s; }
+.r-user--forum_post:hover { border-color:#f2c14e; box-shadow:0 8px 24px rgba(30,54,92,.08); transform:translateY(-1px); }
+.r-user--forum_post>div,.r-user--forum_post>p { display:flex; flex-wrap:wrap; gap:12px; color:#98a2b3; font-size:12px; }
+.r-user--forum_post h3 { margin:10px 0; color:#273142; font-size:16px; }
+.r-user--forum_post p { margin:0; }
 
 @media (max-width: 768px) {
   .r-user--page { padding: 14px 12px 92px; }

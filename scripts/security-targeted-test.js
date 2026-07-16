@@ -331,6 +331,15 @@ async function main() {
     });
     created.postIds.push(hiddenPost.id);
 
+    const publicForumProfilePosts = await http(`/api/posts/forum/users/${activeUser.id}/posts?page=1&pageSize=100`);
+    record(
+        'public forum profile lists published topics but hides non-public topics',
+        publicForumProfilePosts.status === 200 && publicForumProfilePosts.text.includes(`${marker}_merge_target`) && !publicForumProfilePosts.text.includes(`${marker}_hidden_post`),
+        `status=${publicForumProfilePosts.status}; published=${publicForumProfilePosts.text.includes(`${marker}_merge_target`)}; hidden=${publicForumProfilePosts.text.includes(`${marker}_hidden_post`)}`
+    );
+    const disabledForumProfilePosts = await http(`/api/posts/forum/users/${disabledUser.id}/posts`);
+    record('disabled users do not expose a public forum profile', disabledForumProfilePosts.status === 404, `status=${disabledForumProfilePosts.status}`);
+
     const publicHiddenPost = await http(`/api/posts/${hiddenPost.id}`);
     record('public cannot read hidden post detail', publicHiddenPost.status === 404, `status=${publicHiddenPost.status}`);
 

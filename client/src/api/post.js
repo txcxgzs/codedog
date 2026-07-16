@@ -28,6 +28,10 @@ export const postApi = {
   getUserReputation(userId) {
     return request.get(`/posts/forum/users/${userId}/reputation`)
   },
+
+  getUserForumPosts(userId, params = {}) {
+    return request.get(`/posts/forum/users/${userId}/posts`, { params })
+  },
   getBoards() {
     return request.get('/posts/boards/list')
   },

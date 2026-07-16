@@ -39,6 +39,27 @@ async function getUserReputation(req, res) {
     }
 }
 
+async function getUserForumPosts(req, res) {
+    try {
+        const userId = Number(req.params.userId);
+        if (!Number.isSafeInteger(userId) || userId <= 0) return errorResponse(res, '无效的用户 ID', 400);
+        const user = await User.findOne({ where: { id: userId, status: 'active' }, attributes: ['id'] });
+        if (!user) return errorResponse(res, '用户不存在', 404);
+        const { page, pageSize, offset } = DbAdapter.parsePagination(req.query);
+        const { count, rows } = await Post.findAndCountAll({
+            where: { user_id: userId, status: 'published' },
+            include: [{ model: ForumBoard, as: 'board', required: false, attributes: ['id', 'slug', 'name', 'icon', 'color'] }],
+            order: [['is_top', 'DESC'], ['last_reply_at', 'DESC'], ['created_at', 'DESC']],
+            limit: pageSize,
+            offset
+        });
+        return paginateResponse(res, rows.map(normalizePostOutput), count, page, pageSize);
+    } catch (error) {
+        console.error('获取用户论坛主题失败:', error);
+        return errorResponse(res, '获取用户论坛主题失败', 500);
+    }
+}
+
 const POST_TYPES = new Set(['discussion', 'question', 'tutorial']);
 
 async function resolveBoard(boardId, legacyCategory, role = 'user') {
@@ -977,6 +998,7 @@ async function getMyPosts(req, res) {
 module.exports = {
     getLeaderboard,
     getUserReputation,
+    getUserForumPosts,
     getBoards,
     toggleBoardSubscription,
     togglePostSubscription,
