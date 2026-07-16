@@ -120,7 +120,7 @@
     </el-dialog>
 
     <!-- 帖子详情弹窗(编辑+操作) -->
-    <el-dialog v-model="detailVisible" title="帖子详情" width="600px" destroy-on-close>
+    <el-dialog v-model="detailVisible" title="帖子详情" width="min(680px, 92vw)" destroy-on-close>
       <div v-if="editingPost">
         <el-descriptions :column="2" border size="small" style="margin-bottom: 16px;">
           <el-descriptions-item label="ID">{{ editingPost.id }}</el-descriptions-item>
@@ -163,9 +163,9 @@
           </el-form-item>
         </el-form>
 
-        <div style="display: flex; justify-content: space-between; gap: 8px; margin-top: 16px;">
+        <div class="r-admin-posts--detail_actions">
           <el-button type="danger" @click="handleDeletePost">删除帖子</el-button>
-          <div style="display: flex; gap: 8px;">
+          <div class="r-admin-posts--detail_actions_main">
             <el-button @click="openMovePost">移动主题</el-button>
             <el-button type="warning" plain @click="openMergePost">合并主题</el-button>
             <el-button @click="openPostHistory">历史与日志</el-button>
@@ -506,6 +506,9 @@ onMounted(refreshAll)
 .r-admin-posts--history_card strong { display:block; margin:9px 0 4px; color:#273247; }
 .r-admin-posts--history_card p { margin:5px 0 10px; color:#667085; font-size:13px; }
 .r-admin-posts--moderator_add { display:grid; grid-template-columns:140px minmax(180px,1fr) auto; gap:10px; margin-bottom:14px; }
+.r-admin-posts--detail_actions { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; margin-top:16px; padding:0 8px 4px; }
+.r-admin-posts--detail_actions_main { display:flex; justify-content:flex-end; flex-wrap:wrap; gap:8px; }
+.r-admin-posts--detail_actions_main :deep(.el-button) { margin-left:0; }
 @media (max-width: 1200px) {
   .r-admin-posts--metrics { grid-template-columns:repeat(3,minmax(0,1fr)); }
   .r-admin-posts--overview_grid { grid-template-columns:1fr; }
