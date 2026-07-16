@@ -987,13 +987,13 @@ $shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
 html.codedog-pretty-cursor,
 html.codedog-pretty-cursor body,
 html.codedog-pretty-cursor .r-index--root_container {
-  cursor: url('/cursors/stmc-pointer.cur'), default;
+  cursor: url('/cursors/bibata-pointer.png') 3 2, default;
 }
 html.codedog-pretty-cursor :is(a, button, [role='button'], .el-button, .el-dropdown, .el-menu-item, .el-switch, .el-checkbox, .el-radio, .el-select) {
-  cursor: url('/cursors/stmc-mirrored-pointer.cur'), pointer !important;
+  cursor: url('/cursors/bibata-link.png') 10 2, pointer !important;
 }
 html.codedog-pretty-cursor :is(input, textarea, [contenteditable='true'], .el-input__inner, .el-textarea__inner) {
-  cursor: text !important;
+  cursor: url('/cursors/bibata-text.png') 16 16, text !important;
 }
 html.codedog-pretty-cursor :is(button:disabled, [aria-disabled='true'], .is-disabled) {
   cursor: not-allowed !important;

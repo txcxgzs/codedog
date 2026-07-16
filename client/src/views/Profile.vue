@@ -76,7 +76,7 @@
                 <div class="r-profile--cursor_setting">
                   <el-switch
                     v-model="prettyCursorEnabled"
-                    active-text="使用 STMC 美化鼠标"
+                    active-text="使用 Bibata 美化鼠标"
                     inactive-text="使用系统默认鼠标"
                     @change="changeCursorPreference"
                   />
@@ -187,7 +187,7 @@ const changeCursorPreference = enabled => {
   localStorage.setItem(PRETTY_CURSOR_PREFERENCE, value)
   document.documentElement.classList.toggle('codedog-pretty-cursor', enabled)
   window.dispatchEvent(new CustomEvent('codedog-cursor-preference', { detail: { enabled } }))
-  ElMessage.success(enabled ? '已启用 STMC 美化鼠标' : '已恢复系统默认鼠标')
+  ElMessage.success(enabled ? '已启用 Bibata 美化鼠标' : '已恢复系统默认鼠标')
 }
 
 const viewPublicProfile = () => {
