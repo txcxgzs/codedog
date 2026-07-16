@@ -575,14 +575,49 @@ $shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
 
 // 顶栏使用极浅的暖白毛玻璃，与页面两侧淡黄、浅蓝渐变自然衔接。
 .c-navigator--navigator {
-  background: linear-gradient(90deg, rgba(255, 251, 240, .18), rgba(255, 255, 255, .25) 48%, rgba(240, 248, 255, .18));
-  border-bottom: 1px solid rgba(255, 255, 255, .38);
-  box-shadow: 0 7px 24px rgba(43, 58, 86, .04), inset 0 1px 0 rgba(255, 255, 255, .5);
-  -webkit-backdrop-filter: blur(18px) saturate(135%);
-  backdrop-filter: blur(18px) saturate(135%);
+  isolation: isolate;
+  background:
+    radial-gradient(ellipse at 12% -80%, rgba(255, 224, 142, .16), transparent 44%),
+    radial-gradient(ellipse at 88% 180%, rgba(107, 210, 255, .13), transparent 42%),
+    linear-gradient(90deg, rgba(255, 251, 240, .08), rgba(255, 255, 255, .13) 48%, rgba(240, 248, 255, .08));
+  border-bottom: 1px solid rgba(255, 255, 255, .46);
+  box-shadow:
+    0 12px 30px rgba(31, 47, 75, .11),
+    0 2px 7px rgba(31, 47, 75, .07),
+    inset 0 1px 0 rgba(255, 255, 255, .82),
+    inset 0 -1px 0 rgba(109, 184, 226, .18);
+  -webkit-backdrop-filter: blur(14px) saturate(145%);
+  backdrop-filter: blur(14px) saturate(145%);
   position: sticky;
   top: 0;
   z-index: 1000;
+
+  &::before {
+    content: '';
+    position: absolute;
+    z-index: -1;
+    inset: 0;
+    pointer-events: none;
+    background:
+      linear-gradient(90deg, rgba(255, 207, 90, .2), rgba(255, 255, 255, .58) 28%, rgba(126, 211, 255, .24) 72%, rgba(255, 255, 255, .42)) top / 100% 1px no-repeat,
+      linear-gradient(90deg, rgba(255, 220, 135, .12), rgba(255, 255, 255, .5) 38%, rgba(93, 194, 255, .24)) bottom / 100% 1px no-repeat;
+    filter: drop-shadow(0 1px 1px rgba(255,255,255,.32));
+  }
+
+  &::after {
+    content: '';
+    position: absolute;
+    z-index: -1;
+    left: 8%;
+    right: 8%;
+    bottom: -2px;
+    height: 4px;
+    pointer-events: none;
+    border-radius: 50%;
+    background: linear-gradient(90deg, transparent, rgba(255, 210, 91, .2), rgba(255,255,255,.56), rgba(89, 194, 255, .22), transparent);
+    filter: blur(1.2px);
+    opacity: .9;
+  }
   
   .c-navigator--header-content {
     max-width: 1200px;
