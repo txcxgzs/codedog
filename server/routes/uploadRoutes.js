@@ -25,8 +25,8 @@ router.post('/image', authMiddleware, upload.single('image'), async (req, res) =
     const url = await uploadToImageHost(req.file);
     return successResponse(res, { url }, '图片上传成功');
   } catch (error) {
-    console.error('uploadImage', error);
-    return errorResponse(res, '图片上传到图床失败，请稍后重试', 502);
+    console.error('uploadImage', error.message, error.cause?.code || '');
+    return errorResponse(res, error.message || '图片上传到图床失败，请稍后重试', 502);
   } finally {
     fs.promises.unlink(req.file.path).catch(() => {});
   }
