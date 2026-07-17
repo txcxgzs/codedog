@@ -102,10 +102,10 @@
           <div class="r-studio-detail--forum">
             <template v-if="!selectedForumPost">
               <div class="r-studio-detail--forum_hero">
-                <div class="r-studio-detail--forum_hero_copy"><span class="r-studio-detail--forum_mark">论</span><div><h2>{{ studio?.name }}论坛</h2><p>围绕作品、技术与工作室计划展开交流。内容公开，成员参与。</p></div></div>
+                <div class="r-studio-detail--forum_hero_copy"><span class="r-studio-detail--forum_mark">论</span><div><h2>{{ studio?.name }}论坛</h2></div></div>
                 <div class="r-studio-detail--forum_summary"><span><b>{{ forumPosts.length }}</b>主题</span><i></i><span><b>{{ totalForumReplies }}</b>回复</span></div>
               </div>
-              <div class="r-studio-detail--forum_toolbar"><el-input v-model="forumSearch" clearable placeholder="搜索工作室论坛主题" class="r-studio-detail--forum_search"><template #prefix>⌕</template></el-input><span class="r-studio-detail--forum_rule">外部访客可浏览 · 活跃成员可参与</span><el-button v-if="userMemberStatus === 'active'" type="primary" @click="forumPostDialogVisible = true">＋ 发布主题</el-button></div>
+              <div class="r-studio-detail--forum_toolbar"><el-input v-model="forumSearch" clearable placeholder="搜索工作室论坛主题" class="r-studio-detail--forum_search"><template #prefix>⌕</template></el-input><span class="r-studio-detail--forum_toolbar_spacer"></span><el-button v-if="userMemberStatus === 'active'" type="primary" @click="forumPostDialogVisible = true">＋ 发布主题</el-button></div>
               <div v-loading="forumLoading" class="r-studio-detail--forum_list">
                 <button v-for="item in filteredForumPosts" :key="item.id" type="button" class="r-studio-detail--forum_item" @click="openForumPost(item.id)">
                   <AppImage :src="item.author?.avatar || defaultAvatar" :fallback="defaultAvatar" class="r-studio-detail--forum_item_avatar" />
@@ -1397,6 +1397,7 @@ $border-color: #eee;
 .r-studio-detail--forum_summary i { width:1px; height:30px; background:#dfe4ec; }
 .r-studio-detail--forum_toolbar { display:flex; align-items:center; gap:14px; margin-bottom:12px; }
 .r-studio-detail--forum_search { width:280px; }
+.r-studio-detail--forum_toolbar_spacer { flex:1; }
 .r-studio-detail--forum_search :deep(.el-input__wrapper) { height:40px; border-radius:11px; box-shadow:0 0 0 1px #e4e8ef inset; }
 .r-studio-detail--forum_rule { flex:1; color:#98a2b3; font-size:12px; text-align:right; }
 .r-studio-detail--forum_toolbar .el-button { height:40px; border-radius:11px; font-weight:750; }

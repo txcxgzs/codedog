@@ -38,7 +38,7 @@
       <header><button class="mobile-back" type="button" aria-label="返回会话列表" @click="mobileChannelOpen = false">‹</button><div><small>即时消息</small><h1>{{ selected ? (selected.title || `会话 #${selected.id}`) : '选择一个会话' }}</h1></div><div class="signal"><span></span><span></span><span></span></div></header>
       <div ref="timeline" class="timeline">
         <div v-if="loading" class="center-state">正在加载消息…</div>
-        <div v-else-if="initialLoginError" class="welcome auth-failure"><div class="orb">!</div><h2>无法完成安全登录</h2><p>{{ initialLoginError }}</p><a class="reauth-button" :href="communityUrl">返回编程狗重新进入</a></div>
+        <div v-else-if="initialLoginError" class="welcome auth-failure"><div class="orb">!</div><h2>无法完成安全登录</h2><p>{{ initialLoginError }}</p><div v-if="initialLoginDiagnostic" class="auth-diagnostic"><b>诊断编号 {{ initialLoginDiagnostic.diagnostic_id }}</b><span>网络地址：{{ initialLoginDiagnostic.ip_match ? '一致' : '不一致' }}</span><span>浏览器标识：{{ initialLoginDiagnostic.browser_match ? '一致' : '不一致' }}</span><small>将诊断编号提供给管理员，可在 IM 服务日志中查找对应记录。</small></div><a class="reauth-button" :href="communityUrl">返回编程狗重新进入</a></div>
         <div v-else-if="!selected" class="welcome"><div class="orb">聊</div><h2>欢迎使用编程狗消息</h2><p>选择左侧会话，开始安全、可靠的即时交流。</p></div>
         <article v-for="message in messages" :key="message.id" class="message" :class="{ mine: Number(message.sender_id) === Number(me?.id) }">
           <span class="avatar"><img v-if="message.sender?.avatar" :src="message.sender.avatar" alt="" referrerpolicy="no-referrer" @error="$event.currentTarget.remove()" />{{ Number(message.sender_id) === Number(me?.id) ? initials : avatarLetter(message.sender, '友') }}</span>
@@ -95,6 +95,7 @@ const mobileLayout = ref(false)
 const avatarFailed = ref(false)
 const sessionExpired = ref(false)
 const initialLoginError = ref('')
+const initialLoginDiagnostic = ref(null)
 const searchResults = ref([]), captchaBox = ref(null)
 const captchaDialog = reactive({ open: false, scene: '', error: '', resolve: null })
 const captchaGrants = new Map()
@@ -118,7 +119,7 @@ const api = async (url, options = {}) => {
   // SSO exchange itself may return 401 for configuration or binding errors.
   // Only an already established IM session should be presented as expired.
   if (response.status === 401 && me.value) sessionExpired.value = true
-  if (!response.ok) throw new Error(body.msg || '请求失败')
+  if (!response.ok) { const error = new Error(body.msg || '请求失败'); error.data = body.data; throw error }
   return body.data
 }
 const exchangeSso = async () => {
@@ -230,7 +231,7 @@ onMounted(() => {
   window.addEventListener('resize', syncMobileLayout, { passive: true })
   window.addEventListener('orientationchange', syncMobileLayout, { passive: true })
   window.visualViewport?.addEventListener('resize', syncMobileLayout, { passive: true })
-  load().catch(error => { initialLoginError.value = error.message; socketState.value = error.message })
+load().catch(error => { initialLoginError.value = error.message; initialLoginDiagnostic.value = error.data || null; socketState.value = error.message })
 })
 onUnmounted(() => {
   socket?.close()
@@ -267,7 +268,7 @@ onUnmounted(() => {
 .toast{position:fixed;z-index:1100;top:24px;left:50%;transform:translateX(-50%);padding:11px 18px;border:1px solid #dce7d8;border-radius:10px;background:#f2fbef;color:#38823b;box-shadow:0 10px 30px rgba(31,35,41,.16)}.toast.error{border-color:#f3c1c1;background:#fff2f2;color:#c74343}.toast.warning{border-color:#f0d27c;background:#fff9e6;color:#a86f00}
 .session-expired{z-index:1200}.reauth-button{display:inline-flex;align-items:center;justify-content:center;height:38px;padding:0 18px;border-radius:9px;background:#fec433;color:#20242a;font-weight:700;text-decoration:none}
 .captcha-dialog{width:min(420px,100%)}.captcha-box{min-height:44px;margin-top:16px}
-.auth-failure .orb{background:#fff0f0;color:#d84b4b}.auth-failure p{max-width:520px}.auth-failure .reauth-button{margin-top:10px}
+.auth-failure .orb{background:#fff0f0;color:#d84b4b}.auth-failure p{max-width:520px}.auth-failure .reauth-button{margin-top:10px}.auth-diagnostic{display:grid;grid-template-columns:repeat(2,auto);gap:7px 16px;margin-top:8px;padding:13px 16px;border:1px solid #eadfca;border-radius:11px;background:#fffaf0;color:#6f6552;font-size:11px;text-align:left}.auth-diagnostic b,.auth-diagnostic small{grid-column:1/-1}.auth-diagnostic b{color:#3b352b}.auth-diagnostic small{color:#948a78;line-height:1.55}
 .conversation-list{min-height:0;flex:1;overflow-y:auto;overscroll-behavior:contain}.mobile-back{display:none}
 @media(max-width:820px), (max-device-width:820px){
   .terminal-shell{display:block;width:100%;height:100vh;height:100dvh;min-height:0;padding:0;overflow:hidden;background:#fff}

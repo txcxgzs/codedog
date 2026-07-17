@@ -15,6 +15,8 @@ function requestContext(req) {
   // candidates and require at least one to match the signed CodeDog hash.
   const ips = [...new Set([
     header('cf-connecting-ip'),
+    header('true-client-ip'),
+    ...header('x-forwarded-for').split(','),
     header('x-real-ip'),
     req.socket?.remoteAddress
   ].map(normalizeIp).filter(Boolean))];
@@ -28,12 +30,15 @@ function safeEqual(a, b) {
   const left = Buffer.from(String(a || '')), right = Buffer.from(String(b || ''));
   return left.length === right.length && crypto.timingSafeEqual(left, right);
 }
-function contextMatches(req, payload) {
-  if (!payload.binding_nonce || !payload.client_ip_hash || !payload.browser_hash) return false;
+function contextMatchResult(req, payload) {
+  const signedIpHashes = [...new Set([payload.client_ip_hash, ...(Array.isArray(payload.client_ip_hashes) ? payload.client_ip_hashes : [])].filter(Boolean))];
+  if (!payload.binding_nonce || !signedIpHashes.length || !payload.browser_hash) return { matches: false, ipMatches: false, browserMatches: false, candidateCount: 0 };
   const context = requestContext(req);
-  const ipMatches = context.ips.some(ip => safeEqual(payload.client_ip_hash, boundHash(payload.binding_nonce, ip)));
-  return ipMatches && safeEqual(payload.browser_hash, boundHash(payload.binding_nonce, context.browser));
+  const ipMatches = context.ips.some(ip => signedIpHashes.some(hash => safeEqual(hash, boundHash(payload.binding_nonce, ip))));
+  const browserMatches = safeEqual(payload.browser_hash, boundHash(payload.binding_nonce, context.browser));
+  return { matches: ipMatches && browserMatches, ipMatches, browserMatches, candidateCount: context.ips.length };
 }
+function contextMatches(req, payload) { return contextMatchResult(req, payload).matches; }
 
 function readPublicKey() {
   try { return fs.readFileSync(config.publicKeyFile, 'utf8'); }
@@ -51,9 +56,14 @@ async function exchangeTicket(ticket, req) {
     algorithms: ['RS256'], issuer: 'codedog-community', audience: 'codedog-im'
   });
   if (payload.purpose !== 'im_sso' || !payload.jti || !payload.sub) throw new Error('Invalid IM ticket');
-  if (!contextMatches(req, payload)) {
-    const error = new Error('登录环境与编程狗签发票据时不一致，请从编程狗重新进入');
+  const match = contextMatchResult(req, payload);
+  if (!match.matches) {
+    const diagnosticId = crypto.randomBytes(4).toString('hex').toUpperCase();
+    const mismatch = [!match.ipMatches && '网络地址', !match.browserMatches && '浏览器标识'].filter(Boolean).join('、') || '登录环境';
+    const error = new Error(`${mismatch}校验不一致，请从编程狗重新进入`);
     error.statusCode = 403;
+    error.publicData = { diagnostic_id: diagnosticId, ip_match: match.ipMatches, browser_match: match.browserMatches, ip_candidates: match.candidateCount };
+    console.warn(`[IM SSO ${diagnosticId}] binding mismatch ip=${match.ipMatches} browser=${match.browserMatches} candidates=${match.candidateCount}`);
     throw error;
   }
   if (!await consumeOnce(payload.jti, payload.exp * 1000)) {
@@ -67,7 +77,7 @@ async function exchangeTicket(ticket, req) {
     role: payload.role, token_version: payload.token_version || 0,
     community_url: payload.community_url || '', community_status_url: payload.community_status_url || '',
     status_token: payload.status_token || '', binding_nonce: payload.binding_nonce,
-    client_ip_hash: payload.client_ip_hash, browser_hash: payload.browser_hash
+    client_ip_hash: payload.client_ip_hash, client_ip_hashes: payload.client_ip_hashes || [payload.client_ip_hash], browser_hash: payload.browser_hash
   };
   await setAccountState(user.id, { status: payload.status || 'active', role: user.role, token_version: user.token_version, updated_at: Date.now() });
   const session = jwt.sign({ ...user, type: 'im_session' }, config.sessionSecret, {

@@ -53,7 +53,10 @@ app.post('/api/auth/sso/exchange', async (req, res) => {
     const secure = config.production ? '; Secure' : '';
     res.append('Set-Cookie', `im_session=${session}; Path=/; HttpOnly; SameSite=Lax; Max-Age=1800${secure}`);
     ok(res, user, '登录成功');
-  } catch (error) { fail(res, error.statusCode || 401, error.message || 'SSO 登录失败'); }
+  } catch (error) {
+    const status = error.statusCode || 401;
+    res.status(status).json({ code: status, msg: error.message || 'SSO 登录失败', data: error.publicData || null });
+  }
 });
 
 app.post('/api/auth/logout', requireSession, (req, res) => {

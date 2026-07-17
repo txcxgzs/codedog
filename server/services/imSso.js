@@ -22,11 +22,23 @@ function signingKey() {
 
 function clientContext(req) {
   const header = name => String(req.get(name) || '').trim().toLowerCase();
-  const ip = (header('cf-connecting-ip') || header('x-real-ip') || String(req.ip || req.socket?.remoteAddress || '').trim()).replace(/^::ffff:/, '');
+  const normalizeIp = value => String(value || '').trim().toLowerCase().replace(/^::ffff:/, '');
+  // The community and IM use different reverse-proxy chains. Sign every IP
+  // candidate independently supplied by Cloudflare/Nginx so the IM can match
+  // the real visitor address without requiring both hosts to expose the same
+  // header name. Only salted hashes enter the ticket.
+  const ips = [...new Set([
+    header('cf-connecting-ip'),
+    header('true-client-ip'),
+    ...header('x-forwarded-for').split(','),
+    header('x-real-ip'),
+    req.ip,
+    req.socket?.remoteAddress
+  ].map(normalizeIp).filter(Boolean))];
   // User-Agent is also sent by WebSocket handshakes. Avoid optional Client Hint
   // headers because browsers may send them on navigation but omit them on WS.
   const browser = header('user-agent');
-  return { ip, browser };
+  return { ips, browser };
 }
 
 function boundHash(nonce, value) {
@@ -81,7 +93,8 @@ function createImTicket(user, context = {}) {
     community_status_url: `${communityUrl}/api/users/im-status`,
     status_token: createStatusToken(user, key),
     binding_nonce: nonce,
-    client_ip_hash: boundHash(nonce, requestContext.ip),
+    client_ip_hash: boundHash(nonce, requestContext.ips[0] || ''),
+    client_ip_hashes: requestContext.ips.map(ip => boundHash(nonce, ip)),
     browser_hash: boundHash(nonce, requestContext.browser),
     peer: context.peer ? {
       id: Number(context.peer.id), username: context.peer.username,
