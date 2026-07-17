@@ -14,6 +14,7 @@ function memoryDatabase() {
       for (const symbol of symbols(expected)) {
         if (symbol === Op.in && !expected[symbol].map(String).includes(String(actual))) return false;
         if (symbol === Op.gt && !(Number(actual) > Number(expected[symbol]))) return false;
+        if (symbol === Op.gte && !(new Date(actual).getTime() >= new Date(expected[symbol]).getTime())) return false;
         if (symbol === Op.like) {
           const needle = String(expected[symbol]).replace(/^%|%$/g, '').toLowerCase();
           if (!String(actual || '').toLowerCase().includes(needle)) return false;
@@ -31,12 +32,14 @@ function memoryDatabase() {
   };
   const Conversation = {
     async findAll(options) { return select(state.conversations, options); },
+    async count(options) { return select(state.conversations, options).length; },
     async findByPk(id) { return state.conversations.find(item => String(item.id) === String(id)) || null; },
     async findOrCreate({ where, defaults }) { let item = state.conversations.find(value => matches(value, where)); if (item) return [item, false]; item = row({ id: ++state.ids.conversation, last_sequence: 0, ...defaults, ...where, ...now() }); state.conversations.push(item); return [item, true]; },
     async create(data) { const item = row({ id: ++state.ids.conversation, last_sequence: 0, ...data, ...now() }); state.conversations.push(item); return item; }
   };
   const UserProfile = {
     async findAll(options) { return select(state.users, options); },
+    async count(options) { return select(state.users, options).length; },
     async findByPk(id) { return state.users.find(item => String(item.id) === String(id)) || null; },
     async upsert(data) {
       let item = state.users.find(value => String(value.id) === String(data.id));
@@ -47,17 +50,20 @@ function memoryDatabase() {
   };
   const ConversationMember = {
     async findAll(options) { return select(state.members, options); },
+    async count(options) { return select(state.members, options).length; },
     async findOne({ where }) { return state.members.find(item => matches(item, where)) || null; },
     async findOrCreate({ where, defaults }) { let item = state.members.find(value => matches(value, where)); if (item) return [item, false]; item = row({ ...defaults, ...where, ...now() }); state.members.push(item); return [item, true]; },
     async create(data) { const item = row({ ...data, ...now() }); state.members.push(item); return item; }
   };
   const Message = {
     async findAll(options) { return select(state.messages, options); },
+    async count(options) { return select(state.messages, options).length; },
     async findOne({ where }) { return state.messages.find(item => matches(item, where)) || null; },
     async create(data) { const item = row({ id: ++state.ids.message, status: 'active', ...data, ...now() }); state.messages.push(item); return item; }
   };
   const Group = {
     async findAll(options) { return select(state.groups, options); },
+    async count(options) { return select(state.groups, options).length; },
     async findOne({ where }) { return state.groups.find(item => matches(item, where)) || null; },
     async create(data) { const item = row({ member_limit: config.groupDefaultLimit, ...data, ...now() }); state.groups.push(item); return item; }
   };
@@ -66,10 +72,13 @@ function memoryDatabase() {
     async create(data) { const item = row({ id: ++state.ids.image, status: 'ready', ...data, ...now() }); state.images.push(item); return item; }
   };
   const AdminAudit = {
+    async findAll(options) { return select(state.audits, options); },
+    async count(options) { return select(state.audits, options).length; },
     async create(data) { const item = row({ id: ++state.ids.audit, ...data, ...now() }); state.audits.push(item); return item; }
   };
   const Report = {
     async findAll(options) { return select(state.reports, options); },
+    async count(options) { return select(state.reports, options).length; },
     async findOne({ where }) { return state.reports.find(item => matches(item, where)) || null; },
     async create(data) { const item = row({ id: ++state.ids.report, status: 'pending', ...data, ...now() }); state.reports.push(item); return item; }
   };

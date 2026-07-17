@@ -383,6 +383,84 @@ app.post('/api/messages', requireSession, requireCaptcha('im_message'), async (r
   catch (error) { next(error); }
 });
 
+app.get('/api/admin/dashboard', requireSession, async (req, res, next) => {
+  try {
+    if (!requireImAdmin(req, res)) return;
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const [users, conversations, groups, messages, todayMessages, pendingReports, audits] = await Promise.all([
+      UserProfile.count(), Conversation.count(), Group.count(), Message.count(),
+      Message.count({ where: { created_at: { [Op.gte]: today } } }),
+      Report.count({ where: { status: 'pending' } }), AdminAudit.count()
+    ]);
+    const onlineUsers = [...socketsByUser.values()].filter(set => [...set].some(socket => socket.readyState === socket.OPEN)).length;
+    const recentReports = await Report.findAll({ order: [['created_at', 'DESC']], limit: 6 });
+    ok(res, { users, conversations, groups, messages, today_messages: todayMessages, pending_reports: pendingReports,
+      online_users: onlineUsers, audit_logs: audits, recent_reports: await enrichReports(recentReports) });
+  } catch (error) { next(error); }
+});
+
+app.get('/api/admin/users', requireSession, async (req, res, next) => {
+  try {
+    if (!requireImAdmin(req, res)) return;
+    const keyword = String(req.query.keyword || '').trim().toLowerCase();
+    const profiles = await UserProfile.findAll({ order: [['updated_at', 'DESC']], limit: 500 });
+    const filtered = profiles.filter(profile => !keyword || [profile.id, profile.username, profile.nickname, profile.codemao_user_id]
+      .some(value => String(value || '').toLowerCase().includes(keyword))).slice(0, 100);
+    const rows = await Promise.all(filtered.map(async profile => {
+      const [memberships, messageCount] = await Promise.all([
+        ConversationMember.count({ where: { user_id: profile.id, state: 'active' } }),
+        Message.count({ where: { sender_id: profile.id } })
+      ]);
+      return { ...publicUser(profile), conversation_count: memberships, message_count: messageCount, updated_at: profile.updated_at };
+    }));
+    ok(res, rows);
+  } catch (error) { next(error); }
+});
+
+app.get('/api/admin/users/:id', requireSession, async (req, res, next) => {
+  try {
+    if (!requireImAdmin(req, res)) return;
+    const user = await UserProfile.findByPk(Number(req.params.id));
+    if (!user) return fail(res, 404, 'IM 用户不存在');
+    const memberships = await ConversationMember.findAll({ where: { user_id: user.id }, order: [['updated_at', 'DESC']], limit: 100 });
+    const recentMessages = await Message.findAll({ where: { sender_id: user.id }, order: [['created_at', 'DESC']], limit: 20 });
+    const messageIds = recentMessages.map(item => Number(item.id));
+    const reports = messageIds.length ? await Report.findAll({ where: { message_id: { [Op.in]: messageIds } }, order: [['created_at', 'DESC']], limit: 20 }) : [];
+    ok(res, { ...publicUser(user), updated_at: user.updated_at, memberships: memberships.map(item => item.toJSON()),
+      message_count: await Message.count({ where: { sender_id: user.id } }), reports_received: reports.length });
+  } catch (error) { next(error); }
+});
+
+app.get('/api/admin/conversations', requireSession, async (req, res, next) => {
+  try {
+    if (!requireImAdmin(req, res)) return;
+    const type = String(req.query.type || 'all');
+    const where = ['direct', 'group'].includes(type) ? { type } : {};
+    const conversations = await Conversation.findAll({ where, order: [['updated_at', 'DESC']], limit: 100 });
+    const groups = await Group.findAll();
+    const groupMap = new Map(groups.map(group => [Number(group.conversation_id), group]));
+    const rows = await Promise.all(conversations.map(async conversation => {
+      const members = await ConversationMember.findAll({ where: { conversation_id: conversation.id, state: 'active' } });
+      const profiles = await usersById(members.map(member => member.user_id));
+      const group = groupMap.get(Number(conversation.id));
+      return { ...conversation.toJSON(), name: group?.name || null, member_limit: group?.member_limit || null,
+        member_count: members.length, members: members.slice(0, 8).map(member => profiles.get(Number(member.user_id))).filter(Boolean) };
+    }));
+    ok(res, rows);
+  } catch (error) { next(error); }
+});
+
+app.get('/api/admin/audits', requireSession, async (req, res, next) => {
+  try {
+    if (!requireImAdmin(req, res)) return;
+    const action = String(req.query.action || '').trim();
+    const where = action ? { action } : {};
+    const rows = await AdminAudit.findAll({ where, order: [['created_at', 'DESC']], limit: 200 });
+    const profiles = await usersById(rows.map(row => row.admin_id));
+    ok(res, rows.map(row => ({ ...row.toJSON(), admin: profiles.get(Number(row.admin_id)) || null })));
+  } catch (error) { next(error); }
+});
+
 app.post('/api/admin/messages/search', requireSession, async (req, res, next) => {
   try {
     if (!['admin', 'superadmin'].includes(req.user.role)) return fail(res, 403, '无聊天记录查看权限');
