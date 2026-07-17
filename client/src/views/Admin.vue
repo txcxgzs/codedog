@@ -2277,13 +2277,60 @@
     </div>
     
     <!-- 轮播图编辑对话框 -->
-    <el-dialog v-model="bannerDialogVisible" :title="editingBanner ? '编辑轮播图' : '添加轮播图'" width="500px">
+    <el-dialog
+      v-model="bannerDialogVisible"
+      :title="editingBanner ? '编辑轮播图' : '添加轮播图'"
+      width="640px"
+      class="r-admin--banner_dialog"
+    >
       <el-form :model="bannerForm" label-width="80px">
         <el-form-item label="标题">
           <el-input v-model="bannerForm.title" placeholder="轮播图标题" />
         </el-form-item>
-        <el-form-item label="图片URL">
-          <el-input v-model="bannerForm.image_url" placeholder="图片链接地址" />
+        <el-form-item label="轮播图片">
+          <div class="r-admin--banner_upload">
+            <div
+              class="r-admin--banner_upload_preview"
+              :class="{ 'is-empty': !bannerForm.image_url }"
+              @click="bannerImageInput?.click()"
+            >
+              <img
+                v-if="bannerForm.image_url"
+                :src="bannerForm.image_url"
+                alt="轮播图预览"
+                referrerpolicy="no-referrer"
+              />
+              <div v-else class="r-admin--banner_upload_empty">
+                <el-icon><Picture /></el-icon>
+                <strong>上传轮播图片</strong>
+                <span>支持 JPG、PNG、WebP、GIF</span>
+              </div>
+              <div class="r-admin--banner_upload_mask">
+                {{ bannerUploading ? '正在上传…' : (bannerForm.image_url ? '更换图片' : '选择图片') }}
+              </div>
+            </div>
+            <input
+              ref="bannerImageInput"
+              type="file"
+              accept="image/jpeg,image/png,image/webp,image/gif"
+              hidden
+              @change="handleBannerImageUpload"
+            />
+            <div class="r-admin--banner_upload_actions">
+              <el-button
+                type="primary"
+                plain
+                :loading="bannerUploading"
+                @click="bannerImageInput?.click()"
+              >
+                {{ bannerForm.image_url ? '重新上传' : '上传至图床' }}
+              </el-button>
+              <span>上传成功后自动填入图片地址</span>
+            </div>
+            <el-input v-model="bannerForm.image_url" placeholder="也可以粘贴已有图片链接">
+              <template #prepend>图片 URL</template>
+            </el-input>
+          </div>
         </el-form-item>
         <el-form-item label="跳转链接">
           <el-input v-model="bannerForm.link_url" placeholder="点击跳转的链接" />
@@ -2579,6 +2626,7 @@ import { useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/user'
 import { adminApi } from '@/api/admin'
 import { imApi } from '@/api/im'
+import { uploadApi } from '@/api/upload'
 import request from '@/api/request'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { DataAnalysis, User, UserFilled, Document, Download, Search, Picture, ChatDotRound, Warning, Lock, Bell, Filter, Setting, List, Key, OfficeBuilding, Loading, Cpu, Postcard, Monitor, Check, CopyDocument, Plus, Delete, View, ArrowLeft, CaretBottom, ArrowDown, Back, EditPen, Star, SwitchButton } from '@element-plus/icons-vue'
@@ -2972,6 +3020,8 @@ const banners = ref([])
 const bannerDialogVisible = ref(false)
 const editingBanner = ref(null)
 const crawlingBanners = ref(false)
+const bannerImageInput = ref(null)
+const bannerUploading = ref(false)
 const bannerForm = ref({
   title: '',
   image_url: '',
@@ -5010,6 +5060,35 @@ const showBannerDialog = (banner = null) => {
   bannerDialogVisible.value = true
 }
 
+const handleBannerImageUpload = async (event) => {
+  const input = event.target
+  const file = input.files?.[0]
+  input.value = ''
+  if (!file) return
+  if (!/^image\/(jpeg|png|webp|gif)$/.test(file.type)) {
+    ElMessage.warning('请选择 JPG、PNG、WebP 或 GIF 图片')
+    return
+  }
+  if (file.size > 5 * 1024 * 1024) {
+    ElMessage.warning('图片大小不能超过 5MB')
+    return
+  }
+  bannerUploading.value = true
+  try {
+    const res = await uploadApi.image(file)
+    const url = res?.data?.url || res?.data?.image_url || res?.data
+    if (res.code !== 200 || typeof url !== 'string' || !url) {
+      throw new Error(res.msg || '图床未返回图片地址')
+    }
+    bannerForm.value.image_url = url
+    ElMessage.success('图片已上传至图床')
+  } catch (error) {
+    ElMessage.error(error?.response?.data?.msg || error?.message || '图片上传失败')
+  } finally {
+    bannerUploading.value = false
+  }
+}
+
 const handleSaveBanner = async () => {
   try {
     const data = { ...bannerForm.value, status: bannerForm.value.is_active ? 'active' : 'inactive' }
@@ -6229,6 +6308,22 @@ $sidebar-width: 200px;
 .r-admin--ops .el-button + .el-button {
   margin-left: 0;
 }
+.r-admin--banner_upload { width:100%; display:grid; gap:12px; }
+.r-admin--banner_upload_preview { position:relative; width:100%; aspect-ratio:16/6; overflow:hidden; border:1px solid #e1e6ee; border-radius:14px; background:#f4f7fb; cursor:pointer; }
+.r-admin--banner_upload_preview img { width:100%; height:100%; display:block; object-fit:cover; }
+.r-admin--banner_upload_preview.is-empty { border:1px dashed #bdc7d7; }
+.r-admin--banner_upload_empty { height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:5px; color:#667085; }
+.r-admin--banner_upload_empty .el-icon { color:#f5af16; font-size:30px; }
+.r-admin--banner_upload_empty strong { color:#263247; font-size:15px; }
+.r-admin--banner_upload_empty span,.r-admin--banner_upload_actions span { color:#98a2b3; font-size:12px; }
+.r-admin--banner_upload_mask { position:absolute; inset:auto 0 0; padding:9px; color:#fff; text-align:center; font-size:13px; background:linear-gradient(transparent,rgba(18,27,45,.8)); opacity:0; transform:translateY(4px); transition:.2s ease; }
+.r-admin--banner_upload_preview:hover .r-admin--banner_upload_mask { opacity:1; transform:none; }
+.r-admin--banner_upload_actions { display:flex; align-items:center; gap:10px; }
+.r-admin--banner_dialog :deep(.el-dialog) { overflow:hidden; border-radius:20px!important; }
+.r-admin--banner_dialog :deep(.el-dialog__header) { margin:0; padding:22px 26px 16px; border-bottom:1px solid #edf0f5; background:linear-gradient(90deg,#fffaf0,#f3f8ff); }
+.r-admin--banner_dialog :deep(.el-dialog__title) { color:#172033; font-size:20px; font-weight:800; }
+.r-admin--banner_dialog :deep(.el-dialog__body) { padding:22px 26px 12px; }
+.r-admin--banner_dialog :deep(.el-dialog__footer) { padding:12px 26px 22px; }
 
 /* 后台统一为清晰的深色导航 + 明亮管理画布 */
 .r-admin--page { background:radial-gradient(circle at 18% 0,rgba(255,205,92,.16),transparent 25rem),linear-gradient(145deg,#f3f6fb,#f8faff 55%,#fffaf0); }
