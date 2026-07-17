@@ -356,6 +356,8 @@ async function startServer() {
             await ensureColumn('posts', 'studio_id', { sqlite: 'INTEGER', mysql: 'INT NULL' });
             await ensureColumn('posts', 'legacy_studio_forum_post_id', { sqlite: 'INTEGER', mysql: 'INT NULL' });
             await ensureColumn('comments', 'legacy_studio_forum_reply_id', { sqlite: 'INTEGER', mysql: 'INT NULL' });
+            await ensureColumn('user_warnings', 'source_title', { sqlite: 'VARCHAR(255)', mysql: 'VARCHAR(255) NULL' });
+            await ensureColumn('user_warnings', 'source_content', { sqlite: 'TEXT', mysql: 'TEXT NULL' });
             await ensureColumn('posts', 'post_type', { sqlite: "VARCHAR(30) NOT NULL DEFAULT 'discussion'", mysql: "VARCHAR(30) NOT NULL DEFAULT 'discussion'" });
             await ensureColumn('posts', 'last_reply_at', { sqlite: 'DATETIME', mysql: 'DATETIME NULL' });
             await ensureColumn('posts', 'last_reply_user_id', { sqlite: 'INTEGER', mysql: 'INT NULL' });

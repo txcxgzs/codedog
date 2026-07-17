@@ -352,6 +352,25 @@
                 </el-table>
                 <el-empty v-if="!userDetail.recentComments?.length" description="暂无评论" />
               </el-tab-pane>
+              <el-tab-pane :label="`警告记录 ${userDetail.warnings?.length || 0}`">
+                <div v-if="userDetail.warnings?.length" class="r-admin--warning_history">
+                  <article v-for="warning in userDetail.warnings" :key="warning.id" class="r-admin--warning_record">
+                    <header>
+                      <div><strong>警告 #{{ warning.id }}</strong><el-tag size="small" :type="warning.status === 'acknowledged' ? 'success' : 'danger'">{{ warning.status === 'acknowledged' ? '已签署保证书' : '待签署' }}</el-tag></div>
+                      <time>{{ formatDateTime(warning.created_at) }}</time>
+                    </header>
+                    <el-descriptions :column="2" border size="small">
+                      <el-descriptions-item label="发出人">{{ warning.issuer?.nickname || warning.issuer?.username || `管理员 #${warning.issued_by}` }}</el-descriptions-item>
+                      <el-descriptions-item label="签署时间">{{ warning.acknowledged_at ? formatDateTime(warning.acknowledged_at) : '尚未签署' }}</el-descriptions-item>
+                      <el-descriptions-item label="警告原因" :span="2"><div class="r-admin--warning_text">{{ warning.reason }}</div></el-descriptions-item>
+                      <el-descriptions-item label="违规来源" :span="2">{{ warning.source_title || (warning.source_type ? `${warning.source_type} #${warning.source_id}` : '管理员直接警告') }}</el-descriptions-item>
+                      <el-descriptions-item label="违规内容快照" :span="2"><div class="r-admin--warning_snapshot">{{ warning.source_content || '该警告未关联具体帖子或评论' }}</div></el-descriptions-item>
+                      <el-descriptions-item label="用户保证书" :span="2"><div class="r-admin--guarantee_text">{{ warning.guarantee_text || '尚未提交保证书' }}</div></el-descriptions-item>
+                    </el-descriptions>
+                  </article>
+                </div>
+                <el-empty v-else description="该用户暂无警告记录" />
+              </el-tab-pane>
               <el-tab-pane label="账户信息">
                 <el-descriptions :column="2" border size="small">
                   <el-descriptions-item label="用户ID">{{ userDetail.user.id }}</el-descriptions-item>
@@ -6240,5 +6259,14 @@ $sidebar-width: 200px;
 .r-admin--studio_detail :deep(.el-tabs__active-bar) { height:3px; border-radius:3px; background:#fec433; }
 .r-admin--studio_detail :deep(.el-tabs__content) { padding:16px; border:1px solid #e5eaf1; border-radius:15px; background:#fff; }
 .r-admin--studio_detail :deep(.el-descriptions) { overflow:hidden; border-radius:12px; }
+.r-admin--warning_history { display:grid; gap:16px; padding:4px 0; }
+.r-admin--warning_record { overflow:hidden; border:1px solid #f0d9a5; border-radius:14px; background:#fffdf8; }
+.r-admin--warning_record>header { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:13px 16px; border-bottom:1px solid #f2e5c7; background:linear-gradient(90deg,#fff7e3,#fff); }
+.r-admin--warning_record>header div { display:flex; align-items:center; gap:9px; color:#172033; }
+.r-admin--warning_record>header time { color:#8a93a2; font-size:12px; }
+.r-admin--warning_record :deep(.el-descriptions) { margin:14px; }
+.r-admin--warning_text,.r-admin--warning_snapshot,.r-admin--guarantee_text { white-space:pre-wrap; overflow-wrap:anywhere; line-height:1.7; }
+.r-admin--warning_snapshot { max-height:180px; overflow:auto; padding:10px 12px; border-radius:9px; background:#f6f7f9; color:#4b5565; }
+.r-admin--guarantee_text { padding:10px 12px; border-left:3px solid #67c23a; border-radius:4px 9px 9px 4px; background:#f2fbef; color:#315d2d; }
 @media(max-width:760px){.r-admin--studio_detail_header{grid-template-columns:1fr}.r-admin--studio_detail_logo{width:100%;height:auto;aspect-ratio:16/7}.r-admin--studio_detail_actions{flex-direction:row}.r-admin--studio_detail_actions .el-button{width:auto}}
 </style>

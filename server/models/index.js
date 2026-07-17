@@ -714,6 +714,8 @@ const UserWarning = sequelize.define('UserWarning', {
     reason: { type: DataTypes.TEXT, allowNull: false },
     source_type: { type: DataTypes.STRING(30), allowNull: true },
     source_id: { type: DataTypes.INTEGER, allowNull: true },
+    source_title: { type: DataTypes.STRING(255), allowNull: true },
+    source_content: { type: DataTypes.TEXT, allowNull: true },
     status: { type: DataTypes.ENUM('pending', 'acknowledged'), allowNull: false, defaultValue: 'pending' },
     guarantee_text: { type: DataTypes.TEXT, allowNull: true },
     acknowledged_at: { type: DataTypes.DATE, allowNull: true }

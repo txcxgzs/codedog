@@ -2,7 +2,7 @@
  * 后台管理控制器
  */
 
-const { User, Work, Comment, Post, ForumBoard, ForumBoardModerator, PostSubscription, PostDraft, PostRevision, ForumModerationLog, Favorite, Follow, Banner, Report, ReportAuditLog, IpBan, Notification, Announcement, SystemConfig, OperationLog, SensitiveWord, RolePermission, CaptchaStats, Statistics, Studio, StudioMember, StudioWork, StudioPointLog, Like, sequelize } = require('../models');
+const { User, UserWarning, Work, Comment, Post, ForumBoard, ForumBoardModerator, PostSubscription, PostDraft, PostRevision, ForumModerationLog, Favorite, Follow, Banner, Report, ReportAuditLog, IpBan, Notification, Announcement, SystemConfig, OperationLog, SensitiveWord, RolePermission, CaptchaStats, Statistics, Studio, StudioMember, StudioWork, StudioPointLog, Like, sequelize } = require('../models');
 const { successResponse, errorResponse, paginateResponse } = require('../middleware/response');
 const { getAllRoles, canManageUser, getRole, hasPermission, getAllPermissions, refreshRoleCache, DEFAULT_ROLES } = require('../config/permissions');
 const { logOperation } = require('../middleware/operationLog');
@@ -319,7 +319,7 @@ async function getUserDetail(req, res) {
         }
         
         // 修复: 统计排除 deleted/hidden/pending 等非活跃内容
-        const [works, comments, favorites, following, followers] = await Promise.all([
+        const [works, comments, favorites, following, followers, warnings] = await Promise.all([
             DbAdapter.findAndCountAll(Work, {
                 where: { user_id: userId, status: 'published' },
                 order: [['created_at', 'DESC']],
@@ -337,7 +337,12 @@ async function getUserDetail(req, res) {
             }),
             DbAdapter.count(Favorite, { where: { user_id: userId } }),
             DbAdapter.count(Follow, { where: { follower_id: userId } }),
-            DbAdapter.count(Follow, { where: { following_id: userId } })
+            DbAdapter.count(Follow, { where: { following_id: userId } }),
+            UserWarning.findAll({
+                where: { user_id: userId },
+                include: [{ model: User, as: 'issuer', attributes: ['id', 'username', 'nickname'] }],
+                order: [['created_at', 'DESC']]
+            })
         ]);
 
         const likesReceived = await DbAdapter.count(Like, {
@@ -372,7 +377,8 @@ async function getUserDetail(req, res) {
             },
             stats,
             recentWorks: works.rows,
-            recentComments: comments.rows
+            recentComments: comments.rows,
+            warnings
         });
     } catch (error) {
         console.error('获取用户详情错误:', error);
@@ -1056,6 +1062,26 @@ async function deleteUser(req, res) {
                 codemao_token: null
             }, { where: { id: uid }, transaction: t });
         });
+
+        // 兼容历史警告：首次查看时从仍保留的违规内容补齐快照，之后即使内容被隐藏或删除也可审计。
+        for (const warning of warnings) {
+            if (warning.source_content || !warning.source_type || !warning.source_id) continue;
+            let sourceTitle = warning.source_title;
+            let sourceContent = null;
+            if (warning.source_type === 'post') {
+                const source = await Post.findByPk(warning.source_id, { attributes: ['title', 'content'] });
+                sourceTitle = source?.title || sourceTitle;
+                sourceContent = source?.content || null;
+            } else if (warning.source_type === 'comment') {
+                const source = await Comment.findByPk(warning.source_id, { attributes: ['content', 'post_id', 'work_id'] });
+                sourceContent = source?.content || null;
+                if (source?.post_id) {
+                    const post = await Post.findByPk(source.post_id, { attributes: ['title'] });
+                    sourceTitle = post?.title ? `帖子“${post.title}”中的评论` : '帖子评论';
+                } else if (source?.work_id) sourceTitle = '作品评论';
+            }
+            if (sourceContent) await warning.update({ source_title: sourceTitle, source_content: sourceContent });
+        }
         logOperation(req, 'delete_user', 'user', userId, { username: user.username });
         invalidateForumReputation();
 

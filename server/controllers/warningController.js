@@ -13,23 +13,35 @@ async function issueWarning(req, res) {
         const target = await User.findByPk(userId);
         if (!target) return errorResponse(res, '用户不存在', 404);
         if (Number(req.user.id) === userId || !canManageUser(req.user.role, target.role)) return errorResponse(res, '不能警告同级、更高级或自己的账号', 403);
+        const sourceType = String(req.body?.source_type || '');
+        const sourceId = Number(req.body?.source_id);
+        let sourcePost = null;
+        let sourceTitle = null;
+        let sourceContent = null;
+        if (sourceType === 'post') {
+            sourcePost = await Post.findOne({ where: { id: sourceId, user_id: userId }, attributes: ['id', 'board_id', 'title', 'content'] });
+            sourceTitle = sourcePost?.title || null;
+            sourceContent = sourcePost?.content || null;
+        } else if (sourceType === 'comment') {
+            const sourceComment = await Comment.findOne({ where: { id: sourceId, user_id: userId }, attributes: ['id', 'post_id', 'work_id', 'content'] });
+            sourceContent = sourceComment?.content || null;
+            if (sourceComment?.post_id) {
+                sourcePost = await Post.findByPk(sourceComment.post_id, { attributes: ['id', 'board_id', 'title'] });
+                sourceTitle = sourcePost?.title ? `帖子“${sourcePost.title}”中的评论` : '帖子评论';
+            } else if (sourceComment?.work_id) sourceTitle = '作品评论';
+        }
+        if (sourceType && (!sourceTitle || !sourceContent)) return errorResponse(res, '违规来源不存在或不属于该用户', 400);
         if (req.user.role === 'moderator') {
-            const sourceType = String(req.body?.source_type || '');
-            const sourceId = Number(req.body?.source_id);
-            let post = null;
-            if (sourceType === 'post') post = await Post.findOne({ where: { id: sourceId, user_id: userId }, attributes: ['id', 'board_id'] });
-            if (sourceType === 'comment') {
-                const comment = await Comment.findOne({ where: { id: sourceId, user_id: userId }, attributes: ['id', 'post_id'] });
-                if (comment?.post_id) post = await Post.findByPk(comment.post_id, { attributes: ['id', 'board_id'] });
-            }
-            const assignment = post && await ForumBoardModerator.findOne({ where: { board_id: post.board_id, user_id: Number(req.user.id) }, attributes: ['id'] });
+            const assignment = sourcePost && await ForumBoardModerator.findOne({ where: { board_id: sourcePost.board_id, user_id: Number(req.user.id) }, attributes: ['id'] });
             if (!assignment) return errorResponse(res, '版主只能警告自己负责板块中确有违规内容的作者', 403);
         }
         const warning = await sequelize.transaction(async transaction => {
             const created = await UserWarning.create({
                 user_id: userId, issued_by: Number(req.user.id), reason,
                 source_type: req.body?.source_type || null,
-                source_id: Number(req.body?.source_id) || null
+                source_id: Number(req.body?.source_id) || null,
+                source_title: sourceTitle,
+                source_content: sourceContent
             }, { transaction });
             await Notification.create({
                 user_id: userId, sender_id: Number(req.user.id), type: 'system',
