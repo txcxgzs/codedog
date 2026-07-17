@@ -47,7 +47,7 @@
           <label>发送用户 ID<input v-model="query.user_id" inputmode="numeric" placeholder="可选" /></label>
           <label>关键词<input v-model="query.keyword" placeholder="消息正文" /></label>
           <label class="reason">查看原因（必填）<input v-model="reason" placeholder="请说明本次查看聊天内容的安全或审核原因" /></label>
-          <button @click="search" :disabled="loading || reason.trim().length < 5">{{ loading ? '检索中' : '执行审计检索' }}</button>
+          <button @click="search" :disabled="loading || reason.trim().length < 2">{{ loading ? '检索中' : '执行审计检索' }}</button>
         </section>
         <RecordsTable title="检索结果" :count="rows.length">
           <table><thead><tr><th>时间 / 序列</th><th>会话</th><th>发送者</th><th>内容</th><th>状态</th></tr></thead><tbody><tr v-for="row in rows" :key="row.id"><td>{{ formatDate(row.created_at) }}<small>#{{ row.sequence }}</small></td><td>{{ row.conversation_id }}</td><td>用户 {{ row.sender_id }}</td><td class="content">{{ row.content }}</td><td><span class="tag">{{ row.status }}</span></td></tr><tr v-if="!rows.length"><td colspan="5" class="empty">填写审计原因并执行检索</td></tr></tbody></table>
@@ -70,7 +70,7 @@
             <div class="report-meta"><div><span>举报人</span><b>{{ displayName(selectedReport.reporter, selectedReport.reporter_id) }}</b><small>ID {{ selectedReport.reporter_id }}</small></div><div><span>被举报用户</span><b>{{ displayName(selectedReport.reported_user, selectedReport.message?.sender_id) }}</b><small>ID {{ selectedReport.message?.sender_id }}</small></div><div><span>举报时间</span><b>{{ formatDate(selectedReport.created_at) }}</b><small>会话 #{{ selectedReport.conversation_id }}</small></div><div><span>当前状态</span><b>{{ statusLabel(selectedReport.status) }}</b><small>{{ actionLabel(selectedReport.resolution_action) }}</small></div></div>
             <div class="reason-card"><span>举报原因</span><p>{{ selectedReport.reason }}</p></div>
             <div class="evidence"><div class="evidence-title"><b>聊天上下文</b><span>展示被举报消息前后各 5 条，红框为被举报内容</span></div><div class="message-list"><article v-for="item in selectedReport.context || []" :key="item.id" :class="{ reported: Number(item.id) === Number(selectedReport.message_id), removed: item.status === 'hidden' }"><div><b>{{ displayName(item.sender, item.sender_id) }}</b><small>#{{ item.sequence }} · {{ formatDate(item.created_at) }}</small></div><p>{{ readableMessage(item) }}</p><span v-if="Number(item.id) === Number(selectedReport.message_id)">被举报消息</span></article><p v-if="!selectedReport.context?.length" class="empty-context">消息已不存在或暂无上下文</p></div></div>
-            <div v-if="selectedReport.status === 'pending'" class="decision"><label><span>处理意见 <i>{{ resolutionReason.length }}/500</i></span><textarea v-model="resolutionReason" maxlength="500" placeholder="说明判断依据和处置原因，至少 5 个字"></textarea></label><div class="decision-tip"><b>处置说明</b><span>“确认违规”仅记录结论；删除采用软删除，原文只保留在管理员审计中；禁用会同步到编程狗主账号。</span></div></div>
+            <div v-if="selectedReport.status === 'pending'" class="decision"><label><span>处理意见 <i>{{ resolutionReason.length }}/500</i></span><textarea v-model="resolutionReason" maxlength="500" placeholder="说明判断依据和处置原因，至少 2 个字"></textarea></label><div class="decision-tip"><b>处置说明</b><span>“确认违规”仅记录结论；删除采用软删除，原文只保留在管理员审计中；禁用会同步到编程狗主账号。</span></div></div>
             <div v-else class="handled"><b>{{ actionLabel(selectedReport.resolution_action) }}</b><p>{{ selectedReport.resolution_reason }}</p><span>处理人：{{ displayName(selectedReport.handler, selectedReport.resolved_by) }} · {{ formatDate(selectedReport.resolved_at) }}</span></div>
             <footer v-if="selectedReport.status === 'pending'"><button class="plain" :disabled="!canResolve" @click="askAction('reject')">驳回举报</button><button class="warning" :disabled="!canResolve" @click="askAction('confirm')">确认违规</button><button class="danger-outline" :disabled="!canResolve" @click="askAction('delete_message')">删除违规消息</button><button class="danger" :disabled="!canResolve" @click="askAction('delete_and_disable')">删除消息并禁用用户</button></footer>
           </section>
@@ -111,10 +111,10 @@
                 <div><h3>群聊资料</h3><p>群名和容量均在这里修改；只有实际发生变更时才可保存。</p></div>
                 <label><span>群聊名称</span><input v-model="groupEdit.name" maxlength="50" placeholder="1–50 个字符" /></label>
                 <label><span>成员上限</span><input v-model.number="groupEdit.member_limit" type="number" min="100" max="5000" /><small>超过默认 100 人即为管理员容量例外</small></label>
-                <label class="group-reason"><span>修改原因</span><textarea v-model="groupEdit.reason" maxlength="500" placeholder="请具体说明本次修改原因（至少 5 个字），将永久写入审计日志"></textarea><small>{{ groupEdit.reason.length }}/500</small></label>
+                <label class="group-reason"><span>修改原因</span><textarea v-model="groupEdit.reason" maxlength="500" placeholder="请说明本次修改原因（至少 2 个字），将永久写入审计日志"></textarea><small>{{ groupEdit.reason.length }}/500</small></label>
                 <footer>
                   <span v-if="!groupDirty">当前没有未保存的修改</span>
-                  <button v-if="groupDirty" :disabled="groupSaving || groupEdit.reason.trim().length < 5" @click="saveGroupDetail">{{ groupSaving ? '保存中…' : '保存修改' }}</button>
+                  <button v-if="groupDirty" :disabled="groupSaving || groupEdit.reason.trim().length < 2" @click="saveGroupDetail">{{ groupSaving ? '保存中…' : '保存修改' }}</button>
                 </footer>
               </section>
               <section class="group-info-card">
@@ -198,7 +198,7 @@ const exceptionGroupCount = computed(() => groups.value.filter(group => Number(g
 const groupDirty = computed(() => groupEdit.name.trim() !== groupOriginal.value.name || Number(groupEdit.member_limit) !== Number(groupOriginal.value.member_limit))
 const reportCounts = computed(() => ({ pending: reports.value.filter(item => item.status === 'pending').length, resolved: reports.value.filter(item => item.status === 'resolved').length, rejected: reports.value.filter(item => item.status === 'rejected').length, all: reports.value.length }))
 const filteredReports = computed(() => reportStatus.value === 'all' ? reports.value : reports.value.filter(item => item.status === reportStatus.value))
-const canResolve = computed(() => !resolving.value && resolutionReason.value.trim().length >= 5)
+const canResolve = computed(() => !resolving.value && resolutionReason.value.trim().length >= 2)
 const confirmCopy = computed(() => ({
   reject:{ title:'确认驳回这条举报？', text:'举报将标记为已驳回，处理意见和管理员身份会永久写入审计日志。', button:'确认驳回' },
   confirm:{ title:'确认内容违规？', text:'仅记录违规结论，不会删除消息或禁用用户。', button:'确认违规' },

@@ -328,7 +328,7 @@ app.patch('/api/groups/:id', requireSession, async (req, res, next) => {
     }
     if (req.body?.member_limit !== undefined) {
       if (!['admin', 'superadmin'].includes(req.user.role)) return fail(res, 403, '只有编程狗管理员可以设置群容量例外');
-      const reason = String(req.body.reason || '').trim(); if (reason.length < 5) return fail(res, 400, '设置容量例外必须填写至少 5 个字符的原因');
+      const reason = String(req.body.reason || '').trim(); if (reason.length < 2) return fail(res, 400, '设置容量例外必须填写至少 2 个字符的原因');
       const limit = Number(req.body.member_limit); if (!Number.isInteger(limit) || limit < config.groupDefaultLimit || limit > config.groupHardLimit) return fail(res, 400, `群容量必须在 ${config.groupDefaultLimit}-${config.groupHardLimit} 之间`);
       const oldLimit = Number(group.member_limit); group.member_limit = limit;
       await AdminAudit.create({ admin_id: req.user.id, action: 'group.member_limit.update', reason, filters: { conversation_id: Number(req.params.id), old_limit: oldLimit, new_limit: limit }, source_ip: req.ip });
@@ -384,7 +384,7 @@ async function createMessage(user, input) {
 app.post('/api/reports', requireSession, async (req, res, next) => {
   try {
     const messageId = Number(req.body?.message_id), reason = String(req.body?.reason || '').trim();
-    if (!Number.isInteger(messageId) || messageId <= 0 || reason.length < 5 || reason.length > 500) return fail(res, 400, '请选择消息并填写 5-500 字举报原因');
+    if (!Number.isInteger(messageId) || messageId <= 0 || reason.length < 2 || reason.length > 500) return fail(res, 400, '请选择消息并填写 2-500 字举报原因');
     const message = await Message.findOne({ where: { id: messageId } });
     if (!message || !await requireMember(req.user.id, message.conversation_id)) return fail(res, 404, '消息不存在');
     if (Number(message.sender_id) === Number(req.user.id)) return fail(res, 400, '不能举报自己的消息');
@@ -482,7 +482,7 @@ app.post('/api/admin/messages/search', requireSession, async (req, res, next) =>
   try {
     if (!['admin', 'superadmin'].includes(req.user.role)) return fail(res, 403, '无聊天记录查看权限');
     const reason = String(req.body?.reason || '').trim();
-    if (reason.length < 5) return fail(res, 400, '查看聊天记录必须填写至少 5 个字符的审计原因');
+    if (reason.length < 2) return fail(res, 400, '查看聊天记录必须填写至少 2 个字符的审计原因');
     const where = {};
     if (req.body?.conversation_id) where.conversation_id = Number(req.body.conversation_id);
     if (req.body?.user_id) where.sender_id = Number(req.body.user_id);
@@ -527,7 +527,7 @@ app.patch('/api/admin/reports/:id', requireSession, async (req, res, next) => {
     const action = String(req.body?.action || ''), reason = String(req.body?.reason || '').trim();
     const actions = new Set(['reject', 'confirm', 'delete_message', 'delete_and_disable']);
     if (!actions.has(action)) return fail(res, 400, '处理动作无效');
-    if (reason.length < 5 || reason.length > 500) return fail(res, 400, '处理意见应为 5-500 个字符');
+    if (reason.length < 2 || reason.length > 500) return fail(res, 400, '处理意见应为 2-500 个字符');
     const message = await Message.findOne({ where: { id: report.message_id } });
     if (!message) return fail(res, 409, '被举报消息已不存在，请先核查审计记录');
     if (action === 'delete_and_disable') {
@@ -599,7 +599,7 @@ app.patch('/api/admin/groups/:id', requireSession, async (req, res, next) => {
     const group = await Group.findOne({ where: { conversation_id: conversationId } });
     if (!group) return fail(res, 404, '群聊不存在');
     const reason = String(req.body?.reason || '').trim();
-    if (reason.length < 5 || reason.length > 500) return fail(res, 400, '修改群聊必须填写 5-500 字的操作原因');
+    if (reason.length < 2 || reason.length > 500) return fail(res, 400, '修改群聊必须填写 2-500 字的操作原因');
     const oldValues = { name: group.name, member_limit: Number(group.member_limit) };
     const changes = {};
     if (req.body?.name !== undefined) {

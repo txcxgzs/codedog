@@ -119,7 +119,7 @@
         <p>请说明举报原因，管理员会结合聊天上下文进行审核。请勿重复提交。</p>
         <label>举报原因 <span>{{ reportDialog.reason.length }}/500</span><textarea v-model="reportDialog.reason" maxlength="500" autofocus placeholder="例如：包含辱骂、骚扰、诈骗或违规内容"></textarea></label>
         <div v-if="reportDialog.error" class="dialog-error">{{ reportDialog.error }}</div>
-        <footer><button class="ghost" @click="closeReport">取消</button><button :disabled="reportDialog.reason.trim().length < 5 || reportDialog.submitting" @click="submitReport">{{ reportDialog.submitting ? '提交中' : '提交举报' }}</button></footer>
+        <footer><button class="ghost" @click="closeReport">取消</button><button :disabled="reportDialog.reason.trim().length < 2 || reportDialog.submitting" @click="submitReport">{{ reportDialog.submitting ? '提交中' : '提交举报' }}</button></footer>
       </section>
     </div>
     <div v-if="captchaDialog.open" class="modal-mask">
