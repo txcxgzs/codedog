@@ -21,11 +21,17 @@
         </div>
         <div class="filter-actions">
           <input v-model="keyword" type="text" class="search-input" placeholder="搜索作品" @keyup.enter="searchWorks">
-          <select v-model="sortBy" class="sort-select" @change="fetchWorks">
-            <option value="latest">最新发布</option>
-            <option value="popular">最多浏览</option>
-            <option value="praise">最多点赞</option>
-          </select>
+          <el-select
+            v-model="sortBy"
+            class="sort-select"
+            popper-class="works-sort-popper"
+            :teleported="true"
+            @change="fetchWorks"
+          >
+            <el-option label="最新发布" value="latest" />
+            <el-option label="最多浏览" value="popular" />
+            <el-option label="最多点赞" value="praise" />
+          </el-select>
         </div>
       </div>
     </div>
@@ -262,18 +268,70 @@ $white: #fff;
   }
   
   .sort-select {
+    width: 124px;
     height: 36px;
-    padding: 0 12px;
-    border: 1px solid #ddd;
-    border-radius: 11px;
-    background: rgba(255,255,255,.86);
-    font-size: 14px;
-    outline: none;
     cursor: pointer;
-    
-    &:focus { border-color: $primary-color; }
+
+    :deep(.el-select__wrapper) {
+      min-height: 36px;
+      padding: 0 13px;
+      border-radius: 11px;
+      background: rgba(255,255,255,.9);
+      box-shadow: 0 0 0 1px #d9dfeb inset;
+      transition: box-shadow .2s, background .2s;
+    }
+
+    :deep(.el-select__wrapper:hover) {
+      background: #fff;
+      box-shadow: 0 0 0 1px rgba(254,196,51,.85) inset;
+    }
+
+    :deep(.el-select__wrapper.is-focused) {
+      box-shadow: 0 0 0 2px rgba(254,196,51,.55) inset !important;
+    }
+
+    :deep(.el-select__selected-item) {
+      color: #172033;
+      font-size: 14px;
+      font-weight: 600;
+    }
+
+    :deep(.el-select__caret) { color: #576278; }
   }
 }
+
+:global(.works-sort-popper.el-popper) {
+  overflow: hidden;
+  padding: 6px;
+  border: 1px solid rgba(221,227,238,.95);
+  border-radius: 14px;
+  background: rgba(255,255,255,.98);
+  box-shadow: 0 18px 46px rgba(26,39,67,.16);
+  backdrop-filter: blur(18px);
+}
+
+:global(.works-sort-popper .el-select-dropdown__list) { padding: 0; }
+:global(.works-sort-popper .el-select-dropdown__item) {
+  height: 38px;
+  margin: 2px 0;
+  padding: 0 12px;
+  border-radius: 9px;
+  color: #4f5b70;
+  font-size: 14px;
+  line-height: 38px;
+  transition: background .16s, color .16s;
+}
+:global(.works-sort-popper .el-select-dropdown__item:hover),
+:global(.works-sort-popper .el-select-dropdown__item.is-hovering) {
+  color: #172033;
+  background: #f5f7fb;
+}
+:global(.works-sort-popper .el-select-dropdown__item.is-selected) {
+  color: #172033;
+  font-weight: 700;
+  background: linear-gradient(90deg, rgba(254,196,51,.2), rgba(254,196,51,.08));
+}
+:global(.works-sort-popper .el-popper__arrow) { display: none; }
 
 .works-container {
   position: relative;
