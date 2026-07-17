@@ -166,6 +166,7 @@ router.post('/configs/batch', requireRole('superadmin'), adminController.batchUp
 /**
  * 操作日志
  */
+router.get('/operation-logs/options', requirePermission('log:view'), adminController.getOperationLogOptions);
 router.get('/operation-logs', requirePermission('log:view'), adminController.getOperationLogs);
 
 /**

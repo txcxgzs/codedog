@@ -2203,6 +2203,42 @@
           <div class="r-admin--header">
             <h2 class="r-admin--title">操作日志</h2>
           </div>
+          <div class="r-admin--filters r-admin--log_filters">
+            <el-select v-model="logFilters.userId" clearable filterable placeholder="全部管理员">
+              <el-option
+                v-for="operator in logFilterOptions.operators"
+                :key="operator.id"
+                :label="`${operator.nickname || operator.username}（${getRoleName(operator.role)}）`"
+                :value="operator.id"
+              />
+            </el-select>
+            <el-select v-model="logFilters.action" clearable filterable placeholder="全部操作">
+              <el-option
+                v-for="action in logFilterOptions.actions"
+                :key="action"
+                :label="getActionName(action)"
+                :value="action"
+              />
+            </el-select>
+            <el-select v-model="logFilters.targetType" clearable filterable placeholder="全部目标">
+              <el-option
+                v-for="type in logFilterOptions.targetTypes"
+                :key="type"
+                :label="getTargetTypeName(type)"
+                :value="type"
+              />
+            </el-select>
+            <el-date-picker
+              v-model="logFilters.dateRange"
+              type="datetimerange"
+              range-separator="至"
+              start-placeholder="开始时间"
+              end-placeholder="结束时间"
+              value-format="YYYY-MM-DDTHH:mm:ss"
+            />
+            <el-button type="primary" @click="applyLogFilters">筛选</el-button>
+            <el-button @click="resetLogFilters">重置</el-button>
+          </div>
           <el-table :data="operationLogs" v-loading="loadingOperationLogs" stripe>
             <el-table-column prop="id" label="ID" width="60" />
             <el-table-column prop="user" label="操作者" width="150">
@@ -2234,10 +2270,12 @@
           <div class="r-admin--pagination">
             <el-pagination
               v-model:current-page="logPage"
-              :page-size="20"
+              v-model:page-size="logPageSize"
+              :page-sizes="[10, 20, 50, 100]"
               :total="logTotal"
-              layout="prev, pager, next"
+              layout="total, sizes, prev, pager, next, jumper"
               @current-change="fetchOperationLogs"
+              @size-change="handleLogPageSizeChange"
             />
           </div>
         </div>
@@ -3834,9 +3872,12 @@ const clearRealtimeLogs = async () => {
 const operationLogs = ref([])
 const loadingOperationLogs = ref(false)
 const logPage = ref(1)
+const logPageSize = ref(20)
 const logTotal = ref(0)
 const logDetailDialogVisible = ref(false)
 const logDetailContent = ref('')
+const logFilters = ref({ userId: null, action: '', targetType: '', dateRange: [] })
+const logFilterOptions = ref({ operators: [], actions: [], targetTypes: [] })
 
 const actionNames = {
   'update_user_password': '修改用户密码',
@@ -3991,7 +4032,8 @@ const resourceNames = {
   configs: '系统配置', sensitive: '敏感词', notifications: '通知',
   operation: '操作日志', logs: '日志', forum: '论坛', boards: '版块',
   proxy: '代理配置', captcha: '验证码', developer: '开发者应用',
-  permissions: '权限', realtime: '实时日志'
+  permissions: '权限', realtime: '实时日志', overview: '概览',
+  trends: '趋势', trend: '趋势', stats: '统计数据', stat: '统计数据'
 }
 
 const getActionName = (action) => {
@@ -4043,13 +4085,45 @@ const translateLogDetails = (value) => {
 const fetchOperationLogs = async () => {
   loadingOperationLogs.value = true
   try {
-    const res = await adminApi.getOperationLogs({ page: logPage.value })
+    const [startDate, endDate] = logFilters.value.dateRange || []
+    const res = await adminApi.getOperationLogs({
+      page: logPage.value,
+      pageSize: logPageSize.value,
+      userId: logFilters.value.userId || undefined,
+      action: logFilters.value.action || undefined,
+      targetType: logFilters.value.targetType || undefined,
+      startDate: startDate || undefined,
+      endDate: endDate || undefined
+    })
     if (res.code === 200) {
       operationLogs.value = res.data.list
       logTotal.value = res.data.pagination?.total || 0
     }
   } catch (e) {}
   finally { loadingOperationLogs.value = false }
+}
+
+const fetchOperationLogOptions = async () => {
+  try {
+    const res = await adminApi.getOperationLogOptions()
+    if (res.code === 200) logFilterOptions.value = res.data
+  } catch (e) {}
+}
+
+const applyLogFilters = () => {
+  logPage.value = 1
+  fetchOperationLogs()
+}
+
+const resetLogFilters = () => {
+  logFilters.value = { userId: null, action: '', targetType: '', dateRange: [] }
+  logPage.value = 1
+  fetchOperationLogs()
+}
+
+const handleLogPageSizeChange = () => {
+  logPage.value = 1
+  fetchOperationLogs()
 }
 
 const showLogDetail = (log) => {
@@ -4437,7 +4511,10 @@ const handleMenuSelect = async (key) => {
   if (key === 'announcements') fetchAnnouncements()
   if (key === 'sensitive') fetchSensitiveWords()
   if (key === 'configs') fetchConfigs()
-  if (key === 'logs') fetchOperationLogs()
+  if (key === 'logs') {
+    fetchOperationLogOptions()
+    fetchOperationLogs()
+  }
   if (key === 'permissions') fetchRolePermissions()
   if (key === 'developer-apps') fetchDeveloperApps()
 }
@@ -5795,6 +5872,25 @@ $sidebar-width: 200px;
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+.r-admin--log_filters {
+  margin-bottom: 18px;
+}
+
+.r-admin--log_filters :deep(.el-select) {
+  width: 180px;
+}
+
+.r-admin--log_filters :deep(.el-date-editor) {
+  width: 390px;
+}
+
+@media (max-width: 768px) {
+  .r-admin--log_filters :deep(.el-select),
+  .r-admin--log_filters :deep(.el-date-editor) {
+    width: 100%;
+  }
 }
 
 .r-admin--title {

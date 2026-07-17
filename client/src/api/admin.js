@@ -395,6 +395,10 @@ export const adminApi = {
   getOperationLogs(params = {}) {
     return request.get('/admin/operation-logs', { params })
   },
+
+  getOperationLogOptions() {
+    return request.get('/admin/operation-logs/options')
+  },
   
   /**
    * 敏感词管理

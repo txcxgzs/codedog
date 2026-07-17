@@ -3539,17 +3539,18 @@ async function getOperationLogs(req, res) {
         const { page, pageSize, offset } = DbAdapter.parsePagination(req.query);
         const userId = req.query.userId;
         const action = req.query.action;
+        const targetType = req.query.targetType;
         const startDate = req.query.startDate;
         const endDate = req.query.endDate;
         
         const where = {};
         if (userId) where.user_id = userId;
-        if (action) {
-            const actionWhere = likeContains(sequelize, ['action'], action);
-            if (actionWhere) Object.assign(where, actionWhere);
-        }
-        if (startDate && endDate) {
-            where.created_at = { [Op.between]: [new Date(startDate), new Date(endDate)] };
+        if (action) where.action = action;
+        if (targetType) where.target_type = targetType;
+        if (startDate || endDate) {
+            where.created_at = {};
+            if (startDate) where.created_at[Op.gte] = new Date(startDate);
+            if (endDate) where.created_at[Op.lte] = new Date(endDate);
         }
         
         const { count, rows } = await DbAdapter.findAndCountAll(OperationLog, {
@@ -3578,6 +3579,49 @@ async function getOperationLogs(req, res) {
 }
 
 // ==================== 敏感词管理====================
+
+async function getOperationLogOptions(req, res) {
+    try {
+        const [operatorRows, actionRows, targetTypeRows] = await Promise.all([
+            DbAdapter.findAll(OperationLog, {
+                attributes: ['user_id'],
+                where: { user_id: { [Op.ne]: null } },
+                group: ['user_id'],
+                raw: true
+            }),
+            DbAdapter.findAll(OperationLog, {
+                attributes: ['action'],
+                where: { action: { [Op.ne]: null } },
+                group: ['action'],
+                order: [['action', 'ASC']],
+                raw: true
+            }),
+            DbAdapter.findAll(OperationLog, {
+                attributes: ['target_type'],
+                where: { target_type: { [Op.ne]: null } },
+                group: ['target_type'],
+                order: [['target_type', 'ASC']],
+                raw: true
+            })
+        ]);
+        const operatorIds = operatorRows.map((item) => item.user_id).filter(Boolean);
+        const operators = operatorIds.length
+            ? await DbAdapter.findAll(User, {
+                where: { id: { [Op.in]: operatorIds } },
+                attributes: ['id', 'username', 'nickname', 'role', 'status'],
+                order: [['nickname', 'ASC'], ['username', 'ASC']]
+            })
+            : [];
+        return successResponse(res, {
+            operators,
+            actions: actionRows.map((item) => item.action).filter(Boolean),
+            targetTypes: targetTypeRows.map((item) => item.target_type).filter(Boolean)
+        });
+    } catch (error) {
+        console.error('获取操作日志筛选项错误:', error);
+        return errorResponse(res, '获取筛选项失败', 500);
+    }
+}
 
 async function getSensitiveWords(req, res) {
     try {
@@ -5070,6 +5114,7 @@ module.exports = {
     updateSystemConfig,
     batchUpdateConfigs,
     getOperationLogs,
+    getOperationLogOptions,
     getSensitiveWords,
     addSensitiveWord,
     updateSensitiveWord,
