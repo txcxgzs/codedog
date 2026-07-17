@@ -257,6 +257,8 @@ function setFrontendCacheHeaders(res, filePath) {
     const normalizedPath = String(filePath || '').replace(/\\/g, '/');
     if (normalizedPath.endsWith('/index.html')) {
         res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+        res.setHeader('CDN-Cache-Control', 'no-store');
+        res.setHeader('Cloudflare-CDN-Cache-Control', 'no-store');
         res.setHeader('Pragma', 'no-cache');
         res.setHeader('Expires', '0');
     } else if (normalizedPath.includes('/assets/')) {
@@ -268,6 +270,8 @@ function setFrontendCacheHeaders(res, filePath) {
 
 function sendFrontendIndex(res, rootPath) {
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+    res.setHeader('CDN-Cache-Control', 'no-store');
+    res.setHeader('Cloudflare-CDN-Cache-Control', 'no-store');
     res.setHeader('Pragma', 'no-cache');
     res.setHeader('Expires', '0');
     return res.sendFile(path.join(rootPath, 'index.html'));
@@ -278,6 +282,7 @@ if (fs.existsSync(frontendPath)) {
     app.get('*', (req, res, next) => {
         if (req.path.startsWith('/api')) return next();
         if (req.path.startsWith('/uploads/')) return res.status(404).end();
+        if (req.path.startsWith('/assets/')) return res.status(404).set('Cache-Control', 'no-store').end();
         return sendFrontendIndex(res, frontendPath);
     });
 } else if (fs.existsSync(alternativePath)) {
@@ -285,6 +290,7 @@ if (fs.existsSync(frontendPath)) {
     app.get('*', (req, res, next) => {
         if (req.path.startsWith('/api')) return next();
         if (req.path.startsWith('/uploads/')) return res.status(404).end();
+        if (req.path.startsWith('/assets/')) return res.status(404).set('Cache-Control', 'no-store').end();
         return sendFrontendIndex(res, alternativePath);
     });
 }

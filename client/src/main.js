@@ -15,6 +15,22 @@ import router from './router'
 import './styles/main.scss'
 import './styles/mobile.scss'
 
+const reloadAfterStaleAsset = () => {
+  const retryKey = 'codedog_asset_reload_at'
+  const lastRetry = Number(sessionStorage.getItem(retryKey) || 0)
+  if (Date.now() - lastRetry < 15000) return
+  sessionStorage.setItem(retryKey, String(Date.now()))
+  const url = new URL(window.location.href)
+  url.searchParams.set('__refresh', String(Date.now()))
+  window.location.replace(url.toString())
+}
+
+// Vite 在异步 JS 或其 CSS 预加载失败时触发该事件。更新切换镜像后自动换取新入口。
+window.addEventListener('vite:preloadError', (event) => {
+  event.preventDefault()
+  reloadAfterStaleAsset()
+})
+
 // 创建Vue应用
 const app = createApp(App)
 

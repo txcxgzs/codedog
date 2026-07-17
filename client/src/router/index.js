@@ -6,12 +6,14 @@
 
 import { createRouter, createWebHistory } from 'vue-router'
 import { useUserStore } from '@/stores/user'
+import Home from '@/views/Home.vue'
 
 const routes = [
   {
     path: '/',
     name: 'Home',
-    component: () => import('@/views/Home.vue'),
+    // 首页与主入口一起发布，避免部署切换时旧页面请求已删除的异步首页 JS/CSS。
+    component: Home,
     meta: { title: '首页' }
   },
   {
@@ -146,7 +148,7 @@ router.onError((error) => {
   const isStaleChunk = /Failed to fetch dynamically imported module|Importing a module script failed|Loading chunk|CSS_CHUNK_LOAD_FAILED/i.test(message)
   if (!isStaleChunk) return
 
-  const retryKey = 'codedog_chunk_reload_at'
+  const retryKey = 'codedog_asset_reload_at'
   const lastRetry = Number(sessionStorage.getItem(retryKey) || 0)
   if (Date.now() - lastRetry < 15000) return
   sessionStorage.setItem(retryKey, String(Date.now()))
