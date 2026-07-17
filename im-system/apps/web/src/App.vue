@@ -14,7 +14,8 @@
       <div class="conversation-list">
         <button v-for="item in filteredConversations" :key="item.id" class="conversation" :class="{ active: selected?.id === item.id }" @click="selectConversation(item)">
           <span class="avatar"><img v-if="item.type === 'direct' && item.peer?.avatar" :src="item.peer.avatar" alt="" referrerpolicy="no-referrer" @error="$event.currentTarget.remove()" />{{ item.type === 'group' ? '群' : avatarLetter(item.peer, '友') }}</span>
-          <span class="conversation-copy"><b :class="{ 'user-link': item.type === 'direct' }" @click.stop="item.type === 'direct' && openUser(item.peer)">{{ item.title || `会话 #${item.id}` }}</b><small>序列 {{ item.last_sequence || 0 }}</small></span>
+          <span class="conversation-copy"><b :class="{ 'user-link': item.type === 'direct' }" @click.stop="item.type === 'direct' && openUser(item.peer)">{{ item.title || `会话 #${item.id}` }}</b><small>{{ conversationPreview(item) }}</small></span>
+          <span class="conversation-side"><time>{{ conversationTime(item) }}</time><em v-if="unreadCount(item)">{{ unreadCount(item) > 99 ? '99+' : unreadCount(item) }}</em></span>
         </button>
         <div v-if="!conversations.length" class="empty">还没有会话<br><small>从编程狗用户主页发起私聊</small></div>
       </div>
@@ -160,6 +161,7 @@ const captchaDialog = reactive({ open: false, scene: '', error: '', resolve: nul
 const captchaGrants = new Map()
 const reportDialog = reactive({ open: false, message: null, reason: '', error: '', submitting: false })
 const toast = reactive({ message: '', type: 'success' })
+const readSequences = reactive({})
 let socket = null
 const initials = computed(() => String(me.value?.nickname || me.value?.username || '犬').slice(0, 1))
 const communityUrl = computed(() => String(me.value?.community_url || 'https://54188.xyz').replace(/\/$/, ''))
@@ -189,7 +191,45 @@ const exchangeSso = async () => {
   history.replaceState({}, '', location.pathname)
   return { action, userId, groupId }
 }
-const refreshSidebar = async () => { [conversations.value, requests.value] = await Promise.all([api('/conversations'), api('/conversation-requests')]) }
+const readStorageKey = () => `codedog-im-read-sequences:${me.value?.id || 'guest'}`
+const persistReadSequences = () => localStorage.setItem(readStorageKey(), JSON.stringify(readSequences))
+const loadReadSequences = items => {
+  let stored = null
+  try { stored = JSON.parse(localStorage.getItem(readStorageKey()) || 'null') } catch {}
+  if (stored && typeof stored === 'object') Object.assign(readSequences, stored)
+  else {
+    for (const item of items) readSequences[item.id] = Number(item.last_sequence) || 0
+    persistReadSequences()
+  }
+}
+const markConversationRead = item => {
+  if (!item) return
+  readSequences[item.id] = Math.max(Number(readSequences[item.id]) || 0, Number(item.last_sequence) || 0)
+  persistReadSequences()
+}
+const unreadCount = item => Math.max(0, Number(item.last_sequence || 0) - Number(readSequences[item.id] || 0))
+const conversationPreview = item => {
+  const message = item.latest_message
+  if (!message) return '还没有消息'
+  if (message.status === 'hidden') return '该消息已被删除'
+  if (message.type === 'image') return `${Number(message.sender_id) === Number(me.value?.id) ? '我：' : ''}[图片]`
+  if (message.type === 'system') return `[系统消息] ${message.content || ''}`
+  return `${Number(message.sender_id) === Number(me.value?.id) ? '我：' : ''}${message.content || '消息内容为空'}`
+}
+const conversationTime = item => {
+  const value = item.latest_message?.created_at || item.updated_at
+  if (!value) return ''
+  const date = new Date(value), now = new Date()
+  if (date.toDateString() === now.toDateString()) return date.toLocaleTimeString('zh-CN', { hour:'2-digit', minute:'2-digit' })
+  if (date.getFullYear() === now.getFullYear()) return `${date.getMonth() + 1}/${date.getDate()}`
+  return `${date.getFullYear()}/${date.getMonth() + 1}/${date.getDate()}`
+}
+const refreshSidebar = async () => {
+  const [items, pendingRequests] = await Promise.all([api('/conversations'), api('/conversation-requests')])
+  conversations.value = items
+  requests.value = pendingRequests
+  loadReadSequences(items)
+}
 const loadGeetestScript = () => new Promise((resolve, reject) => {
   if (window.initGeetest) return resolve()
   const existing = document.querySelector('script[data-codedog-geetest]')
@@ -307,7 +347,7 @@ const nextGroupStep = () => {
   else createGroupFromWizard()
 }
 const handleRequest = async (request, action) => { await api(`/conversation-requests/${request.conversation_id}`, { method:'POST', body:JSON.stringify({ action }) }); await refreshSidebar() }
-const selectConversation = async item => { selected.value = item; mobileChannelOpen.value = true; loading.value = true; try { messages.value = await api(`/conversations/${item.id}/messages`); await nextTick(); timeline.value?.scrollTo(0, timeline.value.scrollHeight) } finally { loading.value = false } }
+const selectConversation = async item => { selected.value = item; mobileChannelOpen.value = true; loading.value = true; markConversationRead(item); try { messages.value = await api(`/conversations/${item.id}/messages`); await nextTick(); timeline.value?.scrollTo(0, timeline.value.scrollHeight) } finally { loading.value = false } }
 const sendMessage = async () => {
   if (!selected.value || !draft.value.trim() || sending.value) return
   const content = draft.value.trim(); draft.value = ''; sending.value = true
@@ -340,7 +380,27 @@ const connectSocket = () => {
     }
     if (!sessionExpired.value) setTimeout(connectSocket, 2000)
   }
-  socket.onmessage = async event => { const frame = JSON.parse(event.data); if (frame.event === 'message.new' && Number(frame.data.conversation_id) === Number(selected.value?.id) && !messages.value.some(item => String(item.id) === String(frame.data.id))) { messages.value.push(frame.data); await nextTick(); timeline.value?.scrollTo(0, timeline.value.scrollHeight) } }
+  socket.onmessage = async event => {
+    const frame = JSON.parse(event.data)
+    if (frame.event !== 'message.new') return
+    const conversationId = Number(frame.data.conversation_id)
+    let item = conversations.value.find(value => Number(value.id) === conversationId)
+    if (!item) {
+      await refreshSidebar()
+      item = conversations.value.find(value => Number(value.id) === conversationId)
+    }
+    if (item) {
+      item.last_sequence = Math.max(Number(item.last_sequence) || 0, Number(frame.data.sequence) || 0)
+      item.latest_message = frame.data
+      conversations.value = [...conversations.value].sort((a, b) => new Date(b.latest_message?.created_at || b.updated_at || 0) - new Date(a.latest_message?.created_at || a.updated_at || 0))
+    }
+    if (conversationId === Number(selected.value?.id)) {
+      if (!messages.value.some(value => String(value.id) === String(frame.data.id))) messages.value.push(frame.data)
+      markConversationRead(item)
+      await nextTick()
+      timeline.value?.scrollTo(0, timeline.value.scrollHeight)
+    }
+  }
 }
 const formatTime = value => value ? new Date(value).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) : ''
 const imageData = message => { try { return JSON.parse(message.content) } catch { return { url: '' } } }
@@ -389,6 +449,7 @@ onUnmounted(() => {
 .avatar { position:relative; overflow:hidden; }
 .avatar img { position:absolute; inset:0; display:block; width:100%; height:100%; object-fit:cover; }
 .back-link { margin-left:auto; color:#a86f00; font-size:11px; text-decoration:none; white-space:nowrap; }.back-link:hover,.user-link:hover{color:#d28c00;text-decoration:underline}.user-link{display:inline-block;width:fit-content;max-width:100%;cursor:pointer}.conversation-copy b.user-link{display:block;width:fit-content;max-width:100%}
+.conversation-copy small{max-width:170px;color:#a0a4ad;line-height:1.35}.conversation-side{align-self:stretch;display:flex;min-width:38px;flex-direction:column;align-items:flex-end;justify-content:space-between;padding:2px 0}.conversation-side time{color:#aeb2b9;font-size:10px;font-variant-numeric:tabular-nums;white-space:nowrap}.conversation-side em{display:grid;min-width:19px;height:19px;padding:0 5px;place-items:center;border-radius:10px;background:#ef4d4d;color:#fff;font-size:10px;font-style:normal;font-weight:800;box-shadow:0 3px 9px rgba(239,77,77,.24)}.conversation.active .conversation-side em{background:#e34949}
 .modal-mask{position:fixed;inset:0;z-index:1000;display:grid;place-items:center;padding:20px;background:rgba(25,29,35,.42);backdrop-filter:blur(3px)}
 .report-dialog{width:min(500px,100%);padding:22px;border:1px solid #e3e5e9;border-radius:18px;background:#fff;box-shadow:0 24px 70px rgba(20,25,32,.22)}
 .report-dialog header{display:flex;justify-content:space-between;align-items:flex-start}.report-dialog header small{color:#c88700}.report-dialog h2{margin:5px 0 0}.report-dialog header button{border:0;background:transparent;color:#8c929b;font-size:26px;cursor:pointer}.report-dialog>p{color:#7f858e;font-size:13px;line-height:1.7}

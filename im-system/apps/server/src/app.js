@@ -148,13 +148,33 @@ app.get('/api/conversations', requireSession, async (req, res, next) => {
     const groupById = new Map(groups.filter(Boolean).map(item => [String(item.conversation_id), item.toJSON()]));
     const peerIds = conversations.filter(item => item.type === 'direct').map(item => String(item.direct_key).split(':').map(Number).find(id => id !== Number(req.user.id)));
     const peers = await usersById(peerIds);
-    ok(res, memberships.map(item => {
+    const rows = await Promise.all(memberships.map(async item => {
       const conversation = byId.get(String(item.conversation_id));
       if (!conversation) return null;
       const peerId = conversation.type === 'direct' ? String(conversation.direct_key).split(':').map(Number).find(id => id !== Number(req.user.id)) : null;
       const peer = peers.get(Number(peerId)) || null;
-      return { ...conversation, title: conversation.type === 'group' ? groupById.get(String(conversation.id))?.name : (peer?.nickname || peer?.username || `用户 ${peerId}`), peer_id: peerId, peer, group: groupById.get(String(conversation.id)), membership: item.toJSON() };
-    }).filter(Boolean));
+      const latestMessage = Number(conversation.last_sequence) > 0
+        ? await Message.findOne({ where: { conversation_id: conversation.id, sequence: conversation.last_sequence } })
+        : null;
+      return {
+        ...conversation,
+        title: conversation.type === 'group' ? groupById.get(String(conversation.id))?.name : (peer?.nickname || peer?.username || `用户 ${peerId}`),
+        peer_id: peerId,
+        peer,
+        group: groupById.get(String(conversation.id)),
+        membership: item.toJSON(),
+        latest_message: latestMessage ? {
+          id: latestMessage.id,
+          sequence: latestMessage.sequence,
+          sender_id: latestMessage.sender_id,
+          type: latestMessage.type,
+          content: latestMessage.status === 'hidden' ? '该消息已被删除' : latestMessage.content,
+          status: latestMessage.status,
+          created_at: latestMessage.created_at
+        } : null
+      };
+    }));
+    ok(res, rows.filter(Boolean).sort((a, b) => new Date(b.latest_message?.created_at || b.updated_at || 0) - new Date(a.latest_message?.created_at || a.updated_at || 0)));
   } catch (error) { next(error); }
 });
 
