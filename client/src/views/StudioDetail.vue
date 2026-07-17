@@ -101,29 +101,31 @@
         <el-tab-pane label="工作室论坛" name="forum">
           <div class="r-studio-detail--forum">
             <template v-if="!selectedForumPost">
-              <div class="r-studio-detail--forum_head">
-                <div><h3>工作室论坛</h3><p>所有人都可以浏览，只有本工作室成员可以发帖和回复。</p></div>
-                <el-button v-if="userMemberStatus === 'active'" type="primary" @click="forumPostDialogVisible = true">发布主题</el-button>
+              <div class="r-studio-detail--forum_hero">
+                <div class="r-studio-detail--forum_hero_copy"><span class="r-studio-detail--forum_mark">论</span><div><h2>{{ studio?.name }}论坛</h2><p>围绕作品、技术与工作室计划展开交流。内容公开，成员参与。</p></div></div>
+                <div class="r-studio-detail--forum_summary"><span><b>{{ forumPosts.length }}</b>主题</span><i></i><span><b>{{ totalForumReplies }}</b>回复</span></div>
               </div>
+              <div class="r-studio-detail--forum_toolbar"><el-input v-model="forumSearch" clearable placeholder="搜索工作室论坛主题" class="r-studio-detail--forum_search"><template #prefix>⌕</template></el-input><span class="r-studio-detail--forum_rule">外部访客可浏览 · 活跃成员可参与</span><el-button v-if="userMemberStatus === 'active'" type="primary" @click="forumPostDialogVisible = true">＋ 发布主题</el-button></div>
               <div v-loading="forumLoading" class="r-studio-detail--forum_list">
-                <button v-for="item in forumPosts" :key="item.id" type="button" class="r-studio-detail--forum_item" @click="openForumPost(item.id)">
-                  <span class="r-studio-detail--forum_item_main"><b><el-tag v-if="item.is_pinned" size="small" type="warning">置顶</el-tag>{{ item.title }}</b><small>{{ item.author?.nickname || item.author?.username }} · {{ formatDate(item.last_reply_at || item.created_at) }}</small></span>
-                  <span class="r-studio-detail--forum_counts">{{ item.view_count }} 浏览<br>{{ item.reply_count }} 回复</span>
+                <button v-for="item in filteredForumPosts" :key="item.id" type="button" class="r-studio-detail--forum_item" @click="openForumPost(item.id)">
+                  <AppImage :src="item.author?.avatar || defaultAvatar" :fallback="defaultAvatar" class="r-studio-detail--forum_item_avatar" />
+                  <span class="r-studio-detail--forum_item_main"><span class="r-studio-detail--forum_item_title"><em v-if="item.is_pinned">置顶</em><em v-if="item.is_locked" class="locked">锁定</em><b>{{ item.title }}</b></span><span class="r-studio-detail--forum_excerpt">{{ item.content }}</span><small><strong>{{ item.author?.nickname || item.author?.username }}</strong><i>发布于 {{ formatForumTime(item.created_at) }}</i><i v-if="item.last_reply_at">最后回复 {{ formatForumTime(item.last_reply_at) }}</i></small></span>
+                  <span class="r-studio-detail--forum_counts"><span><b>{{ item.reply_count }}</b>回复</span><span><b>{{ item.view_count }}</b>浏览</span><i>›</i></span>
                 </button>
-                <el-empty v-if="!forumLoading && !forumPosts.length" description="工作室论坛还没有主题" />
+                <el-empty v-if="!forumLoading && !filteredForumPosts.length" :description="forumSearch ? '没有找到相关主题' : '工作室论坛还没有主题'" />
               </div>
             </template>
             <template v-else>
               <div class="r-studio-detail--forum_detail_head">
-                <el-button text @click="closeForumPost">← 返回论坛</el-button>
-                <div v-if="can('member_manage')"><el-button size="small" @click="handleForumState({ is_pinned: !selectedForumPost.is_pinned })">{{ selectedForumPost.is_pinned ? '取消置顶' : '置顶' }}</el-button><el-button size="small" @click="handleForumState({ is_locked: !selectedForumPost.is_locked })">{{ selectedForumPost.is_locked ? '解除锁定' : '锁定' }}</el-button></div>
+                <el-button class="r-studio-detail--forum_back" @click="closeForumPost">‹ 返回工作室论坛</el-button>
+                <div v-if="can('member_manage')" class="r-studio-detail--forum_manage"><el-button size="small" @click="handleForumState({ is_pinned: !selectedForumPost.is_pinned })">{{ selectedForumPost.is_pinned ? '取消置顶' : '置顶主题' }}</el-button><el-button size="small" @click="handleForumState({ is_locked: !selectedForumPost.is_locked })">{{ selectedForumPost.is_locked ? '解除锁定' : '锁定回复' }}</el-button></div>
               </div>
-              <article class="r-studio-detail--forum_post"><h2>{{ selectedForumPost.title }}</h2><div class="r-studio-detail--forum_author">{{ selectedForumPost.author?.nickname || selectedForumPost.author?.username }} · {{ formatDate(selectedForumPost.created_at) }} · {{ selectedForumPost.view_count }} 浏览</div><p>{{ selectedForumPost.content }}</p><el-button v-if="String(selectedForumPost.user_id) === String(userStore.user?.id) || can('member_manage')" text type="danger" @click="handleDeleteForumPost">删除主题</el-button></article>
+              <article class="r-studio-detail--forum_post"><div class="r-studio-detail--forum_post_badges"><span v-if="selectedForumPost.is_pinned">置顶</span><span v-if="selectedForumPost.is_locked" class="locked">已锁定</span></div><h1>{{ selectedForumPost.title }}</h1><div class="r-studio-detail--forum_post_author" role="link" tabindex="0" @click="goUser(selectedForumPost.author)" @keydown.enter="goUser(selectedForumPost.author)"><AppImage :src="selectedForumPost.author?.avatar || defaultAvatar" :fallback="defaultAvatar" /><span><b>{{ selectedForumPost.author?.nickname || selectedForumPost.author?.username }}</b><small>{{ formatForumTime(selectedForumPost.created_at) }} · {{ selectedForumPost.view_count }} 次浏览</small></span></div><div class="r-studio-detail--forum_post_content">{{ selectedForumPost.content }}</div><div class="r-studio-detail--forum_post_footer"><span>来自 {{ studio?.name }} 工作室论坛</span><el-button v-if="String(selectedForumPost.user_id) === String(userStore.user?.id) || can('member_manage')" text type="danger" @click="handleDeleteForumPost">删除主题</el-button></div></article>
               <section class="r-studio-detail--forum_replies">
-                <h3>回复（{{ selectedForumPost.replies?.length || 0 }}）</h3>
-                <div v-for="reply in selectedForumPost.replies" :key="reply.id" class="r-studio-detail--forum_reply"><AppImage :src="reply.author?.avatar || defaultAvatar" :fallback="defaultAvatar" /><div><b>{{ reply.author?.nickname || reply.author?.username }}</b><small>{{ formatDate(reply.created_at) }}</small><p>{{ reply.content }}</p><el-button v-if="String(reply.user_id) === String(userStore.user?.id) || can('member_manage')" text type="danger" size="small" @click="handleDeleteForumReply(reply)">删除</el-button></div></div>
+                <div class="r-studio-detail--forum_replies_head"><h2>全部回复 <small>{{ selectedForumPost.replies?.length || 0 }}</small></h2><span>按发布时间排序</span></div>
+                <div v-for="(reply, index) in selectedForumPost.replies" :key="reply.id" class="r-studio-detail--forum_reply"><AppImage :src="reply.author?.avatar || defaultAvatar" :fallback="defaultAvatar" /><div class="r-studio-detail--forum_reply_body"><div class="r-studio-detail--forum_reply_meta"><span><b role="link" tabindex="0" @click="goUser(reply.author)" @keydown.enter="goUser(reply.author)">{{ reply.author?.nickname || reply.author?.username }}</b><small>{{ formatForumTime(reply.created_at) }}</small></span><em>#{{ index + 1 }}</em></div><p>{{ reply.content }}</p><div class="r-studio-detail--forum_reply_actions"><el-button v-if="String(reply.user_id) === String(userStore.user?.id) || can('member_manage')" text type="danger" size="small" @click="handleDeleteForumReply(reply)">删除</el-button></div></div></div>
                 <el-empty v-if="!selectedForumPost.replies?.length" description="暂无回复" />
-                <div v-if="userMemberStatus === 'active' && !selectedForumPost.is_locked" class="r-studio-detail--forum_reply_box"><el-input v-model="forumReplyText" type="textarea" :rows="3" maxlength="5000" show-word-limit placeholder="回复该主题" /><el-button type="primary" @click="handleCreateForumReply">发表回复</el-button></div>
+                <div v-if="userMemberStatus === 'active' && !selectedForumPost.is_locked" class="r-studio-detail--forum_reply_box"><div class="r-studio-detail--forum_reply_box_head"><AppImage :src="userStore.user?.avatar || defaultAvatar" :fallback="defaultAvatar" /><span><b>参与讨论</b><small>以 {{ userStore.user?.nickname || userStore.user?.username }} 的身份回复</small></span></div><el-input v-model="forumReplyText" type="textarea" :rows="4" maxlength="5000" show-word-limit placeholder="友善交流，分享你的想法…" /><div class="r-studio-detail--forum_reply_box_footer"><small>回复内容将公开显示</small><el-button type="primary" @click="handleCreateForumReply">发表回复</el-button></div></div>
                 <el-alert v-else-if="selectedForumPost.is_locked" title="该主题已锁定" type="warning" :closable="false" /><el-alert v-else title="论坛内容公开可见，加入工作室后才能回复" type="info" :closable="false" />
               </section>
             </template>
@@ -350,8 +352,9 @@
       <template #footer><el-button @click="permissionDialogVisible = false">取消</el-button><el-button type="primary" @click="handleSavePermissions">保存权限</el-button></template>
     </el-dialog>
 
-    <el-dialog v-model="forumPostDialogVisible" title="发布工作室论坛主题" width="620px">
-      <el-form label-width="70px"><el-form-item label="标题"><el-input v-model="forumPostForm.title" maxlength="200" show-word-limit /></el-form-item><el-form-item label="内容"><el-input v-model="forumPostForm.content" type="textarea" :rows="8" maxlength="20000" show-word-limit /></el-form-item></el-form>
+    <el-dialog v-model="forumPostDialogVisible" title="发布工作室论坛主题" width="min(760px, 94vw)" class="r-studio-detail--forum_compose" :close-on-click-modal="false">
+      <div class="r-studio-detail--forum_compose_note"><span>论</span><div><b>发布到 {{ studio?.name }}论坛</b><small>主题对所有访客公开，只有工作室成员可以回复。</small></div></div>
+      <el-form label-position="top"><el-form-item label="主题标题"><el-input v-model="forumPostForm.title" maxlength="200" show-word-limit placeholder="用一句清楚的话概括讨论主题" /></el-form-item><el-form-item label="主题内容"><el-input v-model="forumPostForm.content" type="textarea" :rows="10" maxlength="20000" show-word-limit placeholder="补充背景、想法、进度或希望成员一起讨论的问题…" /></el-form-item></el-form>
       <template #footer><el-button @click="forumPostDialogVisible = false">取消</el-button><el-button type="primary" @click="handleCreateForumPost">发布主题</el-button></template>
     </el-dialog>
     
@@ -401,11 +404,18 @@ const tasks = ref([])
 const discussions = ref([])
 const discussionText = ref('')
 const forumPosts = ref([])
+const forumSearch = ref('')
 const selectedForumPost = ref(null)
 const forumLoading = ref(false)
 const forumPostDialogVisible = ref(false)
 const forumPostForm = reactive({ title: '', content: '' })
 const forumReplyText = ref('')
+const filteredForumPosts = computed(() => {
+  const keyword = forumSearch.value.trim().toLowerCase()
+  if (!keyword) return forumPosts.value
+  return forumPosts.value.filter(item => `${item.title || ''} ${item.content || ''} ${item.author?.nickname || ''} ${item.author?.username || ''}`.toLowerCase().includes(keyword))
+})
+const totalForumReplies = computed(() => forumPosts.value.reduce((sum, item) => sum + Number(item.reply_count || 0), 0))
 const userRole = ref(null)
 const userMemberStatus = ref(null)
 const joinBlockedReason = ref(null)
@@ -521,6 +531,16 @@ const formatDate = (date) => {
   return new Date(date).toLocaleDateString()
 }
 
+const formatForumTime = (date) => {
+  if (!date) return '-'
+  const value = new Date(date)
+  const diff = Date.now() - value.getTime()
+  if (diff >= 0 && diff < 60000) return '刚刚'
+  if (diff >= 0 && diff < 3600000) return `${Math.floor(diff / 60000)} 分钟前`
+  if (diff >= 0 && diff < 86400000) return `${Math.floor(diff / 3600000)} 小时前`
+  return value.toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+}
+
 const goWork = (work) => {
   if (!work) return
   if (work.codemao_work_id) {
@@ -584,6 +604,7 @@ const resetState = () => {
   activeTab.value = 'works'
   worksPage.value = 1
   forumPosts.value = []
+  forumSearch.value = ''
   selectedForumPost.value = null
 }
 
@@ -1364,32 +1385,91 @@ $border-color: #eee;
 .r-studio-detail--member_item { cursor:pointer; transition:transform .2s ease,border-color .2s ease,box-shadow .2s ease; }
 .r-studio-detail--member_item:hover,.r-studio-detail--member_item:focus-visible { transform:translateY(-3px); border-color:#f2c54a; box-shadow:0 12px 28px rgba(39,55,82,.1); outline:none; }
 .r-studio-detail--member_item .r-studio-detail--member_avatar { box-shadow:0 0 0 3px #fff,0 5px 13px rgba(35,48,70,.12); }
-.r-studio-detail--forum_head,.r-studio-detail--forum_detail_head { display:flex; align-items:center; justify-content:space-between; gap:20px; margin-bottom:18px; }
-.r-studio-detail--forum_head h3 { margin:0 0 5px; color:#172033; font-size:22px; }
-.r-studio-detail--forum_head p { margin:0; color:#8590a3; font-size:13px; }
-.r-studio-detail--forum_list { min-height:180px; }
-.r-studio-detail--forum_item { display:flex; width:100%; align-items:center; justify-content:space-between; gap:18px; padding:17px 18px; border:0; border-bottom:1px solid #edf0f5; background:transparent; color:inherit; text-align:left; cursor:pointer; }
-.r-studio-detail--forum_item:hover { border-radius:12px; background:#fffaf0; }
-.r-studio-detail--forum_item_main { display:flex; min-width:0; flex-direction:column; gap:7px; }
-.r-studio-detail--forum_item_main b { display:flex; align-items:center; gap:8px; color:#1b2436; font-size:15px; }
-.r-studio-detail--forum_item_main small,.r-studio-detail--forum_author { color:#98a2b3; }
-.r-studio-detail--forum_counts { flex:none; color:#8590a3; font-size:12px; line-height:1.7; text-align:right; }
-.r-studio-detail--forum_post { padding:22px; border:1px solid #e8ecf2; border-radius:16px; background:#fff; }
-.r-studio-detail--forum_post h2 { margin:0 0 8px; color:#172033; }
-.r-studio-detail--forum_post p,.r-studio-detail--forum_reply p { white-space:pre-wrap; word-break:break-word; line-height:1.8; }
-.r-studio-detail--forum_replies { margin-top:20px; }
-.r-studio-detail--forum_reply { display:flex; gap:13px; padding:17px 4px; border-bottom:1px solid #edf0f5; }
-.r-studio-detail--forum_reply > img { width:38px; height:38px; flex:none; border-radius:50%; object-fit:cover; }
-.r-studio-detail--forum_reply > div { flex:1; }
-.r-studio-detail--forum_reply b { margin-right:10px; }
-.r-studio-detail--forum_reply small { color:#98a2b3; }
-.r-studio-detail--forum_reply_box { display:flex; align-items:flex-end; gap:12px; margin-top:20px; padding:16px; border-radius:14px; background:#fffaf0; }
+.r-studio-detail--forum { max-width:1040px; margin:0 auto; }
+.r-studio-detail--forum_hero { display:flex; align-items:center; justify-content:space-between; gap:24px; margin:4px 0 20px; padding:22px 24px; overflow:hidden; border:1px solid #f0e5c7; border-radius:18px; background:radial-gradient(circle at 92% 12%,rgba(255,210,91,.34),transparent 15rem),linear-gradient(125deg,#fffdf7,#f7faff); }
+.r-studio-detail--forum_hero_copy { display:flex; align-items:center; gap:15px; min-width:0; }
+.r-studio-detail--forum_mark { display:grid; width:48px; height:48px; flex:none; place-items:center; border-radius:14px; background:#172033; color:#fec433; font-size:22px; font-weight:900; box-shadow:0 9px 20px rgba(23,32,51,.17); }
+.r-studio-detail--forum_hero h2 { margin:0 0 5px; color:#172033; font-size:22px; font-weight:850; letter-spacing:-.02em; }
+.r-studio-detail--forum_hero p { margin:0; color:#7a8598; font-size:13px; }
+.r-studio-detail--forum_summary { display:flex; align-items:center; gap:17px; flex:none; }
+.r-studio-detail--forum_summary span { display:flex; flex-direction:column; color:#98a2b3; font-size:11px; }
+.r-studio-detail--forum_summary b { color:#172033; font-size:20px; line-height:1.2; }
+.r-studio-detail--forum_summary i { width:1px; height:30px; background:#dfe4ec; }
+.r-studio-detail--forum_toolbar { display:flex; align-items:center; gap:14px; margin-bottom:12px; }
+.r-studio-detail--forum_search { width:280px; }
+.r-studio-detail--forum_search :deep(.el-input__wrapper) { height:40px; border-radius:11px; box-shadow:0 0 0 1px #e4e8ef inset; }
+.r-studio-detail--forum_rule { flex:1; color:#98a2b3; font-size:12px; text-align:right; }
+.r-studio-detail--forum_toolbar .el-button { height:40px; border-radius:11px; font-weight:750; }
+.r-studio-detail--forum_list { min-height:220px; overflow:hidden; border:1px solid #e8ecf2; border-radius:17px; background:rgba(255,255,255,.84); box-shadow:0 12px 34px rgba(39,55,82,.055); }
+.r-studio-detail--forum_item { display:flex; width:100%; align-items:center; gap:15px; padding:20px 21px; border:0; border-bottom:1px solid #edf0f5; background:transparent; color:inherit; text-align:left; cursor:pointer; transition:background .2s,transform .2s; }
+.r-studio-detail--forum_item:last-child { border-bottom:0; }
+.r-studio-detail--forum_item:hover { background:linear-gradient(90deg,rgba(255,248,228,.75),rgba(247,250,255,.92)); transform:translateX(3px); }
+.r-studio-detail--forum_item_avatar { width:43px; height:43px; flex:none; border-radius:50%; object-fit:cover; box-shadow:0 0 0 3px #fff,0 5px 14px rgba(35,48,70,.12); }
+.r-studio-detail--forum_item_main { display:flex; min-width:0; flex:1; flex-direction:column; gap:7px; }
+.r-studio-detail--forum_item_title { display:flex; align-items:center; min-width:0; gap:7px; }
+.r-studio-detail--forum_item_title b { overflow:hidden; color:#1b2436; font-size:16px; font-weight:800; text-overflow:ellipsis; white-space:nowrap; }
+.r-studio-detail--forum_item_title em,.r-studio-detail--forum_post_badges span { padding:2px 7px; flex:none; border:1px solid #ffd168; border-radius:6px; background:#fff7dc; color:#c17700; font-size:10px; font-style:normal; font-weight:750; }
+.r-studio-detail--forum_item_title em.locked,.r-studio-detail--forum_post_badges span.locked { border-color:#dce2ea; background:#f2f4f7; color:#667085; }
+.r-studio-detail--forum_excerpt { overflow:hidden; color:#7d8899; font-size:12px; text-overflow:ellipsis; white-space:nowrap; }
+.r-studio-detail--forum_item_main small { display:flex; align-items:center; gap:12px; color:#98a2b3; }
+.r-studio-detail--forum_item_main small strong { color:#e59a00; font-weight:650; }
+.r-studio-detail--forum_item_main small i { font-style:normal; }
+.r-studio-detail--forum_counts { display:grid; grid-template-columns:repeat(2,52px) 14px; align-items:center; gap:7px; flex:none; color:#98a2b3; font-size:10px; text-align:center; }
+.r-studio-detail--forum_counts span { display:flex; flex-direction:column; }
+.r-studio-detail--forum_counts b { color:#344054; font-size:14px; }
+.r-studio-detail--forum_counts > i { color:#c1c7d0; font-size:23px; font-style:normal; }
+.r-studio-detail--forum_detail_head { display:flex; align-items:center; justify-content:space-between; gap:20px; margin:0 0 14px; }
+.r-studio-detail--forum_back { border-color:#e3e7ed; border-radius:10px; color:#475467; font-weight:650; }
+.r-studio-detail--forum_manage { display:flex; gap:8px; }
+.r-studio-detail--forum_post { padding:30px 32px 22px; border:1px solid #e8ecf2; border-radius:18px; background:rgba(255,255,255,.93); box-shadow:0 14px 40px rgba(39,55,82,.065); }
+.r-studio-detail--forum_post_badges { display:flex; gap:7px; min-height:4px; margin-bottom:10px; }
+.r-studio-detail--forum_post h1 { margin:0 0 17px; color:#172033; font-size:28px; line-height:1.28; letter-spacing:-.025em; }
+.r-studio-detail--forum_post_author { display:flex; align-items:center; gap:11px; padding-bottom:20px; border-bottom:1px solid #edf0f5; cursor:pointer; }
+.r-studio-detail--forum_post_author img { width:39px; height:39px; border-radius:50%; object-fit:cover; }
+.r-studio-detail--forum_post_author span { display:flex; flex-direction:column; gap:2px; }
+.r-studio-detail--forum_post_author b { color:#344054; font-size:13px; }
+.r-studio-detail--forum_post_author:hover b,
+.r-studio-detail--forum_reply_meta b[role="link"]:hover { color:#d98d00; }
+.r-studio-detail--forum_post_author small { color:#98a2b3; }
+.r-studio-detail--forum_post_content { min-height:130px; padding:26px 0 32px; color:#344054; font-size:15px; line-height:1.9; white-space:pre-wrap; word-break:break-word; }
+.r-studio-detail--forum_post_footer { display:flex; align-items:center; justify-content:space-between; padding-top:14px; border-top:1px solid #edf0f5; color:#98a2b3; font-size:11px; }
+.r-studio-detail--forum_replies { margin-top:24px; padding:24px 28px; border:1px solid #e8ecf2; border-radius:18px; background:rgba(255,255,255,.87); }
+.r-studio-detail--forum_replies_head { display:flex; align-items:center; justify-content:space-between; padding-bottom:14px; border-bottom:1px solid #edf0f5; }
+.r-studio-detail--forum_replies_head h2 { margin:0; color:#172033; font-size:19px; }
+.r-studio-detail--forum_replies_head h2 small { margin-left:4px; color:#e59a00; font-size:14px; }
+.r-studio-detail--forum_replies_head > span { color:#98a2b3; font-size:11px; }
+.r-studio-detail--forum_reply { display:flex; gap:14px; padding:20px 2px; border-bottom:1px solid #edf0f5; }
+.r-studio-detail--forum_reply > img { width:42px; height:42px; flex:none; border-radius:50%; object-fit:cover; box-shadow:0 0 0 3px #fff,0 4px 12px rgba(35,48,70,.1); }
+.r-studio-detail--forum_reply_body { min-width:0; flex:1; }
+.r-studio-detail--forum_reply_meta { display:flex; align-items:center; justify-content:space-between; }
+.r-studio-detail--forum_reply_meta span { display:flex; align-items:baseline; gap:9px; }
+.r-studio-detail--forum_reply_meta b { color:#344054; font-size:13px; }
+.r-studio-detail--forum_reply_meta b[role="link"] { cursor:pointer; transition:color .18s ease; }
+.r-studio-detail--forum_reply_meta small,.r-studio-detail--forum_reply_meta em { color:#98a2b3; font-size:11px; font-style:normal; }
+.r-studio-detail--forum_reply p { margin:10px 0 4px; color:#475467; font-size:14px; line-height:1.75; white-space:pre-wrap; word-break:break-word; }
+.r-studio-detail--forum_reply_actions { min-height:20px; text-align:right; }
+.r-studio-detail--forum_reply_box { margin-top:22px; padding:18px; border:1px solid #f0dfb4; border-radius:16px; background:linear-gradient(135deg,#fffaf0,#fff); }
+.r-studio-detail--forum_reply_box_head { display:flex; align-items:center; gap:10px; margin-bottom:13px; }
+.r-studio-detail--forum_reply_box_head img { width:36px; height:36px; border-radius:50%; object-fit:cover; }
+.r-studio-detail--forum_reply_box_head span { display:flex; flex-direction:column; }
+.r-studio-detail--forum_reply_box_head b { color:#344054; font-size:13px; }
+.r-studio-detail--forum_reply_box_head small,.r-studio-detail--forum_reply_box_footer small { color:#98a2b3; font-size:11px; }
+.r-studio-detail--forum_reply_box :deep(.el-textarea__inner) { border:0; border-radius:12px; box-shadow:0 0 0 1px #e4e8ef inset; }
+.r-studio-detail--forum_reply_box_footer { display:flex; align-items:center; justify-content:space-between; margin-top:12px; }
+.r-studio-detail--forum_reply_box_footer .el-button { border-radius:10px; font-weight:750; }
+.r-studio-detail--forum_compose_note { display:flex; align-items:center; gap:12px; margin-bottom:20px; padding:14px 16px; border:1px solid #f0dfb4; border-radius:14px; background:linear-gradient(135deg,#fff8e7,#f8fbff); }
+.r-studio-detail--forum_compose_note > span { display:grid; width:38px; height:38px; flex:none; place-items:center; border-radius:11px; background:#172033; color:#fec433; font-weight:850; }
+.r-studio-detail--forum_compose_note > div { display:flex; flex-direction:column; gap:3px; }
+.r-studio-detail--forum_compose_note b { color:#344054; }
+.r-studio-detail--forum_compose_note small { color:#8590a3; }
+.r-studio-detail--forum_compose :deep(.el-form-item__label) { color:#344054; font-weight:750; }
+.r-studio-detail--forum_compose :deep(.el-input__wrapper),.r-studio-detail--forum_compose :deep(.el-textarea__inner) { border-radius:11px; box-shadow:0 0 0 1px #e1e6ed inset; }
 .r-studio-detail--my_work_item { border-color:#e5eaf1; border-radius:14px; }
 .r-studio-detail--my_work_item:hover { transform:translateY(-3px); box-shadow:0 10px 24px rgba(39,55,82,.1); }
 :deep(.el-dialog) { border-radius:20px!important; }
 :deep(.el-dialog__header) { padding:22px 24px 16px; }
 :deep(.el-dialog__body) { padding:20px 24px; }
-@media(max-width:800px){.r-studio-detail--page{padding:20px 14px 56px}.r-studio-detail--header{align-items:flex-start;flex-direction:column;padding:20px}.r-studio-detail--header .r-studio-detail--cover{width:100%;height:auto;aspect-ratio:16/7}.r-studio-detail--header .r-studio-detail--info .r-studio-detail--stats{gap:7px}.r-studio-detail--tabs{padding:0 14px 20px}.r-studio-detail--member_list{grid-template-columns:repeat(2,1fr)}.r-studio-detail--forum_head,.r-studio-detail--forum_reply_box{align-items:stretch;flex-direction:column}.r-studio-detail--forum_item{padding:14px 4px}}
+@media(max-width:800px){.r-studio-detail--page{padding:20px 14px 56px}.r-studio-detail--header{align-items:flex-start;flex-direction:column;padding:20px}.r-studio-detail--header .r-studio-detail--cover{width:100%;height:auto;aspect-ratio:16/7}.r-studio-detail--header .r-studio-detail--info .r-studio-detail--stats{gap:7px}.r-studio-detail--tabs{padding:0 14px 20px}.r-studio-detail--member_list{grid-template-columns:repeat(2,1fr)}.r-studio-detail--forum_hero{align-items:flex-start;flex-direction:column;padding:17px}.r-studio-detail--forum_summary{align-self:stretch;justify-content:flex-end}.r-studio-detail--forum_toolbar{align-items:stretch;flex-direction:column}.r-studio-detail--forum_search{width:100%}.r-studio-detail--forum_rule{text-align:left}.r-studio-detail--forum_item{align-items:flex-start;padding:16px 12px}.r-studio-detail--forum_item_avatar{width:38px;height:38px}.r-studio-detail--forum_excerpt,.r-studio-detail--forum_item_main small i:last-child{display:none}.r-studio-detail--forum_counts{grid-template-columns:42px}.r-studio-detail--forum_counts span:nth-child(2),.r-studio-detail--forum_counts>i{display:none}.r-studio-detail--forum_post{padding:22px 18px}.r-studio-detail--forum_post h1{font-size:23px}.r-studio-detail--forum_replies{padding:20px 16px}.r-studio-detail--forum_reply_box_footer{align-items:stretch;flex-direction:column;gap:10px}.r-studio-detail--forum_reply_box_footer .el-button{width:100%}}
 .r-studio-detail--cover_upload { width:100%; min-height:96px; padding:12px; display:flex; align-items:center; gap:12px; border:1px dashed #cad2df; border-radius:14px; background:#f8faff; cursor:pointer; }
 .r-studio-detail--cover_upload:hover { border-color:#fec433; background:#fffaf0; }
 .r-studio-detail--cover_upload img { width:136px; height:76px; object-fit:cover; border-radius:10px; }
