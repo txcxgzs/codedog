@@ -388,7 +388,7 @@ onUnmounted(() => {
 .report-message { border:0; background:transparent; color:#a0a4ad; padding:0; font-size:11px; cursor:pointer; }.report-message:hover{color:#f56c6c}
 .avatar { position:relative; overflow:hidden; }
 .avatar img { position:absolute; inset:0; display:block; width:100%; height:100%; object-fit:cover; }
-.back-link { margin-left:auto; color:#a86f00; font-size:11px; text-decoration:none; white-space:nowrap; }.back-link:hover,.user-link:hover{color:#d28c00;text-decoration:underline}.user-link{cursor:pointer}
+.back-link { margin-left:auto; color:#a86f00; font-size:11px; text-decoration:none; white-space:nowrap; }.back-link:hover,.user-link:hover{color:#d28c00;text-decoration:underline}.user-link{display:inline-block;width:fit-content;max-width:100%;cursor:pointer}.conversation-copy b.user-link{display:block;width:fit-content;max-width:100%}
 .modal-mask{position:fixed;inset:0;z-index:1000;display:grid;place-items:center;padding:20px;background:rgba(25,29,35,.42);backdrop-filter:blur(3px)}
 .report-dialog{width:min(500px,100%);padding:22px;border:1px solid #e3e5e9;border-radius:18px;background:#fff;box-shadow:0 24px 70px rgba(20,25,32,.22)}
 .report-dialog header{display:flex;justify-content:space-between;align-items:flex-start}.report-dialog header small{color:#c88700}.report-dialog h2{margin:5px 0 0}.report-dialog header button{border:0;background:transparent;color:#8c929b;font-size:26px;cursor:pointer}.report-dialog>p{color:#7f858e;font-size:13px;line-height:1.7}
