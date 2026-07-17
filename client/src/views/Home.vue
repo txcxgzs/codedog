@@ -183,6 +183,30 @@
             </div>
           </div>
         </div>
+
+        <div ref="magnetSentinel" class="r-home--magnet_sentinel" aria-hidden="true"></div>
+        <div
+          v-if="magnetWorks.length"
+          class="r-home--magnet_dock"
+          :class="{ 'is-magnetized': magnetActive }"
+          :aria-hidden="!magnetActive"
+        >
+          <a
+            v-for="(work, index) in magnetWorks"
+            :key="work.id"
+            class="r-home--magnet_work"
+            :style="{ '--magnet-index': index }"
+            :tabindex="magnetActive ? 0 : -1"
+            @click="$router.push(`/work/${work.codemao_work_id}`)"
+          >
+            <span class="r-home--magnet_cover" :style="{ backgroundImage: `url(${work.preview})` }"></span>
+            <span class="r-home--magnet_copy">
+              <b :title="work.name">{{ work.name }}</b>
+              <small>{{ work.author?.nickname || work.author?.username }}</small>
+              <em><span>👁 {{ formatNum(work.view_times) }}</span><span>❤️ {{ formatNum(work.praise_times) }}</span></em>
+            </span>
+          </a>
+        </div>
       </aside>
     </div>
   </div>
@@ -221,11 +245,24 @@ const latestWorks = ref([])
 const hotWorks = ref([])
 const activeUsers = ref([])
 const featuredPosts = ref([])
+const magnetSentinel = ref(null)
+const magnetActive = ref(false)
+let magnetFrame = 0
 
 const importantPosts = ref([])
 const loadingFeatured = ref(false)
 const loadingLatest = ref(false)
 const loadingHot = ref(false)
+const magnetWorks = computed(() => hotWorks.value.slice(0, 4))
+
+const syncMagnetDock = () => {
+  if (magnetFrame) return
+  magnetFrame = requestAnimationFrame(() => {
+    const sentinelTop = magnetSentinel.value?.getBoundingClientRect().top ?? Number.POSITIVE_INFINITY
+    magnetActive.value = window.innerWidth > 1080 && sentinelTop <= 92
+    magnetFrame = 0
+  })
+}
 
 const defaultAvatar = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iI0ZFQzQzMyIvPjx0ZXh0IHg9IjUwIiB5PSI2MCIgZm9udC1zaXplPSI0MCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZmlsbD0id2hpdGUiPuahijwvdGV4dD48L3N2Zz4='
 
@@ -285,6 +322,9 @@ const goUser = (author) => {
 }
 
 onMounted(async () => {
+  window.addEventListener('scroll', syncMagnetDock, { passive: true })
+  window.addEventListener('resize', syncMagnetDock, { passive: true })
+  syncMagnetDock()
   // 侧边栏数据（并行加载）
   Promise.all([
     publicApi.getBanners().then(res => { if (res.code === 200) banners.value = res.data }).catch(() => {}),
@@ -312,6 +352,12 @@ onMounted(async () => {
       if (res.code === 200) hotWorks.value = res.data.list
     }).catch(() => {}).finally(() => { loadingHot.value = false })
   ])
+})
+
+onUnmounted(() => {
+  window.removeEventListener('scroll', syncMagnetDock)
+  window.removeEventListener('resize', syncMagnetDock)
+  if (magnetFrame) cancelAnimationFrame(magnetFrame)
 })
 </script>
 
@@ -354,7 +400,7 @@ $border-color: #eee;
     radial-gradient(circle at 92% 18%, rgba(108, 190, 255, .24), transparent 26rem),
     linear-gradient(145deg, #f5f8ff 0%, #f9fbff 48%, #fff9ef 100%);
   background-attachment: fixed;
-  overflow: hidden;
+  overflow: clip;
 }
 
 .r-home--mouse_glow {
@@ -419,6 +465,116 @@ $border-color: #eee;
   flex-direction: column;
   gap: 16px;
   position: static;
+  align-self: stretch;
+}
+
+.r-home--magnet_sentinel {
+  width: 100%;
+  height: 1px;
+  margin-top: 2px;
+  pointer-events: none;
+}
+
+.r-home--magnet_dock {
+  position: sticky;
+  top: 80px;
+  z-index: 4;
+  display: grid;
+  gap: 10px;
+  width: 100%;
+  pointer-events: none;
+}
+
+.r-home--magnet_work {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  min-height: 78px;
+  overflow: hidden;
+  border: 1px solid rgba(221, 226, 235, .94);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, .96);
+  box-shadow: 0 13px 34px rgba(35, 51, 79, .12);
+  color: #202838;
+  cursor: pointer;
+  opacity: 0;
+  transform: translate3d(min(480px, 42vw), calc((var(--magnet-index) - 1.5) * 18px), 0) rotate(calc((var(--magnet-index) - 1.5) * 1.6deg));
+  transform-origin: right center;
+  transition:
+    transform 560ms cubic-bezier(.18, .86, .22, 1.12) calc((3 - var(--magnet-index)) * 42ms),
+    opacity 230ms ease calc((3 - var(--magnet-index)) * 24ms),
+    border-color 180ms ease,
+    box-shadow 180ms ease;
+  will-change: transform, opacity;
+
+  &:hover {
+    border-color: rgba(254, 196, 51, .78);
+    box-shadow: 0 16px 38px rgba(35, 51, 79, .16);
+    transform: translate3d(-4px, 0, 0) !important;
+  }
+}
+
+.r-home--magnet_dock.is-magnetized {
+  pointer-events: auto;
+
+  .r-home--magnet_work {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) rotate(0);
+    transition-delay: calc(var(--magnet-index) * 72ms), calc(var(--magnet-index) * 52ms), 0ms, 0ms;
+  }
+}
+
+.r-home--magnet_cover {
+  min-height: 78px;
+  background-color: #edf1f7;
+  background-position: center;
+  background-size: cover;
+}
+
+.r-home--magnet_copy {
+  display: grid;
+  min-width: 0;
+  align-content: center;
+  gap: 4px;
+  padding: 9px 11px;
+
+  b,
+  small {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  b {
+    font-size: 13px;
+    line-height: 1.25;
+  }
+
+  small {
+    color: #9299a5;
+    font-size: 10px;
+  }
+
+  em {
+    display: flex;
+    gap: 9px;
+    color: #a4a9b1;
+    font-size: 9px;
+    font-style: normal;
+  }
+}
+
+@media (max-width: 1080px) {
+  .r-home--magnet_sentinel,
+  .r-home--magnet_dock {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .r-home--magnet_work {
+    transition: opacity 120ms ease;
+    transform: none;
+  }
 }
 
 .r-home--banner_area {
