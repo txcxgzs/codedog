@@ -130,6 +130,10 @@ const studioManagementController = read('server/controllers/studioManagementCont
 check(studioManagementController.includes('ownership_transferred') && studioManagementController.includes('sequelize.transaction'), 'studio ownership transfer must be atomic and audited.');
 check(studioManagementController.includes('effectivePermissions') && studioManagementController.includes('member_permissions_updated'), 'studio management must enforce fine-grained permissions.');
 check(studioRoutes.includes("geetestVerify('studio_management')"), 'studio sensitive mutations should be protected by Geetest.');
+const studioForumController = read('server/controllers/studioForumController.js');
+check(studioRoutes.includes("router.get('/:id/forum', optionalAuth") && studioForumController.includes('async function listPosts'), 'studio forum should be publicly readable from the studio surface.');
+check(studioRoutes.includes("router.post('/:id/forum', authMiddleware, geetestVerify('studio_management')") && studioForumController.includes('requireMember'), 'studio forum writes should require an active studio member and Geetest.');
+check(studioForumController.includes('StudioForumPost') && studioForumController.includes('StudioForumReply') && !studioForumController.includes('DbAdapter.create(Post'), 'studio forum must remain separate from the main forum tables.');
 check(postController.includes('studio_recruitment_only') && postController.includes('resolveRecruitmentStudio'), 'studio recruitment boards should only accept studio-owner posts.');
 const appSource = read('server/app.js');
 check(appSource.includes("ensureColumn('studios', 'member_limit'") && appSource.includes("ensureColumn('posts', 'studio_id'"), 'studio upgrade columns must be covered by startup migration.');

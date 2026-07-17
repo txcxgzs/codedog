@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const studioController = require('../controllers/studioController');
 const managementController = require('../controllers/studioManagementController');
+const forumController = require('../controllers/studioForumController');
 const { authMiddleware, optionalAuth } = require('../middleware/auth');
 const { geetestVerify } = require('../middleware/geetest');
 
@@ -10,6 +11,8 @@ router.get('/my/list', authMiddleware, studioController.getMyStudios);
 router.get('/:id', optionalAuth, studioController.getStudioDetail);
 router.get('/:id/works', optionalAuth, studioController.getStudioWorks);
 router.get('/:id/announcements', optionalAuth, managementController.listAnnouncements);
+router.get('/:id/forum', optionalAuth, forumController.listPosts);
+router.get('/:id/forum/:postId', optionalAuth, forumController.getPost);
 
 router.post('/', authMiddleware, geetestVerify('create_studio'), studioController.createStudio);
 router.post('/:id/join', authMiddleware, geetestVerify('join_studio'), studioController.joinStudio);
@@ -52,5 +55,10 @@ router.delete('/:id/blacklist/:blacklistId', authMiddleware, geetestVerify('stud
 router.get('/:id/discussions', authMiddleware, managementController.listDiscussions);
 router.post('/:id/discussions', authMiddleware, geetestVerify('studio_management'), managementController.createDiscussion);
 router.delete('/:id/discussions/:discussionId', authMiddleware, geetestVerify('studio_management'), managementController.deleteDiscussion);
+router.post('/:id/forum', authMiddleware, geetestVerify('studio_management'), forumController.createPost);
+router.post('/:id/forum/:postId/replies', authMiddleware, geetestVerify('studio_management'), forumController.createReply);
+router.put('/:id/forum/:postId/state', authMiddleware, geetestVerify('studio_management'), forumController.updatePostState);
+router.delete('/:id/forum/:postId', authMiddleware, geetestVerify('studio_management'), forumController.deletePost);
+router.delete('/:id/forum/:postId/replies/:replyId', authMiddleware, geetestVerify('studio_management'), forumController.deleteReply);
 
 module.exports = router;

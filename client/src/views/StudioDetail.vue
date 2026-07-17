@@ -98,6 +98,38 @@
           </div>
         </el-tab-pane>
         
+        <el-tab-pane label="工作室论坛" name="forum">
+          <div class="r-studio-detail--forum">
+            <template v-if="!selectedForumPost">
+              <div class="r-studio-detail--forum_head">
+                <div><h3>工作室论坛</h3><p>所有人都可以浏览，只有本工作室成员可以发帖和回复。</p></div>
+                <el-button v-if="userMemberStatus === 'active'" type="primary" @click="forumPostDialogVisible = true">发布主题</el-button>
+              </div>
+              <div v-loading="forumLoading" class="r-studio-detail--forum_list">
+                <button v-for="item in forumPosts" :key="item.id" type="button" class="r-studio-detail--forum_item" @click="openForumPost(item.id)">
+                  <span class="r-studio-detail--forum_item_main"><b><el-tag v-if="item.is_pinned" size="small" type="warning">置顶</el-tag>{{ item.title }}</b><small>{{ item.author?.nickname || item.author?.username }} · {{ formatDate(item.last_reply_at || item.created_at) }}</small></span>
+                  <span class="r-studio-detail--forum_counts">{{ item.view_count }} 浏览<br>{{ item.reply_count }} 回复</span>
+                </button>
+                <el-empty v-if="!forumLoading && !forumPosts.length" description="工作室论坛还没有主题" />
+              </div>
+            </template>
+            <template v-else>
+              <div class="r-studio-detail--forum_detail_head">
+                <el-button text @click="closeForumPost">← 返回论坛</el-button>
+                <div v-if="can('member_manage')"><el-button size="small" @click="handleForumState({ is_pinned: !selectedForumPost.is_pinned })">{{ selectedForumPost.is_pinned ? '取消置顶' : '置顶' }}</el-button><el-button size="small" @click="handleForumState({ is_locked: !selectedForumPost.is_locked })">{{ selectedForumPost.is_locked ? '解除锁定' : '锁定' }}</el-button></div>
+              </div>
+              <article class="r-studio-detail--forum_post"><h2>{{ selectedForumPost.title }}</h2><div class="r-studio-detail--forum_author">{{ selectedForumPost.author?.nickname || selectedForumPost.author?.username }} · {{ formatDate(selectedForumPost.created_at) }} · {{ selectedForumPost.view_count }} 浏览</div><p>{{ selectedForumPost.content }}</p><el-button v-if="String(selectedForumPost.user_id) === String(userStore.user?.id) || can('member_manage')" text type="danger" @click="handleDeleteForumPost">删除主题</el-button></article>
+              <section class="r-studio-detail--forum_replies">
+                <h3>回复（{{ selectedForumPost.replies?.length || 0 }}）</h3>
+                <div v-for="reply in selectedForumPost.replies" :key="reply.id" class="r-studio-detail--forum_reply"><AppImage :src="reply.author?.avatar || defaultAvatar" :fallback="defaultAvatar" /><div><b>{{ reply.author?.nickname || reply.author?.username }}</b><small>{{ formatDate(reply.created_at) }}</small><p>{{ reply.content }}</p><el-button v-if="String(reply.user_id) === String(userStore.user?.id) || can('member_manage')" text type="danger" size="small" @click="handleDeleteForumReply(reply)">删除</el-button></div></div>
+                <el-empty v-if="!selectedForumPost.replies?.length" description="暂无回复" />
+                <div v-if="userMemberStatus === 'active' && !selectedForumPost.is_locked" class="r-studio-detail--forum_reply_box"><el-input v-model="forumReplyText" type="textarea" :rows="3" maxlength="5000" show-word-limit placeholder="回复该主题" /><el-button type="primary" @click="handleCreateForumReply">发表回复</el-button></div>
+                <el-alert v-else-if="selectedForumPost.is_locked" title="该主题已锁定" type="warning" :closable="false" /><el-alert v-else title="论坛内容公开可见，加入工作室后才能回复" type="info" :closable="false" />
+              </section>
+            </template>
+          </div>
+        </el-tab-pane>
+
         <el-tab-pane label="成员" name="members">
           <div class="r-studio-detail--members">
             <div class="r-studio-detail--member_list">
@@ -317,6 +349,11 @@
       <el-checkbox-group v-model="permissionForm.permissions" class="r-studio-detail--permission_grid"><el-checkbox v-for="item in permissionOptions" :key="item.value" :label="item.value">{{ item.label }}</el-checkbox></el-checkbox-group>
       <template #footer><el-button @click="permissionDialogVisible = false">取消</el-button><el-button type="primary" @click="handleSavePermissions">保存权限</el-button></template>
     </el-dialog>
+
+    <el-dialog v-model="forumPostDialogVisible" title="发布工作室论坛主题" width="620px">
+      <el-form label-width="70px"><el-form-item label="标题"><el-input v-model="forumPostForm.title" maxlength="200" show-word-limit /></el-form-item><el-form-item label="内容"><el-input v-model="forumPostForm.content" type="textarea" :rows="8" maxlength="20000" show-word-limit /></el-form-item></el-form>
+      <template #footer><el-button @click="forumPostDialogVisible = false">取消</el-button><el-button type="primary" @click="handleCreateForumPost">发布主题</el-button></template>
+    </el-dialog>
     
     <el-dialog v-model="submitWorkDialogVisible" title="投稿作品" width="600px">
       <div class="r-studio-detail--my_works" v-loading="myWorksLoading">
@@ -363,6 +400,12 @@ const announcements = ref([])
 const tasks = ref([])
 const discussions = ref([])
 const discussionText = ref('')
+const forumPosts = ref([])
+const selectedForumPost = ref(null)
+const forumLoading = ref(false)
+const forumPostDialogVisible = ref(false)
+const forumPostForm = reactive({ title: '', content: '' })
+const forumReplyText = ref('')
 const userRole = ref(null)
 const userMemberStatus = ref(null)
 const joinBlockedReason = ref(null)
@@ -520,6 +563,7 @@ const fetchStudio = async () => {
         studioApi.getDiscussions(route.params.id).then(result => { if (result.code === 200) discussions.value = result.data || [] }).catch(() => {})
       } else capabilities.value = []
       studioApi.getAnnouncements(route.params.id).then(result => { if (result.code === 200) announcements.value = result.data || [] }).catch(() => {})
+      fetchForumPosts()
     } else {
       ElMessage.error(res.msg || '获取工作室失败')
     }
@@ -539,6 +583,8 @@ const resetState = () => {
   userMemberStatus.value = null
   activeTab.value = 'works'
   worksPage.value = 1
+  forumPosts.value = []
+  selectedForumPost.value = null
 }
 
 // 监听路由参数变化（在不同工作室间跳转时重新加载数据）
@@ -562,6 +608,41 @@ const fetchWorks = async () => {
 const canManageWork = (studioWork) => {
   if (!userStore.user) return false
   return can('work_manage') || (studioWork.submitUser?.id === userStore.user.id && userRole.value === 'admin')
+}
+
+const fetchForumPosts = async () => {
+  forumLoading.value = true
+  try { const res = await studioApi.getForumPosts(route.params.id); if (res.code === 200) forumPosts.value = res.data?.list || [] } catch { forumPosts.value = [] }
+  finally { forumLoading.value = false }
+}
+const openForumPost = async postId => {
+  forumLoading.value = true
+  try { const res = await studioApi.getForumPost(route.params.id, postId); if (res.code === 200) selectedForumPost.value = res.data } catch (e) { ElMessage.error(e.response?.data?.msg || '加载主题失败') }
+  finally { forumLoading.value = false }
+}
+const closeForumPost = () => { selectedForumPost.value = null; forumReplyText.value = ''; fetchForumPosts() }
+const handleCreateForumPost = async () => {
+  if (forumPostForm.title.trim().length < 2 || forumPostForm.content.trim().length < 2) return ElMessage.warning('标题和内容至少填写 2 个字')
+  const geetestData = await verifyScene('studio_management'); if (!geetestData) return
+  try { const res = await studioApi.createForumPost(route.params.id, { title: forumPostForm.title.trim(), content: forumPostForm.content.trim(), ...geetestData }); if (res.code === 200) { forumPostDialogVisible.value = false; forumPostForm.title = ''; forumPostForm.content = ''; await fetchForumPosts(); await openForumPost(res.data.id) } } catch (e) { ElMessage.error(e.response?.data?.msg || '发布主题失败') }
+}
+const handleCreateForumReply = async () => {
+  if (!forumReplyText.value.trim()) return ElMessage.warning('请输入回复内容')
+  const geetestData = await verifyScene('studio_management'); if (!geetestData) return
+  try { const res = await studioApi.createForumReply(route.params.id, selectedForumPost.value.id, { content: forumReplyText.value.trim(), ...geetestData }); if (res.code === 200) { forumReplyText.value = ''; await openForumPost(selectedForumPost.value.id) } } catch (e) { ElMessage.error(e.response?.data?.msg || '发布回复失败') }
+}
+const handleForumState = async values => {
+  const geetestData = await verifyScene('studio_management'); if (!geetestData) return
+  try { const res = await studioApi.updateForumPostState(route.params.id, selectedForumPost.value.id, { ...values, ...geetestData }); if (res.code === 200) await openForumPost(selectedForumPost.value.id) } catch (e) { ElMessage.error(e.response?.data?.msg || '更新主题失败') }
+}
+const handleDeleteForumPost = async () => {
+  try { await ElMessageBox.confirm('删除后主题不会再对外显示，确定继续吗？', '删除主题', { type: 'warning' }) } catch { return }
+  const geetestData = await verifyScene('studio_management'); if (!geetestData) return
+  try { const res = await studioApi.deleteForumPost(route.params.id, selectedForumPost.value.id, geetestData); if (res.code === 200) { ElMessage.success(res.msg); closeForumPost() } } catch (e) { ElMessage.error(e.response?.data?.msg || '删除主题失败') }
+}
+const handleDeleteForumReply = async reply => {
+  const geetestData = await verifyScene('studio_management'); if (!geetestData) return
+  try { const res = await studioApi.deleteForumReply(route.params.id, selectedForumPost.value.id, reply.id, geetestData); if (res.code === 200) await openForumPost(selectedForumPost.value.id) } catch (e) { ElMessage.error(e.response?.data?.msg || '删除回复失败') }
 }
 
 const handleWorkAction = (action, studioWork) => {
@@ -1283,12 +1364,32 @@ $border-color: #eee;
 .r-studio-detail--member_item { cursor:pointer; transition:transform .2s ease,border-color .2s ease,box-shadow .2s ease; }
 .r-studio-detail--member_item:hover,.r-studio-detail--member_item:focus-visible { transform:translateY(-3px); border-color:#f2c54a; box-shadow:0 12px 28px rgba(39,55,82,.1); outline:none; }
 .r-studio-detail--member_item .r-studio-detail--member_avatar { box-shadow:0 0 0 3px #fff,0 5px 13px rgba(35,48,70,.12); }
+.r-studio-detail--forum_head,.r-studio-detail--forum_detail_head { display:flex; align-items:center; justify-content:space-between; gap:20px; margin-bottom:18px; }
+.r-studio-detail--forum_head h3 { margin:0 0 5px; color:#172033; font-size:22px; }
+.r-studio-detail--forum_head p { margin:0; color:#8590a3; font-size:13px; }
+.r-studio-detail--forum_list { min-height:180px; }
+.r-studio-detail--forum_item { display:flex; width:100%; align-items:center; justify-content:space-between; gap:18px; padding:17px 18px; border:0; border-bottom:1px solid #edf0f5; background:transparent; color:inherit; text-align:left; cursor:pointer; }
+.r-studio-detail--forum_item:hover { border-radius:12px; background:#fffaf0; }
+.r-studio-detail--forum_item_main { display:flex; min-width:0; flex-direction:column; gap:7px; }
+.r-studio-detail--forum_item_main b { display:flex; align-items:center; gap:8px; color:#1b2436; font-size:15px; }
+.r-studio-detail--forum_item_main small,.r-studio-detail--forum_author { color:#98a2b3; }
+.r-studio-detail--forum_counts { flex:none; color:#8590a3; font-size:12px; line-height:1.7; text-align:right; }
+.r-studio-detail--forum_post { padding:22px; border:1px solid #e8ecf2; border-radius:16px; background:#fff; }
+.r-studio-detail--forum_post h2 { margin:0 0 8px; color:#172033; }
+.r-studio-detail--forum_post p,.r-studio-detail--forum_reply p { white-space:pre-wrap; word-break:break-word; line-height:1.8; }
+.r-studio-detail--forum_replies { margin-top:20px; }
+.r-studio-detail--forum_reply { display:flex; gap:13px; padding:17px 4px; border-bottom:1px solid #edf0f5; }
+.r-studio-detail--forum_reply > img { width:38px; height:38px; flex:none; border-radius:50%; object-fit:cover; }
+.r-studio-detail--forum_reply > div { flex:1; }
+.r-studio-detail--forum_reply b { margin-right:10px; }
+.r-studio-detail--forum_reply small { color:#98a2b3; }
+.r-studio-detail--forum_reply_box { display:flex; align-items:flex-end; gap:12px; margin-top:20px; padding:16px; border-radius:14px; background:#fffaf0; }
 .r-studio-detail--my_work_item { border-color:#e5eaf1; border-radius:14px; }
 .r-studio-detail--my_work_item:hover { transform:translateY(-3px); box-shadow:0 10px 24px rgba(39,55,82,.1); }
 :deep(.el-dialog) { border-radius:20px!important; }
 :deep(.el-dialog__header) { padding:22px 24px 16px; }
 :deep(.el-dialog__body) { padding:20px 24px; }
-@media(max-width:800px){.r-studio-detail--page{padding:20px 14px 56px}.r-studio-detail--header{align-items:flex-start;flex-direction:column;padding:20px}.r-studio-detail--header .r-studio-detail--cover{width:100%;height:auto;aspect-ratio:16/7}.r-studio-detail--header .r-studio-detail--info .r-studio-detail--stats{gap:7px}.r-studio-detail--tabs{padding:0 14px 20px}.r-studio-detail--member_list{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:800px){.r-studio-detail--page{padding:20px 14px 56px}.r-studio-detail--header{align-items:flex-start;flex-direction:column;padding:20px}.r-studio-detail--header .r-studio-detail--cover{width:100%;height:auto;aspect-ratio:16/7}.r-studio-detail--header .r-studio-detail--info .r-studio-detail--stats{gap:7px}.r-studio-detail--tabs{padding:0 14px 20px}.r-studio-detail--member_list{grid-template-columns:repeat(2,1fr)}.r-studio-detail--forum_head,.r-studio-detail--forum_reply_box{align-items:stretch;flex-direction:column}.r-studio-detail--forum_item{padding:14px 4px}}
 .r-studio-detail--cover_upload { width:100%; min-height:96px; padding:12px; display:flex; align-items:center; gap:12px; border:1px dashed #cad2df; border-radius:14px; background:#f8faff; cursor:pointer; }
 .r-studio-detail--cover_upload:hover { border-color:#fec433; background:#fffaf0; }
 .r-studio-detail--cover_upload img { width:136px; height:76px; object-fit:cover; border-radius:10px; }

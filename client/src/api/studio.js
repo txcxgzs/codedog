@@ -102,5 +102,12 @@ export const studioApi = {
   removeBlacklist(id, blacklistId, data = {}) { return request.delete(`/studios/${id}/blacklist/${blacklistId}`, { data }) },
   getDiscussions(id) { return request.get(`/studios/${id}/discussions`) },
   createDiscussion(id, data) { return request.post(`/studios/${id}/discussions`, data) },
-  deleteDiscussion(id, discussionId, data = {}) { return request.delete(`/studios/${id}/discussions/${discussionId}`, { data }) }
+  deleteDiscussion(id, discussionId, data = {}) { return request.delete(`/studios/${id}/discussions/${discussionId}`, { data }) },
+  getForumPosts(id, params = {}) { return request.get(`/studios/${id}/forum`, { params }) },
+  getForumPost(id, postId) { return request.get(`/studios/${id}/forum/${postId}`) },
+  createForumPost(id, data) { return request.post(`/studios/${id}/forum`, data) },
+  createForumReply(id, postId, data) { return request.post(`/studios/${id}/forum/${postId}/replies`, data) },
+  updateForumPostState(id, postId, data) { return request.put(`/studios/${id}/forum/${postId}/state`, data) },
+  deleteForumPost(id, postId, data = {}) { return request.delete(`/studios/${id}/forum/${postId}`, { data }) },
+  deleteForumReply(id, postId, replyId, data = {}) { return request.delete(`/studios/${id}/forum/${postId}/replies/${replyId}`, { data }) }
 }

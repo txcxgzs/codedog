@@ -1,5 +1,5 @@
 const DbAdapter = require('../utils/dbAdapter');
-const { Studio, StudioMember, StudioWork, StudioBlacklist, StudioInvite, StudioOperationLog, StudioAnnouncement, StudioTask, StudioDiscussion, Post, User, Work, Notification, sequelize } = require('../models');
+const { Studio, StudioMember, StudioWork, StudioBlacklist, StudioInvite, StudioOperationLog, StudioAnnouncement, StudioTask, StudioDiscussion, StudioForumPost, StudioForumReply, Post, User, Work, Notification, sequelize } = require('../models');
 const { successResponse, errorResponse, paginateResponse } = require('../middleware/response');
 const { Op } = require('sequelize');
 const { isRoleAtLeast } = require('../config/permissions');
@@ -844,6 +844,9 @@ async function deleteStudio(req, res) {
             await DbAdapter.destroy(StudioTask, { where: { studio_id: id }, transaction: t });
             await DbAdapter.destroy(StudioBlacklist, { where: { studio_id: id }, transaction: t });
             await DbAdapter.destroy(StudioDiscussion, { where: { studio_id: id }, transaction: t });
+            const forumPosts = await DbAdapter.findAll(StudioForumPost, { where: { studio_id: id }, attributes: ['id'], transaction: t });
+            if (forumPosts.length) await DbAdapter.destroy(StudioForumReply, { where: { post_id: { [Op.in]: forumPosts.map(item => item.id) } }, transaction: t });
+            await DbAdapter.destroy(StudioForumPost, { where: { studio_id: id }, transaction: t });
             await DbAdapter.destroy(StudioOperationLog, { where: { studio_id: id }, transaction: t });
             await DbAdapter.destroy(StudioMember, { where: { studio_id: id }, transaction: t });
             await DbAdapter.destroy(StudioWork, { where: { studio_id: id }, transaction: t });
@@ -1467,6 +1470,9 @@ async function dissolveStudio(req, res) {
             await DbAdapter.destroy(StudioTask, { where: { studio_id: id }, transaction: t });
             await DbAdapter.destroy(StudioBlacklist, { where: { studio_id: id }, transaction: t });
             await DbAdapter.destroy(StudioDiscussion, { where: { studio_id: id }, transaction: t });
+            const forumPosts = await DbAdapter.findAll(StudioForumPost, { where: { studio_id: id }, attributes: ['id'], transaction: t });
+            if (forumPosts.length) await DbAdapter.destroy(StudioForumReply, { where: { post_id: { [Op.in]: forumPosts.map(item => item.id) } }, transaction: t });
+            await DbAdapter.destroy(StudioForumPost, { where: { studio_id: id }, transaction: t });
             await DbAdapter.destroy(StudioOperationLog, { where: { studio_id: id }, transaction: t });
             await DbAdapter.destroy(StudioMember, { where: { studio_id: id }, transaction: t });
             await DbAdapter.destroy(StudioWork, { where: { studio_id: id }, transaction: t });

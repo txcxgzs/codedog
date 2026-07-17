@@ -432,6 +432,29 @@ const StudioDiscussion = sequelize.define('StudioDiscussion', {
     status: { type: DataTypes.STRING(20), allowNull: false, defaultValue: 'active' }
 }, Object.assign({ tableName: 'studio_discussions', indexes: [{ fields: ['studio_id', 'created_at'] }, { fields: ['user_id'] }] }, TIMESTAMP_OPTS));
 
+// 工作室独立论坛：不进入主论坛 Post/Comment 表，公开可读、仅本工作室成员可写。
+const StudioForumPost = sequelize.define('StudioForumPost', {
+    id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+    studio_id: { type: DataTypes.INTEGER, allowNull: false },
+    user_id: { type: DataTypes.INTEGER, allowNull: false },
+    title: { type: DataTypes.STRING(200), allowNull: false },
+    content: { type: DataTypes.TEXT, allowNull: false },
+    view_count: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
+    reply_count: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
+    is_pinned: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
+    is_locked: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
+    status: { type: DataTypes.STRING(20), allowNull: false, defaultValue: 'active' },
+    last_reply_at: { type: DataTypes.DATE, allowNull: true }
+}, Object.assign({ tableName: 'studio_forum_posts', indexes: [{ fields: ['studio_id', 'status', 'is_pinned', 'last_reply_at'] }, { fields: ['user_id'] }] }, TIMESTAMP_OPTS));
+
+const StudioForumReply = sequelize.define('StudioForumReply', {
+    id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+    post_id: { type: DataTypes.INTEGER, allowNull: false },
+    user_id: { type: DataTypes.INTEGER, allowNull: false },
+    content: { type: DataTypes.TEXT, allowNull: false },
+    status: { type: DataTypes.STRING(20), allowNull: false, defaultValue: 'active' }
+}, Object.assign({ tableName: 'studio_forum_replies', indexes: [{ fields: ['post_id', 'status', 'created_at'] }, { fields: ['user_id'] }] }, TIMESTAMP_OPTS));
+
 const Report = sequelize.define('Report', {
     id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
     type: { type: DataTypes.STRING(20), allowNull: false },
@@ -778,6 +801,12 @@ Studio.hasMany(StudioBlacklist, { foreignKey: 'studio_id', as: 'blacklist', onDe
 StudioDiscussion.belongsTo(Studio, { foreignKey: 'studio_id', as: 'studio', onDelete: 'CASCADE' });
 StudioDiscussion.belongsTo(User, { foreignKey: 'user_id', as: 'user', constraints: false });
 Studio.hasMany(StudioDiscussion, { foreignKey: 'studio_id', as: 'discussions', onDelete: 'CASCADE' });
+StudioForumPost.belongsTo(Studio, { foreignKey: 'studio_id', as: 'studio', onDelete: 'CASCADE' });
+StudioForumPost.belongsTo(User, { foreignKey: 'user_id', as: 'author', constraints: false });
+Studio.hasMany(StudioForumPost, { foreignKey: 'studio_id', as: 'forum_posts', onDelete: 'CASCADE' });
+StudioForumReply.belongsTo(StudioForumPost, { foreignKey: 'post_id', as: 'post', onDelete: 'CASCADE' });
+StudioForumReply.belongsTo(User, { foreignKey: 'user_id', as: 'author', constraints: false });
+StudioForumPost.hasMany(StudioForumReply, { foreignKey: 'post_id', as: 'replies', onDelete: 'CASCADE' });
 Report.belongsTo(User, { foreignKey: 'reporter_id', as: 'reporter' });
 Report.belongsTo(User, { foreignKey: 'handler_id', as: 'handler' });
 Report.hasMany(ReportAuditLog, { foreignKey: 'report_id', as: 'audit_logs' });
@@ -964,7 +993,7 @@ Comment.belongsTo(Comment, { foreignKey: 'parent_id', as: 'parent' });
 
 module.exports = {
     sequelize,
-    User, Work, Comment, Post, ForumBoard, ForumBoardSubscription, ForumBoardModerator, PostSubscription, PostDraft, PostRevision, ForumModerationLog, Studio, StudioMember, StudioWork, StudioPointLog, StudioInvite, StudioOperationLog, StudioAnnouncement, StudioTask, StudioBlacklist, StudioDiscussion,
+    User, Work, Comment, Post, ForumBoard, ForumBoardSubscription, ForumBoardModerator, PostSubscription, PostDraft, PostRevision, ForumModerationLog, Studio, StudioMember, StudioWork, StudioPointLog, StudioInvite, StudioOperationLog, StudioAnnouncement, StudioTask, StudioBlacklist, StudioDiscussion, StudioForumPost, StudioForumReply,
     Report, ReportAuditLog, DeveloperApp, DeveloperAppAuditLog, OAuthAuthCode, OAuthAccessToken, OAuthRefreshToken, UserAppAuthorization, Like, Favorite, Follow, Notification, Announcement, Banner, IpBan, CaptchaStats,
     SystemConfig, OperationLog, RolePermission, Statistics, UserWarning, SensitiveWord
 };
