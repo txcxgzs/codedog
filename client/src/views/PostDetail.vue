@@ -9,6 +9,7 @@
             <el-tag v-if="post.post_type === 'question'" :type="post.accepted_comment_id ? 'success' : 'warning'" size="small">{{ post.accepted_comment_id ? '已解决' : '待解决' }}</el-tag>
             <el-tag v-if="post.is_locked" type="info" size="small">已锁定</el-tag>
           </div>
+          <router-link v-if="post.studio" :to="`/studio/${post.studio.id}`" class="r-post--studio_recruitment">🏠 {{ post.studio.name }} 正在招募 · {{ post.studio.member_count }}/{{ post.studio.member_limit }} 人</router-link>
           <h1 class="r-post--title">{{ post.title }}</h1>
           <div class="r-post--meta">
             <span class="r-post--author_link" role="link" tabindex="0" @click="goToAuthor" @keydown.enter="goToAuthor">
@@ -899,6 +900,7 @@ const acceptAnswer = async comment => {
 
 <style lang="scss" scoped>
 @use 'sass:color';
+.r-post--studio_recruitment { display: inline-flex; margin: 8px 0; padding: 8px 12px; border: 1px solid rgba(254,196,51,.5); border-radius: 10px; color: #8a5b00; background: #fff9e9; text-decoration: none; font-weight: 700; }
 
 $primary-color: #FEC433;
 $text-color: #333;

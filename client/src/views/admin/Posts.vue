@@ -128,6 +128,7 @@
         <el-form-item label="排序"><el-input-number v-model="boardForm.sort_order" :min="0" :max="9999" /></el-form-item>
         <el-form-item label="状态"><el-radio-group v-model="boardForm.status"><el-radio label="active">启用</el-radio><el-radio label="disabled">停用</el-radio></el-radio-group></el-form-item>
         <el-form-item label="允许发帖"><el-checkbox-group v-model="boardForm.allow_post_roles"><el-checkbox v-for="role in roleOptions" :key="role.value" :label="role.value">{{ role.label }}</el-checkbox></el-checkbox-group></el-form-item>
+        <el-form-item label="工作室招募"><el-switch v-model="boardForm.studio_recruitment_only" /><span style="margin-left:10px;color:#8b95a7">开启后仅活跃工作室的室长可发帖，并自动关联工作室</span></el-form-item>
       </el-form>
       <template #footer><el-button @click="boardEditorVisible = false">取消</el-button><el-button type="primary" :loading="boardSaving" @click="saveBoard">保存</el-button></template>
     </el-dialog>
@@ -253,7 +254,7 @@ const roleOptions = [
   { value: 'user', label: '普通用户' }, { value: 'reviewer', label: '审核员' },
   { value: 'moderator', label: '版主' }, { value: 'admin', label: '管理员' }, { value: 'superadmin', label: '超级管理员' }
 ]
-const boardForm = reactive({ id: null, name: '', slug: '', description: '', icon: '💬', color: '#fec433', sort_order: 0, status: 'active', allow_post_roles: ['user', 'reviewer', 'moderator', 'admin', 'superadmin'] })
+const boardForm = reactive({ id: null, name: '', slug: '', description: '', icon: '💬', color: '#fec433', sort_order: 0, status: 'active', studio_recruitment_only: false, allow_post_roles: ['user', 'reviewer', 'moderator', 'admin', 'superadmin'] })
 
 // 帖子详情弹窗
 const detailVisible = ref(false)
@@ -333,8 +334,9 @@ const openBoardEditor = (board = null) => {
   Object.assign(boardForm, board ? {
     id: board.id, name: board.name, slug: board.slug, description: board.description || '', icon: board.icon || '💬',
     color: board.color || '#fec433', sort_order: Number(board.sort_order || 0), status: board.status || 'active',
+    studio_recruitment_only: !!board.studio_recruitment_only,
     allow_post_roles: Array.isArray(board.allow_post_roles) ? [...board.allow_post_roles] : []
-  } : { id: null, name: '', slug: '', description: '', icon: '💬', color: '#fec433', sort_order: 0, status: 'active', allow_post_roles: ['user', 'reviewer', 'moderator', 'admin', 'superadmin'] })
+  } : { id: null, name: '', slug: '', description: '', icon: '💬', color: '#fec433', sort_order: 0, status: 'active', studio_recruitment_only: false, allow_post_roles: ['user', 'reviewer', 'moderator', 'admin', 'superadmin'] })
   boardEditorVisible.value = true
 }
 

@@ -3350,7 +3350,7 @@ async function updateSystemConfig(req, res) {
             'geetest_login', 'geetest_register', 'geetest_like', 'geetest_comment', 'geetest_reply',
             'geetest_report', 'geetest_publish_work', 'geetest_publish_post', 'geetest_favorite',
             'geetest_remove_favorite', 'geetest_update_profile', 'geetest_create_studio',
-            'geetest_join_studio', 'geetest_submit_work', 'geetest_review_member', 'geetest_developer_app',
+            'geetest_join_studio', 'geetest_submit_work', 'geetest_review_member', 'geetest_studio_management', 'geetest_developer_app',
             'geetest_im_message', 'geetest_im_search', 'geetest_im_create_group',
             'sensitive_check_mode',
             'sensitive_api_enabled', 'sensitive_api_url', 'sensitive_api_key',
@@ -3424,7 +3424,7 @@ async function batchUpdateConfigs(req, res) {
             'geetest_login', 'geetest_register', 'geetest_like', 'geetest_comment', 'geetest_reply',
             'geetest_report', 'geetest_publish_work', 'geetest_publish_post', 'geetest_favorite',
             'geetest_remove_favorite', 'geetest_update_profile', 'geetest_create_studio',
-            'geetest_join_studio', 'geetest_submit_work', 'geetest_review_member', 'geetest_developer_app',
+            'geetest_join_studio', 'geetest_submit_work', 'geetest_review_member', 'geetest_studio_management', 'geetest_developer_app',
             'geetest_im_message', 'geetest_im_search', 'geetest_im_create_group',
             'sensitive_check_mode',
             'sensitive_api_enabled', 'sensitive_api_url', 'sensitive_api_key',
@@ -5505,6 +5505,7 @@ function normalizeForumBoardInput(body, partial = false) {
         if (!Array.isArray(body.allow_post_roles) || body.allow_post_roles.some(role => !validRoles.includes(role))) return { error: '发帖角色配置无效' };
         data.allow_post_roles = [...new Set(body.allow_post_roles)];
     }
+    if (body.studio_recruitment_only !== undefined) data.studio_recruitment_only = !!body.studio_recruitment_only;
     return { data };
 }
 

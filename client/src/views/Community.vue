@@ -38,6 +38,7 @@
                     <span class="r-community--author_meta">
                       <span class="r-community--item_time">{{ formatTime(post.created_at) }}</span>
                       <span v-if="post.board" class="r-community--topic_meta" :style="{ color: post.board.color }">{{ post.board.icon }} {{ post.board.name }}</span>
+                      <span v-if="post.studio" class="r-community--topic_meta">🏠 {{ post.studio.name }} · {{ post.studio.member_count }}/{{ post.studio.member_limit }} 人</span>
                       <span v-if="post.post_type === 'question'" :class="['r-community--question_state', { solved: post.accepted_comment_id }]">{{ post.accepted_comment_id ? '已解决' : '待解决' }}</span>
                     </span>
                   </div>

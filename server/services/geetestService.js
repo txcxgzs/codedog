@@ -27,6 +27,8 @@ class GeetestService {
     static async isSceneEnabled(scene) {
         if (!scene) return false;
         const sceneConfig = await DbAdapter.findOne(SystemConfig, { where: { config_key: `geetest_${scene}` } });
+        // 新增的工作室敏感操作默认受保护，避免老站升级后因尚未保存新开关而裸奔。
+        if (!sceneConfig && scene === 'studio_management') return true;
         return sceneConfig && sceneConfig.config_value === 'true';
     }
 

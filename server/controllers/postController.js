@@ -3,7 +3,7 @@ const DbAdapter = require('../utils/dbAdapter');
  * 社区帖子控制器
  */
 
-const { Post, User, Comment, Notification, ForumBoard, ForumBoardSubscription, PostSubscription, PostDraft, Favorite, Statistics, sequelize } = require('../models');
+const { Post, User, Comment, Notification, ForumBoard, ForumBoardSubscription, PostSubscription, PostDraft, Favorite, Statistics, Studio, StudioMember, sequelize } = require('../models');
 const { successResponse, errorResponse, paginateResponse } = require('../middleware/response');
 const { Op } = require('sequelize');
 const { isRoleAtLeast, canManageUser } = require('../config/permissions');
@@ -89,6 +89,20 @@ async function resolveBoard(boardId, legacyCategory, role = 'user') {
     const roles = Array.isArray(board.allow_post_roles) ? board.allow_post_roles : [];
     if (roles.length && !roles.includes(role)) return { error: '当前账号无权在该版块发帖' };
     return { board };
+}
+
+async function resolveRecruitmentStudio(board, reqUser, transaction) {
+    if (!board.studio_recruitment_only) return { studioId: null };
+    const studio = await Studio.findOne({
+        where: { owner_id: DbAdapter.getId(reqUser), status: 'active' }, transaction
+    });
+    if (!studio) return { error: '该板块仅允许活跃工作室的室长发布招募帖' };
+    if (studio.recruitment_status !== 'open') return { error: '您的工作室已暂停招募，请先在工作室设置中开启招募' };
+    const ownerMember = await StudioMember.findOne({
+        where: { studio_id: studio.id, user_id: DbAdapter.getId(reqUser), role: 'owner', status: 'active' }, transaction
+    });
+    if (!ownerMember) return { error: '只有工作室室长可以发布招募帖' };
+    return { studioId: studio.id };
 }
 
 async function getBoards(req, res) {
@@ -352,6 +366,9 @@ async function createPost(req, res) {
         if (boardResult.error) return errorResponse(res, boardResult.error, 400);
         const normalizedType = POST_TYPES.has(post_type) ? post_type : (boardResult.board.slug === 'question' ? 'question' : boardResult.board.slug === 'tutorial' ? 'tutorial' : 'discussion');
 
+        const recruitmentResult = await resolveRecruitmentStudio(boardResult.board, req.user);
+        if (recruitmentResult.error) return errorResponse(res, recruitmentResult.error, 403);
+
         const post = await sequelize.transaction(async transaction => {
             const created = await DbAdapter.create(Post, {
                 title,
@@ -359,6 +376,7 @@ async function createPost(req, res) {
                 user_id: DbAdapter.getId(req.user),
                 category: boardResult.board.slug,
                 board_id: boardResult.board.id,
+                studio_id: recruitmentResult.studioId,
                 post_type: normalizedType,
                 tags,
                 cover,
@@ -378,7 +396,7 @@ async function createPost(req, res) {
                 model: User,
                 as: 'author',
                 attributes: ['id', 'codemao_user_id', 'username', 'nickname', 'avatar']
-            }, { model: ForumBoard, as: 'board' }]
+            }, { model: ForumBoard, as: 'board' }, { model: Studio, as: 'studio', attributes: ['id', 'name', 'cover', 'member_count', 'member_limit', 'recruitment_status'] }]
         });
 
         invalidateForumReputation();
@@ -463,6 +481,11 @@ async function getPosts(req, res) {
                 as: 'board',
                 required: false,
                 attributes: ['id', 'slug', 'name', 'icon', 'color']
+            }, {
+                model: Studio,
+                as: 'studio',
+                required: false,
+                attributes: ['id', 'name', 'cover', 'member_count', 'member_limit', 'recruitment_status']
             }],
             order,
             limit: pageSize,
@@ -501,6 +524,11 @@ async function getPostDetail(req, res) {
                 as: 'board',
                 required: false,
                 attributes: ['id', 'slug', 'name', 'description', 'icon', 'color']
+            }, {
+                model: Studio,
+                as: 'studio',
+                required: false,
+                attributes: ['id', 'name', 'cover', 'member_count', 'member_limit', 'recruitment_status']
             }]
         });
         
@@ -740,6 +768,9 @@ async function updatePost(req, res) {
             if (boardResult.error) return errorResponse(res, boardResult.error, 400);
             updateData.board_id = boardResult.board.id;
             updateData.category = boardResult.board.slug;
+            const recruitmentResult = await resolveRecruitmentStudio(boardResult.board, req.user);
+            if (recruitmentResult.error) return errorResponse(res, recruitmentResult.error, 403);
+            updateData.studio_id = recruitmentResult.studioId;
         }
         if (post_type !== undefined) {
             if (!POST_TYPES.has(post_type)) return errorResponse(res, '帖子类型无效', 400);

@@ -17,16 +17,16 @@ export const studioApi = {
     return request.put(`/studios/${id}`, data)
   },
   
-  deleteStudio(id) {
-    return request.delete(`/studios/${id}`)
+  deleteStudio(id, data = {}) {
+    return request.delete(`/studios/${id}`, { data })
   },
   
   joinStudio(id, geetestData = {}) {
     return request.post(`/studios/${id}/join`, geetestData)
   },
   
-  leaveStudio(id) {
-    return request.post(`/studios/${id}/leave`)
+  leaveStudio(id, data = {}) {
+    return request.post(`/studios/${id}/leave`, data)
   },
   
   getMyStudios() {
@@ -41,43 +41,66 @@ export const studioApi = {
     return request.post(`/studios/${id}/works`, { workId, ...geetestData })
   },
   
-  reviewWork(id, workId, action) {
-    return request.post(`/studios/${id}/works/${workId}/review`, { action })
+  reviewWork(id, workId, action, reason = '', geetestData = {}) {
+    return request.post(`/studios/${id}/works/${workId}/review`, { action, reason, ...geetestData })
   },
   
-  removeWork(id, workId) {
-    return request.delete(`/studios/${id}/works/${workId}`)
+  removeWork(id, workId, geetestData = {}) {
+    return request.delete(`/studios/${id}/works/${workId}`, { data: geetestData })
   },
   
-  toggleWorkStatus(id, workId, action) {
-    return request.put(`/studios/${id}/works/${workId}/status`, { action })
+  toggleWorkStatus(id, workId, action, geetestData = {}) {
+    return request.put(`/studios/${id}/works/${workId}/status`, { action, ...geetestData })
   },
   
   getPendingMembers(id) {
     return request.get(`/studios/${id}/pending-members`)
   },
   
-  reviewMember(id, memberId, action, geetestData = {}) {
-    return request.post(`/studios/${id}/members/${memberId}/review`, { action, ...geetestData })
+  reviewMember(id, memberId, action, reason = '', geetestData = {}) {
+    return request.post(`/studios/${id}/members/${memberId}/review`, { action, reason, ...geetestData })
   },
   
-  setMemberRole(id, memberId, role) {
-    return request.put(`/studios/${id}/members/${memberId}/role`, { role })
+  setMemberRole(id, memberId, role, geetestData = {}) {
+    return request.put(`/studios/${id}/members/${memberId}/role`, { role, ...geetestData })
   },
   
-  kickMember(id, memberId) {
-    return request.delete(`/studios/${id}/members/${memberId}`)
+  kickMember(id, memberId, geetestData = {}) {
+    return request.delete(`/studios/${id}/members/${memberId}`, { data: geetestData })
   },
   
   getPendingWorks(id) {
     return request.get(`/studios/${id}/pending-works`)
   },
   
-  setViceOwner(id, userId) {
-    return request.put(`/studios/${id}/vice-owner`, { user_id: userId })
+  setViceOwner(id, userId, geetestData = {}) {
+    return request.put(`/studios/${id}/vice-owner`, { user_id: userId, ...geetestData })
   },
   
-  dissolveStudio(id) {
-    return request.delete(`/studios/${id}/dissolve`)
-  }
+  dissolveStudio(id, geetestData = {}) {
+    return request.delete(`/studios/${id}/dissolve`, { data: geetestData })
+  },
+
+  getCapabilities(id) { return request.get(`/studios/${id}/capabilities`) },
+  setMemberPermissions(id, memberId, permissions, geetestData = {}) { return request.put(`/studios/${id}/members/${memberId}/permissions`, { permissions, ...geetestData }) },
+  getInvites(id) { return request.get(`/studios/${id}/invites`) },
+  createInvite(id, data) { return request.post(`/studios/${id}/invites`, data) },
+  revokeInvite(id, inviteId, geetestData = {}) { return request.delete(`/studios/${id}/invites/${inviteId}`, { data: geetestData }) },
+  acceptInvite(code, geetestData = {}) { return request.post('/studios/invites/accept', { code, ...geetestData }) },
+  transferOwnership(id, data) { return request.post(`/studios/${id}/transfer`, data) },
+  getLogs(id, params = {}) { return request.get(`/studios/${id}/logs`, { params }) },
+  getAnnouncements(id) { return request.get(`/studios/${id}/announcements`) },
+  createAnnouncement(id, data) { return request.post(`/studios/${id}/announcements`, data) },
+  getTasks(id) { return request.get(`/studios/${id}/tasks`) },
+  createTask(id, data) { return request.post(`/studios/${id}/tasks`, data) },
+  updateTask(id, taskId, data) { return request.put(`/studios/${id}/tasks/${taskId}`, data) },
+  updateSettings(id, data) { return request.put(`/studios/${id}/settings`, data) },
+  getAnalytics(id) { return request.get(`/studios/${id}/analytics`) },
+  updateWorkDisplay(id, workId, data) { return request.put(`/studios/${id}/works/${workId}/display`, data) },
+  getBlacklist(id) { return request.get(`/studios/${id}/blacklist`) },
+  addBlacklist(id, data) { return request.post(`/studios/${id}/blacklist`, data) },
+  removeBlacklist(id, blacklistId, data = {}) { return request.delete(`/studios/${id}/blacklist/${blacklistId}`, { data }) },
+  getDiscussions(id) { return request.get(`/studios/${id}/discussions`) },
+  createDiscussion(id, data) { return request.post(`/studios/${id}/discussions`, data) },
+  deleteDiscussion(id, discussionId, data = {}) { return request.delete(`/studios/${id}/discussions/${discussionId}`, { data }) }
 }

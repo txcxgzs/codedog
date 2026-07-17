@@ -124,8 +124,15 @@ check(studioController.includes('VALID_JOIN_TYPES'), 'studio join_type inputs sh
 check(!studioController.includes("order: [['created_at', 'DESC']],"), 'StudioWork queries should not order by missing created_at.');
 check(!studioController.includes("order: [['created_at', 'ASC']]"), 'Pending StudioWork queries should not order by missing created_at.');
 check(!studioController.includes('submittedAt: w.created_at'), 'StudioWork responses should use added_at for submittedAt.');
-check(studioController.includes("order: [['added_at', 'DESC']]"), 'StudioWork list should order by added_at.');
+check(studioController.includes("['added_at', 'DESC']"), 'StudioWork list should order by added_at.');
 check(!studioController.includes('if (status) where.status = status'), 'public studio work lists should not allow status override.');
+const studioManagementController = read('server/controllers/studioManagementController.js');
+check(studioManagementController.includes('ownership_transferred') && studioManagementController.includes('sequelize.transaction'), 'studio ownership transfer must be atomic and audited.');
+check(studioManagementController.includes('effectivePermissions') && studioManagementController.includes('member_permissions_updated'), 'studio management must enforce fine-grained permissions.');
+check(studioRoutes.includes("geetestVerify('studio_management')"), 'studio sensitive mutations should be protected by Geetest.');
+check(postController.includes('studio_recruitment_only') && postController.includes('resolveRecruitmentStudio'), 'studio recruitment boards should only accept studio-owner posts.');
+const appSource = read('server/app.js');
+check(appSource.includes("ensureColumn('studios', 'member_limit'") && appSource.includes("ensureColumn('posts', 'studio_id'"), 'studio upgrade columns must be covered by startup migration.');
 
 const dbMigrationRoutes = read('server/routes/dbMigration.js');
 check(dbMigrationRoutes.includes("router.use(authMiddleware, requireRole('superadmin'))"), 'database migration routes should require superadmin auth.');

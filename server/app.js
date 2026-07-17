@@ -311,9 +311,16 @@ async function startServer() {
         // 这里统一预检并 ALTER TABLE 补齐所有已知的新增列
         try {
             const dialect = sequelize.options.dialect;
+            const existingTableNames = new Set((await sequelize.getQueryInterface().showAllTables()).map(item => {
+                if (typeof item === 'string') return item.toLowerCase();
+                return String(item.tableName || item.table_name || item.name || '').toLowerCase();
+            }));
 
             // 通用: 检查表是否存在且缺少某列,缺少则 ALTER TABLE ADD COLUMN
             async function ensureColumn(tableName, columnName, columnDef) {
+                // 全新安装时表尚未由 sync 创建；此时跳过补列，让后续 sync 按完整模型建表。
+                // 旧库中已存在的表才执行 ALTER，兼容 SQLite 与 MySQL。
+                if (!existingTableNames.has(String(tableName).toLowerCase())) return false;
                 if (dialect === 'sqlite') {
                     const cols = await sequelize.query(`PRAGMA table_info(${tableName})`, { type: sequelize.QueryTypes.SELECT });
                     if (!cols.some(c => c.name === columnName)) {
@@ -346,6 +353,7 @@ async function startServer() {
             await ensureColumn('posts', 'hidden_reason', { sqlite: 'VARCHAR(50)', mysql: 'VARCHAR(50) NULL' });
             // 成熟论坛基础字段。旧数据全部保留，board_id 在 sync 后按原 category 回填。
             await ensureColumn('posts', 'board_id', { sqlite: 'INTEGER', mysql: 'INT NULL' });
+            await ensureColumn('posts', 'studio_id', { sqlite: 'INTEGER', mysql: 'INT NULL' });
             await ensureColumn('posts', 'post_type', { sqlite: "VARCHAR(30) NOT NULL DEFAULT 'discussion'", mysql: "VARCHAR(30) NOT NULL DEFAULT 'discussion'" });
             await ensureColumn('posts', 'last_reply_at', { sqlite: 'DATETIME', mysql: 'DATETIME NULL' });
             await ensureColumn('posts', 'last_reply_user_id', { sqlite: 'INTEGER', mysql: 'INT NULL' });
@@ -358,6 +366,7 @@ async function startServer() {
             await ensureColumn('posts', 'merged_into_post_id', { sqlite: 'INTEGER', mysql: 'INT NULL' });
             // 主题关注的轻量未读游标。打开主题时更新时间，不保存逐条已读回执。
             await ensureColumn('post_subscriptions', 'last_read_at', { sqlite: 'DATETIME', mysql: 'DATETIME NULL' });
+            await ensureColumn('forum_boards', 'studio_recruitment_only', { sqlite: 'INTEGER NOT NULL DEFAULT 0', mysql: 'TINYINT(1) NOT NULL DEFAULT 0' });
 
             // Banner 表新增字段
             await ensureColumn('banners', 'source', { sqlite: 'VARCHAR(20)', mysql: 'VARCHAR(20) NULL' });
@@ -371,6 +380,21 @@ async function startServer() {
 
             // Studio 表新增字段 + 回填 owner_claim
             const addedOwnerClaim = await ensureColumn('studios', 'owner_claim', { sqlite: 'INTEGER', mysql: 'INT NULL' });
+            await ensureColumn('studios', 'member_limit', { sqlite: 'INTEGER NOT NULL DEFAULT 100', mysql: 'INT NOT NULL DEFAULT 100' });
+            await ensureColumn('studios', 'recruitment_status', { sqlite: "VARCHAR(20) NOT NULL DEFAULT 'open'", mysql: "VARCHAR(20) NOT NULL DEFAULT 'open'" });
+            await ensureColumn('studios', 'application_questions', { sqlite: "TEXT NOT NULL DEFAULT '[]'", mysql: 'TEXT NULL' });
+            await ensureColumn('studios', 'application_cooldown_days', { sqlite: 'INTEGER NOT NULL DEFAULT 7', mysql: 'INT NOT NULL DEFAULT 7' });
+            await ensureColumn('studios', 'leave_work_policy', { sqlite: "VARCHAR(20) NOT NULL DEFAULT 'retain'", mysql: "VARCHAR(20) NOT NULL DEFAULT 'retain'" });
+            await ensureColumn('studios', 'im_group_id', { sqlite: 'VARCHAR(100)', mysql: 'VARCHAR(100) NULL' });
+            await ensureColumn('studio_members', 'permissions', { sqlite: 'TEXT', mysql: 'TEXT NULL' });
+            await ensureColumn('studio_members', 'application_message', { sqlite: 'VARCHAR(500)', mysql: 'VARCHAR(500) NULL' });
+            await ensureColumn('studio_members', 'application_answers', { sqlite: 'TEXT', mysql: 'TEXT NULL' });
+            await ensureColumn('studio_members', 'review_reason', { sqlite: 'VARCHAR(500)', mysql: 'VARCHAR(500) NULL' });
+            await ensureColumn('studio_members', 'reviewed_by', { sqlite: 'INTEGER', mysql: 'INT NULL' });
+            await ensureColumn('studio_members', 'reviewed_at', { sqlite: 'DATETIME', mysql: 'DATETIME NULL' });
+            await ensureColumn('studio_works', 'review_reason', { sqlite: 'VARCHAR(500)', mysql: 'VARCHAR(500) NULL' });
+            await ensureColumn('studio_works', 'is_featured', { sqlite: 'INTEGER NOT NULL DEFAULT 0', mysql: 'TINYINT(1) NOT NULL DEFAULT 0' });
+            await ensureColumn('studio_works', 'sort_order', { sqlite: 'INTEGER NOT NULL DEFAULT 0', mysql: 'INT NOT NULL DEFAULT 0' });
             if (addedOwnerClaim) {
                 await sequelize.query("UPDATE studios SET owner_claim = owner_id WHERE status != 'banned' AND owner_claim IS NULL");
                 console.log('[迁移] owner_claim 已回填 = owner_id');

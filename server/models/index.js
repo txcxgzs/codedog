@@ -123,6 +123,7 @@ const Post = sequelize.define('Post', {
     is_essence: { type: DataTypes.BOOLEAN, defaultValue: false },
     category: { type: DataTypes.STRING(50), defaultValue: 'discussion' },
     board_id: { type: DataTypes.INTEGER, allowNull: true },
+    studio_id: { type: DataTypes.INTEGER, allowNull: true },
     post_type: { type: DataTypes.STRING(30), allowNull: false, defaultValue: 'discussion' },
     last_reply_at: { type: DataTypes.DATE, allowNull: true },
     last_reply_user_id: { type: DataTypes.INTEGER, allowNull: true },
@@ -177,6 +178,7 @@ const ForumBoard = sequelize.define('ForumBoard', {
     color: { type: DataTypes.STRING(20), allowNull: false, defaultValue: '#fec433' },
     sort_order: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
     status: { type: DataTypes.STRING(20), allowNull: false, defaultValue: 'active' },
+    studio_recruitment_only: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
     allow_post_roles: {
         type: DataTypes.TEXT,
         allowNull: false,
@@ -272,6 +274,16 @@ const Studio = sequelize.define('Studio', {
     level: { type: DataTypes.INTEGER, defaultValue: 1 },
     is_public: { type: DataTypes.BOOLEAN, defaultValue: true },
     join_type: { type: DataTypes.STRING(20), defaultValue: 'public' },
+    member_limit: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 100 },
+    recruitment_status: { type: DataTypes.STRING(20), allowNull: false, defaultValue: 'open' },
+    application_questions: {
+        type: DataTypes.TEXT, allowNull: false, defaultValue: '[]',
+        get() { try { return JSON.parse(this.getDataValue('application_questions') || '[]'); } catch { return []; } },
+        set(value) { this.setDataValue('application_questions', JSON.stringify(Array.isArray(value) ? value : [])); }
+    },
+    application_cooldown_days: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 7 },
+    leave_work_policy: { type: DataTypes.STRING(20), allowNull: false, defaultValue: 'retain' },
+    im_group_id: { type: DataTypes.STRING(100), allowNull: true },
     // M7: status 改为 ENUM，覆盖 controller 实际使用的 active/pending/banned，预留 dissolved
     status: { type: DataTypes.ENUM('active', 'pending', 'dissolved', 'banned'), defaultValue: 'active' },
     // 修复: owner_claim 用于数据库级"每人一个工作室"并发保护
@@ -288,6 +300,21 @@ const StudioMember = sequelize.define('StudioMember', {
     user_id: { type: DataTypes.INTEGER, allowNull: false },
     role: { type: DataTypes.ENUM('owner', 'vice_owner', 'admin', 'member'), defaultValue: 'member' },
     status: { type: DataTypes.ENUM('active', 'pending', 'rejected'), defaultValue: 'active' },
+    permissions: {
+        type: DataTypes.TEXT,
+        allowNull: true,
+        get() { try { return JSON.parse(this.getDataValue('permissions') || 'null'); } catch { return null; } },
+        set(value) { this.setDataValue('permissions', value == null ? null : JSON.stringify(value)); }
+    },
+    application_message: { type: DataTypes.STRING(500), allowNull: true },
+    application_answers: {
+        type: DataTypes.TEXT, allowNull: true,
+        get() { try { return JSON.parse(this.getDataValue('application_answers') || '[]'); } catch { return []; } },
+        set(value) { this.setDataValue('application_answers', value == null ? null : JSON.stringify(Array.isArray(value) ? value : [])); }
+    },
+    review_reason: { type: DataTypes.STRING(500), allowNull: true },
+    reviewed_by: { type: DataTypes.INTEGER, allowNull: true },
+    reviewed_at: { type: DataTypes.DATE, allowNull: true },
     joined_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW }
 }, Object.assign({
     tableName: 'studio_members',
@@ -308,6 +335,9 @@ const StudioWork = sequelize.define('StudioWork', {
     status: { type: DataTypes.ENUM('pending', 'approved', 'rejected', 'down'), defaultValue: 'pending' },
     reviewed_by: { type: DataTypes.INTEGER },
     reviewed_at: { type: DataTypes.DATE },
+    review_reason: { type: DataTypes.STRING(500), allowNull: true },
+    is_featured: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
+    sort_order: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
     added_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW }
 }, Object.assign({
     tableName: 'studio_works',
@@ -333,6 +363,74 @@ const StudioPointLog = sequelize.define('StudioPointLog', {
         { fields: ['admin_id'] }
     ]
 }, TIMESTAMP_OPTS));
+
+const StudioInvite = sequelize.define('StudioInvite', {
+    id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+    studio_id: { type: DataTypes.INTEGER, allowNull: false },
+    code: { type: DataTypes.STRING(80), allowNull: false, unique: true },
+    created_by: { type: DataTypes.INTEGER, allowNull: false },
+    target_user_id: { type: DataTypes.INTEGER, allowNull: true },
+    expires_at: { type: DataTypes.DATE, allowNull: true },
+    max_uses: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 1 },
+    used_count: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
+    status: { type: DataTypes.STRING(20), allowNull: false, defaultValue: 'active' },
+    last_used_at: { type: DataTypes.DATE, allowNull: true }
+}, Object.assign({ tableName: 'studio_invites', indexes: [{ fields: ['studio_id', 'status'] }, { fields: ['target_user_id'] }] }, TIMESTAMP_OPTS));
+
+const StudioOperationLog = sequelize.define('StudioOperationLog', {
+    id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+    studio_id: { type: DataTypes.INTEGER, allowNull: false },
+    operator_id: { type: DataTypes.INTEGER, allowNull: true },
+    action: { type: DataTypes.STRING(80), allowNull: false },
+    target_type: { type: DataTypes.STRING(50), allowNull: true },
+    target_id: { type: DataTypes.INTEGER, allowNull: true },
+    reason: { type: DataTypes.STRING(500), allowNull: false, defaultValue: '' },
+    before_state: { type: DataTypes.TEXT, allowNull: true },
+    after_state: { type: DataTypes.TEXT, allowNull: true },
+    ip_address: { type: DataTypes.STRING(50), allowNull: true },
+    is_public: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false }
+}, Object.assign({ tableName: 'studio_operation_logs', indexes: [{ fields: ['studio_id', 'created_at'] }, { fields: ['operator_id'] }] }, TIMESTAMP_OPTS));
+
+const StudioAnnouncement = sequelize.define('StudioAnnouncement', {
+    id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+    studio_id: { type: DataTypes.INTEGER, allowNull: false },
+    author_id: { type: DataTypes.INTEGER, allowNull: false },
+    title: { type: DataTypes.STRING(120), allowNull: false },
+    content: { type: DataTypes.TEXT, allowNull: false },
+    is_pinned: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
+    status: { type: DataTypes.STRING(20), allowNull: false, defaultValue: 'published' },
+    published_at: { type: DataTypes.DATE, allowNull: false, defaultValue: DataTypes.NOW }
+}, Object.assign({ tableName: 'studio_announcements', indexes: [{ fields: ['studio_id', 'status', 'published_at'] }] }, TIMESTAMP_OPTS));
+
+const StudioTask = sequelize.define('StudioTask', {
+    id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+    studio_id: { type: DataTypes.INTEGER, allowNull: false },
+    creator_id: { type: DataTypes.INTEGER, allowNull: false },
+    assignee_id: { type: DataTypes.INTEGER, allowNull: true },
+    work_id: { type: DataTypes.INTEGER, allowNull: true },
+    title: { type: DataTypes.STRING(120), allowNull: false },
+    description: { type: DataTypes.TEXT, allowNull: false, defaultValue: '' },
+    needed_role: { type: DataTypes.STRING(80), allowNull: true },
+    priority: { type: DataTypes.STRING(20), allowNull: false, defaultValue: 'normal' },
+    status: { type: DataTypes.STRING(20), allowNull: false, defaultValue: 'open' },
+    deadline: { type: DataTypes.DATE, allowNull: true }
+}, Object.assign({ tableName: 'studio_tasks', indexes: [{ fields: ['studio_id', 'status'] }, { fields: ['assignee_id'] }] }, TIMESTAMP_OPTS));
+
+const StudioBlacklist = sequelize.define('StudioBlacklist', {
+    id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+    studio_id: { type: DataTypes.INTEGER, allowNull: false },
+    user_id: { type: DataTypes.INTEGER, allowNull: false },
+    added_by: { type: DataTypes.INTEGER, allowNull: false },
+    reason: { type: DataTypes.STRING(500), allowNull: false, defaultValue: '' }
+}, Object.assign({ tableName: 'studio_blacklists', indexes: [{ unique: true, fields: ['studio_id', 'user_id'] }] }, TIMESTAMP_OPTS));
+
+const StudioDiscussion = sequelize.define('StudioDiscussion', {
+    id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+    studio_id: { type: DataTypes.INTEGER, allowNull: false },
+    user_id: { type: DataTypes.INTEGER, allowNull: false },
+    content: { type: DataTypes.TEXT, allowNull: false },
+    status: { type: DataTypes.STRING(20), allowNull: false, defaultValue: 'active' }
+}, Object.assign({ tableName: 'studio_discussions', indexes: [{ fields: ['studio_id', 'created_at'] }, { fields: ['user_id'] }] }, TIMESTAMP_OPTS));
 
 const Report = sequelize.define('Report', {
     id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
@@ -616,6 +714,8 @@ Post.belongsTo(User, { foreignKey: 'user_id', as: 'author' });
 Post.belongsTo(User, { foreignKey: 'last_reply_user_id', as: 'last_reply_user', constraints: false });
 Post.belongsTo(ForumBoard, { foreignKey: 'board_id', as: 'board', constraints: false });
 ForumBoard.hasMany(Post, { foreignKey: 'board_id', as: 'posts', constraints: false });
+Post.belongsTo(Studio, { foreignKey: 'studio_id', as: 'studio', constraints: false });
+Studio.hasMany(Post, { foreignKey: 'studio_id', as: 'recruitment_posts', constraints: false });
 ForumBoardSubscription.belongsTo(ForumBoard, { foreignKey: 'board_id', as: 'board', onDelete: 'CASCADE' });
 ForumBoardSubscription.belongsTo(User, { foreignKey: 'user_id', as: 'user', onDelete: 'CASCADE' });
 ForumBoard.hasMany(ForumBoardSubscription, { foreignKey: 'board_id', as: 'subscriptions', onDelete: 'CASCADE' });
@@ -656,6 +756,28 @@ StudioWork.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
 Studio.hasMany(StudioPointLog, { foreignKey: 'studio_id', as: 'point_logs', constraints: false });
 StudioPointLog.belongsTo(Studio, { foreignKey: 'studio_id', as: 'studio', constraints: false });
 StudioPointLog.belongsTo(User, { foreignKey: 'admin_id', as: 'admin', constraints: false });
+StudioInvite.belongsTo(Studio, { foreignKey: 'studio_id', as: 'studio', onDelete: 'CASCADE' });
+StudioInvite.belongsTo(User, { foreignKey: 'created_by', as: 'creator', constraints: false });
+StudioInvite.belongsTo(User, { foreignKey: 'target_user_id', as: 'target_user', constraints: false });
+Studio.hasMany(StudioInvite, { foreignKey: 'studio_id', as: 'invites', onDelete: 'CASCADE' });
+StudioOperationLog.belongsTo(Studio, { foreignKey: 'studio_id', as: 'studio', onDelete: 'CASCADE' });
+StudioOperationLog.belongsTo(User, { foreignKey: 'operator_id', as: 'operator', constraints: false });
+Studio.hasMany(StudioOperationLog, { foreignKey: 'studio_id', as: 'operation_logs', onDelete: 'CASCADE' });
+StudioAnnouncement.belongsTo(Studio, { foreignKey: 'studio_id', as: 'studio', onDelete: 'CASCADE' });
+StudioAnnouncement.belongsTo(User, { foreignKey: 'author_id', as: 'author', constraints: false });
+Studio.hasMany(StudioAnnouncement, { foreignKey: 'studio_id', as: 'announcements', onDelete: 'CASCADE' });
+StudioTask.belongsTo(Studio, { foreignKey: 'studio_id', as: 'studio', onDelete: 'CASCADE' });
+StudioTask.belongsTo(User, { foreignKey: 'creator_id', as: 'creator', constraints: false });
+StudioTask.belongsTo(User, { foreignKey: 'assignee_id', as: 'assignee', constraints: false });
+StudioTask.belongsTo(Work, { foreignKey: 'work_id', as: 'work', constraints: false });
+Studio.hasMany(StudioTask, { foreignKey: 'studio_id', as: 'tasks', onDelete: 'CASCADE' });
+StudioBlacklist.belongsTo(Studio, { foreignKey: 'studio_id', as: 'studio', onDelete: 'CASCADE' });
+StudioBlacklist.belongsTo(User, { foreignKey: 'user_id', as: 'user', constraints: false });
+StudioBlacklist.belongsTo(User, { foreignKey: 'added_by', as: 'adder', constraints: false });
+Studio.hasMany(StudioBlacklist, { foreignKey: 'studio_id', as: 'blacklist', onDelete: 'CASCADE' });
+StudioDiscussion.belongsTo(Studio, { foreignKey: 'studio_id', as: 'studio', onDelete: 'CASCADE' });
+StudioDiscussion.belongsTo(User, { foreignKey: 'user_id', as: 'user', constraints: false });
+Studio.hasMany(StudioDiscussion, { foreignKey: 'studio_id', as: 'discussions', onDelete: 'CASCADE' });
 Report.belongsTo(User, { foreignKey: 'reporter_id', as: 'reporter' });
 Report.belongsTo(User, { foreignKey: 'handler_id', as: 'handler' });
 Report.hasMany(ReportAuditLog, { foreignKey: 'report_id', as: 'audit_logs' });
@@ -842,7 +964,7 @@ Comment.belongsTo(Comment, { foreignKey: 'parent_id', as: 'parent' });
 
 module.exports = {
     sequelize,
-    User, Work, Comment, Post, ForumBoard, ForumBoardSubscription, ForumBoardModerator, PostSubscription, PostDraft, PostRevision, ForumModerationLog, Studio, StudioMember, StudioWork, StudioPointLog,
+    User, Work, Comment, Post, ForumBoard, ForumBoardSubscription, ForumBoardModerator, PostSubscription, PostDraft, PostRevision, ForumModerationLog, Studio, StudioMember, StudioWork, StudioPointLog, StudioInvite, StudioOperationLog, StudioAnnouncement, StudioTask, StudioBlacklist, StudioDiscussion,
     Report, ReportAuditLog, DeveloperApp, DeveloperAppAuditLog, OAuthAuthCode, OAuthAccessToken, OAuthRefreshToken, UserAppAuthorization, Like, Favorite, Follow, Notification, Announcement, Banner, IpBan, CaptchaStats,
     SystemConfig, OperationLog, RolePermission, Statistics, UserWarning, SensitiveWord
 };
