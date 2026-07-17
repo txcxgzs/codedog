@@ -2,15 +2,14 @@
   <main class="terminal-shell" :class="{ 'mobile-layout': mobileLayout, 'mobile-channel-open': mobileChannelOpen }">
     <aside class="rail">
       <div class="brand"><span class="brand-mark">狗</span><div><b>编程狗消息</b><small>即时通讯</small></div><a class="back-link" :href="communityUrl">返回编程狗</a></div>
-      <form class="search" @submit.prevent="searchUsers"><span>⌕</span><input v-model="filter" placeholder="搜索用户或会话" /><button title="搜索">搜索</button></form>
-      <div v-if="searchResults.length" class="search-results">
-        <button v-for="user in searchResults" :key="user.id" @click="startDirect(user)"><span class="avatar">{{ avatarLetter(user) }}</span><span><b>{{ displayName(user, user.id) }}</b><small>发起私聊</small></span></button>
+      <button type="button" class="search-launcher" @click="openSearchDialog">
+        <span>⌕</span><span>搜索用户或群聊</span><kbd>搜索</kbd>
+      </button>
+      <div class="rail-actions">
+        <button type="button" @click="openSearchDialog"><span class="rail-action-icon">私</span><b>发起私聊</b><small>查找用户</small></button>
+        <button type="button" class="primary" @click="openGroupWizard"><span class="rail-action-icon">群</span><b>创建群聊</b><small>邀请成员</small></button>
       </div>
-      <div class="rail-title"><span>消息列表</span><button title="新建会话" @click="createPanel = !createPanel">＋</button></div>
-      <div v-if="createPanel" class="create-panel">
-        <form @submit.prevent="createDirect"><input v-model="peerId" inputmode="numeric" placeholder="对方用户 ID" /><button>私聊</button></form>
-        <form @submit.prevent="createGroup"><input v-model="groupName" maxlength="50" placeholder="新群名称" /><button>建群</button></form>
-      </div>
+      <div class="rail-title"><span>消息列表</span></div>
       <div v-if="requests.length" class="requests"><small>私聊申请</small><div v-for="request in requests" :key="request.conversation_id"><span class="user-link" @click="openUser(request.from_user)">{{ displayName(request.from_user, request.from_user_id) }}</span><button @click="handleRequest(request, 'accept')">接受</button><button class="ghost" @click="handleRequest(request, 'reject')">拒绝</button></div></div>
       <div class="conversation-list">
         <button v-for="item in filteredConversations" :key="item.id" class="conversation" :class="{ active: selected?.id === item.id }" @click="selectConversation(item)">
@@ -56,6 +55,64 @@
       <dl><div><dt>安全传输</dt><dd>已开启</dd></div><div><dt>消息数量</dt><dd>{{ selected?.last_sequence || 0 }}</dd></div><div><dt>实时连接</dt><dd>正常</dd></div></dl>
       <div class="notice"><b>安全提示</b><p>请勿在聊天中发送密码、令牌或其他敏感凭据。</p></div>
     </aside>
+    <div v-if="searchDialog.open" class="modal-mask" @click.self="closeSearchDialog">
+      <section class="im-dialog discovery-dialog" role="dialog" aria-modal="true" aria-labelledby="discovery-title">
+        <header><div><small>发现联系人</small><h2 id="discovery-title">搜索用户或群聊</h2></div><button aria-label="关闭" @click="closeSearchDialog">×</button></header>
+        <form class="dialog-search" @submit.prevent="searchDirectory">
+          <span>⌕</span><input v-model="searchDialog.keyword" autofocus maxlength="50" placeholder="输入昵称、用户名、编程猫 ID 或群名称" /><button :disabled="searchDialog.loading">{{ searchDialog.loading ? '搜索中' : '搜索' }}</button>
+        </form>
+        <nav class="result-tabs">
+          <button :class="{ active: searchDialog.tab === 'users' }" @click="searchDialog.tab = 'users'">用户 <em>{{ searchDialog.users.length }}</em></button>
+          <button :class="{ active: searchDialog.tab === 'groups' }" @click="searchDialog.tab = 'groups'">群聊 <em>{{ searchDialog.groups.length }}</em></button>
+        </nav>
+        <div class="directory-results">
+          <template v-if="searchDialog.tab === 'users'">
+            <article v-for="user in searchDialog.users" :key="user.id">
+              <span class="avatar"><img v-if="user.avatar" :src="user.avatar" alt="" referrerpolicy="no-referrer" />{{ avatarLetter(user) }}</span>
+              <div><b>{{ displayName(user, user.id) }}</b><small>@{{ user.username }} · ID {{ user.id }}</small></div>
+              <button @click="startDirect(user)">发起私聊</button>
+            </article>
+          </template>
+          <template v-else>
+            <article v-for="group in searchDialog.groups" :key="group.conversation_id">
+              <span class="avatar group-avatar">群</span>
+              <div><b>{{ group.name }}</b><small>群号 {{ group.conversation_id }} · {{ group.member_count }} 人</small></div>
+              <button @click="joinSearchedGroup(group)">加入群聊</button>
+            </article>
+          </template>
+          <div v-if="searchDialog.searched && !(searchDialog.tab === 'users' ? searchDialog.users : searchDialog.groups).length" class="dialog-empty">没有找到匹配结果，换个关键词试试</div>
+          <div v-else-if="!searchDialog.searched" class="dialog-empty">输入关键词开始查找</div>
+        </div>
+      </section>
+    </div>
+    <div v-if="groupWizard.open" class="modal-mask">
+      <section class="im-dialog group-wizard" role="dialog" aria-modal="true" aria-labelledby="group-wizard-title">
+        <header><div><small>第 {{ groupWizard.step }} 步，共 3 步</small><h2 id="group-wizard-title">{{ groupStepTitle }}</h2></div><button aria-label="关闭" @click="closeGroupWizard">×</button></header>
+        <div class="wizard-progress"><i v-for="step in 3" :key="step" :class="{ active: step <= groupWizard.step }"></i></div>
+        <div v-if="groupWizard.step === 1" class="wizard-page">
+          <label>群聊名称<input v-model="groupWizard.name" maxlength="50" autofocus placeholder="给群聊取一个清晰的名称" /><span>{{ groupWizard.name.trim().length }}/50</span></label>
+          <div class="wizard-note"><b>创建后你将成为群主</b><p>可继续邀请成员、调整群资料与管理成员。</p></div>
+        </div>
+        <div v-else-if="groupWizard.step === 2" class="wizard-page">
+          <form class="dialog-search" @submit.prevent="searchWizardMembers"><span>⌕</span><input v-model="groupWizard.keyword" maxlength="50" placeholder="搜索要邀请的用户" /><button :disabled="groupWizard.searching">{{ groupWizard.searching ? '搜索中' : '搜索' }}</button></form>
+          <div v-if="groupWizard.selected.length" class="selected-members"><button v-for="user in groupWizard.selected" :key="user.id" @click="toggleWizardMember(user)">{{ displayName(user, user.id) }} ×</button></div>
+          <div class="directory-results compact">
+            <article v-for="user in groupWizard.results" :key="user.id">
+              <span class="avatar"><img v-if="user.avatar" :src="user.avatar" alt="" referrerpolicy="no-referrer" />{{ avatarLetter(user) }}</span>
+              <div><b>{{ displayName(user, user.id) }}</b><small>@{{ user.username }}</small></div>
+              <button :class="{ selected: isWizardMemberSelected(user) }" @click="toggleWizardMember(user)">{{ isWizardMemberSelected(user) ? '已选择' : '选择' }}</button>
+            </article>
+            <div v-if="!groupWizard.results.length" class="dialog-empty">可跳过此步，创建后再邀请成员</div>
+          </div>
+        </div>
+        <div v-else class="wizard-page confirm-page">
+          <div class="group-preview"><span>群</span><div><b>{{ groupWizard.name.trim() }}</b><small>{{ groupWizard.selected.length + 1 }} 位初始成员</small></div></div>
+          <div class="confirm-members"><span>群主</span><b>{{ displayName(me, me?.id) }}</b><span>邀请成员</span><b>{{ groupWizard.selected.length ? groupWizard.selected.map(user => displayName(user, user.id)).join('、') : '暂不邀请' }}</b></div>
+        </div>
+        <div v-if="groupWizard.error" class="dialog-error">{{ groupWizard.error }}</div>
+        <footer><button class="ghost" @click="groupWizard.step === 1 ? closeGroupWizard() : groupWizard.step--">{{ groupWizard.step === 1 ? '取消' : '上一步' }}</button><button :disabled="groupWizard.submitting || (groupWizard.step === 1 && !groupWizard.name.trim())" @click="nextGroupStep">{{ groupWizard.step === 3 ? (groupWizard.submitting ? '创建中' : '确认创建') : '下一步' }}</button></footer>
+      </section>
+    </div>
     <div v-if="reportDialog.open" class="modal-mask" @click.self="closeReport">
       <section class="report-dialog" role="dialog" aria-modal="true" aria-labelledby="report-title">
         <header><div><small>内容安全</small><h2 id="report-title">举报这条消息</h2></div><button aria-label="关闭" @click="closeReport">×</button></header>
@@ -89,14 +146,16 @@ import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
 
 const me = ref(null), conversations = ref([]), requests = ref([]), selected = ref(null), messages = ref([])
 const filter = ref(''), draft = ref(''), loading = ref(false), sending = ref(false), socketState = ref('正在连接'), timeline = ref(null)
-const createPanel = ref(false), peerId = ref(''), groupName = ref('')
 const mobileChannelOpen = ref(false)
 const mobileLayout = ref(false)
 const avatarFailed = ref(false)
 const sessionExpired = ref(false)
 const initialLoginError = ref('')
 const initialLoginDiagnostic = ref(null)
-const searchResults = ref([]), captchaBox = ref(null)
+const captchaBox = ref(null)
+const searchDialog = reactive({ open: false, keyword: '', tab: 'users', users: [], groups: [], searched: false, loading: false })
+const groupWizard = reactive({ open: false, step: 1, name: '', keyword: '', results: [], selected: [], searching: false, submitting: false, error: '' })
+const groupStepTitle = computed(() => ['设置群资料', '邀请初始成员', '确认创建群聊'][groupWizard.step - 1])
 const captchaDialog = reactive({ open: false, scene: '', error: '', resolve: null })
 const captchaGrants = new Map()
 const reportDialog = reactive({ open: false, message: null, reason: '', error: '', submitting: false })
@@ -174,10 +233,79 @@ const load = async () => {
   const target = intent?.action === 'direct' ? conversations.value.find(item => Number(item.peer_id) === intent.userId) : conversations.value.find(item => Number(item.id) === intent?.groupId)
   if (target) await selectConversation(target)
 }
-const createDirect = async () => { if (!peerId.value) return; await api('/conversations/direct', { method:'POST', body:JSON.stringify({ user_id:Number(peerId.value) }) }); peerId.value=''; createPanel.value=false; await refreshSidebar() }
-const createGroup = async () => { if (!groupName.value.trim()) return; try { const captchaGrant = await getCaptchaGrant('im_create_group'); await api('/conversations/group', { method:'POST', captchaGrant, body:JSON.stringify({ name:groupName.value.trim() }) }); groupName.value=''; createPanel.value=false; await refreshSidebar() } catch (error) { showToast(error.message, 'error') } }
-const searchUsers = async () => { const keyword = filter.value.trim(); if (!keyword) { searchResults.value = []; return } try { const captchaGrant = await getCaptchaGrant('im_search'); searchResults.value = await api('/search', { method:'POST', captchaGrant, body:JSON.stringify({ keyword }) }) } catch (error) { showToast(error.message, 'error') } }
-const startDirect = async user => { peerId.value = String(user.id); searchResults.value = []; await createDirect() }
+const openSearchDialog = () => { searchDialog.open = true; searchDialog.keyword = ''; searchDialog.users = []; searchDialog.groups = []; searchDialog.searched = false; searchDialog.tab = 'users' }
+const closeSearchDialog = () => { if (!searchDialog.loading) searchDialog.open = false }
+const searchDirectory = async () => {
+  const keyword = searchDialog.keyword.trim()
+  if (!keyword || searchDialog.loading) return
+  searchDialog.loading = true
+  try {
+    const captchaGrant = await getCaptchaGrant('im_search')
+    const data = await api('/search', { method:'POST', captchaGrant, body:JSON.stringify({ keyword }) })
+    searchDialog.users = data.users || []
+    searchDialog.groups = data.groups || []
+    searchDialog.searched = true
+  } catch (error) { showToast(error.message, 'error') } finally { searchDialog.loading = false }
+}
+const startDirect = async user => {
+  try {
+    await api('/conversations/direct', { method:'POST', body:JSON.stringify({ user_id:Number(user.id) }) })
+    searchDialog.open = false
+    await refreshSidebar()
+    const target = conversations.value.find(item => Number(item.peer_id) === Number(user.id))
+    if (target) await selectConversation(target)
+  } catch (error) { showToast(error.message, 'error') }
+}
+const joinSearchedGroup = async group => {
+  try {
+    await api(`/groups/${group.conversation_id}/join`, { method:'POST' })
+    searchDialog.open = false
+    await refreshSidebar()
+    const target = conversations.value.find(item => Number(item.id) === Number(group.conversation_id))
+    if (target) await selectConversation(target)
+  } catch (error) { showToast(error.message, 'error') }
+}
+const openGroupWizard = () => Object.assign(groupWizard, { open: true, step: 1, name: '', keyword: '', results: [], selected: [], searching: false, submitting: false, error: '' })
+const closeGroupWizard = () => { if (!groupWizard.submitting) groupWizard.open = false }
+const isWizardMemberSelected = user => groupWizard.selected.some(item => Number(item.id) === Number(user.id))
+const toggleWizardMember = user => {
+  const index = groupWizard.selected.findIndex(item => Number(item.id) === Number(user.id))
+  if (index >= 0) groupWizard.selected.splice(index, 1)
+  else groupWizard.selected.push(user)
+}
+const searchWizardMembers = async () => {
+  const keyword = groupWizard.keyword.trim()
+  if (!keyword || groupWizard.searching) return
+  groupWizard.searching = true
+  try {
+    const captchaGrant = await getCaptchaGrant('im_search')
+    const data = await api('/search', { method:'POST', captchaGrant, body:JSON.stringify({ keyword }) })
+    groupWizard.results = data.users || []
+  } catch (error) { groupWizard.error = error.message } finally { groupWizard.searching = false }
+}
+const createGroupFromWizard = async () => {
+  groupWizard.submitting = true; groupWizard.error = ''
+  try {
+    const captchaGrant = await getCaptchaGrant('im_create_group')
+    const group = await api('/conversations/group', { method:'POST', captchaGrant, body:JSON.stringify({ name:groupWizard.name.trim() }) })
+    const failures = []
+    for (const user of groupWizard.selected) {
+      try { await api(`/groups/${group.id}/members`, { method:'POST', body:JSON.stringify({ user_id:Number(user.id) }) }) }
+      catch { failures.push(displayName(user, user.id)) }
+    }
+    groupWizard.open = false
+    await refreshSidebar()
+    const target = conversations.value.find(item => Number(item.id) === Number(group.id))
+    if (target) await selectConversation(target)
+    showToast(failures.length ? `群聊已创建，${failures.join('、')} 邀请失败` : '群聊创建成功', failures.length ? 'warning' : 'success')
+  } catch (error) { groupWizard.error = error.message } finally { groupWizard.submitting = false }
+}
+const nextGroupStep = () => {
+  groupWizard.error = ''
+  if (groupWizard.step === 1 && !groupWizard.name.trim()) return
+  if (groupWizard.step < 3) groupWizard.step++
+  else createGroupFromWizard()
+}
 const handleRequest = async (request, action) => { await api(`/conversation-requests/${request.conversation_id}`, { method:'POST', body:JSON.stringify({ action }) }); await refreshSidebar() }
 const selectConversation = async item => { selected.value = item; mobileChannelOpen.value = true; loading.value = true; try { messages.value = await api(`/conversations/${item.id}/messages`); await nextTick(); timeline.value?.scrollTo(0, timeline.value.scrollHeight) } finally { loading.value = false } }
 const sendMessage = async () => {
@@ -270,6 +398,9 @@ onUnmounted(() => {
 .captcha-dialog{width:min(420px,100%)}.captcha-box{min-height:44px;margin-top:16px}
 .auth-failure .orb{background:#fff0f0;color:#d84b4b}.auth-failure p{max-width:520px}.auth-failure .reauth-button{margin-top:10px}.auth-diagnostic{display:grid;grid-template-columns:repeat(2,auto);gap:7px 16px;margin-top:8px;padding:13px 16px;border:1px solid #eadfca;border-radius:11px;background:#fffaf0;color:#6f6552;font-size:11px;text-align:left}.auth-diagnostic b,.auth-diagnostic small{grid-column:1/-1}.auth-diagnostic b{color:#3b352b}.auth-diagnostic small{color:#948a78;line-height:1.55}
 .conversation-list{min-height:0;flex:1;overflow-y:auto;overscroll-behavior:contain}.mobile-back{display:none}
+.search-launcher{width:100%;height:44px;display:flex;align-items:center;gap:10px;padding:0 12px;border:1px solid #dfe3eb;border-radius:12px;background:#fafbfc;color:#737d8e;text-align:left;cursor:pointer;transition:.18s}.search-launcher:hover{border-color:#fec433;background:#fff}.search-launcher>span:nth-child(2){flex:1}.search-launcher kbd{border:0;background:transparent;color:#b47b00;font:600 11px inherit}.rail-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}.rail-actions>button{display:grid;grid-template-columns:30px 1fr;grid-template-rows:auto auto;column-gap:8px;align-items:center;padding:10px;border:1px solid #e4e7ed;border-radius:12px;background:#fff;color:#222c3d;text-align:left;cursor:pointer;transition:.18s}.rail-actions>button:hover{transform:translateY(-1px);border-color:#d7dce6;box-shadow:0 8px 20px rgba(27,39,65,.08)}.rail-actions>button.primary{border-color:#f3c451;background:#fff9e8}.rail-action-icon{grid-row:1/3;display:grid;place-items:center;width:30px;height:30px;border-radius:9px;background:#f0f3f8;color:#59657a;font-size:12px;font-weight:800}.primary .rail-action-icon{background:#fec433;color:#242936}.rail-actions b{font-size:12px}.rail-actions small{margin-top:2px;color:#9aa1ad;font-size:9px}
+.im-dialog{width:min(680px,100%);max-height:calc(100dvh - 36px);overflow:auto;border:1px solid rgba(226,230,238,.95);border-radius:24px;background:#fff;box-shadow:0 28px 90px rgba(20,28,44,.25)}.im-dialog>header{display:flex;align-items:flex-start;justify-content:space-between;padding:24px 26px 18px}.im-dialog>header small{color:#b47b00;font-size:11px;font-weight:700}.im-dialog h2{margin:5px 0 0;color:#172033;font-size:24px}.im-dialog>header>button{display:grid;place-items:center;width:36px;height:36px;border:0;border-radius:50%;background:#f5f6f8;color:#737c8c;font-size:23px;cursor:pointer}.dialog-search{display:flex;align-items:center;gap:10px;margin:0 26px;padding:6px 7px 6px 14px;border:1px solid #dfe3ea;border-radius:14px;background:#fafbfc}.dialog-search:focus-within{border-color:#fec433;box-shadow:0 0 0 3px rgba(254,196,51,.14);background:#fff}.dialog-search input{min-width:0;flex:1;height:34px;border:0;outline:0;background:transparent;color:#222b3c}.dialog-search button,.directory-results article>button{height:36px;padding:0 14px;border:0;border-radius:10px;background:#172033;color:#fff;font-weight:700;cursor:pointer}.dialog-search button:disabled{opacity:.5}.result-tabs{display:flex;gap:4px;margin:18px 26px 0;border-bottom:1px solid #eaedf2}.result-tabs button{position:relative;padding:12px 15px;border:0;background:transparent;color:#778194;font-weight:700;cursor:pointer}.result-tabs button.active{color:#172033}.result-tabs button.active:after{content:"";position:absolute;left:14px;right:14px;bottom:-1px;height:3px;border-radius:3px;background:#fec433}.result-tabs em{display:inline-grid;place-items:center;min-width:20px;height:20px;margin-left:4px;border-radius:10px;background:#f0f2f6;color:#7c8492;font-size:10px;font-style:normal}.directory-results{min-height:250px;max-height:390px;overflow:auto;padding:12px 26px 24px}.directory-results article{display:flex;align-items:center;gap:12px;padding:11px 10px;border-radius:14px;transition:.16s}.directory-results article:hover{background:#f7f8fb}.directory-results article>div{min-width:0;flex:1}.directory-results article b,.directory-results article small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.directory-results article b{color:#263044;font-size:14px}.directory-results article small{margin-top:4px;color:#989fac;font-size:11px}.directory-results article>button{height:34px;background:#fff4ce;color:#9a6900}.directory-results article>button:hover,.directory-results article>button.selected{background:#fec433;color:#20242a}.group-avatar{background:#172033;color:#fff}.dialog-empty{display:grid;place-items:center;min-height:190px;color:#a0a7b2;font-size:13px}
+.group-wizard{width:min(640px,100%)}.wizard-progress{display:flex;gap:7px;padding:0 26px}.wizard-progress i{height:4px;flex:1;border-radius:4px;background:#edf0f4}.wizard-progress i.active{background:linear-gradient(90deg,#fec433,#ffd76a)}.wizard-page{min-height:290px;padding:30px 26px 20px}.wizard-page>label{position:relative;display:block;color:#4c576a;font-size:12px;font-weight:700}.wizard-page>label input{display:block;width:100%;height:50px;margin-top:10px;padding:0 48px 0 15px;border:1px solid #dfe3ea;border-radius:13px;outline:0;background:#fafbfc;color:#202a3c;font-size:15px}.wizard-page>label input:focus{border-color:#fec433;box-shadow:0 0 0 3px rgba(254,196,51,.14);background:#fff}.wizard-page>label>span{position:absolute;right:14px;bottom:17px;color:#a1a7b1;font-weight:400}.wizard-note{margin-top:18px;padding:18px;border-radius:14px;background:linear-gradient(135deg,#fff9e8,#fffdf7)}.wizard-note b{color:#403718}.wizard-note p{margin:6px 0 0;color:#8d8368;font-size:12px}.wizard-page .dialog-search{margin:0}.selected-members{display:flex;gap:7px;flex-wrap:wrap;padding:14px 0 4px}.selected-members button{padding:7px 10px;border:0;border-radius:9px;background:#fff3c9;color:#8f6500;font-size:11px;cursor:pointer}.directory-results.compact{min-height:160px;max-height:210px;padding:8px 0}.confirm-page{display:grid;align-content:start;gap:18px}.group-preview{display:flex;align-items:center;gap:14px;padding:18px;border:1px solid #e6e9ef;border-radius:16px;background:#fafbfc}.group-preview>span{display:grid;place-items:center;width:54px;height:54px;border-radius:16px;background:#fec433;font-weight:900}.group-preview b,.group-preview small{display:block}.group-preview small{margin-top:5px;color:#9299a6}.confirm-members{display:grid;grid-template-columns:90px 1fr;gap:12px;padding:18px;border-radius:15px;background:#f7f8fa;font-size:12px}.confirm-members span{color:#9299a6}.confirm-members b{color:#404a5d}.im-dialog>footer{display:flex;justify-content:flex-end;gap:10px;padding:17px 26px 22px;border-top:1px solid #edf0f4}.im-dialog>footer button{height:42px;padding:0 20px;border:0;border-radius:11px;background:#fec433;color:#20242a;font-weight:800;cursor:pointer}.im-dialog>footer button.ghost{border:1px solid #dfe3ea;background:#fff;color:#657084}.im-dialog>footer button:disabled{opacity:.45;cursor:not-allowed}
 @media(max-width:820px), (max-device-width:820px){
   .terminal-shell{display:block;width:100%;height:100vh;height:100dvh;min-height:0;padding:0;overflow:hidden;background:#fff}
   .rail,.channel{width:100%;height:100%;min-height:0;border:0;border-radius:0;box-shadow:none}
@@ -284,7 +415,7 @@ onUnmounted(() => {
   .timeline{min-height:0;padding:14px 12px 8px}.welcome .orb{width:64px;height:64px;border-radius:19px;font-size:29px}.welcome h2{font-size:20px;margin-top:16px}.welcome p{padding:0 20px;font-size:13px;line-height:1.6}
   .message{max-width:94%;gap:8px;margin-bottom:14px}.message>.avatar{width:34px;height:34px}.message-meta{gap:6px;flex-wrap:wrap}.message p{margin-top:5px;padding:9px 11px;line-height:1.55}.message-image{max-width:min(72vw,320px);max-height:300px}
   .composer{margin:6px 8px max(8px,env(safe-area-inset-bottom));border-radius:12px}.composer textarea{height:56px;padding:10px 11px;font-size:16px}.composer footer{padding:6px 7px}.composer footer>span{max-width:92px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.image-button{min-height:40px;padding:8px 11px}.composer button{min-height:40px;padding:8px 14px}
-  .modal-mask{padding:12px}.report-dialog{max-height:calc(100dvh - 24px);overflow-y:auto;padding:18px;border-radius:15px}.report-dialog textarea{min-height:100px}
+  .modal-mask{padding:0;align-items:end}.report-dialog{max-height:calc(100dvh - 24px);overflow-y:auto;padding:18px;border-radius:15px}.report-dialog textarea{min-height:100px}.im-dialog{width:100%;max-height:92dvh;border-radius:24px 24px 0 0}.im-dialog>header{padding:20px 18px 15px}.im-dialog h2{font-size:21px}.dialog-search{margin:0 18px}.result-tabs{margin:14px 18px 0}.directory-results{padding:10px 12px 20px}.wizard-progress{padding:0 18px}.wizard-page{min-height:300px;padding:24px 18px 18px}.im-dialog>footer{position:sticky;bottom:0;padding:14px 18px max(14px,env(safe-area-inset-bottom));background:#fff}.rail-actions>button{padding:9px 8px}
   .toast{top:max(12px,env(safe-area-inset-top));width:calc(100% - 24px);text-align:center}
 }
 .terminal-shell.mobile-layout{display:block;width:100%;height:100vh;height:100dvh;height:var(--im-viewport-height,100dvh);min-height:0;padding:0;overflow:hidden;background:#fff}
@@ -299,5 +430,5 @@ onUnmounted(() => {
 .mobile-layout .timeline{min-height:0;padding:14px 12px 8px;overscroll-behavior:contain}.mobile-layout .welcome .orb{width:64px;height:64px;border-radius:19px;font-size:29px}.mobile-layout .welcome h2{font-size:20px;margin-top:16px}.mobile-layout .welcome p{padding:0 20px;font-size:13px;line-height:1.6}
 .mobile-layout .message{max-width:94%;gap:8px;margin-bottom:14px}.mobile-layout .message>.avatar{width:34px;height:34px}.mobile-layout .message-meta{gap:6px;flex-wrap:wrap}.mobile-layout .message p{margin-top:5px;padding:9px 11px;line-height:1.55}.mobile-layout .message-image{max-width:min(72vw,320px);max-height:300px}
 .mobile-layout .composer{margin:6px 8px max(8px,env(safe-area-inset-bottom));border-radius:12px}.mobile-layout .composer textarea{height:56px;padding:10px 11px;font-size:16px}.mobile-layout .composer footer{padding:6px 7px}.mobile-layout .composer footer>span{max-width:92px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.mobile-layout .image-button{min-height:40px;padding:8px 11px}.mobile-layout .composer button{min-height:40px;padding:8px 14px}
-.mobile-layout .intel{display:none}.mobile-layout .modal-mask{padding:12px}.mobile-layout .report-dialog{max-height:calc(100dvh - 24px);overflow-y:auto;padding:18px;border-radius:15px}.mobile-layout .report-dialog textarea{min-height:100px}.mobile-layout .toast{top:max(12px,env(safe-area-inset-top));width:calc(100% - 24px);text-align:center}
+.mobile-layout .intel{display:none}.mobile-layout .modal-mask{padding:0;align-items:end}.mobile-layout .report-dialog{max-height:calc(100dvh - 24px);overflow-y:auto;padding:18px;border-radius:15px}.mobile-layout .report-dialog textarea{min-height:100px}.mobile-layout .im-dialog{width:100%;max-height:92dvh;border-radius:24px 24px 0 0}.mobile-layout .im-dialog>header{padding:20px 18px 15px}.mobile-layout .dialog-search{margin:0 18px}.mobile-layout .result-tabs{margin:14px 18px 0}.mobile-layout .directory-results{padding:10px 12px 20px}.mobile-layout .wizard-progress{padding:0 18px}.mobile-layout .wizard-page{padding:24px 18px 18px}.mobile-layout .im-dialog>footer{position:sticky;bottom:0;padding:14px 18px max(14px,env(safe-area-inset-bottom));background:#fff}.mobile-layout .toast{top:max(12px,env(safe-area-inset-top));width:calc(100% - 24px);text-align:center}
 </style>

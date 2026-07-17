@@ -161,14 +161,28 @@ app.get('/api/conversations', requireSession, async (req, res, next) => {
 app.post('/api/search', requireSession, requireCaptcha('im_search'), async (req, res, next) => {
   try {
     const keyword = String(req.body?.keyword || '').trim().slice(0, 50);
-    if (!keyword) return ok(res, []);
+    if (!keyword) return ok(res, { users: [], groups: [] });
     const where = { [Op.or]: [
       { username: { [Op.like]: `%${keyword}%` } },
       { nickname: { [Op.like]: `%${keyword}%` } },
       { codemao_user_id: { [Op.like]: `%${keyword}%` } }
     ] };
-    const users = await UserProfile.findAll({ where, order: [['updated_at', 'DESC']], limit: 20 });
-    ok(res, users.filter(user => Number(user.id) !== Number(req.user.id)).map(publicUser));
+    const groupWhere = { [Op.or]: [{ name: { [Op.like]: `%${keyword}%` } }] };
+    if (/^\d+$/.test(keyword)) groupWhere[Op.or].push({ conversation_id: Number(keyword) });
+    const [users, groups] = await Promise.all([
+      UserProfile.findAll({ where, order: [['updated_at', 'DESC']], limit: 20 }),
+      Group.findAll({ where: groupWhere, order: [['updated_at', 'DESC']], limit: 20 })
+    ]);
+    const groupRows = await Promise.all(groups.map(async group => ({
+      conversation_id: Number(group.conversation_id),
+      name: group.name,
+      member_count: await ConversationMember.count({ where: { conversation_id: group.conversation_id, state: 'active' } }),
+      member_limit: Number(group.member_limit)
+    })));
+    ok(res, {
+      users: users.filter(user => Number(user.id) !== Number(req.user.id)).map(publicUser),
+      groups: groupRows
+    });
   } catch (error) { next(error); }
 });
 
