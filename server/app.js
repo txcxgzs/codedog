@@ -252,19 +252,40 @@ app.get('/api/health', (req, res) => {
 const frontendPath = path.join(__dirname, '../client/dist');
 const alternativePath = path.join(__dirname, 'public');
 
+function setFrontendCacheHeaders(res, filePath) {
+    setSecurityHeaders(res);
+    const normalizedPath = String(filePath || '').replace(/\\/g, '/');
+    if (normalizedPath.endsWith('/index.html')) {
+        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+        res.setHeader('Pragma', 'no-cache');
+        res.setHeader('Expires', '0');
+    } else if (normalizedPath.includes('/assets/')) {
+        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    } else {
+        res.setHeader('Cache-Control', 'public, max-age=3600, must-revalidate');
+    }
+}
+
+function sendFrontendIndex(res, rootPath) {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+    return res.sendFile(path.join(rootPath, 'index.html'));
+}
+
 if (fs.existsSync(frontendPath)) {
-    app.use(express.static(frontendPath, { setHeaders: setSecurityHeaders }));
+    app.use(express.static(frontendPath, { setHeaders: setFrontendCacheHeaders }));
     app.get('*', (req, res, next) => {
         if (req.path.startsWith('/api')) return next();
         if (req.path.startsWith('/uploads/')) return res.status(404).end();
-        res.sendFile(path.join(frontendPath, 'index.html'));
+        return sendFrontendIndex(res, frontendPath);
     });
 } else if (fs.existsSync(alternativePath)) {
-    app.use(express.static(alternativePath, { setHeaders: setSecurityHeaders }));
+    app.use(express.static(alternativePath, { setHeaders: setFrontendCacheHeaders }));
     app.get('*', (req, res, next) => {
         if (req.path.startsWith('/api')) return next();
         if (req.path.startsWith('/uploads/')) return res.status(404).end();
-        res.sendFile(path.join(alternativePath, 'index.html'));
+        return sendFrontendIndex(res, alternativePath);
     });
 }
 

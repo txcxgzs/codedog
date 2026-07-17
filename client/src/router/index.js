@@ -139,6 +139,23 @@ const router = createRouter({
   routes
 })
 
+// 部署后旧页面可能仍引用已经被新镜像替换的异步 chunk。
+// 自动带缓存破坏参数刷新一次，避免只剩导航栏、路由区域完全空白。
+router.onError((error) => {
+  const message = String(error?.message || error || '')
+  const isStaleChunk = /Failed to fetch dynamically imported module|Importing a module script failed|Loading chunk|CSS_CHUNK_LOAD_FAILED/i.test(message)
+  if (!isStaleChunk) return
+
+  const retryKey = 'codedog_chunk_reload_at'
+  const lastRetry = Number(sessionStorage.getItem(retryKey) || 0)
+  if (Date.now() - lastRetry < 15000) return
+  sessionStorage.setItem(retryKey, String(Date.now()))
+
+  const url = new URL(window.location.href)
+  url.searchParams.set('__refresh', String(Date.now()))
+  window.location.replace(url.toString())
+})
+
 // 修复: 游客首次检测后即标记已检查,避免每次路由都发 /users/me 产生 401 spam
 let authChecked = false
 

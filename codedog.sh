@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # CodeDog 管理工具箱
-VERSION="1.0.8"
+VERSION="1.0.9"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
@@ -548,11 +548,28 @@ do_update() {
 
     echo "  启动新容器（最长等待 90 秒）..."
     START_OK=0
-    if command -v timeout >/dev/null 2>&1; then
-        timeout 90s $COMPOSE_CMD up -d --no-build codedog && START_OK=1
-    else
-        $COMPOSE_CMD up -d --no-build codedog && START_OK=1
+    # 某些 Docker Compose 版本在已经输出 "Container ... Started" 后仍不退出。
+    # 后台启动并直接轮询容器状态，容器进入 running 后不再被 Compose 客户端卡住。
+    $COMPOSE_CMD up -d --no-build codedog &
+    COMPOSE_START_PID=$!
+    for i in $(seq 1 90); do
+        if docker inspect -f '{{.State.Running}}' codedog 2>/dev/null | grep -qx 'true'; then
+            START_OK=1
+            echo "  [OK] 新容器已进入运行状态"
+            break
+        fi
+        if ! kill -0 "$COMPOSE_START_PID" 2>/dev/null; then
+            wait "$COMPOSE_START_PID" 2>/dev/null || true
+            break
+        fi
+        [ $((i % 10)) -eq 0 ] && echo "  仍在等待 Docker 启动容器... (${i}s)"
+        sleep 1
+    done
+    # Compose 客户端若仍挂起，只结束客户端进程；已启动的 detached 容器不受影响。
+    if kill -0 "$COMPOSE_START_PID" 2>/dev/null; then
+        kill "$COMPOSE_START_PID" 2>/dev/null || true
     fi
+    wait "$COMPOSE_START_PID" 2>/dev/null || true
     if [ "$START_OK" != "1" ]; then
         echo "[!!] 新容器启动失败，正在恢复维护页..."
         $COMPOSE_CMD down --remove-orphans 2>/dev/null || true
