@@ -560,6 +560,76 @@ app.get('/api/admin/groups', requireSession, async (req, res, next) => {
   } catch (error) { next(error); }
 });
 
+app.get('/api/admin/groups/:id', requireSession, async (req, res, next) => {
+  try {
+    if (!requireImAdmin(req, res)) return;
+    const conversationId = Number(req.params.id);
+    const [group, conversation, members, allAudits] = await Promise.all([
+      Group.findOne({ where: { conversation_id: conversationId } }),
+      Conversation.findByPk(conversationId),
+      ConversationMember.findAll({ where: { conversation_id: conversationId }, order: [['created_at', 'ASC']] }),
+      AdminAudit.findAll({ order: [['created_at', 'DESC']], limit: 500 })
+    ]);
+    if (!group || !conversation) return fail(res, 404, '群聊不存在');
+    const profiles = await usersById(members.map(member => member.user_id));
+    const owner = profiles.get(Number(group.owner_id)) || await UserProfile.findByPk(group.owner_id);
+    const groupAudits = allAudits.filter(row => {
+      let filters = row.filters;
+      if (typeof filters === 'string') {
+        try { filters = JSON.parse(filters); } catch { filters = {}; }
+      }
+      return Number(filters?.conversation_id) === conversationId;
+    });
+    const admins = await usersById(groupAudits.map(row => row.admin_id));
+    ok(res, {
+      ...group.toJSON(),
+      owner: publicUser(owner),
+      conversation: conversation.toJSON(),
+      message_count: await Message.count({ where: { conversation_id: conversationId } }),
+      members: members.map(member => ({ ...member.toJSON(), user: profiles.get(Number(member.user_id)) || null })),
+      audits: groupAudits.map(row => ({ ...row.toJSON(), admin: admins.get(Number(row.admin_id)) || null }))
+    });
+  } catch (error) { next(error); }
+});
+
+app.patch('/api/admin/groups/:id', requireSession, async (req, res, next) => {
+  try {
+    if (!requireImAdmin(req, res)) return;
+    const conversationId = Number(req.params.id);
+    const group = await Group.findOne({ where: { conversation_id: conversationId } });
+    if (!group) return fail(res, 404, '群聊不存在');
+    const reason = String(req.body?.reason || '').trim();
+    if (reason.length < 5 || reason.length > 500) return fail(res, 400, '修改群聊必须填写 5-500 字的操作原因');
+    const oldValues = { name: group.name, member_limit: Number(group.member_limit) };
+    const changes = {};
+    if (req.body?.name !== undefined) {
+      const name = String(req.body.name || '').trim();
+      if (!name || name.length > 50) return fail(res, 400, '群名称长度应为 1-50 个字符');
+      if (name !== group.name) { group.name = name; changes.name = name; }
+    }
+    if (req.body?.member_limit !== undefined) {
+      const limit = Number(req.body.member_limit);
+      if (!Number.isInteger(limit) || limit < config.groupDefaultLimit || limit > config.groupHardLimit) {
+        return fail(res, 400, `群容量必须在 ${config.groupDefaultLimit}-${config.groupHardLimit} 之间`);
+      }
+      if (limit !== Number(group.member_limit)) { group.member_limit = limit; changes.member_limit = limit; }
+    }
+    if (!Object.keys(changes).length) return fail(res, 400, '没有需要保存的群聊变更');
+    await sequelize.transaction(async transaction => {
+      await group.save({ transaction });
+      await AdminAudit.create({
+        admin_id: req.user.id,
+        action: 'group.profile.update',
+        reason,
+        filters: { conversation_id: conversationId, old_values: oldValues, changes },
+        source_ip: req.ip
+      }, { transaction });
+    });
+    broadcastConversation(conversationId, 'conversation.updated', group.toJSON());
+    ok(res, group, '群聊资料已更新并记录审计日志');
+  } catch (error) { next(error); }
+});
+
 app.use((error, req, res, next) => {
   console.error(error);
   if (error instanceof multer.MulterError) return fail(res, 400, error.code === 'LIMIT_FILE_SIZE' ? '图片不能超过 5 MB' : '图片上传请求无效');
