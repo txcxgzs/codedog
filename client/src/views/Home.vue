@@ -188,8 +188,8 @@
         <div
           v-if="magnetWorks.length"
           class="r-home--magnet_dock"
-          :class="{ 'is-magnetized': magnetActive }"
-          :aria-hidden="!magnetActive"
+          :class="{ 'is-magnetized': magnetRevealCount > 0 }"
+          :aria-hidden="magnetRevealCount === 0"
         >
           <div class="r-home--magnet_heading">
             <span></span>
@@ -200,8 +200,9 @@
             v-for="(work, index) in magnetWorks"
             :key="work.id"
             class="r-home--magnet_work"
+            :class="{ 'is-visible': index < magnetRevealCount }"
             :style="{ '--magnet-index': index }"
-            :tabindex="magnetActive ? 0 : -1"
+            :tabindex="index < magnetRevealCount ? 0 : -1"
             @click="$router.push(`/work/${work.codemao_work_id}`)"
           >
             <span class="r-home--magnet_cover" :style="{ backgroundImage: `url(${work.preview})` }"></span>
@@ -252,7 +253,7 @@ const sidebarRecommendedWorks = ref([])
 const activeUsers = ref([])
 const featuredPosts = ref([])
 const magnetSentinel = ref(null)
-const magnetActive = ref(false)
+const magnetRevealCount = ref(0)
 let magnetFrame = 0
 
 const importantPosts = ref([])
@@ -265,7 +266,10 @@ const syncMagnetDock = () => {
   if (magnetFrame) return
   magnetFrame = requestAnimationFrame(() => {
     const sentinelTop = magnetSentinel.value?.getBoundingClientRect().top ?? Number.POSITIVE_INFINITY
-    magnetActive.value = window.innerWidth > 1080 && sentinelTop <= 92
+    const revealDistance = Math.max(0, 92 - sentinelTop)
+    magnetRevealCount.value = window.innerWidth > 1080
+      ? Math.min(magnetWorks.value.length, Math.ceil(revealDistance / 52))
+      : 0
     magnetFrame = 0
   })
 }
@@ -538,11 +542,12 @@ $border-color: #eee;
   color: #202838;
   cursor: pointer;
   opacity: 0;
+  pointer-events: none;
   transform: translate3d(min(480px, 42vw), calc((var(--magnet-index) - 1.5) * 18px), 0) rotate(calc((var(--magnet-index) - 1.5) * 1.6deg));
   transform-origin: right center;
   transition:
-    transform 560ms cubic-bezier(.18, .86, .22, 1.12) calc((3 - var(--magnet-index)) * 42ms),
-    opacity 230ms ease calc((3 - var(--magnet-index)) * 24ms),
+    transform 560ms cubic-bezier(.18, .86, .22, 1.12),
+    opacity 230ms ease,
     border-color 180ms ease,
     box-shadow 180ms ease;
   will-change: transform, opacity;
@@ -562,11 +567,13 @@ $border-color: #eee;
     transform: translate3d(0, 0, 0);
   }
 
-  .r-home--magnet_work {
-    opacity: 1;
-    transform: translate3d(0, 0, 0) rotate(0);
-    transition-delay: calc(var(--magnet-index) * 72ms), calc(var(--magnet-index) * 52ms), 0ms, 0ms;
-  }
+}
+
+.r-home--magnet_work.is-visible {
+  opacity: 1;
+  transform: translate3d(0, 0, 0) rotate(0);
+  pointer-events: auto;
+  transition-delay: 0ms;
 }
 
 .r-home--magnet_cover {
