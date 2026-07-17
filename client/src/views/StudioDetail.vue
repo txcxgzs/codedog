@@ -267,7 +267,7 @@
         </el-tab-pane>
         <el-tab-pane label="日志与数据" v-if="can('log_view') || can('analytics_view')">
           <div v-if="analytics" class="r-studio-detail--analytics"><span>成员 <b>{{ analytics.members }}</b></span><span>待审成员 <b>{{ analytics.pending_members }}</b></span><span>作品 <b>{{ analytics.works }}</b></span><span>待审作品 <b>{{ analytics.pending_works }}</b></span></div>
-          <el-table v-if="can('log_view')" :data="operationLogs" size="small"><el-table-column prop="created_at" label="时间" width="170" /><el-table-column prop="operator.nickname" label="操作者" width="120" /><el-table-column prop="action" label="操作" min-width="180" /><el-table-column prop="reason" label="原因" min-width="160" /></el-table>
+          <el-table v-if="can('log_view')" :data="operationLogs" size="small"><el-table-column prop="created_at" label="时间" width="170" /><el-table-column prop="operator.nickname" label="操作者" width="120" /><el-table-column label="操作" min-width="180"><template #default="{ row }">{{ studioLogActionName(row.action) }}</template></el-table-column><el-table-column prop="reason" label="原因" min-width="160" /></el-table>
         </el-tab-pane>
         <el-tab-pane label="转让工作室" v-if="userRole === 'owner'">
           <el-alert title="转让后您将降为普通成员，新室长会立即获得全部权限。此操作需要再次完成安全验证。" type="warning" :closable="false" />
@@ -380,6 +380,19 @@ const pendingWorks = ref([])
 const capabilities = ref([])
 const invites = ref([])
 const operationLogs = ref([])
+const studioLogActionNames = {
+  member_permissions_updated: '更新成员权限', invite_created: '创建邀请', invite_revoked: '撤销邀请',
+  announcement_created: '发布公告', task_created: '创建任务', task_status_updated: '更新任务状态',
+  settings_updated: '更新工作室设置', studio_work_display_updated: '更新作品展示',
+  blacklist_added: '加入黑名单', blacklist_removed: '移出黑名单', discussion_deleted: '删除讨论',
+  forum_post_created: '创建论坛帖子', forum_post_state_updated: '更新帖子状态',
+  forum_post_deleted: '删除论坛帖子', forum_reply_deleted: '删除论坛回复',
+  studio_profile_updated: '更新工作室资料', member_application_approved: '批准成员申请',
+  member_application_rejected: '拒绝成员申请', member_application_rejected_blacklisted: '拒绝并拉黑申请人',
+  studio_work_approved: '批准工作室作品', studio_work_rejected: '拒绝工作室作品',
+  member_role_updated: '更新成员角色', member_removed: '移除成员'
+}
+const studioLogActionName = action => studioLogActionNames[action] || '工作室管理操作'
 const analytics = ref(null)
 const blacklist = ref([])
 const blacklistForm = reactive({ user_id: null, reason: '' })

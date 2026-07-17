@@ -50,7 +50,39 @@ function getIp(req) {
 
 async function logOperation(req, action, targetType = null, targetId = null, details = {}) {
     try {
-        const safeDetails = sanitize(details || {});
+        const isAutomaticAudit = details?.schema_version >= 2 && details?.request && details?.result;
+        const safeDetails = isAutomaticAudit ? sanitize(details) : sanitize({
+            schema_version: 3,
+            log_kind: 'business_operation',
+            operator: {
+                id: req.user?.id ?? null,
+                username: req.user?.username ?? null,
+                nickname: req.user?.nickname ?? null,
+                role: req.user?.role ?? null
+            },
+            request: {
+                request_id: req.id || req.headers['x-request-id'] || null,
+                method: req.method,
+                path: req.originalUrl,
+                route: req.route?.path || null,
+                params: req.params || {},
+                query: req.query || {},
+                body: req.body || {}
+            },
+            target: {
+                type: targetType,
+                id: targetId,
+                before: req.operationAuditContext?.before ?? null,
+                after: await readTargetSnapshot(targetType, targetId)
+            },
+            business_details: details || {},
+            context: {
+                ip: getIp(req),
+                user_agent: req.headers['user-agent'] || 'unknown',
+                referer: req.headers.referer || null,
+                recorded_at: new Date().toISOString()
+            }
+        });
         await OperationLog.create({
             user_id: req.user?.id || null,
             action,
@@ -63,6 +95,34 @@ async function logOperation(req, action, targetType = null, targetId = null, det
         });
     } catch (error) {
         console.error('记录操作日志错误:', error);
+    }
+}
+
+async function readTargetSnapshot(targetType, targetId) {
+    if (targetId === null || targetId === undefined || targetId === '' || !Number.isInteger(Number(targetId))) return null;
+    const models = {
+        user: User,
+        work: Work,
+        comment: Comment,
+        post: Post,
+        studio: Studio,
+        studio_member: StudioMember,
+        studio_work: StudioWork,
+        report: Report,
+        developer_app: DeveloperApp,
+        announcement: Announcement,
+        banner: Banner,
+        ip_ban: IpBan,
+        system_config: SystemConfig,
+        sensitive_word: SensitiveWord
+    };
+    const model = models[targetType];
+    if (!model) return null;
+    try {
+        const record = await model.findByPk(Number(targetId));
+        return record ? sanitize(record) : null;
+    } catch (error) {
+        return { snapshot_error: error.message };
     }
 }
 
@@ -117,6 +177,7 @@ function auditAdminRequest() {
         const startedAt = Date.now();
         const isMutation = !['GET', 'HEAD', 'OPTIONS'].includes(req.method);
         const before = isMutation ? await readSnapshot(req) : undefined;
+        req.operationAuditContext = { startedAt, isMutation, before };
         const originalJson = res.json.bind(res);
         let written = false;
         const record = (body) => {

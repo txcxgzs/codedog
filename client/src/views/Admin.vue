@@ -3888,7 +3888,68 @@ const actionNames = {
   'delete_post': '删除帖子',
   'update_post': '更新帖子',
   'set_post_essence': '设置精华帖',
-  'set_post_top': '设置置顶帖'
+  'set_post_top': '设置置顶帖',
+  'view_codemao_token': '查看编程猫令牌',
+  'restore_from_impersonate': '恢复管理员身份',
+  'crawl_work': '抓取单个作品',
+  'crawl_hot_works': '抓取热门作品',
+  'crawl_user_works': '抓取用户作品',
+  'crawl_post_works': '按关键词抓取作品',
+  'clear_realtime_logs': '清空实时日志',
+  'merge_reports': '合并重复举报',
+  'ai_batch_review': '批量 AI 审核',
+  'review_studio_member': '审核工作室成员',
+  'review_studio': '审核工作室',
+  'create_developer_app': '创建开发者应用',
+  'update_developer_app': '更新开发者应用',
+  'rotate_developer_app_secret': '重置应用密钥',
+  'rotate_developer_app_secret_admin': '管理员重置应用密钥',
+  'review_developer_app': '审核开发者应用',
+  'update_developer_app_rate_limit': '调整应用限流',
+  'revoke_developer_app_tokens': '撤销应用令牌',
+  'delete_developer_app': '删除开发者应用',
+  'revoke_app_authorization': '撤销应用授权',
+  'warn_user': '警告用户',
+  'acknowledge_user_warning': '用户签署警告保证书',
+  'im_report_disable_user': '根据即时通讯举报禁用用户',
+  'preview_recalibrate_works': '预览作品校准',
+  'apply_recalibrate_works': '执行作品校准',
+  'assign_forum_board_moderator': '任命论坛版主',
+  'update_forum_board_moderator': '更新论坛版主',
+  'remove_forum_board_moderator': '移除论坛版主',
+  'move_post': '移动帖子',
+  'merge_posts': '合并帖子',
+  'restore_post_revision': '恢复帖子历史版本',
+  'create_forum_board': '创建论坛版块',
+  'update_forum_board': '更新论坛版块',
+  'disable_forum_board': '停用论坛版块',
+  'delete_forum_board': '删除论坛版块',
+  'update_forum_attention_settings': '更新论坛关注设置',
+  'db_migration_start': '开始数据库迁移',
+  'db_migration_success': '数据库迁移成功',
+  'db_migration_failed': '数据库迁移失败',
+  'db_migration_error': '数据库迁移异常',
+  'member_permissions_updated': '更新成员权限',
+  'invite_created': '创建工作室邀请',
+  'invite_revoked': '撤销工作室邀请',
+  'announcement_created': '发布工作室公告',
+  'task_created': '创建工作室任务',
+  'task_status_updated': '更新任务状态',
+  'settings_updated': '更新工作室设置',
+  'studio_work_display_updated': '更新工作室作品展示',
+  'blacklist_added': '加入工作室黑名单',
+  'blacklist_removed': '移出工作室黑名单',
+  'discussion_deleted': '删除工作室讨论',
+  'forum_post_created': '创建工作室论坛帖子',
+  'forum_post_state_updated': '更新工作室帖子状态',
+  'forum_post_deleted': '删除工作室论坛帖子',
+  'forum_reply_deleted': '删除工作室论坛回复',
+  'studio_profile_updated': '更新工作室资料',
+  'member_application_approved': '批准成员申请',
+  'studio_work_approved': '批准工作室作品',
+  'studio_work_rejected': '拒绝工作室作品',
+  'member_role_updated': '更新成员角色',
+  'member_removed': '移除工作室成员'
 }
 
 const targetTypeNames = {
@@ -3906,11 +3967,78 @@ const targetTypeNames = {
   'studio_member': '工作室成员',
   'studio_work': '工作室作品',
   'notification': '通知',
-  'post': '帖子'
+  'post': '帖子',
+  'developer_app': '开发者应用',
+  'user_app_authorization': '应用授权',
+  'user_warning': '用户警告',
+  'forum_board': '论坛版块',
+  'database': '数据库',
+  'system': '系统',
+  'operation_log': '操作日志'
 }
 
-const getActionName = (action) => actionNames[action] || action
-const getTargetTypeName = (type) => targetTypeNames[type] || type
+const actionVerbNames = {
+  view: '查看', create: '创建', update: '更新', delete: '删除',
+  add: '添加', remove: '移除', crawl: '抓取', batch: '批量处理',
+  review: '审核', reset: '重置', clear: '清空', apply: '执行',
+  preview: '预览', send: '发送', restore: '恢复', revoke: '撤销'
+}
+const resourceNames = {
+  users: '用户', user: '用户', works: '作品', work: '作品', comments: '评论',
+  posts: '帖子', post: '帖子', banners: '轮播图', banner: '轮播图',
+  announcements: '公告', announcement: '公告', reports: '举报', report: '举报',
+  studios: '工作室', studio: '工作室', roles: '角色', role: '角色',
+  configs: '系统配置', sensitive: '敏感词', notifications: '通知',
+  operation: '操作日志', logs: '日志', forum: '论坛', boards: '版块',
+  proxy: '代理配置', captcha: '验证码', developer: '开发者应用',
+  permissions: '权限', realtime: '实时日志'
+}
+
+const getActionName = (action) => {
+  if (actionNames[action]) return actionNames[action]
+  if (action?.startsWith('admin_')) {
+    const parts = action.slice(6).split('_')
+    const verb = actionVerbNames[parts.shift()] || '操作'
+    const resource = parts.map(part => resourceNames[part] || '').filter(Boolean).join('·')
+    return resource ? `${verb}${resource}` : '后台操作'
+  }
+  return '系统操作'
+}
+const getTargetTypeName = (type) => targetTypeNames[type] || resourceNames[type] || '其他对象'
+
+const detailKeyNames = {
+  schema_version: '日志结构版本', log_kind: '日志类型', business_operation: '业务操作',
+  operator: '操作者', id: '编号', username: '用户名', nickname: '昵称', role: '角色',
+  request: '请求信息', request_id: '请求编号', method: '请求方法', path: '请求路径',
+  route: '路由', params: '路径参数', query: '查询参数', body: '提交内容',
+  target: '操作目标', type: '类型', before: '操作前完整数据', after: '操作后完整数据',
+  business_details: '业务详情', result: '执行结果', success: '是否成功',
+  http_status: 'HTTP 状态码', business_code: '业务状态码', message: '结果说明',
+  response: '响应数据', change: '数据变化', context: '操作环境', ip: 'IP 地址',
+  user_agent: '浏览器标识', referer: '来源页面', duration_ms: '耗时（毫秒）',
+  recorded_at: '记录时间', created_at: '创建时间', updated_at: '更新时间',
+  title: '标题', content: '正文内容', image_url: '图片地址', link_url: '跳转地址',
+  sort: '排序', sort_order: '排序', is_active: '是否启用', color: '颜色',
+  show_top_bar: '顶部显示', show_popup: '弹窗显示', show_community: '社区显示',
+  author_id: '发布者编号', status: '状态', reason: '原因', note: '备注',
+  name: '名称', description: '说明', details: '详情', changes: '修改内容',
+  target_type: '目标类型', target_id: '目标编号', user_id: '用户编号',
+  old_status: '原状态', new_status: '新状态', oldScore: '原分数',
+  newScore: '新分数', oldLevel: '原等级', newLevel: '新等级',
+  count: '数量', permissions: '权限列表', action: '操作'
+}
+
+const translateLogDetails = (value) => {
+  if (Array.isArray(value)) return value.map(translateLogDetails)
+  if (!value || typeof value !== 'object') {
+    if (value === 'business_operation') return '业务操作'
+    return value
+  }
+  return Object.fromEntries(Object.entries(value).map(([key, item]) => [
+    detailKeyNames[key] || key,
+    translateLogDetails(item)
+  ]))
+}
 
 const fetchOperationLogs = async () => {
   loadingOperationLogs.value = true
@@ -3929,16 +4057,16 @@ const showLogDetail = (log) => {
   if (!details || typeof details !== 'object') {
     try { details = log.details ? JSON.parse(log.details) : {} } catch (e) { details = { legacy_raw_details: log.details || '' } }
   }
-  logDetailContent.value = JSON.stringify({
-    log_id: log.id,
-    operator: log.user || details.operator || { id: log.user_id, name: '历史记录操作者' },
-    action: { code: log.action, name: getActionName(log.action) },
-    target: { type: log.target_type, id: log.target_id },
-    ip_address: log.ip_address,
-    user_agent: log.user_agent,
-    created_at: log.created_at,
-    details
-  }, null, 2)
+  logDetailContent.value = JSON.stringify(translateLogDetails({
+    日志编号: log.id,
+    操作者: log.user || details.operator || { id: log.user_id, name: '历史记录操作者' },
+    操作: { 操作代码: log.action, 中文名称: getActionName(log.action) },
+    操作目标: { 类型: getTargetTypeName(log.target_type), 编号: log.target_id },
+    IP地址: log.ip_address,
+    浏览器标识: log.user_agent,
+    操作时间: log.created_at,
+    完整审计详情: details
+  }), null, 2)
   logDetailDialogVisible.value = true
 }
 
