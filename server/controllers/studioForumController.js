@@ -43,6 +43,29 @@ async function listPosts(req, res) {
     } catch (error) { console.error('获取工作室论坛失败:', error); return errorResponse(res, '获取工作室论坛失败', 500); }
 }
 
+async function listAllPosts(req, res) {
+    try {
+        const page = Math.max(1, Number(req.query.page) || 1);
+        const pageSize = Math.max(1, Math.min(50, Number(req.query.pageSize) || 20));
+        const studioId = Number(req.query.studio_id) || null;
+        const where = { status: 'active', ...(studioId ? { studio_id: studioId } : {}) };
+        const result = await DbAdapter.findAndCountAll(StudioForumPost, {
+            where,
+            include: [
+                { model: User, as: 'author', attributes: authorFields },
+                { model: Studio, as: 'studio', attributes: ['id', 'name', 'cover_url', 'member_count'], where: { status: 'active' } }
+            ],
+            order: [['is_pinned', 'DESC'], [sequelize.literal('COALESCE(last_reply_at, StudioForumPost.created_at)'), 'DESC']],
+            limit: pageSize, offset: (page - 1) * pageSize, distinct: true
+        });
+        const studios = await DbAdapter.findAll(Studio, {
+            where: { status: 'active' }, attributes: ['id', 'name', 'cover_url', 'member_count'],
+            order: [['name', 'ASC']], limit: 200
+        });
+        return successResponse(res, { list: result.rows, total: result.count, page, pageSize, studios });
+    } catch (error) { console.error('获取工作室论坛总板块失败:', error); return errorResponse(res, '获取工作室论坛失败', 500); }
+}
+
 async function getPost(req, res) {
     try {
         const studio = await activeStudio(req.params.id);
@@ -142,4 +165,4 @@ async function deleteReply(req, res) {
     } catch (error) { return errorResponse(res, '删除回复失败', 500); }
 }
 
-module.exports = { listPosts, getPost, createPost, createReply, updatePostState, deletePost, deleteReply };
+module.exports = { listAllPosts, listPosts, getPost, createPost, createReply, updatePostState, deletePost, deleteReply };

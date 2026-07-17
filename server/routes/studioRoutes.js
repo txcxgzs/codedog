@@ -8,6 +8,7 @@ const { geetestVerify } = require('../middleware/geetest');
 
 router.get('/', studioController.getStudios);
 router.get('/my/list', authMiddleware, studioController.getMyStudios);
+router.get('/forum/all', optionalAuth, forumController.listAllPosts);
 router.get('/:id', optionalAuth, studioController.getStudioDetail);
 router.get('/:id/works', optionalAuth, studioController.getStudioWorks);
 router.get('/:id/announcements', optionalAuth, managementController.listAnnouncements);
@@ -44,17 +45,11 @@ router.delete('/:id/invites/:inviteId', authMiddleware, geetestVerify('studio_ma
 router.post('/invites/accept', authMiddleware, geetestVerify('studio_management'), managementController.acceptInvite);
 router.get('/:id/logs', authMiddleware, managementController.listLogs);
 router.post('/:id/announcements', authMiddleware, geetestVerify('studio_management'), managementController.createAnnouncement);
-router.get('/:id/tasks', authMiddleware, managementController.listTasks);
-router.post('/:id/tasks', authMiddleware, geetestVerify('studio_management'), managementController.createTask);
-router.put('/:id/tasks/:taskId', authMiddleware, geetestVerify('studio_management'), managementController.updateTask);
 router.put('/:id/settings', authMiddleware, geetestVerify('studio_management'), managementController.updateSettings);
 router.get('/:id/analytics', authMiddleware, managementController.getAnalytics);
 router.get('/:id/blacklist', authMiddleware, managementController.listBlacklist);
 router.post('/:id/blacklist', authMiddleware, geetestVerify('studio_management'), managementController.addBlacklist);
 router.delete('/:id/blacklist/:blacklistId', authMiddleware, geetestVerify('studio_management'), managementController.removeBlacklist);
-router.get('/:id/discussions', authMiddleware, managementController.listDiscussions);
-router.post('/:id/discussions', authMiddleware, geetestVerify('studio_management'), managementController.createDiscussion);
-router.delete('/:id/discussions/:discussionId', authMiddleware, geetestVerify('studio_management'), managementController.deleteDiscussion);
 router.post('/:id/forum', authMiddleware, geetestVerify('studio_management'), forumController.createPost);
 router.post('/:id/forum/:postId/replies', authMiddleware, geetestVerify('studio_management'), forumController.createReply);
 router.put('/:id/forum/:postId/state', authMiddleware, geetestVerify('studio_management'), forumController.updatePostState);

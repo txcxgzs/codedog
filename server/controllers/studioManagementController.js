@@ -11,13 +11,13 @@ const { isRoleAtLeast } = require('../config/permissions');
 
 const PERMISSIONS = Object.freeze([
     'member_review', 'member_manage', 'role_manage', 'work_review', 'work_manage',
-    'profile_edit', 'announcement_manage', 'task_manage', 'invite_manage',
+    'profile_edit', 'announcement_manage', 'invite_manage',
     'log_view', 'analytics_view', 'im_bind'
 ]);
 const ROLE_DEFAULTS = Object.freeze({
     owner: PERMISSIONS,
     vice_owner: PERMISSIONS.filter(item => item !== 'role_manage'),
-    admin: ['member_review', 'member_manage', 'work_review', 'work_manage', 'announcement_manage', 'task_manage', 'invite_manage', 'log_view'],
+    admin: ['member_review', 'member_manage', 'work_review', 'work_manage', 'announcement_manage', 'invite_manage', 'log_view'],
     member: []
 });
 
@@ -255,7 +255,8 @@ async function updateSettings(req, res) {
             values.application_questions = req.body.application_questions.map(item => String(item || '').trim().slice(0, 120)).filter(Boolean);
         }
         if (req.body.application_cooldown_days !== undefined) values.application_cooldown_days = Math.max(0, Math.min(90, Number(req.body.application_cooldown_days) || 0));
-        if (['retain', 'remove'].includes(req.body.leave_work_policy)) values.leave_work_policy = req.body.leave_work_policy;
+        // 成员退出或被移除时作品投稿关系必须清除，不再允许按工作室配置保留。
+        values.leave_work_policy = 'remove';
         if (req.body.im_group_id !== undefined && effectivePermissions(member).includes('im_bind')) values.im_group_id = String(req.body.im_group_id || '').trim().slice(0, 100) || null;
         const before = { member_limit: studio.member_limit, recruitment_status: studio.recruitment_status, leave_work_policy: studio.leave_work_policy, im_group_id: studio.im_group_id };
         await studio.update(values); await logOperation(req, 'settings_updated', { before, after: values });
@@ -267,12 +268,11 @@ async function getAnalytics(req, res) {
     try {
         if (!await requirePermission(req, res, 'analytics_view')) return;
         const studioId = req.params.id;
-        const [members, pendingMembers, works, pendingWorks, tasks, completedTasks] = await Promise.all([
+        const [members, pendingMembers, works, pendingWorks] = await Promise.all([
             StudioMember.count({ where: { studio_id: studioId, status: 'active' } }), StudioMember.count({ where: { studio_id: studioId, status: 'pending' } }),
-            StudioWork.count({ where: { studio_id: studioId, status: 'approved' } }), StudioWork.count({ where: { studio_id: studioId, status: 'pending' } }),
-            StudioTask.count({ where: { studio_id: studioId } }), StudioTask.count({ where: { studio_id: studioId, status: 'completed' } })
+            StudioWork.count({ where: { studio_id: studioId, status: 'approved' } }), StudioWork.count({ where: { studio_id: studioId, status: 'pending' } })
         ]);
-        return successResponse(res, { members, pending_members: pendingMembers, works, pending_works: pendingWorks, tasks, completed_tasks: completedTasks });
+        return successResponse(res, { members, pending_members: pendingMembers, works, pending_works: pendingWorks });
     } catch (error) { return errorResponse(res, '获取数据概览失败', 500); }
 }
 

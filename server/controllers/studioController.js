@@ -565,21 +565,17 @@ async function leaveStudio(req, res) {
             return errorResponse(res, '创建者不能退出工作室，请转让或解散', 400);
         }
 
-        const leavingStudio = await DbAdapter.findByPk(Studio, id);
-
         // M2/Bug-19: 退出成员+计数-1+清理副室长引用需事务保证一致性
         // 原子递减用模型级 where member_count>0 避免漂移(不再用旧实例 member_count 判断)
         // Bug-3(打工机器): 同时清理该用户在该工作室的 StudioWork 记录
         await sequelize.transaction(async (t) => {
             await DbAdapter.destroy(StudioMember, { where: { id: DbAdapter.getId(member) }, transaction: t });
-            let removedStudioWorks = [];
-            if (leavingStudio?.leave_work_policy === 'remove') {
-                removedStudioWorks = await DbAdapter.findAll(StudioWork, {
-                    where: { studio_id: id, user_id: DbAdapter.getId(req.user), status: 'approved' },
-                    attributes: ['id'], transaction: t
-                });
-                await DbAdapter.destroy(StudioWork, { where: { studio_id: id, user_id: DbAdapter.getId(req.user) }, transaction: t });
-            }
+            // 产品规则：成员退出后不能继续占用工作室作品位，始终清除全部投稿关系。
+            const removedStudioWorks = await DbAdapter.findAll(StudioWork, {
+                where: { studio_id: id, user_id: DbAdapter.getId(req.user), status: 'approved' },
+                attributes: ['id'], transaction: t
+            });
+            await DbAdapter.destroy(StudioWork, { where: { studio_id: id, user_id: DbAdapter.getId(req.user) }, transaction: t });
 
             if (member.status === 'active') {
                 await DbAdapter.decrement(Studio, 'member_count', {
@@ -734,7 +730,7 @@ async function reviewMember(req, res) {
         
         // 🔴4 修复: pending 检查从事务外移入事务内,使用 SELECT ... WHERE status='pending' 防幻读
         // 并发狂点时多个请求都看到 pending,然后全部挤进事务导致 member_count 双增
-        const VALID_ACTIONS = ['approve', 'reject'];
+        const VALID_ACTIONS = ['approve', 'reject', 'reject_blacklist'];
         if (!VALID_ACTIONS.includes(action)) {
             return errorResponse(res, '无效的操作', 400);
         }
@@ -794,14 +790,26 @@ async function reviewMember(req, res) {
             return successResponse(res, null, '已通过申请');
         } else {
             // Reject 必须在 WHERE 带上 status:'pending',防止并发 approve/reject 把已 active 成员改 rejected
-            const rejectAffected = await DbAdapter.update(StudioMember,
-                { status: 'rejected', review_reason: reason || null, reviewed_by: DbAdapter.getId(req.user), reviewed_at: new Date() },
-                { where: { id: memberId, studio_id: id, status: 'pending' } }
-            );
-            const rejectCount = Array.isArray(rejectAffected) ? rejectAffected[0] : rejectAffected;
-            if (rejectCount === 0) {
-                return errorResponse(res, '申请已处理或不存在', 400);
-            }
+            let rejected = false;
+            await sequelize.transaction(async (transaction) => {
+                const rejectAffected = await DbAdapter.update(StudioMember,
+                    { status: 'rejected', review_reason: reason || null, reviewed_by: DbAdapter.getId(req.user), reviewed_at: new Date() },
+                    { where: { id: memberId, studio_id: id, status: 'pending' }, transaction }
+                );
+                const rejectCount = Array.isArray(rejectAffected) ? rejectAffected[0] : rejectAffected;
+                if (rejectCount === 0) return;
+                rejected = true;
+                if (action === 'reject_blacklist') {
+                    const blacklistReason = reason || '成员申请被拒绝并加入黑名单';
+                    const [blacklistRow] = await StudioBlacklist.findOrCreate({
+                        where: { studio_id: Number(id), user_id: member.user_id },
+                        defaults: { added_by: DbAdapter.getId(req.user), reason: blacklistReason },
+                        transaction
+                    });
+                    await blacklistRow.update({ added_by: DbAdapter.getId(req.user), reason: blacklistReason }, { transaction });
+                }
+            });
+            if (!rejected) return errorResponse(res, '申请已处理或不存在', 400);
             try {
                 const studioForNotify = await DbAdapter.findByPk(Studio, id);
                 await DbAdapter.create(Notification, {
@@ -810,8 +818,8 @@ async function reviewMember(req, res) {
                     related_id: Number(id), related_type: 'studio', sender_id: DbAdapter.getId(req.user)
                 });
             } catch (notifyErr) { console.error('Create reject notification error:', notifyErr); }
-            await logOperation(req, 'member_application_rejected', { targetType: 'studio_member', targetId: Number(memberId), reason });
-            return successResponse(res, null, '已拒绝申请');
+            await logOperation(req, action === 'reject_blacklist' ? 'member_application_rejected_blacklisted' : 'member_application_rejected', { targetType: 'studio_member', targetId: Number(memberId), reason });
+            return successResponse(res, null, action === 'reject_blacklist' ? '已拒绝申请并加入黑名单' : '已拒绝申请');
         }
     } catch (error) {
         console.error('审核成员错误:', error);
@@ -1354,6 +1362,11 @@ async function kickMember(req, res) {
         // 原子递减用模型级 where member_count>0,不再依赖旧实例 member_count 判断
         await sequelize.transaction(async (t) => {
             await DbAdapter.destroy(StudioMember, { where: { id: DbAdapter.getId(member) }, transaction: t });
+            const removedStudioWorks = await DbAdapter.findAll(StudioWork, {
+                where: { studio_id: id, user_id: member.user_id, status: 'approved' },
+                attributes: ['id'], transaction: t
+            });
+            await DbAdapter.destroy(StudioWork, { where: { studio_id: id, user_id: member.user_id }, transaction: t });
             await DbAdapter.decrement(Studio, 'member_count', {
                 where: { id: id, member_count: { [Op.gt]: 0 } },
                 transaction: t
@@ -1363,6 +1376,7 @@ async function kickMember(req, res) {
             if (studio && sameId(studio.vice_owner_id, member.user_id)) {
                 await DbAdapter.update(Studio, { vice_owner_id: null }, { where: { id: id }, transaction: t });
             }
+            if (removedStudioWorks.length > 0) await recalculateStudioStats(id, t);
         });
 
         await logOperation(req, 'member_removed', { targetType: 'studio_member', targetId: Number(memberId), after: { user_id: member.user_id } });

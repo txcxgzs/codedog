@@ -282,7 +282,7 @@ const Studio = sequelize.define('Studio', {
         set(value) { this.setDataValue('application_questions', JSON.stringify(Array.isArray(value) ? value : [])); }
     },
     application_cooldown_days: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 7 },
-    leave_work_policy: { type: DataTypes.STRING(20), allowNull: false, defaultValue: 'retain' },
+    leave_work_policy: { type: DataTypes.STRING(20), allowNull: false, defaultValue: 'remove' },
     im_group_id: { type: DataTypes.STRING(100), allowNull: true },
     // M7: status 改为 ENUM，覆盖 controller 实际使用的 active/pending/banned，预留 dissolved
     status: { type: DataTypes.ENUM('active', 'pending', 'dissolved', 'banned'), defaultValue: 'active' },

@@ -93,6 +93,7 @@
 
           <div class="r-community--side_card r-community--boards_card">
             <div class="r-community--side_heading"><h4 class="r-community--card_title">论坛版块</h4><button v-if="activeBoardId" @click="selectBoard(null)">查看全部</button></div>
+            <div class="r-community--board_row"><button class="r-community--board_item" @click="$router.push('/community/studios')"><span class="r-community--board_icon" style="background:#fff4d6;color:#c47c00">🏠</span><span><b>工作室论坛</b><small>查看所有工作室的公开板块</small></span><em>›</em></button></div>
             <div v-for="board in boards" :key="board.id" class="r-community--board_row">
               <button :class="['r-community--board_item', { active: Number(activeBoardId) === Number(board.id) }]" @click="selectBoard(board)">
                 <span class="r-community--board_icon" :style="{ background: `${board.color}18`, color: board.color }">{{ board.icon }}</span>

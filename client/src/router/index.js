@@ -33,6 +33,12 @@ const routes = [
     meta: { title: '社区' }
   },
   {
+    path: '/community/studios',
+    name: 'StudioForumHub',
+    component: () => import('@/views/StudioForumHub.vue'),
+    meta: { title: '工作室论坛' }
+  },
+  {
     path: '/post/:id',
     name: 'PostDetail',
     component: () => import('@/views/PostDetail.vue'),

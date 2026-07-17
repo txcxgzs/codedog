@@ -27,7 +27,6 @@
                     <el-dropdown-menu>
                       <el-dropdown-item command="manage" v-if="capabilities.length">管理工作室</el-dropdown-item>
                       <el-dropdown-item command="edit" v-if="userRole === 'owner'">编辑信息</el-dropdown-item>
-                      <el-dropdown-item command="viceOwner" v-if="userRole === 'owner'">设置副室长</el-dropdown-item>
                       <el-dropdown-item command="submit">投稿作品</el-dropdown-item>
                       <el-dropdown-item command="leave" divided v-if="userRole !== 'owner'">退出工作室</el-dropdown-item>
                       <el-dropdown-item command="dissolve" divided v-if="userRole === 'owner'">解散工作室</el-dropdown-item>
@@ -99,37 +98,7 @@
         </el-tab-pane>
         
         <el-tab-pane label="工作室论坛" name="forum">
-          <div class="r-studio-detail--forum">
-            <template v-if="!selectedForumPost">
-              <div class="r-studio-detail--forum_hero">
-                <div class="r-studio-detail--forum_hero_copy"><span class="r-studio-detail--forum_mark">论</span><div><h2>{{ studio?.name }}论坛</h2></div></div>
-                <div class="r-studio-detail--forum_summary"><span><b>{{ forumPosts.length }}</b>主题</span><i></i><span><b>{{ totalForumReplies }}</b>回复</span></div>
-              </div>
-              <div class="r-studio-detail--forum_toolbar"><el-input v-model="forumSearch" clearable placeholder="搜索工作室论坛主题" class="r-studio-detail--forum_search"><template #prefix>⌕</template></el-input><span class="r-studio-detail--forum_toolbar_spacer"></span><el-button v-if="userMemberStatus === 'active'" type="primary" @click="forumPostDialogVisible = true">＋ 发布主题</el-button></div>
-              <div v-loading="forumLoading" class="r-studio-detail--forum_list">
-                <button v-for="item in filteredForumPosts" :key="item.id" type="button" class="r-studio-detail--forum_item" @click="openForumPost(item.id)">
-                  <AppImage :src="item.author?.avatar || defaultAvatar" :fallback="defaultAvatar" class="r-studio-detail--forum_item_avatar" />
-                  <span class="r-studio-detail--forum_item_main"><span class="r-studio-detail--forum_item_title"><em v-if="item.is_pinned">置顶</em><em v-if="item.is_locked" class="locked">锁定</em><b>{{ item.title }}</b></span><span class="r-studio-detail--forum_excerpt">{{ item.content }}</span><small><strong>{{ item.author?.nickname || item.author?.username }}</strong><i>发布于 {{ formatForumTime(item.created_at) }}</i><i v-if="item.last_reply_at">最后回复 {{ formatForumTime(item.last_reply_at) }}</i></small></span>
-                  <span class="r-studio-detail--forum_counts"><span><b>{{ item.reply_count }}</b>回复</span><span><b>{{ item.view_count }}</b>浏览</span><i>›</i></span>
-                </button>
-                <el-empty v-if="!forumLoading && !filteredForumPosts.length" :description="forumSearch ? '没有找到相关主题' : '工作室论坛还没有主题'" />
-              </div>
-            </template>
-            <template v-else>
-              <div class="r-studio-detail--forum_detail_head">
-                <el-button class="r-studio-detail--forum_back" @click="closeForumPost">‹ 返回工作室论坛</el-button>
-                <div v-if="can('member_manage')" class="r-studio-detail--forum_manage"><el-button size="small" @click="handleForumState({ is_pinned: !selectedForumPost.is_pinned })">{{ selectedForumPost.is_pinned ? '取消置顶' : '置顶主题' }}</el-button><el-button size="small" @click="handleForumState({ is_locked: !selectedForumPost.is_locked })">{{ selectedForumPost.is_locked ? '解除锁定' : '锁定回复' }}</el-button></div>
-              </div>
-              <article class="r-studio-detail--forum_post"><div class="r-studio-detail--forum_post_badges"><span v-if="selectedForumPost.is_pinned">置顶</span><span v-if="selectedForumPost.is_locked" class="locked">已锁定</span></div><h1>{{ selectedForumPost.title }}</h1><div class="r-studio-detail--forum_post_author" role="link" tabindex="0" @click="goUser(selectedForumPost.author)" @keydown.enter="goUser(selectedForumPost.author)"><AppImage :src="selectedForumPost.author?.avatar || defaultAvatar" :fallback="defaultAvatar" /><span><b>{{ selectedForumPost.author?.nickname || selectedForumPost.author?.username }}</b><small>{{ formatForumTime(selectedForumPost.created_at) }} · {{ selectedForumPost.view_count }} 次浏览</small></span></div><div class="r-studio-detail--forum_post_content">{{ selectedForumPost.content }}</div><div class="r-studio-detail--forum_post_footer"><span>来自 {{ studio?.name }} 工作室论坛</span><el-button v-if="String(selectedForumPost.user_id) === String(userStore.user?.id) || can('member_manage')" text type="danger" @click="handleDeleteForumPost">删除主题</el-button></div></article>
-              <section class="r-studio-detail--forum_replies">
-                <div class="r-studio-detail--forum_replies_head"><h2>全部回复 <small>{{ selectedForumPost.replies?.length || 0 }}</small></h2><span>按发布时间排序</span></div>
-                <div v-for="(reply, index) in selectedForumPost.replies" :key="reply.id" class="r-studio-detail--forum_reply"><AppImage :src="reply.author?.avatar || defaultAvatar" :fallback="defaultAvatar" /><div class="r-studio-detail--forum_reply_body"><div class="r-studio-detail--forum_reply_meta"><span><b role="link" tabindex="0" @click="goUser(reply.author)" @keydown.enter="goUser(reply.author)">{{ reply.author?.nickname || reply.author?.username }}</b><small>{{ formatForumTime(reply.created_at) }}</small></span><em>#{{ index + 1 }}</em></div><p>{{ reply.content }}</p><div class="r-studio-detail--forum_reply_actions"><el-button v-if="String(reply.user_id) === String(userStore.user?.id) || can('member_manage')" text type="danger" size="small" @click="handleDeleteForumReply(reply)">删除</el-button></div></div></div>
-                <el-empty v-if="!selectedForumPost.replies?.length" description="暂无回复" />
-                <div v-if="userMemberStatus === 'active' && !selectedForumPost.is_locked" class="r-studio-detail--forum_reply_box"><div class="r-studio-detail--forum_reply_box_head"><AppImage :src="userStore.user?.avatar || defaultAvatar" :fallback="defaultAvatar" /><span><b>参与讨论</b><small>以 {{ userStore.user?.nickname || userStore.user?.username }} 的身份回复</small></span></div><el-input v-model="forumReplyText" type="textarea" :rows="4" maxlength="5000" show-word-limit placeholder="友善交流，分享你的想法…" /><div class="r-studio-detail--forum_reply_box_footer"><small>回复内容将公开显示</small><el-button type="primary" @click="handleCreateForumReply">发表回复</el-button></div></div>
-                <el-alert v-else-if="selectedForumPost.is_locked" title="该主题已锁定" type="warning" :closable="false" /><el-alert v-else title="论坛内容公开可见，加入工作室后才能回复" type="info" :closable="false" />
-              </section>
-            </template>
-          </div>
+          <div class="r-studio-detail--forum_portal"><span>论</span><div><h2>{{ studio?.name }}论坛已并入主论坛</h2><p>主题会出现在主论坛的“工作室论坛”板块，所有人可浏览，工作室成员可发帖和回复。</p></div><el-button type="primary" @click="$router.push(`/community/studios?studio_id=${studio.id}`)">进入工作室论坛</el-button></div>
         </el-tab-pane>
 
         <el-tab-pane label="成员" name="members">
@@ -188,20 +157,6 @@
       </template>
     </el-dialog>
     
-    <el-dialog v-model="viceOwnerDialogVisible" title="设置副室长" width="400px">
-      <el-form :model="viceOwnerForm" label-width="80px">
-        <el-form-item label="副室长">
-          <el-select v-model="viceOwnerForm.user_id" clearable placeholder="选择副室长（可清空）" filterable style="width: 100%;">
-            <el-option v-for="m in members.filter(m => m.memberRole !== 'owner')" :key="m.id" :label="m.user?.nickname || m.user?.username" :value="m.user_id" />
-          </el-select>
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="viceOwnerDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="handleSetViceOwner" :loading="viceOwnerLoading">保存</el-button>
-      </template>
-    </el-dialog>
-    
     <el-dialog v-model="manageDialogVisible" title="工作室管理" width="800px">
       <el-tabs>
         <el-tab-pane label="成员申请">
@@ -226,10 +181,11 @@
                 <span v-if="!row.application_answers?.length">-</span>
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="150">
+            <el-table-column label="操作" width="300">
               <template #default="{ row }">
                 <el-button size="small" type="primary" @click="handleReviewMember(row.id, 'approve')">通过</el-button>
                 <el-button size="small" type="danger" @click="handleReviewMember(row.id, 'reject')">拒绝</el-button>
+                <el-button size="small" type="danger" plain @click="handleReviewMember(row.id, 'reject_blacklist')">拒绝并拉黑</el-button>
               </template>
             </el-table-column>
           </el-table>
@@ -279,13 +235,10 @@
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="280">
+            <el-table-column label="操作" width="220">
               <template #default="{ row }">
                 <template v-if="row.memberRole !== 'owner'">
-                  <el-button size="small" v-if="userRole === 'owner' && row.memberRole !== 'vice_owner'" @click="handleSetRole(row.id, row.memberRole === 'admin' ? 'member' : 'admin')">
-                    {{ row.memberRole === 'admin' ? '设为成员' : '设为管理员' }}
-                  </el-button>
-                  <el-button v-if="userRole === 'owner'" size="small" @click="showPermissionDialog(row)">权限</el-button>
+                  <el-button v-if="userRole === 'owner'" size="small" :class="['r-studio-detail--role_button', `role-${row.memberRole}`]" @click="showRoleDialog(row)">角色管理</el-button>
                   <el-button size="small" type="danger" @click="handleKickMember(row.id)">移除</el-button>
                 </template>
               </template>
@@ -293,22 +246,18 @@
           </el-table>
         </el-tab-pane>
         <el-tab-pane label="邀请管理" v-if="can('invite_manage')">
-          <div class="r-studio-detail--manage_toolbar"><el-input-number v-model="inviteForm.max_uses" :min="1" :max="100" /><span>可用次数</span><el-input-number v-model="inviteForm.expires_in_hours" :min="1" :max="720" /><span>有效小时</span><el-button type="primary" @click="handleCreateInvite">创建邀请</el-button></div>
+          <div class="r-studio-detail--manage_explainer"><div><h4>邀请链接</h4><p>邀请码可发给指定用户，对方使用后可直接加入工作室，无需经过成员申请审核。请只发给可信的人。</p></div><el-button type="primary" @click="inviteCreateVisible=true">＋ 创建邀请</el-button></div>
           <el-table :data="invites" size="small"><el-table-column prop="code" label="邀请码" min-width="230" /><el-table-column label="使用" width="90"><template #default="{ row }">{{ row.used_count }}/{{ row.max_uses }}</template></el-table-column><el-table-column prop="status" label="状态" width="100" /><el-table-column label="操作" width="100"><template #default="{ row }"><el-button v-if="row.status === 'active'" size="small" type="danger" plain @click="handleRevokeInvite(row)">撤销</el-button></template></el-table-column></el-table>
         </el-tab-pane>
-        <el-tab-pane label="公告与任务" v-if="can('announcement_manage') || can('task_manage')">
-          <div v-if="can('announcement_manage')" class="r-studio-detail--manage_section"><h4>发布公告</h4><el-input v-model="announcementForm.title" maxlength="120" placeholder="公告标题" /><el-input v-model="announcementForm.content" type="textarea" :rows="3" maxlength="10000" placeholder="公告内容" /><el-button type="primary" @click="handleCreateAnnouncement">发布公告</el-button></div>
-          <div v-if="can('task_manage')" class="r-studio-detail--manage_section"><h4>创建招募任务</h4><el-input v-model="taskForm.title" maxlength="120" placeholder="任务名称" /><el-input v-model="taskForm.needed_role" maxlength="80" placeholder="需要的角色，如美术、程序" /><el-input v-model="taskForm.description" type="textarea" :rows="3" placeholder="任务说明" /><el-button type="primary" @click="handleCreateTask">创建任务</el-button></div>
+        <el-tab-pane label="公告" v-if="can('announcement_manage')">
+          <div class="r-studio-detail--manage_explainer"><div><h4>当前公告</h4><p>公告会展示给所有访问工作室的人。</p></div><el-button type="primary" @click="announcementCreateVisible=true">＋ 新增公告</el-button></div>
+          <div class="r-studio-detail--feed"><div v-for="item in announcements" :key="item.id" class="r-studio-detail--feed_item"><div><b>{{ item.title }}</b><el-tag v-if="item.is_pinned" size="small" type="warning">置顶</el-tag></div><p>{{ item.content }}</p><small>{{ item.author?.nickname || '工作室' }} · {{ formatDate(item.published_at) }}</small></div><el-empty v-if="!announcements.length" description="当前没有公告" /></div>
         </el-tab-pane>
         <el-tab-pane label="设置" v-if="can('profile_edit')">
-          <el-form label-width="120px"><el-form-item label="人数上限"><el-input-number v-model="settingsForm.member_limit" :min="studio?.member_count || 1" :max="1000" /></el-form-item><el-form-item label="招募状态"><el-radio-group v-model="settingsForm.recruitment_status"><el-radio label="open">开放</el-radio><el-radio label="paused">暂停</el-radio></el-radio-group></el-form-item><el-form-item label="成员退出后作品"><el-radio-group v-model="settingsForm.leave_work_policy"><el-radio label="retain">保留</el-radio><el-radio label="remove">移除</el-radio></el-radio-group></el-form-item><el-form-item label="重申冷却（天）"><el-input-number v-model="settingsForm.application_cooldown_days" :min="0" :max="90" /></el-form-item><el-form-item label="招募问题"><el-input v-model="settingsForm.questions_text" type="textarea" :rows="4" placeholder="每行一个问题，最多 5 个" /></el-form-item><el-form-item v-if="can('im_bind')" label="IM 群 ID"><el-input v-model="settingsForm.im_group_id" maxlength="100" placeholder="绑定编程狗 IM 群聊 ID" /></el-form-item><el-form-item><el-button type="primary" @click="handleSaveSettings">保存设置</el-button></el-form-item></el-form>
+          <el-form label-width="120px"><el-form-item label="人数上限"><el-input-number v-model="settingsForm.member_limit" :min="studio?.member_count || 1" :max="1000" /></el-form-item><el-form-item label="招募状态"><el-radio-group v-model="settingsForm.recruitment_status"><el-radio label="open">开放</el-radio><el-radio label="paused">暂停</el-radio></el-radio-group></el-form-item><el-form-item label="退出作品规则"><el-tag type="danger">成员退出或被移除时，强制清除其全部工作室作品</el-tag></el-form-item><el-form-item label="重申冷却（天）"><el-input-number v-model="settingsForm.application_cooldown_days" :min="0" :max="90" /></el-form-item><el-form-item label="招募问题"><el-input v-model="settingsForm.questions_text" type="textarea" :rows="4" placeholder="每行一个问题，最多 5 个" /></el-form-item><el-form-item v-if="can('im_bind')" label="IM 群 ID"><el-input v-model="settingsForm.im_group_id" maxlength="100" placeholder="绑定编程狗 IM 群聊 ID" /></el-form-item><el-form-item><el-button type="primary" @click="handleSaveSettings">保存设置</el-button></el-form-item></el-form>
         </el-tab-pane>
         <el-tab-pane label="成员黑名单" v-if="can('member_manage')">
-          <div class="r-studio-detail--manage_toolbar">
-            <el-input-number v-model="blacklistForm.user_id" :min="1" placeholder="用户 ID" />
-            <el-input v-model="blacklistForm.reason" maxlength="500" placeholder="加入黑名单原因" />
-            <el-button type="danger" @click="handleAddBlacklist">加入黑名单</el-button>
-          </div>
+          <div class="r-studio-detail--manage_explainer"><div><h4>成员黑名单</h4><p>黑名单用户不能申请或通过邀请加入工作室。审核申请时可直接“拒绝并拉黑”；本页用于查看、解除，也可手动添加。</p></div><el-button type="danger" @click="blacklistCreateVisible=true">＋ 手动添加</el-button></div>
           <el-table :data="blacklist" size="small">
             <el-table-column label="用户" min-width="160"><template #default="{ row }">{{ row.user?.nickname || row.user?.username || row.user_id }}</template></el-table-column>
             <el-table-column prop="reason" label="原因" min-width="220" />
@@ -317,39 +266,37 @@
           <el-empty v-if="!blacklist.length" description="暂无黑名单用户" />
         </el-tab-pane>
         <el-tab-pane label="日志与数据" v-if="can('log_view') || can('analytics_view')">
-          <div v-if="analytics" class="r-studio-detail--analytics"><span>成员 <b>{{ analytics.members }}</b></span><span>待审成员 <b>{{ analytics.pending_members }}</b></span><span>作品 <b>{{ analytics.works }}</b></span><span>待审作品 <b>{{ analytics.pending_works }}</b></span><span>任务完成 <b>{{ analytics.completed_tasks }}/{{ analytics.tasks }}</b></span></div>
+          <div v-if="analytics" class="r-studio-detail--analytics"><span>成员 <b>{{ analytics.members }}</b></span><span>待审成员 <b>{{ analytics.pending_members }}</b></span><span>作品 <b>{{ analytics.works }}</b></span><span>待审作品 <b>{{ analytics.pending_works }}</b></span></div>
           <el-table v-if="can('log_view')" :data="operationLogs" size="small"><el-table-column prop="created_at" label="时间" width="170" /><el-table-column prop="operator.nickname" label="操作者" width="120" /><el-table-column prop="action" label="操作" min-width="180" /><el-table-column prop="reason" label="原因" min-width="160" /></el-table>
         </el-tab-pane>
         <el-tab-pane label="转让工作室" v-if="userRole === 'owner'">
           <el-alert title="转让后您将降为普通成员，新室长会立即获得全部权限。此操作需要再次完成安全验证。" type="warning" :closable="false" />
           <el-form label-width="100px" style="margin-top:16px"><el-form-item label="接任成员"><el-select v-model="transferForm.target_user_id" style="width:100%"><el-option v-for="m in members.filter(item => item.memberRole !== 'owner')" :key="m.id" :label="m.user?.nickname || m.user?.username" :value="m.user_id" /></el-select></el-form-item><el-form-item label="转让原因"><el-input v-model="transferForm.reason" maxlength="500" /></el-form-item><el-form-item label="输入名称确认"><el-input v-model="transferForm.confirm_name" :placeholder="studio?.name" /></el-form-item><el-form-item><el-button type="danger" @click="handleTransfer">确认转让</el-button></el-form-item></el-form>
         </el-tab-pane>
-        <el-tab-pane label="公告" name="announcements">
-          <div class="r-studio-detail--feed"><div v-for="item in announcements" :key="item.id" class="r-studio-detail--feed_item"><div><b>{{ item.title }}</b><el-tag v-if="item.is_pinned" size="small" type="warning">置顶</el-tag></div><p>{{ item.content }}</p><small>{{ item.author?.nickname || '工作室' }} · {{ formatDate(item.published_at) }}</small></div><el-empty v-if="!announcements.length" description="暂无公告" /></div>
-        </el-tab-pane>
-        <el-tab-pane v-if="userMemberStatus === 'active'" label="协作任务" name="tasks">
-          <div class="r-studio-detail--feed"><div v-for="item in tasks" :key="item.id" class="r-studio-detail--feed_item"><div><b>{{ item.title }}</b><el-tag size="small">{{ item.status }}</el-tag></div><p>{{ item.description || '暂无说明' }}</p><small>需要：{{ item.needed_role || '不限' }} · 负责人：{{ item.assignee?.nickname || '待认领' }}</small><div class="r-studio-detail--task_actions"><el-button v-if="!item.assignee_id && item.status === 'open'" size="small" @click="handleTaskStatus(item, 'in_progress')">认领任务</el-button><el-button v-if="String(item.assignee_id) === String(userStore.user?.id) && item.status === 'in_progress'" size="small" type="primary" @click="handleTaskStatus(item, 'completed')">标记完成</el-button></div></div><el-empty v-if="!tasks.length" description="暂无协作任务" /></div>
-        </el-tab-pane>
-        <el-tab-pane v-if="userMemberStatus === 'active'" label="成员讨论" name="discussions">
-          <div class="r-studio-detail--discussion_composer">
-            <el-input v-model="discussionText" type="textarea" :rows="3" maxlength="2000" show-word-limit placeholder="仅工作室成员可见，分享进度、想法或协作事项" />
-            <el-button type="primary" @click="handleCreateDiscussion">发送讨论</el-button>
-          </div>
-          <div class="r-studio-detail--feed">
-            <div v-for="item in discussions" :key="item.id" class="r-studio-detail--feed_item">
-              <div><b>{{ item.user?.nickname || item.user?.username }}</b><small>{{ formatDate(item.created_at) }}</small></div>
-              <p>{{ item.content }}</p>
-              <el-button v-if="String(item.user_id) === String(userStore.user?.id) || can('member_manage')" size="small" text type="danger" @click="handleDeleteDiscussion(item)">删除</el-button>
-            </div>
-            <el-empty v-if="!discussions.length" description="暂无成员讨论" />
-          </div>
-        </el-tab-pane>
       </el-tabs>
     </el-dialog>
 
-    <el-dialog v-model="permissionDialogVisible" title="配置成员管理权限" width="620px">
-      <el-checkbox-group v-model="permissionForm.permissions" class="r-studio-detail--permission_grid"><el-checkbox v-for="item in permissionOptions" :key="item.value" :label="item.value">{{ item.label }}</el-checkbox></el-checkbox-group>
-      <template #footer><el-button @click="permissionDialogVisible = false">取消</el-button><el-button type="primary" @click="handleSavePermissions">保存权限</el-button></template>
+    <el-dialog v-model="permissionDialogVisible" title="角色管理" width="620px" :close-on-click-modal="false">
+      <div class="r-studio-detail--role_intro"><AppImage :src="roleTarget?.avatar || defaultAvatar" :fallback="defaultAvatar" /><span><b>{{ roleTarget?.nickname || roleTarget?.username }}</b><small>在这里统一设置成员、副室长、管理员及其附加权限</small></span></div>
+      <el-form label-position="top"><el-form-item label="工作室角色"><el-radio-group v-model="permissionForm.role" class="r-studio-detail--role_options"><el-radio-button label="member">成员</el-radio-button><el-radio-button label="admin">管理员</el-radio-button><el-radio-button label="vice_owner">副室长</el-radio-button></el-radio-group></el-form-item><el-form-item label="附加管理权限"><el-checkbox-group v-model="permissionForm.permissions" class="r-studio-detail--permission_grid"><el-checkbox v-for="item in permissionOptions" :key="item.value" :label="item.value">{{ item.label }}</el-checkbox></el-checkbox-group></el-form-item></el-form>
+      <template #footer><el-button @click="permissionDialogVisible = false">取消</el-button><el-button type="primary" @click="handleSaveRole">保存角色</el-button></template>
+    </el-dialog>
+
+    <el-dialog v-model="inviteCreateVisible" title="创建工作室邀请" width="480px" :close-on-click-modal="false">
+      <el-alert title="邀请码可让收到的人绕过申请审核直接加入，请勿公开分享。" type="warning" :closable="false" />
+      <el-form label-width="110px" style="margin-top:18px"><el-form-item label="可用次数"><el-input-number v-model="inviteForm.max_uses" :min="1" :max="100" /></el-form-item><el-form-item label="有效小时"><el-input-number v-model="inviteForm.expires_in_hours" :min="1" :max="720" /></el-form-item></el-form>
+      <template #footer><el-button @click="inviteCreateVisible=false">取消</el-button><el-button type="primary" @click="handleCreateInvite">创建邀请</el-button></template>
+    </el-dialog>
+
+    <el-dialog v-model="announcementCreateVisible" title="新增工作室公告" width="620px" :close-on-click-modal="false">
+      <el-form label-position="top"><el-form-item label="公告标题"><el-input v-model="announcementForm.title" maxlength="120" show-word-limit /></el-form-item><el-form-item label="公告内容"><el-input v-model="announcementForm.content" type="textarea" :rows="7" maxlength="10000" show-word-limit /></el-form-item></el-form>
+      <template #footer><el-button @click="announcementCreateVisible=false">取消</el-button><el-button type="primary" @click="handleCreateAnnouncement">发布公告</el-button></template>
+    </el-dialog>
+
+    <el-dialog v-model="blacklistCreateVisible" title="手动加入黑名单" width="520px" :close-on-click-modal="false">
+      <el-alert title="加入后该用户不能申请，也不能通过邀请码加入此工作室。" type="error" :closable="false" />
+      <el-form label-position="top" style="margin-top:18px"><el-form-item label="用户 ID"><el-input-number v-model="blacklistForm.user_id" :min="1" controls-position="right" style="width:100%" /></el-form-item><el-form-item label="拉黑原因"><el-input v-model="blacklistForm.reason" maxlength="500" show-word-limit /></el-form-item></el-form>
+      <template #footer><el-button @click="blacklistCreateVisible=false">取消</el-button><el-button type="danger" @click="handleAddBlacklist">确认加入黑名单</el-button></template>
     </el-dialog>
 
     <el-dialog v-model="forumPostDialogVisible" title="发布工作室论坛主题" width="min(760px, 94vw)" class="r-studio-detail--forum_compose" :close-on-click-modal="false">
@@ -400,9 +347,6 @@ const studio = ref(null)
 const members = ref([])
 const works = ref([])
 const announcements = ref([])
-const tasks = ref([])
-const discussions = ref([])
-const discussionText = ref('')
 const forumPosts = ref([])
 const forumSearch = ref('')
 const selectedForumPost = ref(null)
@@ -446,11 +390,10 @@ const uploadEditCover = async (event) => {
   finally { editCoverUploading.value = false }
 }
 
-const viceOwnerDialogVisible = ref(false)
-const viceOwnerLoading = ref(false)
-const viceOwnerForm = reactive({ user_id: null })
-
 const manageDialogVisible = ref(false)
+const inviteCreateVisible = ref(false)
+const announcementCreateVisible = ref(false)
+const blacklistCreateVisible = ref(false)
 const pendingMembers = ref([])
 const pendingWorks = ref([])
 const capabilities = ref([])
@@ -461,13 +404,13 @@ const blacklist = ref([])
 const blacklistForm = reactive({ user_id: null, reason: '' })
 const inviteForm = reactive({ max_uses: 1, expires_in_hours: 72 })
 const announcementForm = reactive({ title: '', content: '' })
-const taskForm = reactive({ title: '', description: '', needed_role: '' })
-const settingsForm = reactive({ member_limit: 100, recruitment_status: 'open', leave_work_policy: 'retain', application_cooldown_days: 7, questions_text: '', im_group_id: '' })
+const settingsForm = reactive({ member_limit: 100, recruitment_status: 'open', application_cooldown_days: 7, questions_text: '', im_group_id: '' })
 const transferForm = reactive({ target_user_id: null, reason: '', confirm_name: '' })
 const permissionDialogVisible = ref(false)
-const permissionForm = reactive({ memberId: null, permissions: [] })
+const roleTarget = ref(null)
+const permissionForm = reactive({ memberId: null, role: 'member', permissions: [] })
 const permissionOptions = [
-  ['member_review','审核成员'],['member_manage','管理成员'],['role_manage','管理角色'],['work_review','审核作品'],['work_manage','管理作品'],['profile_edit','编辑资料'],['announcement_manage','发布公告'],['task_manage','管理任务'],['invite_manage','管理邀请'],['log_view','查看日志'],['analytics_view','查看数据'],['im_bind','绑定 IM 群']
+  ['member_review','审核成员'],['member_manage','管理成员'],['role_manage','管理角色'],['work_review','审核作品'],['work_manage','管理作品'],['profile_edit','编辑资料'],['announcement_manage','发布公告'],['invite_manage','管理邀请'],['log_view','查看日志'],['analytics_view','查看数据'],['im_bind','绑定 IM 群']
 ].map(([value, label]) => ({ value, label }))
 const can = permission => capabilities.value.includes(permission)
 
@@ -573,14 +516,11 @@ const fetchStudio = async () => {
       joinBlockedReason.value = res.data.joinBlockedReason || null
       settingsForm.member_limit = Number(studio.value.member_limit || 100)
       settingsForm.recruitment_status = studio.value.recruitment_status || 'open'
-      settingsForm.leave_work_policy = studio.value.leave_work_policy || 'retain'
       settingsForm.application_cooldown_days = Number(studio.value.application_cooldown_days || 0)
       settingsForm.questions_text = Array.isArray(studio.value.application_questions) ? studio.value.application_questions.join('\n') : ''
       settingsForm.im_group_id = studio.value.im_group_id || ''
       if (userMemberStatus.value === 'active') {
         studioApi.getCapabilities(route.params.id).then(result => { if (result.code === 200) capabilities.value = result.data.permissions || [] }).catch(() => {})
-        studioApi.getTasks(route.params.id).then(result => { if (result.code === 200) tasks.value = result.data || [] }).catch(() => {})
-        studioApi.getDiscussions(route.params.id).then(result => { if (result.code === 200) discussions.value = result.data || [] }).catch(() => {})
       } else capabilities.value = []
       studioApi.getAnnouncements(route.params.id).then(result => { if (result.code === 200) announcements.value = result.data || [] }).catch(() => {})
       fetchForumPosts()
@@ -787,12 +727,18 @@ const showManageDialog = async () => {
 
 const handleCreateInvite = async () => {
   const geetestData = await verifyScene('studio_management'); if (!geetestData) return
-  try { const res = await studioApi.createInvite(route.params.id, { ...inviteForm, ...geetestData }); if (res.code === 200) { ElMessage.success('邀请已创建'); await showManageDialog() } } catch (e) { ElMessage.error(e.response?.data?.msg || '创建邀请失败') }
+  try { const res = await studioApi.createInvite(route.params.id, { ...inviteForm, ...geetestData }); if (res.code === 200) { ElMessage.success('邀请已创建'); inviteCreateVisible.value = false; await showManageDialog() } } catch (e) { ElMessage.error(e.response?.data?.msg || '创建邀请失败') }
 }
-const showPermissionDialog = row => { permissionForm.memberId = row.id; permissionForm.permissions = Array.isArray(row.permissions) ? [...row.permissions] : []; permissionDialogVisible.value = true }
-const handleSavePermissions = async () => {
+const showRoleDialog = row => { roleTarget.value = row; permissionForm.memberId = row.id; permissionForm.role = row.memberRole || 'member'; permissionForm.permissions = Array.isArray(row.permissions) ? [...row.permissions] : []; permissionDialogVisible.value = true }
+const handleSaveRole = async () => {
   const geetestData = await verifyScene('studio_management'); if (!geetestData) return
-  try { const res = await studioApi.setMemberPermissions(route.params.id, permissionForm.memberId, permissionForm.permissions, geetestData); if (res.code === 200) { ElMessage.success('权限已保存'); permissionDialogVisible.value = false; await fetchStudio() } } catch (e) { ElMessage.error(e.response?.data?.msg || '保存权限失败') }
+  try {
+    const roleRes = await studioApi.setMemberRole(route.params.id, permissionForm.memberId, permissionForm.role, geetestData)
+    if (roleRes.code !== 200) return ElMessage.error(roleRes.msg || '保存角色失败')
+    const permissionVerify = await verifyScene('studio_management'); if (!permissionVerify) return
+    const permissionRes = await studioApi.setMemberPermissions(route.params.id, permissionForm.memberId, permissionForm.permissions, permissionVerify)
+    if (permissionRes.code === 200) { ElMessage.success('角色与权限已保存'); permissionDialogVisible.value = false; await fetchStudio() }
+  } catch (e) { ElMessage.error(e.response?.data?.msg || '保存角色失败') }
 }
 const handleRevokeInvite = async row => {
   const geetestData = await verifyScene('studio_management'); if (!geetestData) return
@@ -800,15 +746,7 @@ const handleRevokeInvite = async row => {
 }
 const handleCreateAnnouncement = async () => {
   const geetestData = await verifyScene('studio_management'); if (!geetestData) return
-  try { const res = await studioApi.createAnnouncement(route.params.id, { ...announcementForm, ...geetestData }); if (res.code === 200) { ElMessage.success('公告已发布'); announcementForm.title = ''; announcementForm.content = '' } } catch (e) { ElMessage.error(e.response?.data?.msg || '发布失败') }
-}
-const handleCreateTask = async () => {
-  const geetestData = await verifyScene('studio_management'); if (!geetestData) return
-  try { const res = await studioApi.createTask(route.params.id, { ...taskForm, ...geetestData }); if (res.code === 200) { ElMessage.success('任务已创建'); taskForm.title = ''; taskForm.description = ''; taskForm.needed_role = ''; await showManageDialog() } } catch (e) { ElMessage.error(e.response?.data?.msg || '创建任务失败') }
-}
-const handleTaskStatus = async (task, status) => {
-  const geetestData = await verifyScene('studio_management'); if (!geetestData) return
-  try { const res = await studioApi.updateTask(route.params.id, task.id, { status, ...geetestData }); if (res.code === 200) { ElMessage.success(res.msg); const refreshed = await studioApi.getTasks(route.params.id); if (refreshed.code === 200) tasks.value = refreshed.data || [] } } catch (e) { ElMessage.error(e.response?.data?.msg || '更新任务失败') }
+  try { const res = await studioApi.createAnnouncement(route.params.id, { ...announcementForm, ...geetestData }); if (res.code === 200) { ElMessage.success('公告已发布'); announcementForm.title = ''; announcementForm.content = ''; announcementCreateVisible.value = false; const refreshed = await studioApi.getAnnouncements(route.params.id); if (refreshed.code === 200) announcements.value = refreshed.data || [] } } catch (e) { ElMessage.error(e.response?.data?.msg || '发布失败') }
 }
 const handleSaveSettings = async () => {
   const geetestData = await verifyScene('studio_management'); if (!geetestData) return
@@ -819,51 +757,17 @@ const handleSaveSettings = async () => {
 const handleAddBlacklist = async () => {
   if (!blacklistForm.user_id || blacklistForm.reason.trim().length < 2) return ElMessage.warning('请填写用户 ID 和至少 2 个字的原因')
   const geetestData = await verifyScene('studio_management'); if (!geetestData) return
-  try { const res = await studioApi.addBlacklist(route.params.id, { ...blacklistForm, ...geetestData }); if (res.code === 200) { ElMessage.success(res.msg); blacklistForm.user_id = null; blacklistForm.reason = ''; await showManageDialog() } } catch (e) { ElMessage.error(e.response?.data?.msg || '加入黑名单失败') }
+  try { const res = await studioApi.addBlacklist(route.params.id, { ...blacklistForm, ...geetestData }); if (res.code === 200) { ElMessage.success(res.msg); blacklistForm.user_id = null; blacklistForm.reason = ''; blacklistCreateVisible.value = false; await showManageDialog() } } catch (e) { ElMessage.error(e.response?.data?.msg || '加入黑名单失败') }
 }
 const handleRemoveBlacklist = async row => {
   const geetestData = await verifyScene('studio_management'); if (!geetestData) return
   try { const res = await studioApi.removeBlacklist(route.params.id, row.id, geetestData); if (res.code === 200) { ElMessage.success(res.msg); await showManageDialog() } } catch (e) { ElMessage.error(e.response?.data?.msg || '移出黑名单失败') }
-}
-const handleCreateDiscussion = async () => {
-  if (!discussionText.value.trim()) return ElMessage.warning('请输入讨论内容')
-  const geetestData = await verifyScene('studio_management'); if (!geetestData) return
-  try { const res = await studioApi.createDiscussion(route.params.id, { content: discussionText.value.trim(), ...geetestData }); if (res.code === 200) { discussionText.value = ''; const refreshed = await studioApi.getDiscussions(route.params.id); if (refreshed.code === 200) discussions.value = refreshed.data || [] } } catch (e) { ElMessage.error(e.response?.data?.msg || '发送讨论失败') }
-}
-const handleDeleteDiscussion = async row => {
-  const geetestData = await verifyScene('studio_management'); if (!geetestData) return
-  try { const res = await studioApi.deleteDiscussion(route.params.id, row.id, geetestData); if (res.code === 200) discussions.value = discussions.value.filter(item => item.id !== row.id) } catch (e) { ElMessage.error(e.response?.data?.msg || '删除讨论失败') }
 }
 const handleTransfer = async () => {
   if (!transferForm.target_user_id || transferForm.reason.trim().length < 2 || transferForm.confirm_name !== studio.value?.name) return ElMessage.warning('请完整填写接任成员、原因，并准确输入工作室名称')
   try { await ElMessageBox.confirm('确认将工作室永久转让给该成员吗？', '高风险操作', { type: 'warning' }) } catch { return }
   const geetestData = await verifyScene('studio_management'); if (!geetestData) return
   try { const res = await studioApi.transferOwnership(route.params.id, { ...transferForm, ...geetestData }); if (res.code === 200) { ElMessage.success('工作室已转让'); manageDialogVisible.value = false; await fetchStudio() } } catch (e) { ElMessage.error(e.response?.data?.msg || '转让失败') }
-}
-
-const showViceOwnerDialog = () => {
-  viceOwnerForm.user_id = studio.value.vice_owner_id || null
-  viceOwnerDialogVisible.value = true
-}
-
-const handleSetViceOwner = async () => {
-  viceOwnerLoading.value = true
-  try {
-    const geetestData = await verifyScene('studio_management')
-    if (!geetestData) return
-    const res = await studioApi.setViceOwner(route.params.id, viceOwnerForm.user_id, geetestData)
-    if (res.code === 200) {
-      ElMessage.success('副室长已设置')
-      viceOwnerDialogVisible.value = false
-      fetchStudio()
-    } else {
-      ElMessage.error(res.msg || '设置失败')
-    }
-  } catch (e) {
-    ElMessage.error('设置失败')
-  } finally {
-    viceOwnerLoading.value = false
-  }
 }
 
 const handleDissolve = async () => {
@@ -886,7 +790,6 @@ const handleCommand = (command) => {
   switch (command) {
     case 'manage': showManageDialog(); break
     case 'edit': showEditDialog(); break
-    case 'viceOwner': showViceOwnerDialog(); break
     case 'submit': showSubmitWorkDialog(); break
     case 'leave': handleLeave(); break
     case 'dissolve': handleDissolve(); break
@@ -895,9 +798,9 @@ const handleCommand = (command) => {
 
 const handleReviewMember = async (memberId, action) => {
   let reason = ''
-  if (action === 'reject') {
+  if (action === 'reject' || action === 'reject_blacklist') {
     try {
-      reason = (await ElMessageBox.prompt('请填写拒绝原因，申请人会收到通知', '拒绝成员申请', { inputValidator: value => String(value || '').trim().length >= 2 || '至少填写 2 个字' })).value.trim()
+      reason = (await ElMessageBox.prompt(action === 'reject_blacklist' ? '请填写拒绝并拉黑原因。加入黑名单后，该用户不能再次申请或使用邀请码加入。' : '请填写拒绝原因，申请人会收到通知', action === 'reject_blacklist' ? '拒绝并加入黑名单' : '拒绝成员申请', { inputValidator: value => String(value || '').trim().length >= 2 || '至少填写 2 个字' })).value.trim()
     } catch { return }
   }
   let geetestData = {}
@@ -1026,8 +929,25 @@ $border-color: #eee;
 .r-studio-detail--feed_item > div { display: flex; align-items: center; gap: 8px; }
 .r-studio-detail--feed_item p { white-space: pre-wrap; color: #505a6b; }
 .r-studio-detail--feed_item small { color: #8b95a7; }
-.r-studio-detail--task_actions { margin-top: 10px; }
 .r-studio-detail--permission_grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.r-studio-detail--manage_explainer { display:flex; align-items:center; justify-content:space-between; gap:20px; padding:16px; margin-bottom:14px; border:1px solid #f0dfb4; border-radius:14px; background:linear-gradient(135deg,#fffaf0,#fff); }
+.r-studio-detail--manage_explainer h4,.r-studio-detail--manage_explainer p { margin:0; }
+.r-studio-detail--manage_explainer p { margin-top:5px; color:#7d8797; line-height:1.6; }
+.r-studio-detail--role_button { border:0; font-weight:700; }
+.r-studio-detail--role_button.role-member { background:#eef2f6; color:#475467; }
+.r-studio-detail--role_button.role-admin { background:#fff0c2; color:#a15c00; }
+.r-studio-detail--role_button.role-vice_owner { background:#dcf7e8; color:#087443; }
+.r-studio-detail--role_intro { display:flex; align-items:center; gap:12px; padding:14px; margin-bottom:18px; border-radius:14px; background:#fff8e8; }
+.r-studio-detail--role_intro img { width:46px; height:46px; border-radius:50%; }
+.r-studio-detail--role_intro span { display:grid; gap:4px; }
+.r-studio-detail--role_intro small { color:#7d8797; }
+.r-studio-detail--role_options { display:flex; width:100%; }
+.r-studio-detail--role_options :deep(.el-radio-button) { flex:1; }
+.r-studio-detail--role_options :deep(.el-radio-button__inner) { width:100%; font-weight:700; }
+.r-studio-detail--forum_portal { display:grid; grid-template-columns:auto 1fr auto; align-items:center; gap:18px; padding:24px; border:1px solid rgba(254,196,51,.42); border-radius:18px; background:linear-gradient(135deg,rgba(255,248,226,.95),rgba(241,247,255,.9)); }
+.r-studio-detail--forum_portal>span { display:grid; width:58px; height:58px; place-items:center; border-radius:17px; background:#172033; color:#fec433; font-size:25px; font-weight:900; box-shadow:0 12px 26px rgba(23,32,51,.16); }
+.r-studio-detail--forum_portal h2,.r-studio-detail--forum_portal p { margin:0; }
+.r-studio-detail--forum_portal p { margin-top:6px; color:#6f7a8c; }
 
 .r-studio-detail--page {
   padding: 24px;
