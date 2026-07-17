@@ -105,6 +105,19 @@ async function resolveRecruitmentStudio(board, reqUser, transaction) {
     return { studioId: studio.id };
 }
 
+async function resolveStudioForumTarget(board, requestedStudioId, reqUser, transaction) {
+    if (board.slug !== 'studios') return { studioId: null };
+    const studioId = Number(requestedStudioId);
+    if (!Number.isSafeInteger(studioId) || studioId <= 0) return { error: '请选择要发布到的工作室' };
+    const membership = await StudioMember.findOne({
+        where: { studio_id: studioId, user_id: DbAdapter.getId(reqUser), status: 'active' },
+        include: [{ model: Studio, as: 'studio', required: true, where: { status: 'active' }, attributes: ['id'] }],
+        transaction
+    });
+    if (!membership) return { error: '只有该工作室的正式成员可以在此发布主题' };
+    return { studioId };
+}
+
 async function getBoards(req, res) {
     try {
         const boards = await ForumBoard.findAll({ where: { status: 'active' }, order: [['sort_order', 'ASC'], ['id', 'ASC']] });
@@ -330,7 +343,7 @@ function normalizePostOutput(post) {
  */
 async function createPost(req, res) {
     try {
-        const { title, content, category, board_id, post_type, tags, cover } = req.body;
+        const { title, content, category, board_id, studio_id, post_type, tags, cover } = req.body;
         
         // 修复: null/undefined 先拦截,避免 String(null)=="null" 绕过校验
         if (title == null || content == null || !String(title).trim() || !String(content).trim()) {
@@ -368,6 +381,8 @@ async function createPost(req, res) {
 
         const recruitmentResult = await resolveRecruitmentStudio(boardResult.board, req.user);
         if (recruitmentResult.error) return errorResponse(res, recruitmentResult.error, 403);
+        const studioForumResult = await resolveStudioForumTarget(boardResult.board, studio_id, req.user);
+        if (studioForumResult.error) return errorResponse(res, studioForumResult.error, 403);
 
         const post = await sequelize.transaction(async transaction => {
             const created = await DbAdapter.create(Post, {
@@ -376,7 +391,7 @@ async function createPost(req, res) {
                 user_id: DbAdapter.getId(req.user),
                 category: boardResult.board.slug,
                 board_id: boardResult.board.id,
-                studio_id: recruitmentResult.studioId,
+                studio_id: studioForumResult.studioId || recruitmentResult.studioId,
                 post_type: normalizedType,
                 tags,
                 cover,
@@ -416,6 +431,7 @@ async function getPosts(req, res) {
         const { page, pageSize, offset } = DbAdapter.parsePagination(req.query);
         const category = req.query.category || '';
         const boardId = Number(req.query.board_id || 0);
+        const studioId = Number(req.query.studio_id || 0);
         const keyword = req.query.keyword || '';
         const tag = String(req.query.tag || '').trim();
         const sortBy = req.query.sortBy || 'latest';
@@ -425,6 +441,7 @@ async function getPosts(req, res) {
         // 统一使用 'published' 状态
         const where = { status: 'published' };
         if (boardId > 0) where.board_id = boardId;
+        if (studioId > 0) where.studio_id = studioId;
         
         if (category === 'essence') {
             where.is_essence = true;

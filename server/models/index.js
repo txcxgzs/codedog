@@ -96,6 +96,7 @@ const Comment = sequelize.define('Comment', {
     post_id: { type: DataTypes.INTEGER },
     parent_id: { type: DataTypes.INTEGER },
     reply_to_user_id: { type: DataTypes.INTEGER },
+    legacy_studio_forum_reply_id: { type: DataTypes.INTEGER, allowNull: true, unique: true },
     like_count: { type: DataTypes.INTEGER, defaultValue: 0 },
     status: { type: DataTypes.ENUM('active', 'hidden', 'deleted'), defaultValue: 'active' }
 }, Object.assign({
@@ -124,6 +125,7 @@ const Post = sequelize.define('Post', {
     category: { type: DataTypes.STRING(50), defaultValue: 'discussion' },
     board_id: { type: DataTypes.INTEGER, allowNull: true },
     studio_id: { type: DataTypes.INTEGER, allowNull: true },
+    legacy_studio_forum_post_id: { type: DataTypes.INTEGER, allowNull: true, unique: true },
     post_type: { type: DataTypes.STRING(30), allowNull: false, defaultValue: 'discussion' },
     last_reply_at: { type: DataTypes.DATE, allowNull: true },
     last_reply_user_id: { type: DataTypes.INTEGER, allowNull: true },

@@ -17,6 +17,7 @@
         <div class="r-community--content">
           <div class="r-community--tabs">
             <span class="r-community--tabs_label">{{ activeBoard ? activeBoard.name : '全部帖子' }}</span>
+            <el-tag v-if="activeStudioId" closable type="warning" @close="clearStudioFilter">{{ activeStudioName || '指定工作室' }}</el-tag>
             <el-input v-model="searchKeyword" clearable placeholder="搜索标题、正文或标签" class="r-community--forum_search" @keyup.enter="handleSearch" @clear="handleSearch" />
             <el-tag v-if="activeTag" closable type="warning" @close="clearTag">#{{ activeTag }}</el-tag>
             <el-radio-group v-model="sortBy" @change="changeSort">
@@ -93,7 +94,6 @@
 
           <div class="r-community--side_card r-community--boards_card">
             <div class="r-community--side_heading"><h4 class="r-community--card_title">论坛版块</h4><button v-if="activeBoardId" @click="selectBoard(null)">查看全部</button></div>
-            <div class="r-community--board_row"><button class="r-community--board_item" @click="$router.push('/community/studios')"><span class="r-community--board_icon" style="background:#fff4d6;color:#c47c00">🏠</span><span><b>工作室论坛</b><small>查看所有工作室的公开板块</small></span><em>›</em></button></div>
             <div v-for="board in boards" :key="board.id" class="r-community--board_row">
               <button :class="['r-community--board_item', { active: Number(activeBoardId) === Number(board.id) }]" @click="selectBoard(board)">
                 <span class="r-community--board_icon" :style="{ background: `${board.color}18`, color: board.color }">{{ board.icon }}</span>
@@ -135,6 +135,12 @@
           <el-select v-model="postForm.board_id" placeholder="选择发布版块" style="width: 100%">
             <el-option v-for="board in boards" :key="board.id" :label="`${board.icon} ${board.name}`" :value="board.id" />
           </el-select>
+        </el-form-item>
+        <el-form-item v-if="selectedComposeBoard?.slug === 'studios'" label="工作室" prop="studio_id">
+          <el-select v-model="postForm.studio_id" placeholder="选择你已加入的工作室" style="width: 100%" :loading="myStudiosLoading">
+            <el-option v-for="studio in myStudios" :key="studio.id" :label="studio.name" :value="studio.id" />
+          </el-select>
+          <div v-if="!myStudiosLoading && !myStudios.length" class="r-community--studio_hint">你尚未加入任何工作室，暂时不能在此版块发帖。</div>
         </el-form-item>
         <el-form-item label="帖子类型" prop="post_type">
           <el-radio-group v-model="postForm.post_type">
@@ -215,6 +221,8 @@ import 'highlight.js/styles/github.css'
 import AppImage from '@/components/AppImage.vue'
 import WysiwygEditor from '@/components/WysiwygEditor.vue'
 import { uploadApi } from '@/api/upload'
+import { studioApi } from '@/api/studio'
+import { useRoute, useRouter } from 'vue-router'
 
 // 配置 marked
 marked.setOptions({
@@ -229,6 +237,8 @@ marked.setOptions({
 })
 
 const userStore = useUserStore()
+const route = useRoute()
+const router = useRouter()
 const loading = ref(false)
 const postLoading = ref(false)
 const communityAnnouncements = ref([])
@@ -260,6 +270,11 @@ const sortBy = ref('active')
 const searchKeyword = ref('')
 const activeTag = ref('')
 const activeBoard = computed(() => boards.value.find(board => Number(board.id) === Number(activeBoardId.value)) || null)
+const selectedComposeBoard = computed(() => boards.value.find(board => Number(board.id) === Number(postForm.board_id)) || null)
+const activeStudioId = ref(null)
+const myStudios = ref([])
+const myStudiosLoading = ref(false)
+const activeStudioName = computed(() => posts.value.find(post => Number(post.studio?.id) === Number(activeStudioId.value))?.studio?.name || '')
 const posts = ref([])
 const currentPage = ref(1)
 const pageSize = ref(10)
@@ -308,6 +323,7 @@ const postForm = reactive({
   title: '',
   content: '',
   board_id: null,
+  studio_id: null,
   post_type: 'discussion',
   cover: '',
   tags: ''
@@ -352,6 +368,7 @@ const fetchPosts = async () => {
       page: currentPage.value,
       pageSize: pageSize.value,
       board_id: activeBoardId.value || undefined,
+      studio_id: activeStudioId.value || undefined,
       sortBy: sortBy.value,
       keyword: searchKeyword.value.trim() || undefined,
       tag: activeTag.value || undefined
@@ -372,6 +389,11 @@ const loadBoards = async () => {
     const res = await postApi.getBoards()
     if (res.code === 200) {
       boards.value = Array.isArray(res.data) ? res.data : []
+      const requestedBoard = String(route.query.board || '')
+      const boardFromRoute = boards.value.find(board => board.slug === requestedBoard)
+      if (boardFromRoute) activeBoardId.value = boardFromRoute.id
+      const requestedStudio = Number(route.query.studio_id || 0)
+      activeStudioId.value = requestedStudio > 0 ? requestedStudio : null
       if (!postForm.board_id && boards.value.length) postForm.board_id = boards.value[0].id
     }
   } catch (e) {
@@ -381,8 +403,27 @@ const loadBoards = async () => {
 
 const selectBoard = (board) => {
   activeBoardId.value = board?.id || null
+  activeStudioId.value = null
+  router.replace({ query: board ? { board: board.slug } : {} })
   currentPage.value = 1
   fetchPosts()
+}
+
+const clearStudioFilter = () => {
+  activeStudioId.value = null
+  router.replace({ query: activeBoard.value ? { board: activeBoard.value.slug } : {} })
+  currentPage.value = 1
+  fetchPosts()
+}
+
+const loadMyStudios = async () => {
+  if (!userStore.isLoggedIn) return
+  myStudiosLoading.value = true
+  try {
+    const res = await studioApi.getMyStudios()
+    myStudios.value = (Array.isArray(res.data) ? res.data : []).filter(studio => studio.status === 'active' && studio.memberStatus === 'active')
+  } catch (e) { myStudios.value = [] }
+  finally { myStudiosLoading.value = false }
 }
 
 const selectTag = tag => {
@@ -455,6 +496,7 @@ const showPostDialog = async () => {
   postForm.title = ''
   postForm.content = ''
   postForm.board_id = activeBoardId.value || boards.value[0]?.id || null
+  postForm.studio_id = activeBoard.value?.slug === 'studios' ? (activeStudioId.value || myStudios.value[0]?.id || null) : null
   postForm.post_type = activeBoard.value?.slug === 'question'
     ? 'question'
     : activeBoard.value?.slug === 'tutorial' ? 'tutorial' : 'discussion'
@@ -473,6 +515,7 @@ const showPostDialog = async () => {
       postForm.title = draft.title || ''
       postForm.content = draft.content || ''
       postForm.board_id = draft.board_id || postForm.board_id
+      postForm.studio_id = activeBoard.value?.slug === 'studios' ? postForm.studio_id : null
       postForm.post_type = draft.post_type || 'discussion'
       postForm.cover = draft.cover || ''
       postForm.tags = Array.isArray(draft.tags) ? draft.tags.join(', ') : ''
@@ -522,6 +565,10 @@ const requestCloseComposer = () => confirmCloseComposer(() => { postDialogVisibl
 const createPost = async () => {
   const valid = await postFormRef.value.validate().catch(() => false)
   if (!valid) return
+  if (selectedComposeBoard.value?.slug === 'studios' && !postForm.studio_id) {
+    ElMessage.error('请选择要发布到的工作室')
+    return
+  }
 
   // 封面 URL 校验：如填写则必须以 http:// 或 https:// 开头
   if (postForm.cover && !/^https?:\/\//i.test(postForm.cover)) {
@@ -576,6 +623,7 @@ onMounted(async () => {
   loadCommunityAnnouncements()
   loadForumLeaderboard()
   await loadBoards()
+  await loadMyStudios()
   fetchPosts()
   fetchGeetestConfig()
 })

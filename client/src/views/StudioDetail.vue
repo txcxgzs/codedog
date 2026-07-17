@@ -98,7 +98,7 @@
         </el-tab-pane>
         
         <el-tab-pane label="工作室论坛" name="forum">
-          <div class="r-studio-detail--forum_portal"><span>论</span><div><h2>{{ studio?.name }}论坛已并入主论坛</h2><p>主题会出现在主论坛的“工作室论坛”板块，所有人可浏览，工作室成员可发帖和回复。</p></div><el-button type="primary" @click="$router.push(`/community/studios?studio_id=${studio.id}`)">进入工作室论坛</el-button></div>
+          <div class="r-studio-detail--forum_portal"><span>论</span><div><h2>{{ studio?.name }}论坛</h2><p>这是主论坛“工作室论坛”版块的一部分，使用与主论坛完全相同的发帖、编辑和回复功能。</p></div><el-button type="primary" @click="$router.push(`/community?board=studios&studio_id=${studio.id}`)">进入论坛版块</el-button></div>
         </el-tab-pane>
 
         <el-tab-pane label="成员" name="members">
@@ -299,12 +299,6 @@
       <template #footer><el-button @click="blacklistCreateVisible=false">取消</el-button><el-button type="danger" @click="handleAddBlacklist">确认加入黑名单</el-button></template>
     </el-dialog>
 
-    <el-dialog v-model="forumPostDialogVisible" title="发布工作室论坛主题" width="min(760px, 94vw)" class="r-studio-detail--forum_compose" :close-on-click-modal="false">
-      <div class="r-studio-detail--forum_compose_note"><span>论</span><div><b>发布到 {{ studio?.name }}论坛</b><small>主题对所有访客公开，只有工作室成员可以回复。</small></div></div>
-      <el-form label-position="top"><el-form-item label="主题标题"><el-input v-model="forumPostForm.title" maxlength="200" show-word-limit placeholder="用一句清楚的话概括讨论主题" /></el-form-item><el-form-item label="主题内容"><el-input v-model="forumPostForm.content" type="textarea" :rows="10" maxlength="20000" show-word-limit placeholder="补充背景、想法、进度或希望成员一起讨论的问题…" /></el-form-item></el-form>
-      <template #footer><el-button @click="forumPostDialogVisible = false">取消</el-button><el-button type="primary" @click="handleCreateForumPost">发布主题</el-button></template>
-    </el-dialog>
-    
     <el-dialog v-model="submitWorkDialogVisible" title="投稿作品" width="600px">
       <div class="r-studio-detail--my_works" v-loading="myWorksLoading">
         <template v-if="myWorks.length > 0">
@@ -347,19 +341,6 @@ const studio = ref(null)
 const members = ref([])
 const works = ref([])
 const announcements = ref([])
-const forumPosts = ref([])
-const forumSearch = ref('')
-const selectedForumPost = ref(null)
-const forumLoading = ref(false)
-const forumPostDialogVisible = ref(false)
-const forumPostForm = reactive({ title: '', content: '' })
-const forumReplyText = ref('')
-const filteredForumPosts = computed(() => {
-  const keyword = forumSearch.value.trim().toLowerCase()
-  if (!keyword) return forumPosts.value
-  return forumPosts.value.filter(item => `${item.title || ''} ${item.content || ''} ${item.author?.nickname || ''} ${item.author?.username || ''}`.toLowerCase().includes(keyword))
-})
-const totalForumReplies = computed(() => forumPosts.value.reduce((sum, item) => sum + Number(item.reply_count || 0), 0))
 const userRole = ref(null)
 const userMemberStatus = ref(null)
 const joinBlockedReason = ref(null)
@@ -523,7 +504,6 @@ const fetchStudio = async () => {
         studioApi.getCapabilities(route.params.id).then(result => { if (result.code === 200) capabilities.value = result.data.permissions || [] }).catch(() => {})
       } else capabilities.value = []
       studioApi.getAnnouncements(route.params.id).then(result => { if (result.code === 200) announcements.value = result.data || [] }).catch(() => {})
-      fetchForumPosts()
     } else {
       ElMessage.error(res.msg || '获取工作室失败')
     }
@@ -543,9 +523,6 @@ const resetState = () => {
   userMemberStatus.value = null
   activeTab.value = 'works'
   worksPage.value = 1
-  forumPosts.value = []
-  forumSearch.value = ''
-  selectedForumPost.value = null
 }
 
 // 监听路由参数变化（在不同工作室间跳转时重新加载数据）
@@ -571,40 +548,6 @@ const canManageWork = (studioWork) => {
   return can('work_manage') || (studioWork.submitUser?.id === userStore.user.id && userRole.value === 'admin')
 }
 
-const fetchForumPosts = async () => {
-  forumLoading.value = true
-  try { const res = await studioApi.getForumPosts(route.params.id); if (res.code === 200) forumPosts.value = res.data?.list || [] } catch { forumPosts.value = [] }
-  finally { forumLoading.value = false }
-}
-const openForumPost = async postId => {
-  forumLoading.value = true
-  try { const res = await studioApi.getForumPost(route.params.id, postId); if (res.code === 200) selectedForumPost.value = res.data } catch (e) { ElMessage.error(e.response?.data?.msg || '加载主题失败') }
-  finally { forumLoading.value = false }
-}
-const closeForumPost = () => { selectedForumPost.value = null; forumReplyText.value = ''; fetchForumPosts() }
-const handleCreateForumPost = async () => {
-  if (forumPostForm.title.trim().length < 2 || forumPostForm.content.trim().length < 2) return ElMessage.warning('标题和内容至少填写 2 个字')
-  const geetestData = await verifyScene('studio_management'); if (!geetestData) return
-  try { const res = await studioApi.createForumPost(route.params.id, { title: forumPostForm.title.trim(), content: forumPostForm.content.trim(), ...geetestData }); if (res.code === 200) { forumPostDialogVisible.value = false; forumPostForm.title = ''; forumPostForm.content = ''; await fetchForumPosts(); await openForumPost(res.data.id) } } catch (e) { ElMessage.error(e.response?.data?.msg || '发布主题失败') }
-}
-const handleCreateForumReply = async () => {
-  if (!forumReplyText.value.trim()) return ElMessage.warning('请输入回复内容')
-  const geetestData = await verifyScene('studio_management'); if (!geetestData) return
-  try { const res = await studioApi.createForumReply(route.params.id, selectedForumPost.value.id, { content: forumReplyText.value.trim(), ...geetestData }); if (res.code === 200) { forumReplyText.value = ''; await openForumPost(selectedForumPost.value.id) } } catch (e) { ElMessage.error(e.response?.data?.msg || '发布回复失败') }
-}
-const handleForumState = async values => {
-  const geetestData = await verifyScene('studio_management'); if (!geetestData) return
-  try { const res = await studioApi.updateForumPostState(route.params.id, selectedForumPost.value.id, { ...values, ...geetestData }); if (res.code === 200) await openForumPost(selectedForumPost.value.id) } catch (e) { ElMessage.error(e.response?.data?.msg || '更新主题失败') }
-}
-const handleDeleteForumPost = async () => {
-  try { await ElMessageBox.confirm('删除后主题不会再对外显示，确定继续吗？', '删除主题', { type: 'warning' }) } catch { return }
-  const geetestData = await verifyScene('studio_management'); if (!geetestData) return
-  try { const res = await studioApi.deleteForumPost(route.params.id, selectedForumPost.value.id, geetestData); if (res.code === 200) { ElMessage.success(res.msg); closeForumPost() } } catch (e) { ElMessage.error(e.response?.data?.msg || '删除主题失败') }
-}
-const handleDeleteForumReply = async reply => {
-  const geetestData = await verifyScene('studio_management'); if (!geetestData) return
-  try { const res = await studioApi.deleteForumReply(route.params.id, selectedForumPost.value.id, reply.id, geetestData); if (res.code === 200) await openForumPost(selectedForumPost.value.id) } catch (e) { ElMessage.error(e.response?.data?.msg || '删除回复失败') }
-}
 
 const handleWorkAction = (action, studioWork) => {
   if (action === 'up' || action === 'down') {

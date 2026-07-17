@@ -1,5 +1,5 @@
 const DbAdapter = require('../utils/dbAdapter');
-const { Comment, User, Work, Post, Studio, Notification, PostSubscription, sequelize } = require('../models');
+const { Comment, User, Work, Post, Studio, StudioMember, Notification, PostSubscription, sequelize } = require('../models');
 const { successResponse, errorResponse, paginateResponse } = require('../middleware/response');
 const { isRoleAtLeast, canManageUser } = require('../config/permissions');
 // H12: 引入内容审核服务，落库前做敏感词检查
@@ -129,6 +129,13 @@ async function createComment(req, res) {
         const post = hasPostTarget ? await resolvePublishedPost(post_id) : null;
         if ((hasWorkTarget && !work) || (hasPostTarget && !post)) {
             return errorResponse(res, 'Comment target not found', 404);
+        }
+        if (post?.studio_id && post.category === 'studios') {
+            const membership = await StudioMember.findOne({
+                where: { studio_id: post.studio_id, user_id: DbAdapter.getId(req.user), status: 'active' },
+                attributes: ['id']
+            });
+            if (!membership) return errorResponse(res, '只有该工作室的正式成员可以回复此主题', 403);
         }
         if (post?.is_locked && !['moderator', 'admin', 'superadmin'].includes(req.user.role)) {
             return errorResponse(res, '该帖子已锁定，不能继续回复', 403);

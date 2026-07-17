@@ -96,13 +96,5 @@ export const studioApi = {
   updateWorkDisplay(id, workId, data) { return request.put(`/studios/${id}/works/${workId}/display`, data) },
   getBlacklist(id) { return request.get(`/studios/${id}/blacklist`) },
   addBlacklist(id, data) { return request.post(`/studios/${id}/blacklist`, data) },
-  removeBlacklist(id, blacklistId, data = {}) { return request.delete(`/studios/${id}/blacklist/${blacklistId}`, { data }) },
-  getForumPosts(id, params = {}) { return request.get(`/studios/${id}/forum`, { params }) },
-  getAllForumPosts(params = {}) { return request.get('/studios/forum/all', { params }) },
-  getForumPost(id, postId) { return request.get(`/studios/${id}/forum/${postId}`) },
-  createForumPost(id, data) { return request.post(`/studios/${id}/forum`, data) },
-  createForumReply(id, postId, data) { return request.post(`/studios/${id}/forum/${postId}/replies`, data) },
-  updateForumPostState(id, postId, data) { return request.put(`/studios/${id}/forum/${postId}/state`, data) },
-  deleteForumPost(id, postId, data = {}) { return request.delete(`/studios/${id}/forum/${postId}`, { data }) },
-  deleteForumReply(id, postId, replyId, data = {}) { return request.delete(`/studios/${id}/forum/${postId}/replies/${replyId}`, { data }) }
+  removeBlacklist(id, blacklistId, data = {}) { return request.delete(`/studios/${id}/blacklist/${blacklistId}`, { data }) }
 }

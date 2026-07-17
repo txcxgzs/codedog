@@ -9,7 +9,7 @@
             <el-tag v-if="post.post_type === 'question'" :type="post.accepted_comment_id ? 'success' : 'warning'" size="small">{{ post.accepted_comment_id ? '已解决' : '待解决' }}</el-tag>
             <el-tag v-if="post.is_locked" type="info" size="small">已锁定</el-tag>
           </div>
-          <router-link v-if="post.studio" :to="`/studio/${post.studio.id}`" class="r-post--studio_recruitment">🏠 {{ post.studio.name }} 正在招募 · {{ post.studio.member_count }}/{{ post.studio.member_limit }} 人</router-link>
+          <router-link v-if="post.studio" :to="`/studio/${post.studio.id}`" class="r-post--studio_recruitment">🏠 {{ post.studio.name }} · {{ post.board?.slug === 'studios' ? '工作室论坛主题' : `正在招募 · ${post.studio.member_count}/${post.studio.member_limit} 人` }}</router-link>
           <h1 class="r-post--title">{{ post.title }}</h1>
           <div class="r-post--meta">
             <span class="r-post--author_link" role="link" tabindex="0" @click="goToAuthor" @keydown.enter="goToAuthor">

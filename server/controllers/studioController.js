@@ -620,7 +620,8 @@ async function getMyStudios(req, res) {
         
         const studios = memberships.map(m => ({
             ...m.studio.toJSON(),
-            memberRole: m.role
+            memberRole: m.role,
+            memberStatus: m.status
         }));
         
         return successResponse(res, studios);

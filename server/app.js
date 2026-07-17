@@ -354,6 +354,8 @@ async function startServer() {
             // 成熟论坛基础字段。旧数据全部保留，board_id 在 sync 后按原 category 回填。
             await ensureColumn('posts', 'board_id', { sqlite: 'INTEGER', mysql: 'INT NULL' });
             await ensureColumn('posts', 'studio_id', { sqlite: 'INTEGER', mysql: 'INT NULL' });
+            await ensureColumn('posts', 'legacy_studio_forum_post_id', { sqlite: 'INTEGER', mysql: 'INT NULL' });
+            await ensureColumn('comments', 'legacy_studio_forum_reply_id', { sqlite: 'INTEGER', mysql: 'INT NULL' });
             await ensureColumn('posts', 'post_type', { sqlite: "VARCHAR(30) NOT NULL DEFAULT 'discussion'", mysql: "VARCHAR(30) NOT NULL DEFAULT 'discussion'" });
             await ensureColumn('posts', 'last_reply_at', { sqlite: 'DATETIME', mysql: 'DATETIME NULL' });
             await ensureColumn('posts', 'last_reply_user_id', { sqlite: 'INTEGER', mysql: 'INT NULL' });
@@ -465,15 +467,39 @@ async function startServer() {
 
         // 论坛默认版块采用幂等种子：重复启动或智能更新不会覆盖管理员后续修改。
         try {
-            const { ForumBoard } = require('./models');
+            const { ForumBoard, Post, Comment, StudioForumPost, StudioForumReply } = require('./models');
             const defaultBoards = [
                 { slug: 'discussion', name: '交流讨论', description: '讨论编程、创作与社区话题', icon: '💬', color: '#fec433', sort_order: 10 },
                 { slug: 'question', name: '问答互助', description: '提出问题，等待社区成员解答', icon: '❓', color: '#5b8def', sort_order: 20 },
                 { slug: 'share', name: '作品分享', description: '分享作品、经验、灵感与创作过程', icon: '✨', color: '#8b6ee8', sort_order: 30 },
                 { slug: 'tutorial', name: '教程知识', description: '发布教程、知识总结与学习资料', icon: '📚', color: '#37a56b', sort_order: 40 },
+                { slug: 'studios', name: '工作室论坛', description: '浏览各工作室的公开主题，工作室成员可参与讨论', icon: '🏠', color: '#c47c00', sort_order: 45 },
                 { slug: 'news', name: '官方公告', description: '编程狗官方动态与重要通知', icon: '📢', color: '#ef6a5b', sort_order: 50, allow_post_roles: ['admin', 'superadmin'] }
             ];
             for (const board of defaultBoards) await ForumBoard.findOrCreate({ where: { slug: board.slug }, defaults: board });
+            const studioBoard = await ForumBoard.findOne({ where: { slug: 'studios' } });
+            const legacyStudioPosts = await StudioForumPost.findAll({ where: { status: 'active' }, order: [['id', 'ASC']] });
+            for (const legacyPost of legacyStudioPosts) {
+                const [nativePost] = await Post.findOrCreate({
+                    where: { legacy_studio_forum_post_id: legacyPost.id },
+                    defaults: {
+                        title: legacyPost.title, content: legacyPost.content, user_id: legacyPost.user_id,
+                        category: 'studios', board_id: studioBoard.id, studio_id: legacyPost.studio_id,
+                        post_type: 'discussion', status: 'published', is_top: legacyPost.is_pinned,
+                        view_count: legacyPost.view_count, reply_count: legacyPost.reply_count,
+                        comment_count: legacyPost.reply_count, last_reply_at: legacyPost.last_reply_at || legacyPost.created_at,
+                        last_reply_user_id: legacyPost.user_id, participant_count: 1,
+                        created_at: legacyPost.created_at, updated_at: legacyPost.updated_at
+                    }
+                });
+                const legacyReplies = await StudioForumReply.findAll({ where: { post_id: legacyPost.id, status: 'active' }, order: [['id', 'ASC']] });
+                for (const legacyReply of legacyReplies) {
+                    await Comment.findOrCreate({
+                        where: { legacy_studio_forum_reply_id: legacyReply.id },
+                        defaults: { content: legacyReply.content, user_id: legacyReply.user_id, post_id: nativePost.id, status: 'active', created_at: legacyReply.created_at, updated_at: legacyReply.updated_at }
+                    });
+                }
+            }
             for (const board of defaultBoards) {
                 await sequelize.query('UPDATE posts SET board_id = (SELECT id FROM forum_boards WHERE slug = :slug), post_type = CASE WHEN category = :slug THEN :postType ELSE post_type END WHERE board_id IS NULL AND category = :slug', {
                     replacements: { slug: board.slug, postType: board.slug === 'question' ? 'question' : board.slug === 'tutorial' ? 'tutorial' : 'discussion' }
