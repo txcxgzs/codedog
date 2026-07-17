@@ -4,19 +4,47 @@ const cookie = require('cookie');
 const config = require('./config');
 const { consumeOnce } = require('./replayStore');
 const crypto = require('crypto');
+const net = require('net');
 const { assertAccountActive } = require('./accountStatus');
 const { setAccountState } = require('./replayStore');
 
+function normalizeIp(value) {
+  let ip = String(value || '').trim().toLowerCase().replace(/^"|"$/g, '').replace(/^::ffff:/, '');
+  if (ip.startsWith('[') && ip.includes(']')) ip = ip.slice(1, ip.indexOf(']'));
+  if (net.isIP(ip)) return ip;
+  const ipv4WithPort = ip.match(/^(\d{1,3}(?:\.\d{1,3}){3}):\d+$/);
+  return ipv4WithPort && net.isIP(ipv4WithPort[1]) ? ipv4WithPort[1] : '';
+}
+function ipv6Parts(ip) {
+  const halves = ip.split('::');
+  if (halves.length > 2) return null;
+  const left = halves[0] ? halves[0].split(':') : [];
+  const right = halves[1] ? halves[1].split(':') : [];
+  const missing = 8 - left.length - right.length;
+  if (missing < 0 || (halves.length === 1 && missing !== 0)) return null;
+  return [...left, ...Array(missing).fill('0'), ...right].map(part => part.padStart(4, '0'));
+}
+function networkKey(value) {
+  const ip = normalizeIp(value);
+  const family = net.isIP(ip);
+  if (family === 4) return `4:${ip.split('.').slice(0, 3).join('.')}`;
+  if (family === 6) {
+    const parts = ipv6Parts(ip);
+    return parts ? `6:${parts.slice(0, 4).join(':')}` : '';
+  }
+  return '';
+}
 function requestContext(req) {
   const header = name => String(req.headers?.[name] || '').trim().toLowerCase();
-  const normalizeIp = value => String(value || '').trim().toLowerCase().replace(/^::ffff:/, '');
   // Host Nginx, Cloudflare and the inner IM Nginx do not always expose the
   // same header as the first choice. Keep all independently supplied
   // candidates and require at least one to match the signed CodeDog hash.
   const ips = [...new Set([
     header('cf-connecting-ip'),
+    header('cf-connecting-ipv6'),
     header('true-client-ip'),
     ...header('x-forwarded-for').split(','),
+    ...header('x-original-forwarded-for').split(','),
     header('x-real-ip'),
     req.socket?.remoteAddress
   ].map(normalizeIp).filter(Boolean))];
@@ -32,11 +60,14 @@ function safeEqual(a, b) {
 }
 function contextMatchResult(req, payload) {
   const signedIpHashes = [...new Set([payload.client_ip_hash, ...(Array.isArray(payload.client_ip_hashes) ? payload.client_ip_hashes : [])].filter(Boolean))];
-  if (!payload.binding_nonce || !signedIpHashes.length || !payload.browser_hash) return { matches: false, ipMatches: false, browserMatches: false, candidateCount: 0 };
+  const signedNetworkHashes = [...new Set(Array.isArray(payload.client_network_hashes) ? payload.client_network_hashes.filter(Boolean) : [])];
+  if (!payload.binding_nonce || (!signedIpHashes.length && !signedNetworkHashes.length) || !payload.browser_hash) return { matches: false, ipMatches: false, browserMatches: false, candidateCount: 0, matchType: 'none' };
   const context = requestContext(req);
-  const ipMatches = context.ips.some(ip => signedIpHashes.some(hash => safeEqual(hash, boundHash(payload.binding_nonce, ip))));
+  const exactMatch = context.ips.some(ip => signedIpHashes.some(hash => safeEqual(hash, boundHash(payload.binding_nonce, ip))));
+  const networkMatch = context.ips.map(networkKey).filter(Boolean).some(network => signedNetworkHashes.some(hash => safeEqual(hash, boundHash(payload.binding_nonce, network))));
+  const ipMatches = exactMatch || networkMatch;
   const browserMatches = safeEqual(payload.browser_hash, boundHash(payload.binding_nonce, context.browser));
-  return { matches: ipMatches && browserMatches, ipMatches, browserMatches, candidateCount: context.ips.length };
+  return { matches: ipMatches && browserMatches, ipMatches, browserMatches, candidateCount: context.ips.length, matchType: exactMatch ? 'exact' : networkMatch ? 'network' : 'none' };
 }
 function contextMatches(req, payload) { return contextMatchResult(req, payload).matches; }
 
@@ -62,8 +93,8 @@ async function exchangeTicket(ticket, req) {
     const mismatch = [!match.ipMatches && '网络地址', !match.browserMatches && '浏览器标识'].filter(Boolean).join('、') || '登录环境';
     const error = new Error(`${mismatch}校验不一致，请从编程狗重新进入`);
     error.statusCode = 403;
-    error.publicData = { diagnostic_id: diagnosticId, ip_match: match.ipMatches, browser_match: match.browserMatches, ip_candidates: match.candidateCount };
-    console.warn(`[IM SSO ${diagnosticId}] binding mismatch ip=${match.ipMatches} browser=${match.browserMatches} candidates=${match.candidateCount}`);
+    error.publicData = { diagnostic_id: diagnosticId, ip_match: match.ipMatches, browser_match: match.browserMatches, ip_candidates: match.candidateCount, network_match_type: match.matchType };
+    console.warn(`[IM SSO ${diagnosticId}] binding mismatch ip=${match.ipMatches} browser=${match.browserMatches} candidates=${match.candidateCount} match=${match.matchType}`);
     throw error;
   }
   if (!await consumeOnce(payload.jti, payload.exp * 1000)) {
@@ -77,7 +108,7 @@ async function exchangeTicket(ticket, req) {
     role: payload.role, token_version: payload.token_version || 0,
     community_url: payload.community_url || '', community_status_url: payload.community_status_url || '',
     status_token: payload.status_token || '', binding_nonce: payload.binding_nonce,
-    client_ip_hash: payload.client_ip_hash, client_ip_hashes: payload.client_ip_hashes || [payload.client_ip_hash], browser_hash: payload.browser_hash
+    client_ip_hash: payload.client_ip_hash, client_ip_hashes: payload.client_ip_hashes || [payload.client_ip_hash], client_network_hashes: payload.client_network_hashes || [], browser_hash: payload.browser_hash
   };
   await setAccountState(user.id, { status: payload.status || 'active', role: user.role, token_version: user.token_version, updated_at: Date.now() });
   const session = jwt.sign({ ...user, type: 'im_session' }, config.sessionSecret, {
@@ -105,4 +136,4 @@ async function requireSession(req, res, next) {
   catch (error) { return res.status(error.statusCode || 401).json({ code: error.statusCode || 401, msg: error.message, data: null }); }
 }
 
-module.exports = { exchangeTicket, parseSession, requireSession };
+module.exports = { exchangeTicket, parseSession, requireSession, _test: { normalizeIp, networkKey, boundHash, contextMatchResult } };

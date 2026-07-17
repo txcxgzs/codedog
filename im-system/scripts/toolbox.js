@@ -57,30 +57,64 @@ const actions = {
   '10': backupDatabase,
   '11': installGlobalCommand
 };
-async function main() {
-  if (process.argv[2]) { const action = actions[process.argv[2]]; if (!action) throw new Error('未知操作'); return action(); }
-  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+const menuItems = [
+  ['1', '构建并启动'], ['2', '停止'], ['3', '重启'], ['4', '智能更新'],
+  ['5', '查看日志'], ['6', '状态'], ['7', '检查与构建'], ['8', '生成 SSO 密钥'],
+  ['9', '安装依赖'], ['10', '备份 MySQL'], ['11', '安装/修复全局 codedogim 命令'], ['0', '退出']
+];
+
+function renderMenu() {
   clearScreen();
   console.log(color('cyan', color('bold', '======================================')));
   console.log(color('yellow', color('bold', '  CodeDog IM 管理工具箱 v0.1.0')));
   console.log(color('cyan', color('bold', '======================================')));
-  console.log([
-    ['1', '构建并启动'], ['2', '停止'], ['3', '重启'], ['4', '智能更新'],
-    ['5', '查看日志'], ['6', '状态'], ['7', '检查与构建'], ['8', '生成 SSO 密钥'],
-    ['9', '安装依赖'], ['10', '备份 MySQL'], ['11', '安装/修复全局 codedogim 命令'], ['0', '退出']
-  ].map(([number, label]) => `${color('yellow', number.padStart(2))}. ${label}`).join('\n'));
-  rl.question(color('cyan', '\n请选择操作 [0-11]: '), answer => {
-    rl.close();
-    if (answer === '0') return;
-    const action = actions[answer];
-    if (!action) {
-      console.error(color('red', '✗ 无效操作，请输入 0-11'));
-      process.exitCode = 1;
-      return;
+  console.log(menuItems.map(([number, label]) => `${color('yellow', number.padStart(2))}. ${label}`).join('\n'));
+}
+
+function ask(rl, prompt) {
+  return new Promise(resolve => rl.question(prompt, answer => resolve(String(answer || '').trim())));
+}
+
+async function main() {
+  if (process.argv[2]) {
+    const action = actions[process.argv[2]];
+    if (!action) throw new Error('未知操作');
+    if (process.argv[2] === '2' && !process.argv.includes('--yes')) throw new Error('停止服务是危险操作，请交互运行 codedogim，或明确使用 codedogim 2 --yes');
+    return action();
+  }
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    while (true) {
+      renderMenu();
+      const answer = await ask(rl, color('cyan', '\n请选择操作 [0-11]: '));
+      if (answer === '0') break;
+      if (answer === '2') {
+        console.log(color('red', '\n警告：停止会让 IM 网页、消息服务、容器内 MySQL 和 Redis 一并停止。'));
+        const confirmation = await ask(rl, color('yellow', '确认停止请输入 STOP，其他输入均取消: '));
+        if (confirmation !== 'STOP') {
+          console.log(color('cyan', '\n已取消停止操作。'));
+          await ask(rl, color('dim', '按 Enter 返回主菜单...'));
+          continue;
+        }
+      }
+      const action = actions[answer];
+      if (!action) {
+        console.error(color('red', '\n✗ 无效操作，请输入 0-11'));
+        await ask(rl, color('dim', '按 Enter 返回主菜单...'));
+        continue;
+      }
+      try {
+        await Promise.resolve().then(action);
+        console.log(color('green', '\n✓ 操作执行完成'));
+      } catch (error) {
+        console.error(color('red', `\n✗ ${error.message}`));
+      }
+      await ask(rl, color('dim', '\n按 Enter 返回主菜单（输入 0 只在主菜单退出）...'));
     }
-    Promise.resolve().then(action)
-      .then(() => console.log(color('green', '\n✓ 操作执行完成')))
-      .catch(error => { console.error(color('red', `\n✗ ${error.message}`)); process.exitCode = 1; });
-  });
+  } finally {
+    rl.close();
+    clearScreen();
+    console.log(color('green', '已退出 CodeDog IM 管理工具箱。'));
+  }
 }
 main().catch(error => { console.error(color('red', `✗ ${error.message}`)); process.exit(1); });

@@ -222,7 +222,8 @@ async function createComment(req, res) {
         if (post && isVisible) {
             const participantCount = await Comment.count({ where: { post_id: localPostId, status: 'active' }, distinct: true, col: 'user_id' });
             await DbAdapter.update(Post, { participant_count: Math.max(1, participantCount + (await Comment.count({ where: { post_id: localPostId, status: 'active', user_id: post.user_id } }) ? 0 : 1)) }, { where: { id: localPostId } });
-            await PostSubscription.findOrCreate({ where: { post_id: localPostId, user_id: DbAdapter.getId(req.user) }, defaults: { notify: true } });
+            // 发表评论不等于订阅整帖。只有用户主动点击“订阅回复”时才创建
+            // PostSubscription，避免评论后按钮无提示地变成“已订阅回复”。
         }
 
         // 通知创建放在事务外,失败不影响评论落库

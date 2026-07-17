@@ -53,6 +53,9 @@ check(authMiddleware.includes('role: user.role'), 'auth middleware should use th
 const requestApi = read('client/src/api/request.js');
 check(requestApi.includes('error.response.data?.errorCode'), 'client request interceptor should read response.errorCode.');
 
+const commentSubscriptionController = read('server/controllers/commentController.js');
+check(!commentSubscriptionController.includes('PostSubscription.findOrCreate'), 'posting a comment must not silently subscribe the user to all topic replies.');
+
 const router = read('client/src/router/index.js');
 check(router.includes("path: '/register'") && router.includes("redirect: '/login'"), 'register route should redirect to login.');
 
