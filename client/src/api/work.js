@@ -16,6 +16,10 @@ export const workApi = {
   getFeatured() {
     return request.get('/works/featured')
   },
+
+  getSidebarRecommended() {
+    return request.get('/works/sidebar-recommended')
+  },
   
   getById(codemaoId) {
     return request.get(`/works/${codemaoId}`)

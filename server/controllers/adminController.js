@@ -1139,7 +1139,7 @@ async function getWorks(req, res) {
 async function updateWork(req, res) {
     try {
         const { workId } = req.params;
-        const { name, preview, type, ide_type, view_times, praise_times, collection_times, status, is_featured, _reason } = req.body;
+        const { name, preview, type, ide_type, view_times, praise_times, collection_times, status, is_featured, is_sidebar_recommended, sidebar_sort_order, _reason } = req.body;
 
         const work = await DbAdapter.findByPk(Work, workId);
         if (!work) {
@@ -1187,6 +1187,8 @@ async function updateWork(req, res) {
         if (collection_times !== undefined) updateData.collection_times = Math.max(0, parseInt(collection_times, 10) || 0);
         if (status !== undefined && VALID_WORK_STATUSES.includes(status)) updateData.status = status;
         if (is_featured !== undefined) updateData.is_featured = is_featured;
+        if (is_sidebar_recommended !== undefined) updateData.is_sidebar_recommended = Boolean(is_sidebar_recommended);
+        if (sidebar_sort_order !== undefined) updateData.sidebar_sort_order = Math.max(-9999, Math.min(9999, parseInt(sidebar_sort_order, 10) || 0));
 
         await DbAdapter.update(Work, updateData, { where: { id: workId } });
         logOperation(req, 'update_work', 'work', workId, {
@@ -1201,7 +1203,9 @@ async function updateWork(req, res) {
                 praise_times: work.praise_times,
                 collection_times: work.collection_times,
                 status: work.status,
-                is_featured: work.is_featured
+                is_featured: work.is_featured,
+                is_sidebar_recommended: work.is_sidebar_recommended,
+                sidebar_sort_order: work.sidebar_sort_order
             }
         });
 

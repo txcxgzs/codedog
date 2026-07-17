@@ -575,6 +575,31 @@ async function getFeaturedWorks(req, res) {
 }
 
 /**
+ * 获取首页右侧磁吸推荐。仅返回后台明确启用且已发布的作品。
+ */
+async function getSidebarRecommendedWorks(req, res) {
+    try {
+        const works = await DbAdapter.findAll(Work, {
+            where: {
+                status: 'published',
+                is_sidebar_recommended: true
+            },
+            include: [{
+                model: User,
+                as: 'author',
+                attributes: ['id', 'codemao_user_id', 'username', 'nickname', 'avatar']
+            }],
+            order: [['sidebar_sort_order', 'DESC'], ['updated_at', 'DESC']],
+            limit: 8
+        });
+        return successResponse(res, works);
+    } catch (error) {
+        console.error('获取右侧推荐作品错误:', error);
+        return errorResponse(res, '获取右侧推荐作品失败', 500);
+    }
+}
+
+/**
  * 从编程猫获取热门作品
  */
 async function getHotWorksFromCodemao() {
@@ -1041,6 +1066,7 @@ module.exports = {
     getWorkByCodemaoId,
     importWork,
     getFeaturedWorks,
+    getSidebarRecommendedWorks,
     getMyWorks,
     getUserWorks,
     likeWork,

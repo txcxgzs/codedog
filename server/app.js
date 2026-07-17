@@ -371,6 +371,8 @@ async function startServer() {
             // 主题关注的轻量未读游标。打开主题时更新时间，不保存逐条已读回执。
             await ensureColumn('post_subscriptions', 'last_read_at', { sqlite: 'DATETIME', mysql: 'DATETIME NULL' });
             await ensureColumn('forum_boards', 'studio_recruitment_only', { sqlite: 'INTEGER NOT NULL DEFAULT 0', mysql: 'TINYINT(1) NOT NULL DEFAULT 0' });
+            await ensureColumn('works', 'is_sidebar_recommended', { sqlite: 'INTEGER NOT NULL DEFAULT 0', mysql: 'TINYINT(1) NOT NULL DEFAULT 0' });
+            await ensureColumn('works', 'sidebar_sort_order', { sqlite: 'INTEGER NOT NULL DEFAULT 0', mysql: 'INT NOT NULL DEFAULT 0' });
 
             // Banner 表新增字段
             await ensureColumn('banners', 'source', { sqlite: 'VARCHAR(20)', mysql: 'VARCHAR(20) NULL' });

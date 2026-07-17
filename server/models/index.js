@@ -77,7 +77,9 @@ const Work = sequelize.define('Work', {
     comment_count: { type: DataTypes.INTEGER, defaultValue: 0 },
     // 新增 'hidden' 状态：管理员可隐藏作品(从前台和列表移除,数据保留),与 deleted 区分
     status: { type: DataTypes.ENUM('pending', 'published', 'rejected', 'hidden', 'deleted'), defaultValue: 'published' },
-    is_featured: { type: DataTypes.BOOLEAN, defaultValue: false }
+    is_featured: { type: DataTypes.BOOLEAN, defaultValue: false },
+    is_sidebar_recommended: { type: DataTypes.BOOLEAN, defaultValue: false },
+    sidebar_sort_order: { type: DataTypes.INTEGER, defaultValue: 0 }
 }, Object.assign({
     tableName: 'works',
     // M21: 高频查询字段索引（status/user_id/created_at）

@@ -191,6 +191,11 @@
           :class="{ 'is-magnetized': magnetActive }"
           :aria-hidden="!magnetActive"
         >
+          <div class="r-home--magnet_heading">
+            <span></span>
+            <b>更多推荐</b>
+            <i></i>
+          </div>
           <a
             v-for="(work, index) in magnetWorks"
             :key="work.id"
@@ -243,6 +248,7 @@ const announcements = ref([])
 const featuredWorks = ref([])
 const latestWorks = ref([])
 const hotWorks = ref([])
+const sidebarRecommendedWorks = ref([])
 const activeUsers = ref([])
 const featuredPosts = ref([])
 const magnetSentinel = ref(null)
@@ -253,7 +259,7 @@ const importantPosts = ref([])
 const loadingFeatured = ref(false)
 const loadingLatest = ref(false)
 const loadingHot = ref(false)
-const magnetWorks = computed(() => hotWorks.value.slice(0, 4))
+const magnetWorks = computed(() => (sidebarRecommendedWorks.value.length ? sidebarRecommendedWorks.value : hotWorks.value).slice(0, 8))
 
 const syncMagnetDock = () => {
   if (magnetFrame) return
@@ -350,7 +356,11 @@ onMounted(async () => {
 
     workApi.getList({ page: 1, pageSize: 15, sortBy: 'popular' }).then(res => {
       if (res.code === 200) hotWorks.value = res.data.list
-    }).catch(() => {}).finally(() => { loadingHot.value = false })
+    }).catch(() => {}).finally(() => { loadingHot.value = false }),
+
+    workApi.getSidebarRecommended().then(res => {
+      if (res.code === 200) sidebarRecommendedWorks.value = res.data || []
+    }).catch(() => {})
   ])
 })
 
@@ -485,6 +495,37 @@ $border-color: #eee;
   pointer-events: none;
 }
 
+.r-home--magnet_heading {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 0 4px 3px;
+  opacity: 0;
+  transform: translate3d(120px, 0, 0);
+  transition: transform 460ms cubic-bezier(.18, .86, .22, 1.12), opacity 220ms ease;
+
+  span {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #fec433;
+    box-shadow: 0 0 0 5px rgba(254, 196, 51, .17);
+  }
+
+  b {
+    color: #202838;
+    font-size: 17px;
+    font-weight: 850;
+    letter-spacing: .04em;
+  }
+
+  i {
+    height: 1px;
+    flex: 1;
+    background: linear-gradient(90deg, rgba(254, 196, 51, .7), transparent);
+  }
+}
+
 .r-home--magnet_work {
   display: grid;
   grid-template-columns: 92px minmax(0, 1fr);
@@ -515,6 +556,11 @@ $border-color: #eee;
 
 .r-home--magnet_dock.is-magnetized {
   pointer-events: auto;
+
+  .r-home--magnet_heading {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
 
   .r-home--magnet_work {
     opacity: 1;

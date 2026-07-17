@@ -36,6 +36,7 @@ router.get('/', workController.getWorks);
 
 // 获取推荐作品（只读，加限流防滥用）
 router.get('/featured', apiRateLimit, workController.getFeaturedWorks);
+router.get('/sidebar-recommended', apiRateLimit, workController.getSidebarRecommendedWorks);
 
 // 获取我的作品（需要登录）
 router.get('/my', authMiddleware, workController.getMyWorks);

@@ -582,6 +582,13 @@
                 </el-tag>
               </template>
             </el-table-column>
+            <el-table-column prop="is_sidebar_recommended" label="右栏" width="90">
+              <template #default="{ row }">
+                <el-tag :type="row.is_sidebar_recommended ? 'success' : 'info'" size="small">
+                  {{ row.is_sidebar_recommended ? `推荐 ${row.sidebar_sort_order || 0}` : '关闭' }}
+                </el-tag>
+              </template>
+            </el-table-column>
             <el-table-column prop="status" label="状态" width="100">
               <template #default="{ row }">
                 <el-tag :type="row.status === 'published' ? 'success' : row.status === 'hidden' ? 'warning' : row.status === 'deleted' ? 'danger' : 'info'" size="small">
@@ -624,6 +631,7 @@
                   <div style="display: flex; gap: 8px; flex-wrap: wrap;">
                     <el-tag>{{ getTypeName(workDetail.type) }}</el-tag>
                     <el-tag :type="workDetail.is_featured ? 'warning' : 'info'">{{ workDetail.is_featured ? '已精选' : '未精选' }}</el-tag>
+                    <el-tag :type="workDetail.is_sidebar_recommended ? 'success' : 'info'">{{ workDetail.is_sidebar_recommended ? `右栏推荐 · 顺序 ${workDetail.sidebar_sort_order || 0}` : '未加入右栏' }}</el-tag>
                     <el-tag :type="workDetail.status === 'published' ? 'success' : workDetail.status === 'hidden' ? 'warning' : 'info'">{{ workDetail.status === 'published' ? '已发布' : workDetail.status === 'hidden' ? '已隐藏' : workDetail.status === 'deleted' ? '已删除' : workDetail.status === 'pending' ? '待审核' : workDetail.status === 'rejected' ? '已驳回' : workDetail.status }}</el-tag>
                   </div>
                 </div>
@@ -717,7 +725,12 @@
                     </el-select>
                   </el-form-item></el-col>
                   <el-col :span="8"><el-form-item label="精选"><el-switch v-model="workEditForm.is_featured" /></el-form-item></el-col>
+                  <el-col :span="8"><el-form-item label="右栏推荐"><el-switch v-model="workEditForm.is_sidebar_recommended" /></el-form-item></el-col>
                 </el-row>
+                <el-form-item v-if="workEditForm.is_sidebar_recommended" label="右栏顺序">
+                  <el-input-number v-model="workEditForm.sidebar_sort_order" :min="-9999" :max="9999" />
+                  <span style="margin-left: 10px; color: #999; font-size: 12px;">数值越大越靠前，最多展示 8 个</span>
+                </el-form-item>
                 <el-form-item label="修改原因">
                   <el-input v-model="workEditReason" type="textarea" :rows="2" placeholder="请简要说明修改原因（会记录到操作日志）" />
                 </el-form-item>
@@ -2617,7 +2630,7 @@ const workDetail = ref(null)
 const workDetailSaving = ref(false)
 const workEditing = ref(false)
 const workEditReason = ref('')
-const workEditForm = ref({ name: '', preview: '', type: '', ide_type: '', view_times: 0, praise_times: 0, collection_times: 0, status: 'published', is_featured: false })
+const workEditForm = ref({ name: '', preview: '', type: '', ide_type: '', view_times: 0, praise_times: 0, collection_times: 0, status: 'published', is_featured: false, is_sidebar_recommended: false, sidebar_sort_order: 0 })
 const userDetail = ref(null)
 const passwordDialogVisible = ref(false)
 const passwordLoading = ref(false)
@@ -4558,7 +4571,9 @@ const enterWorkEdit = () => {
     praise_times: workDetail.value.praise_times || 0,
     collection_times: workDetail.value.collection_times || 0,
     status: workDetail.value.status || 'published',
-    is_featured: workDetail.value.is_featured || false
+    is_featured: workDetail.value.is_featured || false,
+    is_sidebar_recommended: workDetail.value.is_sidebar_recommended || false,
+    sidebar_sort_order: workDetail.value.sidebar_sort_order || 0
   }
   workEditing.value = true
 }
