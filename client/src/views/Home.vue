@@ -254,7 +254,9 @@ const activeUsers = ref([])
 const featuredPosts = ref([])
 const magnetSentinel = ref(null)
 const magnetRevealCount = ref(0)
+const magnetTargetCount = ref(0)
 let magnetFrame = 0
+let magnetStepTimer = 0
 
 const importantPosts = ref([])
 const loadingFeatured = ref(false)
@@ -262,14 +264,28 @@ const loadingLatest = ref(false)
 const loadingHot = ref(false)
 const magnetWorks = computed(() => (sidebarRecommendedWorks.value.length ? sidebarRecommendedWorks.value : hotWorks.value).slice(0, 8))
 
+const runMagnetSteps = () => {
+  if (magnetStepTimer || magnetRevealCount.value === magnetTargetCount.value) return
+  const step = () => {
+    magnetStepTimer = 0
+    if (magnetRevealCount.value === magnetTargetCount.value) return
+    magnetRevealCount.value += magnetTargetCount.value > magnetRevealCount.value ? 1 : -1
+    if (magnetRevealCount.value !== magnetTargetCount.value) {
+      magnetStepTimer = window.setTimeout(step, 82)
+    }
+  }
+  step()
+}
+
 const syncMagnetDock = () => {
   if (magnetFrame) return
   magnetFrame = requestAnimationFrame(() => {
     const sentinelTop = magnetSentinel.value?.getBoundingClientRect().top ?? Number.POSITIVE_INFINITY
     const revealDistance = Math.max(0, 92 - sentinelTop)
-    magnetRevealCount.value = window.innerWidth > 1080
+    magnetTargetCount.value = window.innerWidth > 1080
       ? Math.min(magnetWorks.value.length, Math.ceil(revealDistance / 52))
       : 0
+    runMagnetSteps()
     magnetFrame = 0
   })
 }
@@ -372,6 +388,7 @@ onUnmounted(() => {
   window.removeEventListener('scroll', syncMagnetDock)
   window.removeEventListener('resize', syncMagnetDock)
   if (magnetFrame) cancelAnimationFrame(magnetFrame)
+  if (magnetStepTimer) window.clearTimeout(magnetStepTimer)
 })
 </script>
 
