@@ -281,7 +281,8 @@ const syncMagnetDock = () => {
   if (magnetFrame) return
   magnetFrame = requestAnimationFrame(() => {
     const sentinelTop = magnetSentinel.value?.getBoundingClientRect().top ?? Number.POSITIVE_INFINITY
-    const revealDistance = Math.max(0, 92 - sentinelTop)
+    const triggerLine = Math.max(280, Math.min(window.innerHeight - 140, window.innerHeight * .78))
+    const revealDistance = Math.max(0, triggerLine - sentinelTop)
     magnetTargetCount.value = window.innerWidth > 1080
       ? Math.min(magnetWorks.value.length, Math.ceil(revealDistance / 52))
       : 0
