@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <div class="r-admin--page">
     <div class="r-admin--container">
       <!-- 侧边栏 -->
@@ -1156,7 +1156,7 @@
                 <a :href="row.link_url" target="_blank" style="color: #409eff;">{{ row.link_url }}</a>
               </template>
             </el-table-column>
-            <el-table-column prop="sort_order" label="排序" width="80" />
+            <el-table-column prop="sort" label="排序" width="80" />
             <el-table-column prop="status" label="状态" width="80">
               <template #default="{ row }">
                 <el-tag :type="row.status === 'active' ? 'success' : 'info'" size="small">
@@ -2386,7 +2386,7 @@
           <el-input v-model="bannerForm.link_url" placeholder="点击跳转的链接" />
         </el-form-item>
         <el-form-item label="排序">
-          <el-input-number v-model="bannerForm.sort_order" :min="0" :max="100" />
+          <el-input-number v-model="bannerForm.sort" :min="0" :max="100" />
         </el-form-item>
         <el-form-item label="状态">
           <el-switch v-model="bannerForm.is_active" active-text="启用" inactive-text="禁用" />
@@ -5272,7 +5272,7 @@ const showBannerDialog = (banner = null) => {
   if (banner) {
     bannerForm.value = { ...banner, is_active: banner.status === 'active' }
   } else {
-    bannerForm.value = { title: '', image_url: '', link_url: '', sort_order: 0, is_active: true }
+    bannerForm.value = { title: '', image_url: '', link_url: '', sort: 0, is_active: true }
   }
   bannerDialogVisible.value = true
 }
