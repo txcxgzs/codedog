@@ -1030,15 +1030,225 @@ const reportComment = async (comment) => {
         ElMessage.error(res.msg || '举报失败')
       }
     } catch (e) {
+} finally {
+    likingComments.value.delete(comment.id)
+  }
+}
+
+const replyTo = (comment) => {
+  replyingTo.value = comment
+  replyingComment.value = comment
+  commentContent.value = ''
+  document.querySelector('.r-work--comment_form textarea')?.focus()
+}
+
+const deleteComment = async (comment) => {
+  try {
+    await ElMessageBox.confirm('确定删除这条评论吗？', '提示', { type: 'warning' })
+    const res = await commentApi.deleteComment(comment.id)
+    if (res.code === 200) {
+      // 先在顶层评论中查找
+      const index = comments.value.findIndex(c => c.id === comment.id)
+      if (index > -1) {
+        comments.value.splice(index, 1)
+        work.value.comment_count = Math.max(0, (work.value.comment_count || 0) - 1)
+      } else {
+        // 在回复列表中查找
+        for (const parent of comments.value) {
+          if (parent.replies) {
+            const replyIndex = parent.replies.findIndex(r => r.id === comment.id)
+            if (replyIndex > -1) {
+              parent.replies.splice(replyIndex, 1)
+              break
+            }
+          }
+        }
+      }
+      ElMessage.success('删除成功')
+    }
+  } catch (e) {
+    if (e !== 'cancel') {
+      ElMessage.error('删除失败')
+    }
+  }
+}
+
+const showShareDialog = () => {
+  shareDialogVisible.value = true
+  generateQrcode()
+}
+
+const generateQrcode = async () => {
+  try {
+    const QRCode = (await import('qrcode')).default
+    qrcodeUrl.value = await QRCode.toDataURL(shareLink.value, { width: 150, margin: 2 })
+  } catch (e) {
+    console.error('生成二维码失败:', e)
+  }
+}
+
+const copyShareLink = async () => {
+  try {
+    await navigator.clipboard.writeText(shareLink.value)
+    ElMessage.success('链接已复制')
+  } catch (e) {
+    ElMessage.error('复制失败')
+  }
+}
+
+const shareToWeibo = () => {
+  const url = encodeURIComponent(shareLink.value)
+  const title = encodeURIComponent(work.value?.name || '分享作品')
+  window.open(`https://service.weibo.com/share/share.php?url=${url}&title=${title}`, '_blank')
+}
+
+const shareToQQ = () => {
+  const url = encodeURIComponent(shareLink.value)
+  const title = encodeURIComponent(work.value?.name || '分享作品')
+  const desc = encodeURIComponent(work.value?.description || '')
+  window.open(`https://connect.qq.com/widget/shareqq/index.html?url=${url}&title=${title}&desc=${desc}`, '_blank')
+}
+
+const handleMoreAction = (command) => {
+  if (command === 'report') {
+    if (!userStore.isLoggedIn) {
+      ElMessage.warning('请先登录')
+      return
+    }
+    reportForm.value = { reason: '', description: '' }
+    reportDialogVisible.value = true
+  } else if (command === 'edit') {
+    editWorkForm.value = { 
+      name: work.value.name, 
+      description: work.value.description || '' 
+    }
+    editWorkVisible.value = true
+  } else if (command === 'copyLink') {
+    copyShareLink()
+  } else if (command === 'openOriginal') {
+    window.open(`https://creation.codemao.cn/${work.value.codemao_work_id}`, '_blank')
+  }
+}
+
+const submitEditWork = async () => {
+  if (!String(editWorkForm.value.name).trim()) {
+    ElMessage.warning('作品名不能为空')
+    return
+  }
+  
+  editWorkSubmitting.value = true
+  try {
+    const res = await workApi.update(work.value.codemao_work_id, {
+      name: editWorkForm.value.name,
+      description: editWorkForm.value.description
+    })
+    if (res.code === 200) {
+      ElMessage.success('保存成功')
+      work.value.name = editWorkForm.value.name
+      work.value.description = editWorkForm.value.description
+      editWorkVisible.value = false
+    } else {
+      ElMessage.error(res.msg || '保存失败')
+    }
+  } catch (e) {
+    ElMessage.error('保存失败')
+  } finally {
+    editWorkSubmitting.value = false
+  }
+}
+
+const submitReport = async () => {
+  if (!reportForm.value.reason) {
+    ElMessage.warning('请选择举报原因')
+    return
+  }
+  
+  let geetestData = {}
+  
+  // 检查是否需要验证码
+  if (geetestConfig.value?.enabled && geetestConfig.value?.scenes?.report) {
+    geetestData = await geetestDialogRef.value.show('report')
+    if (!geetestData) return
+  }
+  
+  reportSubmitting.value = true
+  try {
+    const res = await reportApi.create({
+      type: 'work',
+      target_id: work.value.id,
+      reason: reportForm.value.reason,
+      description: reportForm.value.description,
+      ...geetestData
+    })
+    if (res.code === 200) {
+      ElMessage.success('举报成功，我们会尽快处理')
+      reportDialogVisible.value = false
+    } else {
+      ElMessage.error(res.msg || '举报失败')
+    }
+  } catch (e) {
+    ElMessage.error('举报失败')
+  } finally {
+    reportSubmitting.value = false
+  }
+}
+
+const reportComment = async (comment) => {
+  if (!userStore.isLoggedIn) {
+    ElMessage.warning('请先登录')
+    return
+  }
+  
+  let geetestData = {}
+  
+  if (geetestConfig.value?.enabled && geetestConfig.value?.scenes?.report) {
+    geetestData = await geetestDialogRef.value.show('report')
+    if (!geetestData) return
+  }
+  
+  ElMessageBox.prompt('请输入举报原因', '举报评论', {
+    confirmButtonText: '提交',
+    cancelButtonText: '取消',
+    inputPattern: /\S+/,
+    inputErrorMessage: '请输入举报原因'
+  }).then(async ({ value }) => {
+    try {
+      const res = await reportApi.create({
+        type: 'comment',
+        target_id: comment.id,
+        reason: value,
+        description: `评论内容: ${comment.content}`
+      }, geetestData)
+      if (res.code === 200) {
+        ElMessage.success('举报成功，我们会尽快处理')
+      } else {
+        ElMessage.error(res.msg || '举报失败')
+      }
+    } catch (e) {
       ElMessage.error('举报失败')
     }
   }).catch(() => {})
+}
+
+const preventScroll = (e) => {
+  // 允许在输入框等元素内正常使用上下键
+  if (['INPUT', 'TEXTAREA'].includes(e.target.tagName) || e.target.isContentEditable) return
+  
+  // 阻止上下键滚动页面，以便能正常游玩作品
+  if (['ArrowUp', 'ArrowDown'].includes(e.key)) {
+    e.preventDefault()
+  }
 }
 
 watch(() => route.params.codemaoId, fetchWork)
 onMounted(() => {
   fetchWork()
   fetchGeetestConfig()
+  window.addEventListener('keydown', preventScroll, { passive: false })
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', preventScroll)
 })
 const selectSocialCard = async type => {
   if (type === 'user') { selectedSocialCard.value = { type:'user' }; return }

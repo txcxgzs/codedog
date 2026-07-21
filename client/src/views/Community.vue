@@ -142,13 +142,7 @@
           </el-select>
           <div v-if="!myStudiosLoading && !myStudios.length" class="r-community--studio_hint">你尚未加入任何工作室，暂时不能在此版块发帖。</div>
         </el-form-item>
-        <el-form-item label="帖子类型" prop="post_type">
-          <el-radio-group v-model="postForm.post_type">
-            <el-radio label="discussion">普通讨论</el-radio>
-            <el-radio label="question">问答求助</el-radio>
-            <el-radio label="tutorial">教程文章</el-radio>
-          </el-radio-group>
-        </el-form-item>
+
         <el-form-item label="内容" prop="content">
           <!-- 修复: 替换分屏编辑器为 WYSIWYG Word 式编辑器 -->
           <WysiwygEditor v-model="postForm.content" ref="wysiwygRef" />
@@ -271,6 +265,20 @@ const searchKeyword = ref('')
 const activeTag = ref('')
 const activeBoard = computed(() => boards.value.find(board => Number(board.id) === Number(activeBoardId.value)) || null)
 const selectedComposeBoard = computed(() => boards.value.find(board => Number(board.id) === Number(postForm.board_id)) || null)
+
+watch(() => postForm.board_id, (newVal) => {
+  if (restoringDraft.value) return
+  const board = boards.value.find(b => Number(b.id) === Number(newVal))
+  if (board) {
+    if (board.slug === 'question') {
+      postForm.post_type = 'question'
+    } else if (board.slug === 'tutorial') {
+      postForm.post_type = 'tutorial'
+    } else {
+      postForm.post_type = 'discussion'
+    }
+  }
+})
 const activeStudioId = ref(null)
 const myStudios = ref([])
 const myStudiosLoading = ref(false)
