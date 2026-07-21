@@ -18,7 +18,7 @@
             <router-link to="/works">发现</router-link>
           </li>
           <li class="c-navigator--item" :class="{ 'c-navigator--selected': $route.path.startsWith('/community') || $route.path.startsWith('/post/') }">
-            <router-link to="/community">社区</router-link>
+            <router-link to="/community">论坛</router-link>
           </li>
           <li class="c-navigator--item" :class="{ 'c-navigator--selected': $route.path.startsWith('/work_shop') || $route.path.startsWith('/studio/') }">
             <router-link to="/work_shop">工作室</router-link>

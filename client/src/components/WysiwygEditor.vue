@@ -42,10 +42,18 @@
       </div>
 
       <div class="word-editor__group">
-        <ToolButton label="≡" title="左对齐" :active="isActive('justifyLeft')" @run="exec('justifyLeft')" />
-        <ToolButton label="≣" title="居中" :active="isActive('justifyCenter')" @run="exec('justifyCenter')" />
-        <ToolButton label="≡" title="右对齐" class="align-right" :active="isActive('justifyRight')" @run="exec('justifyRight')" />
-        <ToolButton label="☰" title="两端对齐" :active="isActive('justifyFull')" @run="exec('justifyFull')" />
+        <ToolButton title="左对齐" :active="isActive('justifyLeft')" @run="exec('justifyLeft')">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M1 3h14v2H1V3zm0 4h8v2H1V7zm0 4h14v2H1v-2z"/></svg>
+        </ToolButton>
+        <ToolButton title="居中" :active="isActive('justifyCenter')" @run="exec('justifyCenter')">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M1 3h14v2H1V3zm3 4h8v2H4V7zm-3 4h14v2H1v-2z"/></svg>
+        </ToolButton>
+        <ToolButton title="右对齐" :active="isActive('justifyRight')" @run="exec('justifyRight')">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M1 3h14v2H1V3zm6 4h8v2H7V7zm-6 4h14v2H1v-2z"/></svg>
+        </ToolButton>
+        <ToolButton title="两端对齐" :active="isActive('justifyFull')" @run="exec('justifyFull')">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M1 3h14v2H1V3zm0 4h14v2H1V7zm0 4h14v2H1v-2z"/></svg>
+        </ToolButton>
       </div>
 
       <div class="word-editor__group">
@@ -103,12 +111,12 @@ import { uploadApi } from '@/api/upload'
 const ToolButton = defineComponent({
   props: { label: String, title: String, active: Boolean, strong: Boolean, italic: Boolean, underline: Boolean, strike: Boolean },
   emits: ['run'],
-  setup(props, { emit }) {
+  setup(props, { emit, slots }) {
     return () => h('button', {
       type: 'button', title: props.title, class: ['word-editor__tool', { 'is-active': props.active }],
       style: { fontWeight: props.strong ? '800' : '', fontStyle: props.italic ? 'italic' : '', textDecoration: props.underline ? 'underline' : (props.strike ? 'line-through' : '') },
       onClick: () => emit('run')
-    }, props.label)
+    }, slots.default ? slots.default() : props.label)
   }
 })
 

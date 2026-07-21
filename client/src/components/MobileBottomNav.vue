@@ -28,7 +28,7 @@ const myPage = computed(() => {
 const items = computed(() => [
   { label: '首页', to: '/', icon: HomeFilled, match: p => p === '/' },
   { label: '发现', to: '/works', icon: Compass, match: p => p.startsWith('/work') && !p.startsWith('/work_shop') },
-  { label: '社区', to: '/community', icon: ChatDotRound, match: p => p.startsWith('/community') || p.startsWith('/post/') },
+  { label: '论坛', to: '/community', icon: ChatDotRound, match: p => p.startsWith('/community') || p.startsWith('/post/') },
   { label: '工作室', to: '/work_shop', icon: OfficeBuilding, match: p => p.startsWith('/work_shop') || p.startsWith('/studio/') },
   { label: '我的', to: myPage.value, icon: User, match: p => p.startsWith('/user/') || ['/profile','/login','/my-works','/favorites','/notifications'].some(x => p.startsWith(x)) }
 ])

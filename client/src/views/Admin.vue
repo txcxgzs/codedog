@@ -1000,6 +1000,18 @@
                 </el-tag>
               </template>
             </el-table-column>
+            <el-table-column label="处理人" width="120">
+              <template #default="{ row }">
+                <span
+                  v-if="row.handler"
+                  class="r-admin--clickable_name"
+                  @click="goToUser(row.handler)"
+                >
+                  {{ row.handler.nickname || row.handler.username }}
+                </span>
+                <span v-else>-</span>
+              </template>
+            </el-table-column>
             <el-table-column prop="created_at" label="时间" width="110">
               <template #default="{ row }">{{ formatDate(row.created_at) }}</template>
             </el-table-column>
