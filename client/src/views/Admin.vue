@@ -1157,10 +1157,10 @@
               </template>
             </el-table-column>
             <el-table-column prop="sort" label="排序" width="80" />
-            <el-table-column prop="status" label="状态" width="80">
+            <el-table-column prop="is_active" label="状态" width="80">
               <template #default="{ row }">
-                <el-tag :type="row.status === 'active' ? 'success' : 'info'" size="small">
-                  {{ row.status === 'active' ? '启用' : '禁用' }}
+                <el-tag :type="row.is_active ? 'success' : 'info'" size="small">
+                  {{ row.is_active ? '启用' : '禁用' }}
                 </el-tag>
               </template>
             </el-table-column>
@@ -5308,7 +5308,7 @@ const handleBannerImageUpload = async (event) => {
 
 const handleSaveBanner = async () => {
   try {
-    const data = { ...bannerForm.value, status: bannerForm.value.is_active ? 'active' : 'inactive' }
+    const data = { ...bannerForm.value }
     let res
     if (editingBanner.value) {
       res = await adminApi.updateBanner(editingBanner.value.id, data)
